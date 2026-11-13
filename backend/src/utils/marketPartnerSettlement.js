@@ -18,7 +18,7 @@ function tierFinalAt(salesMonth) {
 }
 
 function policyFromRule(rule) {
-  return { kind: rule.kind, first: rule.firstBasisPoints,
+  return { kind: rule.kind, first: rule.firstBasisPoints, repeat: rule.repeatBasisPoints,
     tiers: rule.tierBasisPoints?.length ? rule.tierBasisPoints : null,
     renewals: Object.fromEntries((rule.renewalBasisPoints || []).map(item => [item.year, item.basisPoints])),
     directReferralRequired: rule.directReferralRequired, quickClose: rule.quickCloseEnabled };
@@ -53,12 +53,13 @@ function annualPeriodNumber(history, verifiedSinceCutover) {
 }
 
 async function paidPeriodNumber(order, rule) {
-  if (rule.kind === 'every') return 1;
+  if (rule.kind === 'every' && rule.repeatBasisPoints == null) return 1;
   const annual = rule.kind === 'annual';
   const history = annual ? await MarketPartnerCustomerHistory.findOne({ tenantId: order.tenantId,
     patientId: order.user, productLine: rule.productLine, status: 'approved' }).lean() : null;
   if (annual && !history) return null;
-  const productIds = await MarketPartnerRule.distinct('productId', { tenantId: order.tenantId, productLine: rule.productLine });
+  const productIds = rule.kind === 'every' ? [rule.productId]
+    : await MarketPartnerRule.distinct('productId', { tenantId: order.tenantId, productLine: rule.productLine });
   const priorOrders = await Order.find({ tenantId: order.tenantId, user: order.user,
     serviceId: { $in: productIds.map(String) }, paymentStatus: 'paid',
     refundStatus: { $ne: 'refunded' },

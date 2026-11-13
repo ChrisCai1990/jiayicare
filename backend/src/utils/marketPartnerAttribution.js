@@ -2,6 +2,7 @@ const MarketPartner = require('../models/MarketPartner');
 const MarketPartnerRule = require('../models/MarketPartnerRule');
 const MarketPartnerAttribution = require('../models/MarketPartnerAttribution');
 const hasPromotion = rule => !!rule && !rule.disabled && (rule.firstBasisPoints > 0
+  || rule.repeatBasisPoints > 0
   || (rule.tierBasisPoints || []).some(value => value > 0)
   || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
 
@@ -43,6 +44,9 @@ async function resolveForOrder({ tenantId, patientId, productId, code, at = new 
     .select('_id productLine segment').lean();
   if (!partner) return null;
   const rule = await activeRule(tenantId, productId, at, partner._id);
+  // Per-purchase rules require a referral code on this order. A prior claim for the
+  // same customer and product must not silently attribute a later self-purchase.
+  if (rule?.kind === 'every') return null;
   return (partner.segment ? String(rule?.partnerId) === String(partner._id)
     : rule?.productLine === partner.productLine) ? { attribution, rule } : null;
 }

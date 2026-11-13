@@ -105,7 +105,7 @@ router.get('/:id/promotable-products', async (req, res) => {
       ...(partner.segment ? { partnerId: partner._id } : { partnerId: null, productLine: partner.productLine }),
       effectiveFrom: { $lte: now }, $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: now } }],
     }).sort({ effectiveFrom: -1, version: -1 }).lean();
-    const commissionRules = rules.filter(rule => rule.firstBasisPoints > 0
+    const commissionRules = rules.filter(rule => rule.firstBasisPoints > 0 || rule.repeatBasisPoints > 0
       || (rule.tierBasisPoints || []).some(value => value > 0)
       || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
     const productIds = commissionRules.filter(rule => rule.sourceType !== 'servicePackage').map(rule => rule.productId);
@@ -126,6 +126,7 @@ router.get('/:id/promotable-products', async (req, res) => {
     }).map(rule => ({ productId: rule.productId, name: names.get(String(rule.productId)),
       category: rule.category || rule.productLine, sourceType: rule.sourceType, kind: rule.kind,
       firstPercent: rule.firstBasisPoints / 100,
+      repeatPercent: rule.kind === 'every' ? (rule.repeatBasisPoints ?? rule.firstBasisPoints) / 100 : null,
       tierPercents: (rule.tierBasisPoints || []).map(value => value / 100),
       renewals: (rule.renewalBasisPoints || []).map(item => ({ year: item.year, percent: item.basisPoints / 100 })),
       directReferralRequired: !!rule.directReferralRequired,
@@ -811,6 +812,7 @@ router.post('/rules', async (req, res) => {
     const row = await MarketPartnerRule.create({ tenantId: tenant(req), productId: source._id,
       sourceType, productLine, version: (latest?.version || 0) + 1,
       kind: req.body.kind, firstBasisPoints: req.body.firstBasisPoints,
+      repeatBasisPoints: req.body.kind === 'every' ? req.body.repeatBasisPoints ?? null : null,
       tierBasisPoints: req.body.tierBasisPoints || [], renewalBasisPoints: req.body.renewalBasisPoints || [],
       directReferralRequired: req.body.directReferralRequired === true,
       quickCloseEnabled: req.body.quickCloseEnabled === true,
@@ -828,7 +830,8 @@ router.patch('/rules/:id', async (req, res) => {
   const expected = new Date(req.body?.updatedAt);
   const start = new Date(req.body?.effectiveFrom);
   const end = req.body?.effectiveUntil ? new Date(req.body.effectiveUntil) : null;
-  const rates = [req.body?.firstBasisPoints, ...(req.body?.tierBasisPoints || []),
+  const rates = [req.body?.firstBasisPoints, ...(req.body?.repeatBasisPoints == null ? [] : [req.body.repeatBasisPoints]),
+    ...(req.body?.tierBasisPoints || []),
     ...(req.body?.renewalBasisPoints || []).map(item => item.basisPoints)];
   const years = (req.body?.renewalBasisPoints || []).map(item => item.year);
   if (!Number.isFinite(expected.getTime()) || !Number.isFinite(start.getTime())
@@ -840,6 +843,7 @@ router.patch('/rules/:id', async (req, res) => {
     return res.status(400).json({ success: false, message: '规则草稿内容或版本时间无效' });
   try {
     const fields = { kind: req.body.kind, firstBasisPoints: req.body.firstBasisPoints,
+      repeatBasisPoints: req.body.kind === 'every' ? req.body.repeatBasisPoints ?? null : null,
       tierBasisPoints: req.body.tierBasisPoints || [], renewalBasisPoints: req.body.renewalBasisPoints || [],
       directReferralRequired: req.body.directReferralRequired === true,
       quickCloseEnabled: req.body.quickCloseEnabled === true,
@@ -888,7 +892,8 @@ router.post('/rules/preview', async (req, res) => {
     const row = await MarketPartnerRule.findOne({ _id: req.body.ruleId, tenantId: tenant(req) }).lean();
     if (!row) return res.status(404).json({ success: false, message: '规则不存在' });
     const paidCents = req.body.paidCents;
-    const policy = { kind: row.kind, first: row.firstBasisPoints, tiers: row.tierBasisPoints.length ? row.tierBasisPoints : null,
+    const policy = { kind: row.kind, first: row.firstBasisPoints, repeat: row.repeatBasisPoints,
+      tiers: row.tierBasisPoints.length ? row.tierBasisPoints : null,
       renewals: Object.fromEntries(row.renewalBasisPoints.map(item => [item.year, item.basisPoints])),
       directReferralRequired: row.directReferralRequired, quickClose: row.quickCloseEnabled };
     const result = commissionCents({ paidCents, policy, periodNumber: req.body.periodNumber || 1,

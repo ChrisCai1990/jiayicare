@@ -89,8 +89,8 @@ router.get('/products', async (req, res) => {
       : { partnerId: null, productLine: req.marketPartner.productLine }),
     status: 'active', disabled: { $ne: true }, effectiveFrom: { $lte: new Date() },
     $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: new Date() } }] })
-    .select('productId sourceType firstBasisPoints tierBasisPoints renewalBasisPoints').lean();
-  const promotable = rules.filter(rule => rule.firstBasisPoints > 0
+    .select('productId sourceType firstBasisPoints repeatBasisPoints tierBasisPoints renewalBasisPoints').lean();
+  const promotable = rules.filter(rule => rule.firstBasisPoints > 0 || rule.repeatBasisPoints > 0
     || (rule.tierBasisPoints || []).some(value => value > 0)
     || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
   const products = await Product.find({ _id: { $in: promotable.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
