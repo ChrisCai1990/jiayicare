@@ -914,6 +914,7 @@ router.patch('/orders/:id/fulfillment', adminAuth, async (req, res) => {
   order.fulfillmentStatus = fulfillment.status;
   if (['booked', 'shipped', 'in_service'].includes(fulfillment.status)) order.tradeStatus = 'fulfilling';
   if (fulfillment.status === 'completed') order.tradeStatus = 'completed';
+  if (fulfillment.status === 'completed' && !order.completedAt) order.completedAt = fulfillment.completedAt || new Date();
   await order.save();
   res.json({ success: true, data: { order, fulfillment }, message: fulfillment.wechatDeliveryStatus === 'reported' ? '履约已更新并上报微信' : '履约已更新' });
 });
@@ -2199,10 +2200,23 @@ async function validateProductSettlementConfig({ serviceItems, servicePrices, bu
   return null;
 }
 
+function productBusinessAttributionRequired({ status, servicePrices, businessAllocations, originalPrice }) {
+  if (status !== 'on') return null;
+  const prices = servicePrices || [];
+  if (prices.length) {
+    const missing = prices.find(price => Number(price.price) > 0 && !(price.businessAllocations || []).length);
+    return missing ? `请先为收费项目「${missing.label}」完成业务归属拆解，再上架产品` : null;
+  }
+  return Number(originalPrice) > 0 && !(businessAllocations || []).length
+    ? '请先完成整单业务归属拆解，再上架产品' : null;
+}
+
 router.post('/products', adminAuth, async (req, res) => {
   const { name, subtitle, images, originalPrice, servicePrices, businessAllocations, memberPrices, category, sortOrder, features, description, stock, stockLimited, status, performanceRule, servicePerformerRoles, serviceItems, staffPerformanceOverrides, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, healthFundDeduction, memberBundle, skus, aiProfile, specialtyTerms } = req.body;
   const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations, originalPrice, staffPerformanceOverrides }, req.admin.tenantId);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
+  const attributionError = productBusinessAttributionRequired({ status: status || 'off', servicePrices, businessAllocations, originalPrice });
+  if (attributionError) return res.status(400).json({ success: false, message: attributionError });
   const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
@@ -2256,6 +2270,11 @@ router.put('/products/:id', adminAuth, async (req, res) => {
     originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice,
     staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
+  const attributionError = productBusinessAttributionRequired({ status: status ?? existingProduct.status,
+    servicePrices: servicePrices ?? existingProduct.servicePrices,
+    businessAllocations: businessAllocations ?? existingProduct.businessAllocations,
+    originalPrice: originalPrice ?? existingProduct.originalPrice });
+  if (attributionError) return res.status(400).json({ success: false, message: attributionError });
   const sharedInventory = existingProduct.inventoryTracking?.enabled || await require('../models/InventoryMaterial').exists({ tenantId: req.admin.tenantId, linkedProductIds: existingProduct._id });
   if (sharedInventory && stock !== undefined && Number(stock) !== Number(existingProduct.stock)) return res.status(409).json({ success: false, message: '已启用物资台账，请通过入库或盘点调整库存' });
   const priceError = productPublicationError({ name: name ?? existingProduct.name, category: category ?? existingProduct.category,

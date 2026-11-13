@@ -73,7 +73,7 @@ async function settleOrderCommission(order) {
   };
 
   // ── 引流人（referrer）：始终按 performanceRule 结算 ──
-  if (order.referrerId) {
+  if (order.referrerId && !order.marketPartnerId) {
     const staff = await Admin.findById(order.referrerId).select('personalPerformanceRule').catch(() => null);
     const personalRule = staff?.personalPerformanceRule;
     const personRule = await staffRuleForOrder(order, order.referrerId);
@@ -99,12 +99,12 @@ async function settleOrderCommission(order) {
       const override = personRule || productStaffRule(order, staffId);
       const effectiveType = override?.ruleType || ruleType;
       const rate = effectiveType === 'percentage' ? (parseFloat(override ? override.fulfillerRate : pr.rate) || 0) / 100 : 0;
-      const roleShares = personRule && order.businessAllocationsSnapshot?.length
+      const roleShares = order.businessAllocationsSnapshot?.length
         ? require('./businessRevenueAllocation').allocations(order, Math.round(base * 100)) : null;
       const roleBase = roleShares ? roleShares.filter(row => row.businessType === 'service' && row.teamRole === pr.role)
         .reduce((sum, row) => sum + row.amountCents, 0) / 100 : base;
       const amount = effectiveType === 'fixedAmount'
-        ? Math.min(parseFloat(override ? override.fulfillerAmount : pr.amount) || 0, base)
+        ? Math.min(parseFloat(override ? override.fulfillerAmount : pr.amount) || 0, roleBase)
         : Math.round(roleBase * rate * 100) / 100;
       await createCommission(staffId, 'fulfiller', rate, amount, personRule, roleBase);
     }
@@ -126,7 +126,7 @@ async function settleOrderCommission(order) {
 
 // 支付时只预估推广佣金；实际服务启动且支付满7天后才可审核。
 async function settleReferralCommission(order) {
-  if (!order?.referrerId || commissionBlockReason(order)) return { created: [] };
+  if (!order?.referrerId || order.marketPartnerId || commissionBlockReason(order)) return { created: [] };
   let productRule = order.performanceRuleSnapshot || null;
   if (!productRule && (order.orderType === 'product' || mongoose.Types.ObjectId.isValid(order.serviceId))) {
     const product = await Product.findById(order.serviceId).catch(() => null);
@@ -161,8 +161,14 @@ async function settleRedemptionCommission(order, redemption) {
   if (commissionBlockReason(order) || !redemption?.serviceItemKey || !order.serviceItemsSnapshot?.length) return { created: [] };
   const item = order.serviceItemsSnapshot.find(i => i.key === redemption.serviceItemKey);
   if (!item) return { created: [] };
+  const frozenShares = order.businessAllocationsSnapshot?.length
+    ? require('./businessRevenueAllocation').allocations(order,
+      Math.round(Number(order.paidAmount || order.servicePrice || 0) * 100)) : null;
+  const frozenItem = frozenShares?.find(row => row.key === item.key && row.businessType === 'service');
   const hasRevenueSplit = order.serviceItemsSnapshot.every(row => row.childProductId && Number(row.revenueSharePercent) > 0);
-  const base = hasRevenueSplit
+  const base = frozenItem
+    ? Math.round(frozenItem.amountCents / Math.max(1, item.units || 1)) / 100
+    : hasRevenueSplit
     ? Math.round((Number(order.paidAmount || order.servicePrice || 0) * Number(item.revenueSharePercent) / 100 / Math.max(1, item.units || 1)) * 100) / 100
     : Math.round(((order.paidAmount || order.servicePrice || 0) / Math.max(1, order.totalUnits || 1)) * 100) / 100;
   const performerMap = {};
@@ -177,7 +183,7 @@ async function settleRedemptionCommission(order, redemption) {
     if (!staffId || ruleType === 'none') continue;
     const rate = ruleType === 'percentage' ? (Number(override ? override.fulfillerRate : rule.rate) || 0) / 100 : 0;
     const amount = ruleType === 'fixedAmount'
-      ? Number(override ? override.fulfillerAmount : rule.amount) || 0
+      ? Math.min(Number(override ? override.fulfillerAmount : rule.amount) || 0, base)
       : Math.round(base * rate * 100) / 100;
     if (amount <= 0) continue;
     try {

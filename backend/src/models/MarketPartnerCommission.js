@@ -40,4 +40,11 @@ schema.index({ tenantId: 1, recoveryReferences: 1 }, { unique: true,
   partialFilterExpression: { recoveryReferences: { $type: 'string' } } });
 schema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
+schema.post('save', async function (doc) {
+  await require('../utils/partnerTeamEarning').syncSource('partnerCommission', doc);
+});
+schema.post('findOneAndUpdate', async function (doc) {
+  if (doc) await require('../utils/partnerTeamEarning').syncSource('partnerCommission', doc);
+});
+
 module.exports = mongoose.model('MarketPartnerCommission', schema);

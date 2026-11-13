@@ -19,6 +19,9 @@ export default function PersonCommissionRulesPage() {
   const [products, setProducts] = useState([])
   const [packages, setPackages] = useState([])
   const [staffRules, setStaffRules] = useState([])
+  const [serviceThresholds, setServiceThresholds] = useState([])
+  const [thresholdYuan, setThresholdYuan] = useState('0')
+  const [monthlyVolume, setMonthlyVolume] = useState(null)
   const [partnerRules, setPartnerRules] = useState([])
   const [personId, setPersonId] = useState(searchParams.get('tab') === 'partner' ? searchParams.get('partnerId') || '' : '')
   const [personSearch, setPersonSearch] = useState('')
@@ -35,19 +38,29 @@ export default function PersonCommissionRulesPage() {
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
-    const [employees, partnerRows, productRows, packageRows, employeeRules, externalRules] = await Promise.all([
+    const [employees, partnerRows, productRows, packageRows, employeeRules, externalRules, thresholds] = await Promise.all([
       adminAPI.employees({ limit: 500 }), adminAPI.marketPartners(), adminAPI.products(),
       adminAPI.marketPartnerEligiblePackages(), adminAPI.staffCommissionRules(),
       adminAPI.partnerPersonCommissionRules(),
+      adminAPI.staffServiceThresholds(),
     ])
     setStaff((employees.data || []).filter(row => row.staffStatus === 'active'))
     setPartners((partnerRows.data || []).filter(row => row.status !== 'closed'))
     setProducts((productRows.data || []).filter(row => row.status === 'on'))
     setPackages(packageRows.data || [])
     setStaffRules(employeeRules.data || [])
+    setServiceThresholds(thresholds.data || [])
     setPartnerRules(externalRules.data || [])
   }
   useEffect(() => { load().catch(error => setMessage(error.message)).finally(() => setLoading(false)) }, [])
+  useEffect(() => {
+    if (tab !== 'staff' || !personId) { setMonthlyVolume(null); return }
+    let cancelled = false
+    adminAPI.staffServiceVolume(personId).then(response => {
+      if (!cancelled) setMonthlyVolume(response.data)
+    }).catch(error => { if (!cancelled) setMessage(error.message) })
+    return () => { cancelled = true }
+  }, [tab, personId])
 
   const people = tab === 'staff' ? staff : partners
   const person = people.find(row => String(row._id) === personId)
@@ -86,6 +99,8 @@ export default function PersonCommissionRulesPage() {
   }
   const changePerson = id => {
     setPersonId(id); setCategory(''); setSelected([]); setSearch(''); setMessage('')
+    const current = serviceThresholds.find(row => String(row.staffId) === id && !row.effectiveUntil)
+    setThresholdYuan(String((current?.thresholdCents || 0) / 100))
   }
   const changeCategory = value => {
     setCategory(value); setSearch(''); setMessage(''); loadExisting(personId, value, '')
@@ -96,6 +111,19 @@ export default function PersonCommissionRulesPage() {
   }
   const changeTab = value => {
     setTab(value); setPersonId(''); setPersonSearch(''); setCategory(''); setSelected([]); setSearch(''); setMessage('')
+    setThresholdYuan('0')
+  }
+  const saveThreshold = async () => {
+    if (!personId || !Number.isFinite(Number(thresholdYuan)) || Number(thresholdYuan) < 0) {
+      setMessage('请选择员工并填写有效的月度基础服务业务量'); return
+    }
+    setBusy(true); setMessage('')
+    try {
+      await adminAPI.saveStaffServiceThreshold({ staffId: personId, thresholdYuan: Number(thresholdYuan) })
+      await load(); setMonthlyVolume((await adminAPI.staffServiceVolume(personId)).data)
+      setMessage('月度门槛已保存，新完成的服务按新版规则核算')
+    } catch (error) { setMessage(error.message || '保存门槛失败') }
+    finally { setBusy(false) }
   }
   const chooseProduct = id => { loadExisting(personId, category, id); setMessage('') }
   const save = async () => {
@@ -143,6 +171,19 @@ export default function PersonCommissionRulesPage() {
               .map(name => <option key={name} value={name}>{name}</option>)}
           </select></div>
         </div>
+        {tab === 'staff' && personId && <div style={{ ...card, marginTop: 16, background: '#f8fbf9' }}>
+          <strong>基础服务业务量门槛</strong>
+          <p style={{ color: '#667a6d' }}>按自然月累计本人已完成服务的净实收归属。仅超出门槛部分按产品适用的服务比例计提；未达门槛不产生服务费。月结且订单支付满 30 天后才可审核发放。设置 0 表示不设门槛。</p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>每月 ¥</span><input className="form-input" type="number" min="0" step="0.01"
+              aria-label="员工月度基础服务业务量" value={thresholdYuan}
+              onChange={event => setThresholdYuan(event.target.value)} style={{ maxWidth: 170 }} />
+            <button className="btn btn-primary" disabled={busy} onClick={saveThreshold}>保存员工门槛</button>
+            <span>当前 v{serviceThresholds.find(row => String(row.staffId) === personId && !row.effectiveUntil)?.version || '—'}</span>
+          </div>
+          {monthlyVolume && <p style={{ marginBottom: 0 }}>本月（{monthlyVolume.month}）已完成服务业务量 ¥{(monthlyVolume.volumeCents / 100).toFixed(2)}；
+            当前门槛 ¥{(monthlyVolume.thresholdCents / 100).toFixed(2)}；超出部分 ¥{(monthlyVolume.excessCents / 100).toFixed(2)}。</p>}
+        </div>}
         {!!category && <>
           <div style={{ marginTop: 18 }}><strong>选择产品</strong></div>
           <input className="form-input" type="search" value={search} onChange={event => setSearch(event.target.value)}

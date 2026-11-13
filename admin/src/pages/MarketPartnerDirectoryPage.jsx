@@ -102,6 +102,7 @@ export default function MarketPartnerDirectoryPage() {
       <div className="page-subtitle">合伙人档案和团队成员名册</div></div></div>
     <div style={{ ...row, marginBottom: 16 }}>
       <Link className="btn btn-ghost" to="/commission-rules?tab=partner">设置合伙人佣金</Link>
+      <Link className="btn btn-ghost" to="/partner-teams">设置团队关系与负责人收益</Link>
       <Link className="btn btn-ghost" to="/market-partner-operations">业务登记</Link>
     </div>
     {error && <p role="alert" style={{ color: '#b42318' }}>{error}</p>}
@@ -169,7 +170,7 @@ export default function MarketPartnerDirectoryPage() {
     <section style={card}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人团队{selected && ` · ${selected.name}`}</h2>
       {!selected ? <p>在上方选择合伙人后登记团队成员。</p> : <>
-        <p style={{ color: '#667a6d' }}>这里仅维护团队成员名册。成员拓展比例另行设置；当前不会因登记成员自动分佣。</p>
+        <p style={{ color: '#667a6d' }}>这里保留历史联系人名册，不参与业务归因。参与核算的成员须建立自己的合伙人档案，并在<Link to="/partner-teams">合伙人团队</Link>中关联负责人和设置规则。</p>
         <form onSubmit={saveMember} style={row}>
           <input className="form-input" aria-label="团队成员姓名" placeholder="成员姓名" value={memberForm.name}
             onChange={event => setMemberForm({ ...memberForm, name: event.target.value })} required />

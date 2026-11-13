@@ -9,6 +9,7 @@ import MarketPartnerPortalPage from './pages/public/MarketPartnerPortalPage'
 import MarketPartnerManagementPage from './pages/MarketPartnerManagementPage'
 import MarketPartnerDirectoryPage from './pages/MarketPartnerDirectoryPage'
 import BusinessAccountingPage from './pages/BusinessAccountingPage'
+import PartnerTeamsPage from './pages/PartnerTeamsPage'
 import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
 import ExpertSupplementPage from './pages/public/ExpertSupplementPage'
 import ExpertRecruitmentPage from './pages/settings/ExpertRecruitmentPage'
@@ -179,6 +180,7 @@ export default function App() {
               <Route path="market-partner-operations" element={<MarketPartnerManagementPage view="operations" />} />
               <Route path="market-partner-finance" element={<MarketPartnerManagementPage view="finance" />} />
               <Route path="business-accounting" element={<BusinessAccountingPage />} />
+              <Route path="partner-teams" element={<PartnerTeamsPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="tenants" element={<TenantsPage />} />
               <Route path="agreements" element={<PlatformAgreementPage />} />

@@ -812,6 +812,9 @@ async function validatePackageBusinessAllocations(rows, tenantId) {
   return null;
 }
 
+const paidPackageNeedsAllocation = (activation, configuration) => activation?.enabled === true
+  && Number(activation.price) > 0 && !(configuration?.businessAllocations || []).length;
+
 async function normalizeServicePackageConfiguration(clientBrand, configuration) {
   const next = configuration && typeof configuration === 'object' ? { ...configuration } : {};
   // 不复用运营维护的 MemberType 树：其中可能有归属根节点和历史类型，
@@ -839,6 +842,8 @@ router.post('/service-packages', adminAuth, async (req, res) => {
   const namedConfiguration = normalizePackageAllocationNames(configuration);
   const allocationError = await validatePackageBusinessAllocations(namedConfiguration?.businessAllocations, req.admin.tenantId);
   if (allocationError) return res.status(400).json({ success: false, message: allocationError });
+  if (paidPackageNeedsAllocation(activation, namedConfiguration))
+    return res.status(400).json({ success: false, message: '请先完成收费服务包的业务归属拆解，再启用开通' });
   const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, namedConfiguration);
   const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration });
   res.json({ success: true, data: item });
@@ -852,6 +857,10 @@ router.put('/service-packages/:id', adminAuth, async (req, res) => {
   const namedConfiguration = normalizePackageAllocationNames(configuration);
   const allocationError = await validatePackageBusinessAllocations(namedConfiguration?.businessAllocations, req.admin.tenantId);
   if (allocationError) return res.status(400).json({ success: false, message: allocationError });
+  const existing = await ServicePackage.findById(req.params.id).select('activation configuration').lean();
+  if (!existing) return res.status(404).json({ success: false, message: '服务包不存在' });
+  if (!existing.activation?.enabled && paidPackageNeedsAllocation(activation, namedConfiguration))
+    return res.status(400).json({ success: false, message: '请先完成收费服务包的业务归属拆解，再启用开通' });
   const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, namedConfiguration);
   const item = await ServicePackage.findByIdAndUpdate(
     req.params.id,
@@ -865,6 +874,8 @@ router.put('/service-packages/:id', adminAuth, async (req, res) => {
 router.patch('/service-packages/:id/toggle', adminAuth, async (req, res) => {
   const item = await ServicePackage.findById(req.params.id);
   if (!item) return res.status(404).json({ success: false, message: '服务包不存在' });
+  if (!item.active && paidPackageNeedsAllocation(item.activation, item.configuration))
+    return res.status(400).json({ success: false, message: '请先完成收费服务包的业务归属拆解，再启用' });
   item.active = !item.active;
   await item.save();
   res.json({ success: true, data: item });

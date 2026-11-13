@@ -32,6 +32,9 @@ async function cancelOrderCommissions(order) {
     { orderId: order._id, status: 'paid' },
     { $set: { reversalRequired: true, cancellationReason: reason } },
   );
+  const referrals = await Commission.find({ orderId: order._id, role: 'referrer' });
+  for (const source of referrals)
+    await require('./partnerTeamEarning').syncSource('staffCommission', source);
 }
 
 async function reconcileCancelledCommissions() {

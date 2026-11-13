@@ -7,6 +7,7 @@ const ServicePackage = require('../models/ServicePackage');
 const MarketPartner = require('../models/MarketPartner');
 const MarketPartnerRule = require('../models/MarketPartnerRule');
 const StaffCommissionRule = require('../models/StaffCommissionRule');
+const StaffServiceThresholdRule = require('../models/StaffServiceThresholdRule');
 
 router.use(adminAuth);
 router.use((req, res, next) => req.admin.role === 'superadmin' && req.admin.tenantId
@@ -15,6 +16,57 @@ router.use((req, res, next) => req.admin.role === 'superadmin' && req.admin.tena
 const validIds = ids => Array.isArray(ids) && ids.length > 0 && ids.length <= 200
   && ids.every(id => mongoose.isValidObjectId(id)) && new Set(ids.map(String)).size === ids.length;
 const validRate = value => Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100;
+
+router.get('/service-thresholds', async (req, res) => {
+  const rows = await StaffServiceThresholdRule.find({ tenantId: req.admin.tenantId })
+    .sort({ createdAt: -1 }).limit(2000).lean();
+  res.json({ success: true, data: rows });
+});
+
+router.get('/service-thresholds/volume', async (req, res) => {
+  const staffId = String(req.query.staffId || '');
+  const { monthlyServiceEvents, monthOf } = require('../utils/staffServiceThreshold');
+  const month = String(req.query.month || monthOf(new Date()));
+  if (!mongoose.isValidObjectId(staffId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+    return res.status(400).json({ success: false, message: '请选择员工和有效月份' });
+  const tenantId = req.admin.tenantId;
+  if (!await Admin.exists({ _id: staffId, tenantId }))
+    return res.status(404).json({ success: false, message: '本机构员工不存在' });
+  const events = await monthlyServiceEvents(tenantId, staffId, month);
+  const volumeCents = events.reduce((sum, item) => sum + item.amountCents, 0);
+  const rule = await StaffServiceThresholdRule.findOne({ tenantId, staffId, effectiveUntil: null })
+    .sort({ version: -1 }).lean();
+  res.json({ success: true, data: { month, volumeCents,
+    thresholdCents: rule?.thresholdCents || 0,
+    excessCents: Math.max(0, volumeCents - (rule?.thresholdCents || 0)),
+    orderCount: new Set(events.map(item => item.orderId)).size } });
+});
+
+router.post('/service-thresholds', async (req, res) => {
+  const staffId = req.body?.staffId;
+  const value = Number(req.body?.thresholdYuan);
+  const thresholdCents = Math.round(value * 100);
+  if (!mongoose.isValidObjectId(staffId) || !Number.isSafeInteger(thresholdCents)
+    || value < 0 || value > 100000000)
+    return res.status(400).json({ success: false, message: '请选择员工并填写有效的月度基础服务业务量' });
+  const tenantId = req.admin.tenantId;
+  if (!await Admin.exists({ _id: staffId, tenantId, staffStatus: 'active' }))
+    return res.status(404).json({ success: false, message: '本机构在职员工不存在' });
+  const previous = await StaffServiceThresholdRule.findOne({ tenantId, staffId })
+    .sort({ version: -1 }).lean();
+  const now = new Date();
+  try {
+    const row = await StaffServiceThresholdRule.create({ tenantId, staffId,
+      thresholdCents, version: (previous?.version || 0) + 1,
+      effectiveFrom: now, createdBy: req.admin._id });
+    await StaffServiceThresholdRule.updateMany({ tenantId, staffId,
+      _id: { $ne: row._id }, effectiveUntil: null }, { $set: { effectiveUntil: now } });
+    res.status(201).json({ success: true, data: row });
+  } catch (error) {
+    res.status(error.code === 11000 ? 409 : 500).json({ success: false,
+      message: error.code === 11000 ? '门槛版本已变化，请刷新后重试' : '保存服务业务量门槛失败' });
+  }
+});
 
 router.get('/staff', async (req, res) => {
   const rows = await StaffCommissionRule.find({ tenantId: req.admin.tenantId })

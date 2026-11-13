@@ -21,6 +21,10 @@ export default function BusinessAccountingPage() {
   const [data, setData] = useState(null)
   const [orders, setOrders] = useState(null)
   const [teamRevenue, setTeamRevenue] = useState([])
+  const [leaderEarnings, setLeaderEarnings] = useState([])
+  const [peopleVolume, setPeopleVolume] = useState([])
+  const [peopleExpanded, setPeopleExpanded] = useState(false)
+  const [peoplePage, setPeoplePage] = useState(1)
   const [source, setSource] = useState('')
   const [page, setPage] = useState(1)
   const [productPage, setProductPage] = useState(1)
@@ -33,12 +37,16 @@ export default function BusinessAccountingPage() {
     setLoading(true); setError('')
     const period = { ...(start ? { from: start } : {}), ...(end ? { to: end } : {}) }
     try {
-      const [summary, orderList, teamList] = await Promise.all([
+      const [summary, orderList, teamList, leaderList, peopleList] = await Promise.all([
         adminAPI.marketPartnerBusinessOverview(period),
         adminAPI.marketPartnerBusinessOrders({ ...period, ...(source ? { source } : {}), page: 1, pageSize: 10 }),
         adminAPI.marketPartnerTeamRevenue(period),
+        adminAPI.partnerTeamSummary(period),
+        adminAPI.partnerPeopleVolume(period),
       ])
-      setData(summary.data); setOrders(orderList.data); setTeamRevenue(teamList.data || []); setPage(1); setProductPage(1)
+      setData(summary.data); setOrders(orderList.data); setTeamRevenue(teamList.data || []);
+      setLeaderEarnings(leaderList.data || []); setPage(1); setProductPage(1)
+      setPeopleVolume(peopleList.data || []); setPeoplePage(1)
     }
     catch (err) { setError(err.message || '经营数据读取失败') }
     finally { setLoading(false) }
@@ -103,6 +111,26 @@ export default function BusinessAccountingPage() {
         <tr key={`${row.teamRole}:${row.childProductId || row.serviceItemKey}`}><td>{roleName[row.teamRole] || row.teamRole}</td><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.amountCents)}</td></tr>} />
       <DataTable title="企业资源业务归属" headers={['归属', '收费项目', '订单数', '净实收分摊']} rows={teamRevenue.filter(row => row.businessType === 'enterprise')} render={row =>
         <tr key={`${row.teamRole}:${row.serviceItemKey}`}><td>企业资源</td><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.amountCents)}</td></tr>} />
+      <section style={{ ...card, marginTop: 16, overflowX: 'auto' }}>
+        <button type="button" className="btn" aria-expanded={peopleExpanded}
+          onClick={() => setPeopleExpanded(value => !value)}>个人业务量（{peopleVolume.length} 项）{peopleExpanded ? '收起 ▲' : '展开 ▼'}</button>
+        {peopleExpanded && <><p style={{ color: '#667a6d' }}>推广按唯一引入人计入，服务仅在实际完成后按订单归属快照计入；按所选订单付款期回溯展示，两项不可相加作为企业营收。</p>
+          <table className="table"><thead><tr><th>人员</th><th>身份</th><th>业务</th><th>订单数</th><th>净实收业务量</th></tr></thead><tbody>
+            {peopleVolume.slice((peoplePage - 1) * 10, peoplePage * 10).map(item =>
+              <tr key={`${item.personType}:${item.personId}:${item.activity}`}>
+                <td>{item.personName}</td><td>{item.personType === 'staff' ? '员工' : '市场合伙人'}</td>
+                <td>{item.activity === 'service' ? '服务' : '推广'}</td><td>{item.orderCount}</td><td>{money(item.amountCents)}</td>
+              </tr>)}
+          </tbody></table>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><span>每页 10 项 · 第 {peoplePage} / {Math.max(1, Math.ceil(peopleVolume.length / 10))} 页</span>
+            <button type="button" className="btn" disabled={peoplePage <= 1} onClick={() => setPeoplePage(value => value - 1)}>上一页</button>
+            <button type="button" className="btn" disabled={peoplePage * 10 >= peopleVolume.length} onClick={() => setPeoplePage(value => value + 1)}>下一页</button></div>
+        </>}
+      </section>
+      <section style={{ ...card, marginTop: 16 }}><strong>团队负责人收益</strong>
+        <p>累计应计 {money(leaderEarnings.reduce((sum, row) => sum + row.accruedCents, 0))}；已发 {money(leaderEarnings.reduce((sum, row) => sum + row.paidCents - row.recoveredCents, 0))}。
+          这是佣金成本，不计入企业净实收；<Link to="/partner-teams">查看团队关系与逐笔明细</Link>。</p>
+      </section>
       <p style={{ color: '#667a6d' }}>归属表仅含已完成 100% 配置的订单；未拆解的订单仍计入企业净实收。人员激励必须依据实际推广或履约，不能把业务归属额直接当作个人收入。</p>
       <section style={{ ...card, marginTop: 16, overflowX: 'auto' }}>
         <button type="button" className="btn" aria-expanded={ordersExpanded} onClick={() => setOrdersExpanded(value => !value)}>

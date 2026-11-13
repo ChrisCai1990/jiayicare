@@ -211,6 +211,7 @@ orderSchema.post('save', async function (doc) {
     await require('../utils/marketPartnerSettlement').syncOrder(doc);
   if (process.env.MARKET_PARTNER_ENABLED === 'true')
     await require('../utils/teamIncentiveSettlement').syncOrder(doc);
+  await require('../utils/partnerTeamEarning').syncOrderServices(doc);
 });
 orderSchema.post('findOneAndUpdate', async function (doc) {
   if (!doc) return;
@@ -220,6 +221,7 @@ orderSchema.post('findOneAndUpdate', async function (doc) {
     await require('../utils/marketPartnerSettlement').syncOrder(current);
   if (process.env.MARKET_PARTNER_ENABLED === 'true')
     await require('../utils/teamIncentiveSettlement').syncOrder(current);
+  await require('../utils/partnerTeamEarning').syncOrderServices(current);
 });
 
 orderSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

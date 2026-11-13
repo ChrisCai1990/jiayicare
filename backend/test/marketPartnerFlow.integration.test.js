@@ -1000,4 +1000,25 @@ test('online and offline partner payments, renewals, refunds and team incentives
       patientId: segmentPatientId, productId: memberPackageId,
       code: segmentPartner.body.data.referralCode });
     assert.equal(matchedAnnual.rule.productLine, 'consumer365');
+
+    // 基础服务业务量只从实际完结的服务归属累计，门槛以员工个人保存。
+    const thresholdStaffId = oid();
+    await mongoose.connection.db.collection('admins').insertOne({ _id: thresholdStaffId,
+      tenantId, username: 'threshold-staff', name: '门槛合成员工', password: 'unused',
+      role: 'healthPlanner', staffStatus: 'active' });
+    const thresholdSave = await call(clerkId, 'POST', `${personPrefix}/service-thresholds`, {
+      staffId: String(thresholdStaffId), thresholdYuan: 3000 });
+    assert.equal(thresholdSave.status, 201, JSON.stringify(thresholdSave.body));
+    const completedAt = new Date();
+    await Order.collection.insertOne({ _id: oid(), tenantId, user: patientId,
+      orderNo: 'SYNTHETIC-THRESHOLD-1', status: 'completed', paymentStatus: 'paid',
+      paidAmount: 4000, refundedAmount: 0, paidAt: completedAt, verifiedAt: completedAt,
+      businessAllocationsSnapshot: [{ key: 'care', name: '实际服务', businessType: 'service',
+        teamRole: 'familyDoctor', revenueSharePercent: 100, allocationAmountCents: 400000 }],
+      servicePerformers: [{ role: 'familyDoctor', staffId: thresholdStaffId }] });
+    const month = require('../src/utils/staffServiceThreshold').monthOf(completedAt);
+    const volume = await call(clerkId, 'GET', `${personPrefix}/service-thresholds/volume?staffId=${thresholdStaffId}&month=${month}`);
+    assert.equal(volume.status, 200, JSON.stringify(volume.body));
+    assert.equal(volume.body.data.volumeCents, 400000);
+    assert.equal(volume.body.data.excessCents, 100000);
   });
