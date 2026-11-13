@@ -1,8 +1,8 @@
 // Conservative PDF text-layer transcription of printed department exam rows.
 // Every result stays pending until a clinician checks it against the original.
-const SECTION = /^【\s*(眼科体检|耳鼻喉科体检)\s*】$/;
+const SECTION = /^【\s*(一般项目\(基础\)|眼科体检|耳鼻喉科体检|全科医学检查)\s*】$/;
 const ANY_SECTION = /^【[^】]{2,40}】$/;
-const METADATA = /^(?:检查医生|检验医生|报告时间|检查时间|报告医生|体检号|姓名|眼科体检|耳鼻喉科体检|项目名称|检查结果|初检时间|复检时间)/;
+const METADATA = /^(?:检查医生|检验医生|报告时间|检查时间|报告医生|体检号|姓名|眼科体检|耳鼻喉科体检|项目名称|检查结果|初检时间|复检时间|邵逸夫医院体检报告)/;
 const RESULT = /[\u4e00-\u9fffA-Za-z\d≥≤<>]/;
 
 function parseTextPhysicalExam(layout, sourcePage) {
@@ -29,8 +29,10 @@ function parseTextPhysicalExam(layout, sourcePage) {
     const [name, finding] = cells;
     if (!name || !finding || name.length > 30 || finding.length > 100
       || METADATA.test(name) || METADATA.test(finding) || !/[\u4e00-\u9fffA-Za-z]/.test(name)
-      || !RESULT.test(finding) || /(?:姓名|身份证|手机号|体检号|报告时间|检查医生)/.test(`${name}${finding}`)) continue;
-    items.push({ name, itemType: 'imaging', findings: finding, value: '', diagnosis: '',
+      || !RESULT.test(finding) || /(?:姓名|身份证|手机号|体检号|报告时间|检查医生|Page\d+\/\d+)/i.test(`${name}${finding}`)) continue;
+    const basic = /一般项目\(基础\)/.test(section);
+    items.push({ name, itemType: basic ? 'data' : 'imaging', findings: basic ? '' : finding,
+      value: basic ? finding : '', diagnosis: '',
       status: 'unknown', manualReviewStatus: 'pending', sourcePage,
       sourceSection: section, sourceSectionOrder: sectionOrder, sourceRowOrder: ++rowOrder });
   }
