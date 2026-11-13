@@ -58,9 +58,12 @@ export default function MarketPartnerDirectoryPage() {
     return () => { cancelled = true }
   }, [selectedId])
   const selected = partners.find(item => String(item._id) === selectedId)
+  const liaisonByPartner = useMemo(() => new Map(liaisons.map(item => [
+    String(item.partnerId?._id || item.partnerId), item.staffId?.name || '已停用员工',
+  ])), [liaisons])
   const visiblePartners = useMemo(() => partners.filter(item =>
-    `${item.name} ${item.phone} ${item.referralCode} ${segmentName(item.segment || item.productLine)}`
-      .toLowerCase().includes(search.trim().toLowerCase())), [partners, search])
+    `${item.name} ${item.phone} ${item.referralCode} ${segmentName(item.segment || item.productLine)} ${liaisonByPartner.get(String(item._id)) || ''}`
+      .toLowerCase().includes(search.trim().toLowerCase())), [partners, liaisonByPartner, search])
 
   const run = async action => {
     setBusy(true); setError(''); setNotice('')
@@ -143,12 +146,13 @@ export default function MarketPartnerDirectoryPage() {
     </section>
     <section style={card}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人档案</h2>
-      <input className="form-input" type="search" aria-label="搜索合伙人" placeholder="搜索名称、手机、板块或推荐码"
+      <input className="form-input" type="search" aria-label="搜索合伙人" placeholder="搜索名称、手机、板块、对接人或推荐码"
         value={search} onChange={event => setSearch(event.target.value)} style={{ marginBottom: 12, maxWidth: 380 }} />
       <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr>
-        <th>名称</th><th>手机号</th><th>板块</th><th>推荐码</th><th>状态</th><th>操作</th>
+        <th>名称</th><th>手机号</th><th>板块</th><th>内部对接人</th><th>推荐码</th><th>状态</th><th>操作</th>
       </tr></thead><tbody>{visiblePartners.map(item => <tr key={item._id}>
         <td>{item.name}</td><td>{item.phone}</td><td>{segmentName(item.segment || item.productLine)}</td>
+        <td>{liaisonByPartner.get(String(item._id)) || '未指定'}</td>
         <td>{item.referralCode}</td><td>{item.status}</td><td>
           <button className="btn btn-sm" onClick={() => { setSelectedId(String(item._id)); setLiaisonPartnerId(String(item._id)) }}>查看产品与团队</button>{' '}
           {item.status !== 'closed' && <button className="btn btn-sm" onClick={() => editPartner(item)}>编辑</button>}{' '}
