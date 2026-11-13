@@ -79,6 +79,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     app.use(express.json());
     app.use('/api/admin/market-partners', require('../src/routes/marketPartnersAdmin'));
     app.use('/api/admin/person-commission-rules', require('../src/routes/personCommissionRulesAdmin'));
+    app.use('/api/admin/partner-teams', require('../src/routes/partnerTeamsAdmin'));
     app.use('/api/market-partner', require('../src/routes/marketPartnerPortal'));
     app.use('/api/admin', require('../src/routes/admin'));
     app.use('/api/admin', require('../src/routes/settings'));
@@ -1010,7 +1011,8 @@ test('online and offline partner payments, renewals, refunds and team incentives
       staffId: String(thresholdStaffId), thresholdYuan: 3000 });
     assert.equal(thresholdSave.status, 201, JSON.stringify(thresholdSave.body));
     const completedAt = new Date();
-    await Order.collection.insertOne({ _id: oid(), tenantId, user: patientId,
+    const thresholdOrderId = oid();
+    await Order.collection.insertOne({ _id: thresholdOrderId, tenantId, user: patientId,
       orderNo: 'SYNTHETIC-THRESHOLD-1', status: 'completed', paymentStatus: 'paid',
       paidAmount: 4000, refundedAmount: 0, paidAt: completedAt, verifiedAt: completedAt,
       businessAllocationsSnapshot: [{ key: 'care', name: '实际服务', businessType: 'service',
@@ -1021,4 +1023,26 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(volume.status, 200, JSON.stringify(volume.body));
     assert.equal(volume.body.data.volumeCents, 400000);
     assert.equal(volume.body.data.excessCents, 100000);
+    assert.equal(volume.body.data.quarterThresholdCents, 900000);
+    assert.equal(volume.body.data.quarterExcessCents, 0);
+    const teamPrefix = '/api/admin/partner-teams';
+    const thresholdLeaderId = oid();
+    await mongoose.connection.db.collection('admins').insertOne({ _id: thresholdLeaderId,
+      tenantId, username: 'threshold-leader', name: '门槛合成负责人', password: 'unused',
+      role: 'healthPlanner', staffStatus: 'active' });
+    const relation = await call(clerkId, 'POST', `${teamPrefix}/relations`, {
+      leaderType: 'staff', leaderId: String(thresholdLeaderId),
+      memberType: 'staff', memberId: String(thresholdStaffId) });
+    assert.equal(relation.status, 201, JSON.stringify(relation.body));
+    const leaderServiceRule = await call(clerkId, 'POST', `${teamPrefix}/relations/${relation.body.data._id}/rules`, {
+      activity: 'service', calculationType: 'percentage', value: 5 });
+    assert.equal(leaderServiceRule.status, 201, JSON.stringify(leaderServiceRule.body));
+    await Order.collection.updateOne({ _id: thresholdOrderId },
+      { $set: { verifiedAt: new Date() } });
+    await require('../src/utils/partnerTeamEarning').syncOrderServices(await Order.findById(thresholdOrderId));
+    const teamEarning = await require('../src/models/PartnerTeamEarning').findOne({
+      tenantId, orderId: thresholdOrderId, activity: 'service' }).lean();
+    assert.equal(teamEarning.basisCents, 400000);
+    assert.equal(teamEarning.accruedCents, 20000,
+      'leader service reward must be independent of the member personal service fee');
   });

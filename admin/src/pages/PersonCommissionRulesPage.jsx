@@ -172,8 +172,8 @@ export default function PersonCommissionRulesPage() {
           </select></div>
         </div>
         {tab === 'staff' && personId && <div style={{ ...card, marginTop: 16, background: '#f8fbf9' }}>
-          <strong>基础服务业务量门槛</strong>
-          <p style={{ color: '#667a6d' }}>按自然月累计本人已完成服务的净实收归属。仅超出门槛部分按产品适用的服务比例计提；未达门槛不产生服务费。月结且订单支付满 30 天后才可审核发放。设置 0 表示不设门槛。</p>
+          <strong>本人全部服务的月度与季度业务量门槛</strong>
+          <p style={{ color: '#667a6d' }}>所有产品、所有类别的已完成服务业务量合并计算，每名员工只设一个月度门槛，季度门槛为月度的 3 倍。单月超额须抵扣季度内其他月份的不足；季度最终可计提业务量不超过季度合计超额。季度结束且订单支付满 30 天后才可审核发放。设置 0 表示不设门槛。</p>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span>每月 ¥</span><input className="form-input" type="number" min="0" step="0.01"
               aria-label="员工月度基础服务业务量" value={thresholdYuan}
@@ -182,7 +182,9 @@ export default function PersonCommissionRulesPage() {
             <span>当前 v{serviceThresholds.find(row => String(row.staffId) === personId && !row.effectiveUntil)?.version || '—'}</span>
           </div>
           {monthlyVolume && <p style={{ marginBottom: 0 }}>本月（{monthlyVolume.month}）已完成服务业务量 ¥{(monthlyVolume.volumeCents / 100).toFixed(2)}；
-            当前门槛 ¥{(monthlyVolume.thresholdCents / 100).toFixed(2)}；超出部分 ¥{(monthlyVolume.excessCents / 100).toFixed(2)}。</p>}
+            月门槛 ¥{(monthlyVolume.thresholdCents / 100).toFixed(2)}；本月超出 ¥{(monthlyVolume.excessCents / 100).toFixed(2)}。<br />
+            本季度累计 ¥{(monthlyVolume.quarterVolumeCents / 100).toFixed(2)}；季度门槛 ¥{(monthlyVolume.quarterThresholdCents / 100).toFixed(2)}；
+            季度净超出 ¥{(monthlyVolume.quarterExcessCents / 100).toFixed(2)}。季度结算前金额仅为预估。</p>}
         </div>}
         {!!category && <>
           <div style={{ marginTop: 18 }}><strong>选择产品</strong></div>

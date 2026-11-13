@@ -25,7 +25,7 @@ router.get('/service-thresholds', async (req, res) => {
 
 router.get('/service-thresholds/volume', async (req, res) => {
   const staffId = String(req.query.staffId || '');
-  const { monthlyServiceEvents, monthOf } = require('../utils/staffServiceThreshold');
+  const { monthlyServiceEvents, monthOf, quarterMonths } = require('../utils/staffServiceThreshold');
   const month = String(req.query.month || monthOf(new Date()));
   if (!mongoose.isValidObjectId(staffId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
     return res.status(400).json({ success: false, message: '请选择员工和有效月份' });
@@ -34,11 +34,18 @@ router.get('/service-thresholds/volume', async (req, res) => {
     return res.status(404).json({ success: false, message: '本机构员工不存在' });
   const events = await monthlyServiceEvents(tenantId, staffId, month);
   const volumeCents = events.reduce((sum, item) => sum + item.amountCents, 0);
+  const quarter = quarterMonths(new Date(`${month}-15T12:00:00+08:00`));
+  const quarterRows = await Promise.all(quarter.map(item => item === month
+    ? Promise.resolve(events) : monthlyServiceEvents(tenantId, staffId, item)));
+  const quarterVolumeCents = quarterRows.flat().reduce((sum, item) => sum + item.amountCents, 0);
   const rule = await StaffServiceThresholdRule.findOne({ tenantId, staffId, effectiveUntil: null })
     .sort({ version: -1 }).lean();
   res.json({ success: true, data: { month, volumeCents,
     thresholdCents: rule?.thresholdCents || 0,
     excessCents: Math.max(0, volumeCents - (rule?.thresholdCents || 0)),
+    quarterMonths: quarter, quarterVolumeCents,
+    quarterThresholdCents: (rule?.thresholdCents || 0) * 3,
+    quarterExcessCents: Math.max(0, quarterVolumeCents - (rule?.thresholdCents || 0) * 3),
     orderCount: new Set(events.map(item => item.orderId)).size } });
 });
 

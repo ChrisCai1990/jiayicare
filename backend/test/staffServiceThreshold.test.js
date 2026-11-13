@@ -45,7 +45,7 @@ test('cancelled paid order contributes no monthly service volume', () => {
   assert.equal(events.reduce((sum, row) => sum + row.amountCents, 0), 0);
 });
 
-test('a second completed order earns service fee only on its excess monthly volume', async () => {
+test('service fee requires monthly excess and a positive quarterly net excess', async () => {
   const originalOrderFind = Order.find;
   const originalCommissionFind = Commission.find;
   const originalRuleFind = StaffServiceThresholdRule.findOne;
@@ -57,11 +57,19 @@ test('a second completed order earns service fee only on its excess monthly volu
     servicePerformers: [{ role: 'familyDoctor', staffId: 'staff-a' }],
     verifiedAt: new Date(`2026-11-${day}T03:00:00Z`), redemptions: [],
   });
-  const first = makeOrder('order-1', '01');
-  const second = makeOrder('order-2', '02');
+  const first = { ...makeOrder('order-1', '01'), serviceId: 'product-a' };
+  const second = { ...makeOrder('order-2', '02'), serviceId: 'product-b' };
+  const priorMonth = { ...makeOrder('order-oct', '01'),
+    paidAt: new Date('2026-10-01T01:00:00Z'),
+    verifiedAt: new Date('2026-10-01T03:00:00Z'), paidAmount: 3000,
+    businessAllocationsSnapshot: [{ key: 'care', name: '服务', businessType: 'service',
+      teamRole: 'familyDoctor', revenueSharePercent: 100, allocationAmountCents: 300000 }] };
+  const finalMonth = { ...priorMonth, _id: 'order-dec',
+    paidAt: new Date('2026-12-01T01:00:00Z'),
+    verifiedAt: new Date('2026-12-01T03:00:00Z') };
   try {
     Order.find = () => ({ select: () => ({ lean: () => ({ cursor: async function* () {
-      yield first; yield second;
+      yield priorMonth; yield first; yield second; yield finalMonth;
     } }) }) });
     Commission.find = () => ({ select: () => ({ lean: async () => [] }) });
     StaffServiceThresholdRule.findOne = () => ({ sort: () => ({ lean: async () => ({
@@ -70,10 +78,21 @@ test('a second completed order earns service fee only on its excess monthly volu
     const result = await serviceThresholdForCommission(second, { role: 'fulfiller',
       tenantId: 'tenant', staffId: 'staff-a', orderId: 'order-2', orderAmount: 2000,
       createdAt: new Date('2026-11-02T03:01:00Z'), redemptionSequence: null,
-      serviceItemKey: '' }, new Date('2026-12-03T00:00:00Z'));
+      serviceItemKey: '' }, new Date('2027-01-03T00:00:00Z'));
     assert.equal(result.totalCents, 200000);
     assert.equal(result.eligibleCents, 100000);
+    assert.equal(result.quarterVolumeCents, 1000000);
+    assert.equal(result.quarterExcessCents, 100000);
     assert.equal(result.ready, true);
+    Order.find = () => ({ select: () => ({ lean: () => ({ cursor: async function* () {
+      yield first; yield second;
+    } }) }) });
+    const insufficient = await serviceThresholdForCommission(second, { role: 'fulfiller',
+      tenantId: 'tenant', staffId: 'staff-a', orderId: 'order-2', orderAmount: 2000,
+      createdAt: new Date('2026-11-02T03:01:00Z'), redemptionSequence: null,
+      serviceItemKey: '' }, new Date('2027-01-03T00:00:00Z'));
+    assert.equal(insufficient.eligibleCents, 0);
+    assert.equal(insufficient.quarterExcessCents, 0);
   } finally {
     Order.find = originalOrderFind;
     Commission.find = originalCommissionFind;
