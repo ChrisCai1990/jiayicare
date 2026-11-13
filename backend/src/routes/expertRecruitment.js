@@ -12,6 +12,7 @@ const MedicalInstitution = require('../models/MedicalInstitution');
 const Admin = require('../models/Admin');
 const supplements = require('./expertRecruitmentSupplement');
 const { normalizeLanguages } = require('../../../shared/expertQualifications.cjs');
+const { createPsychologistAgreementDocx } = require('../utils/psychologistAgreementDocx');
 
 const router = express.Router();
 router.use(supplements.router);
@@ -128,6 +129,25 @@ router.get('/admin', adminAuth, async (req, res) => {
   if (!adminAllowed(req)) return fail(res, 403, '无专家招募审核权限');
   const rows = await ExpertRecruitment.find().select('-tokenHash').sort({ createdAt: -1 }).limit(300).lean();
   res.json({ success: true, data: rows });
+});
+
+router.get('/admin/:id/psychologist-agreement.docx', adminAuth, async (req, res) => {
+  if (!adminAllowed(req)) return fail(res, 403, '无专家协议查看权限');
+  if (!mongoose.isValidObjectId(req.params.id)) return fail(res, 400, '记录编号无效');
+  const row = await ExpertRecruitment.findOne({ _id: req.params.id, status: 'approved' }).lean();
+  if (!row?.expertProfileId) return fail(res, 409, '仅已审核入库的心理咨询师可生成协议');
+  const profile = await MedicalExpert.findOne({ _id: row.expertProfileId, recruitmentId: row._id }).select('linkedStaffId').lean();
+  if (!profile?.linkedStaffId) return fail(res, 409, '关联咨询师账号缺失');
+  const staff = await Admin.findOne({ _id: profile.linkedStaffId, tenantId: req.admin.tenantId, role: 'psychologist' }).select('name').lean();
+  if (!staff || !same(staff.name, row.response?.name)) return fail(res, 409, '该记录未关联已核验的心理咨询师');
+  const singleFee = Number(row.agreement?.singleFee);
+  if (row.agreement?.singleFee === null || row.agreement?.singleFee === undefined || !Number.isFinite(singleFee) || singleFee < 0)
+    return fail(res, 409, '请先核对已谈妥的单次报酬');
+  const docx = createPsychologistAgreementDocx({ name: staff.name, singleFee });
+  res.set({ 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(`心理咨询师合作协议-${staff.name}.docx`)}`,
+    'Content-Length': String(docx.length), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.send(docx);
 });
 
 router.post('/admin', adminAuth, async (req, res) => {

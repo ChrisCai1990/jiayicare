@@ -16,9 +16,9 @@ function fileType(buffer) {
   if (buffer.subarray(0,4).toString() === 'RIFF' && buffer.subarray(8,12).toString() === 'WEBP') return { mimeType: 'image/webp', ext: 'webp' };
   throw new Error('请上传 JPG、PNG、WebP 图片或 PDF 文件');
 }
-async function store(file, row) {
+async function store(file, row, prefix = 'expert-certificates') {
   const { mimeType, ext } = fileType(file.buffer);
-  const key = `expert-certificates/${row.tenantId}/${row._id}/${crypto.randomUUID()}.${ext}`;
+  const key = `${prefix}/${row.tenantId}/${row._id}/${crypto.randomUUID()}.${ext}`;
   await oss.getClient().put(key, file.buffer, { mime: mimeType, headers: { 'x-oss-object-acl': 'private' } });
   return { key, mimeType, size: file.buffer.length };
 }
