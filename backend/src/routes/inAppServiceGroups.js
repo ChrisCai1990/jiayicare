@@ -27,6 +27,10 @@ async function currentStaff(patient) {
   return Admin.find({ _id: { $in: assignedIds(patient) }, tenantId: patient.tenantId,
     staffStatus: 'active' }).select('_id name role').lean();
 }
+async function groupStaff(group, patient) {
+  return (await currentStaff(patient)).filter(person =>
+    (group.memberIds || []).some(id => same(id, person._id)));
+}
 async function mentorStaffIds(staff) {
   const teams = await Team.find({ tenantId: staff.tenantId, mentorId: staff._id,
     status: 'active' }).select('_id').lean();
@@ -51,32 +55,16 @@ async function groupAndPatient(groupId, tenantId) {
   if (!patient) fail('服务对象不可用', 404);
   return { group, patient };
 }
-function summary(group, patient, staffMembers, supervised = false) {
+function summary(group, patient, staffMembers, supervised = false, canConfigure = false) {
   return { id: group._id, patientId: patient._id, patientName: patient.name,
     staff: staffMembers.map(person => ({ id: person._id, name: person.name, role: person.role })),
     lastMessageAt: group.lastMessageAt || null,
     waitingForStaff: needsStaffReply(group),
-    supervised };
+    supervised, canConfigure };
 }
-async function ensureGroup(patient, createdByStaffId = null) {
-  const staff = await currentStaff(patient);
-  if (!staff.length) fail('尚未分配服务团队', 409);
-  let group;
-  try {
-    // Production disables automatic secondary indexes. The patient's immutable
-    // ObjectId is also the group _id, so MongoDB's primary-key index fences
-    // concurrent customer/staff creation even before the optional unique index exists.
-    group = await Group.findOneAndUpdate({ _id: patient._id, tenantId: patient.tenantId },
-      { $setOnInsert: { _id: patient._id, tenantId: patient.tenantId,
-        patientId: patient._id, createdByStaffId } },
-      { upsert: true, new: true, setDefaultsOnInsert: true });
-  } catch (error) {
-    if (error.code !== 11000) throw error;
-    group = await Group.findOne({ _id: patient._id, tenantId: patient.tenantId });
-  }
-  if (!group) fail('服务群建立失败，请重试', 409);
-  if (group.status !== 'active') fail('服务群已关闭', 409);
-  return { group, staff };
+function leaderCanConfigure(patient, staff, mentoredIds) {
+  return staff.role === 'superadmin' || assignedIds(patient).some(id =>
+    mentoredIds.some(memberId => same(id, memberId)));
 }
 async function recentMessages(group) {
   const rows = await Message.find({ groupId: group._id, tenantId: group.tenantId })
@@ -112,13 +100,12 @@ async function send(group, senderType, sender, content) {
 customerRouter.use(customerAuth);
 customerRouter.get('/', wrap(async (req, res) => {
   const groups = await Group.find({ tenantId: req.user.tenantId, patientId: req.user._id,
-    status: 'active' }).lean();
-  const staff = await currentStaff(req.user);
-  res.json({ success: true, data: groups.map(group => summary(group, req.user, staff)) });
+    status: 'active', 'memberIds.0': { $exists: true } }).lean();
+  res.json({ success: true, data: await Promise.all(groups.map(async group =>
+    summary(group, req.user, await groupStaff(group, req.user)))) });
 }));
 customerRouter.post('/', wrap(async (req, res) => {
-  const { group, staff } = await ensureGroup(req.user);
-  res.json({ success: true, data: summary(group, req.user, staff) });
+  fail('请等待团队负责人配置服务群成员', 409);
 }));
 customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId);
@@ -128,7 +115,7 @@ customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
 customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.user.tenantId);
   if (!canCustomerAccess(group, req.user)) fail('无权发送服务群消息');
-  if (!(await currentStaff(patient)).length) fail('当前没有可接收消息的服务人员', 409);
+  if (!(await groupStaff(group, patient)).length) fail('当前没有可接收消息的入群人员', 409);
   res.status(201).json({ success: true, data: await send(group, 'customer', req.user, req.body?.content) });
 }));
 
@@ -153,24 +140,73 @@ staffRouter.get('/', wrap(async (req, res) => {
     const patient = patientMap.get(String(group.patientId));
     const direct = canStaffAccess(group, patient, req.staff);
     const supervised = !direct && canMentorObserve(group, patient, req.staff, mentoredIds);
-    if (direct || supervised) data.push(summary(group, patient, await currentStaff(patient), supervised));
+    const canConfigure = leaderCanConfigure(patient, req.staff, mentoredIds);
+    if (direct || supervised)
+      data.push(summary(group, patient, await groupStaff(group, patient), !direct, canConfigure));
   }
-  res.json({ success: true, data, page, hasMore });
+  res.json({ success: true, data, page, hasMore,
+    canConfigure: req.staff.role === 'superadmin' || mentoredIds.length > 0 });
+}));
+staffRouter.get('/configuration/:patientId', wrap(async (req, res) => {
+  await permitStaff(req, 'send');
+  const patient = await User.findOne({ _id: validId(req.params.patientId),
+    tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
+    .select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
+  if (!patient || !leaderCanConfigure(patient, req.staff, await mentorStaffIds(req.staff)))
+    fail('仅客户所属团队负责人可配置群成员');
+  const group = await Group.findOne({ _id: patient._id, tenantId: patient.tenantId }).lean();
+  res.json({ success: true, data: { patientId: patient._id, patientName: patient.name,
+    candidates: await currentStaff(patient), memberIds: group?.memberIds || [],
+    membershipVersion: group?.membershipVersion || 0 } });
 }));
 staffRouter.post('/', wrap(async (req, res) => {
   await permitStaff(req, 'send');
   const patientId = validId(req.body?.patientId);
   const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId,
     isDeleted: { $ne: true } }).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
-  if (!patient || !assignedIds(patient).some(id => same(id, req.staff._id)) && req.staff.role !== 'superadmin')
-    fail('只能为当前负责的客户建立服务群');
-  const { group, staff } = await ensureGroup(patient, req.staff._id);
-  res.json({ success: true, data: summary(group, patient, staff) });
+  const mentoredIds = await mentorStaffIds(req.staff);
+  if (!patient || !leaderCanConfigure(patient, req.staff, mentoredIds))
+    fail('仅客户所属团队负责人可配置群成员');
+  const candidates = await currentStaff(patient);
+  const rawIds = req.body?.memberIds;
+  if (!Array.isArray(rawIds) || !rawIds.length || rawIds.length > 20 ||
+    rawIds.some(id => !mongoose.isValidObjectId(id)) ||
+    new Set(rawIds.map(String)).size !== rawIds.length) fail('请选择有效的入群成员', 400);
+  const members = candidates.filter(person => rawIds.some(id => same(id, person._id)));
+  if (members.length !== rawIds.length) fail('入群人员必须是当前服务人员', 400);
+  if (req.staff.role !== 'superadmin' && !members.some(person =>
+    mentoredIds.some(id => same(id, person._id)))) fail('至少选择一名本团队服务人员', 400);
+  const version = Number(req.body?.membershipVersion);
+  if (!Number.isSafeInteger(version) || version < 0) fail('请刷新群成员名单后重试', 409);
+  const existing = await Group.findOne({ _id: patient._id, tenantId: patient.tenantId })
+    .select('membershipVersion status').lean();
+  if (existing?.status === 'closed') fail('服务群已关闭', 409);
+  if (version !== (existing?.membershipVersion || 0))
+    fail('群成员名单已变化，请刷新后重试', 409);
+  const membershipFilter = existing
+    ? (existing.membershipVersion === undefined ? { $exists: false } : existing.membershipVersion)
+    : 0;
+  let group;
+  try {
+    group = await Group.findOneAndUpdate({ _id: patient._id, tenantId: patient.tenantId,
+      membershipVersion: membershipFilter, status: 'active' },
+    { $set: { memberIds: members.map(person => person._id), configuredByStaffId: req.staff._id },
+      $setOnInsert: { _id: patient._id, tenantId: patient.tenantId,
+        patientId: patient._id, createdByStaffId: req.staff._id },
+      $inc: { membershipVersion: 1 } },
+    { upsert: !existing, new: true, setDefaultsOnInsert: true });
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    fail('群成员名单已变化，请刷新后重试', 409);
+  }
+  if (!group) fail('群成员名单已变化，请刷新后重试', 409);
+  res.json({ success: true, data: summary(group, patient, members, true, true) });
 }));
 staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
   const direct = canStaffAccess(group, patient, req.staff);
-  const supervised = !direct && canMentorObserve(group, patient, req.staff, await mentorStaffIds(req.staff));
+  const mentoredIds = await mentorStaffIds(req.staff);
+  const supervised = !direct && canMentorObserve(group, patient, req.staff, mentoredIds);
   if (!direct && !supervised) fail('无权查看服务群');
   const data = await recentMessages(group);
   if (supervised) await View.create({ tenantId: group.tenantId, groupId: group._id,

@@ -39,16 +39,6 @@ export default function ServiceGroupPage() {
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
-  const start = async () => {
-    if (busy) return;
-    setBusy(true); setError('');
-    try {
-      const response = await api.start();
-      setGroup(response.data);
-      setMessages((await api.messages(response.data.id)).data || []);
-    } catch (e) { setError(e.message || '建立服务群失败'); }
-    finally { setBusy(false); }
-  };
   const send = async () => {
     const content = draft.trim();
     if (!group || !content || busy) return;
@@ -73,11 +63,9 @@ export default function ServiceGroupPage() {
     </Text>
     {!!error && <Text onClick={refresh} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{error} · 点击重试</Text>}
     {loading ? <Text style={{ padding: '16px', color: colors.textMuted }}>正在加载…</Text>
-      : !group ? <View style={{ padding: '20px' }}>
-        <View onClick={start} style={{ padding: '14px', backgroundColor: colors.primary, borderRadius: `${radius.sm}px`, textAlign: 'center' }}>
-          <Text style={{ color: '#fff', fontWeight: 700 }}>{busy ? '正在建立…' : '开始服务群沟通'}</Text>
-        </View>
-      </View>
+      : !group ? <Text style={{ display: 'block', padding: '20px', color: colors.textMuted, fontSize: '14px' }}>
+        团队负责人尚未为您配置服务群成员，请联系服务团队。配置完成后点击右上角刷新。
+      </Text>
       : <>
         <ScrollView scrollY style={{ flex: 1, height: 0, padding: '12px 16px', boxSizing: 'border-box' }}>
           {messages.map(message => <View key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
