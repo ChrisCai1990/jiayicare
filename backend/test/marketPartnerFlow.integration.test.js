@@ -55,6 +55,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await auditMarketPartnerIndexes({ apply: true });
     await require('../src/models/PartnerTeam').createIndexes();
     await require('../src/models/PartnerTeamRelation').createIndexes();
+    await require('../src/models/MarketPartnerLiaison').createIndexes();
     const tenantId = oid(), otherTenantId = oid(), clerkId = oid(), reviewerId = oid(),
       outsiderId = oid(), plannerId = oid(), patientId = oid(), productId = oid();
     await mongoose.connection.db.collection('tenants').insertMany([
@@ -298,6 +299,35 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(partner.status, 201, JSON.stringify(partner.body));
     assert.equal((await call(clerkId, 'PATCH', `${prefix}/${partner.body.data._id}/status`,
       { status: 'active' })).status, 200);
+    const partnerB = await call(clerkId, 'POST', prefix, { name: '对接合伙人B',
+      phone: '13900000071', productLine: 'nutrition', contractReference: 'PARTNER-B' });
+    const partnerC = await call(clerkId, 'POST', prefix, { name: '对接合伙人C',
+      phone: '13900000072', productLine: 'annual', contractReference: 'PARTNER-C' });
+    assert.equal(partnerB.status, 201); assert.equal(partnerC.status, 201);
+    for (const partnerId of [partner.body.data._id, partnerB.body.data._id, partnerC.body.data._id]) {
+      const assigned = await call(clerkId, 'POST', `${prefix}/liaisons`, {
+        partnerId, staffId: String(plannerId) });
+      assert.equal(assigned.status, 201, JSON.stringify(assigned.body));
+    }
+    const liaisons = await call(clerkId, 'GET', `${prefix}/liaisons`);
+    assert.equal(liaisons.body.data.length, 3);
+    assert.ok(liaisons.body.data.every(row => String(row.staffId._id) === String(plannerId)));
+    assert.equal((await call(clerkId, 'POST', `${prefix}/liaisons`, {
+      partnerId: partner.body.data._id, staffId: String(teamLeaderA),
+    })).status, 409);
+    assert.equal((await call(outsiderId, 'GET', `${prefix}/liaisons`)).body.data.length, 0);
+    const partnerTeam = await call(clerkId, 'POST', `${teamRoute}/teams`, {
+      leaderType: 'partner', leaderId: partner.body.data._id });
+    assert.equal(partnerTeam.status, 201, JSON.stringify(partnerTeam.body));
+    assert.equal((await call(clerkId, 'GET', `${prefix}/liaisons`)).body.data.length, 3,
+      'creating a partner team must not change internal liaison assignments');
+    const oldLiaison = liaisons.body.data.find(row => String(row.partnerId._id) === String(partnerB.body.data._id));
+    assert.equal((await call(clerkId, 'POST', `${prefix}/liaisons/${oldLiaison._id}/end`,
+      { reason: '内部人员交接' })).status, 200);
+    assert.equal((await call(clerkId, 'POST', `${prefix}/liaisons`, {
+      partnerId: partnerB.body.data._id, staffId: String(teamLeaderA),
+    })).status, 201);
+    assert.equal((await call(clerkId, 'GET', `${prefix}/liaisons?history=true`)).body.data.length, 4);
     const teamMember = await call(clerkId, 'POST', `${prefix}/team-members`, {
       partnerId: partner.body.data._id, name: '合成拓展成员', phone: '13900000006' });
     assert.equal(teamMember.status, 201, JSON.stringify(teamMember.body));

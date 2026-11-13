@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const MarketPartner = require('../models/MarketPartner');
+const MarketPartnerLiaison = require('../models/MarketPartnerLiaison');
 const MarketPartnerTeamMember = require('../models/MarketPartnerTeamMember');
 const MarketPartnerRule = require('../models/MarketPartnerRule');
 const TeamIncentiveRule = require('../models/TeamIncentiveRule');
@@ -37,6 +38,48 @@ router.get('/', async (req, res) => {
   try {
     const rows = await MarketPartner.find({ tenantId: tenant(req) }).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+// 内部对接人与市场团队负责人是两条独立关系；对接不会转移客户归因或自动计佣。
+router.get('/liaisons', async (req, res) => {
+  try {
+    const rows = await MarketPartnerLiaison.find({ tenantId: tenant(req),
+      ...(req.query.history === 'true' ? {} : { effectiveUntil: null }) })
+      .sort({ createdAt: -1 }).limit(1000).populate('staffId', 'name staffStatus')
+      .populate('partnerId', 'name status referralCode').lean();
+    res.json({ success: true, data: rows });
+  } catch (err) { fail(res, err); }
+});
+
+router.post('/liaisons', async (req, res) => {
+  if (!validId(req.body?.partnerId) || !validId(req.body?.staffId))
+    return res.status(400).json({ success: false, message: '请选择市场合伙人与内部对接员工' });
+  try {
+    const [partner, staff] = await Promise.all([
+      MarketPartner.findOne({ _id: req.body.partnerId, tenantId: tenant(req), status: { $ne: 'closed' } }).select('_id').lean(),
+      Admin.findOne({ _id: req.body.staffId, tenantId: tenant(req), staffStatus: 'active' }).select('_id').lean(),
+    ]);
+    if (!partner || !staff) return res.status(404).json({ success: false, message: '合伙人或员工不存在、未启用，或不属于本机构' });
+    const row = await MarketPartnerLiaison.create({ tenantId: tenant(req), partnerId: partner._id,
+      staffId: staff._id, effectiveFrom: new Date(), createdBy: req.admin._id });
+    res.status(201).json({ success: true, data: row });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ success: false, message: '该合伙人已有内部对接人，请先结束原关系' });
+    fail(res, err);
+  }
+});
+
+router.post('/liaisons/:id/end', async (req, res) => {
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  if (!validId(req.params.id) || !reason)
+    return res.status(400).json({ success: false, message: '请填写调整对接关系的原因' });
+  try {
+    const row = await MarketPartnerLiaison.findOneAndUpdate({ _id: req.params.id,
+      tenantId: tenant(req), effectiveUntil: null }, { $set: { effectiveUntil: new Date(),
+      endedBy: req.admin._id, endReason: reason } }, { new: true });
+    if (!row) return res.status(404).json({ success: false, message: '生效中的对接关系不存在' });
+    res.json({ success: true, data: row });
   } catch (err) { fail(res, err); }
 });
 

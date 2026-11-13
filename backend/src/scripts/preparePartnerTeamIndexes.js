@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const { sameIndex } = require('../utils/marketPartnerIndexes');
 
 const models = ['PartnerTeam', 'PartnerTeamRelation', 'PartnerTeamRule', 'PartnerTeamEarning',
+  'MarketPartnerLiaison',
   'StaffServiceThresholdRule'].map(name => require(`../models/${name}`));
 
 async function main() {

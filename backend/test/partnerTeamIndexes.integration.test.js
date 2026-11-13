@@ -35,11 +35,15 @@ test('new accounting indexes can be audited and applied to empty collections',
     const script = path.join(__dirname, '../src/scripts/preparePartnerTeamIndexes.js');
     const run = (...args) => execFileSync(process.execPath, [script, ...args],
       { env: { ...process.env, MONGODB_URI: uri }, encoding: 'utf8' });
-    assert.match(run(), /partnerteamrelations: documents=0, missingIndexes=[1-9]/);
-    assert.match(run(), /partnerteams: documents=0, missingIndexes=[1-9]/);
+    const before = run();
+    assert.match(before, /partnerteamrelations: documents=0, missingIndexes=[1-9]/);
+    assert.match(before, /partnerteams: documents=0, missingIndexes=[1-9]/);
+    assert.match(before, /marketpartnerliaisons: documents=0, missingIndexes=[1-9]/);
     run('--apply');
-    assert.match(run(), /partnerteamrelations: documents=0, missingIndexes=0/);
-    assert.match(run(), /partnerteams: documents=0, missingIndexes=0/);
+    const after = run();
+    assert.match(after, /partnerteamrelations: documents=0, missingIndexes=0/);
+    assert.match(after, /partnerteams: documents=0, missingIndexes=0/);
+    assert.match(after, /marketpartnerliaisons: documents=0, missingIndexes=0/);
     await mongoose.connect(uri, { autoIndex: false, autoCreate: false });
     const indexes = await mongoose.connection.db.collection('partnerteamrelations').listIndexes().toArray();
     assert.ok(indexes.some(row => row.unique && row.partialFilterExpression?.effectiveUntil === null));

@@ -12,6 +12,12 @@ const emptyMember = { name: '', phone: '', status: 'active', reason: '' }
 
 export default function MarketPartnerDirectoryPage() {
   const [partners, setPartners] = useState([])
+  const [staff, setStaff] = useState([])
+  const [liaisons, setLiaisons] = useState([])
+  const [accountingTeams, setAccountingTeams] = useState([])
+  const [liaisonPartnerId, setLiaisonPartnerId] = useState('')
+  const [liaisonStaffId, setLiaisonStaffId] = useState('')
+  const [staffSearch, setStaffSearch] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [members, setMembers] = useState([])
   const [promotable, setPromotable] = useState([])
@@ -27,8 +33,14 @@ export default function MarketPartnerDirectoryPage() {
   const [notice, setNotice] = useState('')
 
   const loadPartners = async () => {
-    const response = await adminAPI.marketPartners()
-    setPartners(response.data || [])
+    const [market, employees, assigned, teams] = await Promise.all([
+      adminAPI.marketPartners(), adminAPI.employees({ limit: 500 }),
+      adminAPI.marketPartnerLiaisons(), adminAPI.partnerTeams(),
+    ])
+    setPartners(market.data || [])
+    setStaff((employees.data || []).filter(item => item.staffStatus === 'active'))
+    setLiaisons(assigned.data || [])
+    setAccountingTeams(teams.data || [])
   }
   useEffect(() => { loadPartners().catch(err => setError(err.message)) }, [])
   useEffect(() => {
@@ -138,7 +150,7 @@ export default function MarketPartnerDirectoryPage() {
       </tr></thead><tbody>{visiblePartners.map(item => <tr key={item._id}>
         <td>{item.name}</td><td>{item.phone}</td><td>{segmentName(item.segment || item.productLine)}</td>
         <td>{item.referralCode}</td><td>{item.status}</td><td>
-          <button className="btn btn-sm" onClick={() => setSelectedId(String(item._id))}>查看产品与团队</button>{' '}
+          <button className="btn btn-sm" onClick={() => { setSelectedId(String(item._id)); setLiaisonPartnerId(String(item._id)) }}>查看产品与团队</button>{' '}
           {item.status !== 'closed' && <button className="btn btn-sm" onClick={() => editPartner(item)}>编辑</button>}{' '}
           {item.status !== 'active' && item.status !== 'closed' && <button className="btn btn-sm" disabled={busy}
             onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'active'))}>启用</button>}
@@ -147,6 +159,44 @@ export default function MarketPartnerDirectoryPage() {
         </td>
       </tr>)}</tbody></table></div>
       {!visiblePartners.length && <p>暂无匹配合伙人</p>}
+    </section>
+    <section style={card}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>内部市场对接人</h2>
+      <p style={{ color: '#667a6d' }}>一名员工可对接多个市场合伙人；每位市场合伙人当前只指定一名内部对接人。对接关系独立于合伙人自己的团队，不改变客户归属、业务量或佣金。</p>
+      <div style={row}>
+        <select className="form-input" aria-label="选择对接的市场合伙人" value={liaisonPartnerId}
+          onChange={event => setLiaisonPartnerId(event.target.value)}>
+          <option value="">选择市场合伙人</option>
+          {partners.filter(item => item.status !== 'closed').map(item => <option key={item._id} value={item._id}>{item.name} · {item.phone}</option>)}
+        </select>
+        <input className="form-input" type="search" aria-label="搜索内部员工" placeholder="搜索员工姓名或岗位"
+          value={staffSearch} onChange={event => setStaffSearch(event.target.value)} />
+        <select className="form-input" aria-label="选择内部对接员工" value={liaisonStaffId}
+          onChange={event => setLiaisonStaffId(event.target.value)}>
+          <option value="">选择内部员工</option>
+          {staff.filter(item => `${item.name} ${item.role || ''} ${item.title || ''}`.toLowerCase()
+            .includes(staffSearch.trim().toLowerCase())).map(item =>
+            <option key={item._id} value={item._id}>{item.name} · {item.role}</option>)}
+        </select>
+        <button className="btn btn-primary" disabled={busy || !liaisonPartnerId || !liaisonStaffId}
+          onClick={() => run(() => adminAPI.createMarketPartnerLiaison({ partnerId: liaisonPartnerId,
+            staffId: liaisonStaffId }))}>指定对接人</button>
+      </div>
+      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr>
+        <th>内部员工</th><th>市场合伙人</th><th>合伙人团队</th><th>生效时间</th><th>操作</th>
+      </tr></thead><tbody>{liaisons.map(item => {
+        const team = accountingTeams.find(row => String(row.leaderId) === String(item.partnerId?._id)
+          && row.leaderType === 'partner')
+        return <tr key={item._id}><td>{item.staffId?.name || '已停用员工'}</td>
+          <td>{item.partnerId?.name || '已停用合伙人'}</td>
+          <td>{team ? `${team.memberCount} 位成员` : '尚未建立核算团队'}</td>
+          <td>{item.effectiveFrom?.slice(0, 10) || '-'}</td><td>
+            <button className="btn btn-sm" disabled={busy} onClick={() => {
+              const reason = window.prompt('请输入更换或结束内部对接人的原因')
+              if (reason?.trim()) run(() => adminAPI.endMarketPartnerLiaison(item._id, reason.trim()))
+            }}>结束／更换</button></td></tr>
+      })}</tbody></table></div>
+      {!liaisons.length && <p>尚未指定内部对接人</p>}
     </section>
     <section style={card}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>可推广产品与佣金{selected && ` · ${selected.name}`}</h2>
