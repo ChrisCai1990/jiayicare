@@ -18909,6 +18909,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
       const { parseTextLabTable } = require('../utils/reportTextLabTable');
       const textCandidate = parseTextLabTable(layout, pageNum);
+      const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
+      const urineCandidate = parseTextUrineTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
       const physicalCandidate = parseTextPhysicalExam(layout, pageNum);
       const { parseTextUltrasoundTable } = require('../utils/reportTextUltrasoundTable');
@@ -18917,9 +18919,10 @@ async function runReportPageParseControlled(reportId, pageNum) {
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported) {
+      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported) {
         localScan = { source: 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
+          ...(urineCandidate.supported ? urineCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
         ] };
