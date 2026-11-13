@@ -18,7 +18,6 @@ const ProductShare = require('../models/ProductShare');
 const crypto = require('crypto');
 
 const Product = require('../models/Product');
-const MarketPartnerRule = require('../models/MarketPartnerRule');
 const ProductCategory = require('../models/ProductCategory');
 const { resolveOrderWorkflowAssignee, orderOwnershipFields } = require('../utils/serviceOwnership');
 
@@ -307,36 +306,40 @@ router.get('/my-partner-promotion', auth, async (req, res) => {
     message: '该手机号关联多个合伙人档案，请联系管理员核对' });
   if (!partner) return res.json({ success: true, data: null });
   const now = new Date();
-  const rules = await MarketPartnerRule.find({ tenantId: req.user.tenantId,
-    ...(partner.segment ? { partnerId: partner._id }
-      : { partnerId: null, productLine: partner.productLine }),
-    status: 'active', disabled: { $ne: true }, effectiveFrom: { $lte: now },
-    $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: now } }] })
-    .select('productId sourceType firstBasisPoints repeatBasisPoints tierBasisPoints renewalBasisPoints').lean();
-  const promotable = rules.filter(rule => rule.firstBasisPoints > 0 || rule.repeatBasisPoints > 0
-    || (rule.tierBasisPoints || []).some(value => value > 0)
-    || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
+  const promotable = await require('../utils/partnerOwnPrice').promotableRulesForPartner(
+    req.user.tenantId, partner, now);
   const [products, packages] = await Promise.all([
     Product.find({ _id: { $in: promotable.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
       tenantId: req.user.tenantId, status: 'on', paymentChannel: { $ne: 'offline' } })
-      .select('name images').lean(),
+      .select('name images originalPrice servicePrices memberBundle').lean(),
     ServicePackage.find({ _id: { $in: promotable.filter(row => row.sourceType === 'servicePackage').map(row => row.productId) },
       active: true, 'activation.enabled': true, 'activation.durationMonths': 12,
       'configuration.membershipTier': 'consumer365', 'configuration.includes365': true })
-      .select('name activation.partnerSelfPrice').lean(),
+      .select('name activation.price').lean(),
   ]);
-  const priced = eligible ? await Product.find({ tenantId: req.user.tenantId, status: 'on',
-    paymentChannel: { $ne: 'offline' }, 'memberBundle.enabled': { $ne: true },
-    $or: [{ partnerSelfPrice: { $ne: null } },
-      { 'servicePrices.partnerSelfPrice': { $ne: null } }] })
-    .select('_id partnerSelfPrice servicePrices.label servicePrices.partnerSelfPrice').lean() : [];
+  const ownPriceFor = require('../utils/partnerOwnPrice').ownPriceFor;
+  const selfPrices = eligible ? (await Promise.all([
+    ...products.map(async item => {
+      const product = item;
+      if (product?.memberBundle?.enabled) return null;
+      const specifications = await Promise.all((product?.servicePrices || []).map(async row => ({
+        label: row.label, ...(await ownPriceFor({ tenantId: req.user.tenantId, partner, userId: req.user._id,
+          productId: item._id, customerPrice: row.price }) || {}),
+      })));
+      const base = await ownPriceFor({ tenantId: req.user.tenantId, partner, userId: req.user._id,
+        productId: item._id, customerPrice: product?.servicePrices?.[0]?.price ?? product?.originalPrice });
+      return base ? { id: String(item._id), price: base.price,
+        specifications: specifications.filter(row => row.price != null) } : null;
+    }),
+    ...packages.map(async item => {
+      const quote = await ownPriceFor({ tenantId: req.user.tenantId, partner, userId: req.user._id,
+        productId: item._id, customerPrice: item.activation?.price });
+      return quote ? { id: String(item._id), price: quote.price, specifications: [] } : null;
+    }),
+  ])).filter(Boolean) : [];
   res.json({ success: true, data: { name: partner.name, referralCode: partner.referralCode,
     selfPurchaseEligible: eligible,
-    selfPrices: [...priced.map(item => ({ id: String(item._id), price: item.partnerSelfPrice,
-      specifications: (item.servicePrices || []).filter(row => row.partnerSelfPrice != null)
-        .map(row => ({ label: row.label, price: row.partnerSelfPrice })) })),
-      ...(eligible ? packages.filter(item => item.activation?.partnerSelfPrice != null)
-        .map(item => ({ id: String(item._id), price: item.activation.partnerSelfPrice, specifications: [] })) : [])],
+    selfPrices,
     products: [...products, ...packages]
     .map(item => ({ id: String(item._id), name: item.name, image: item.images?.[0] || '' })) } });
 });
@@ -487,23 +490,22 @@ router.post('/order', auth, async (req, res) => {
   }
 
   let partnerSelfPurchaseApplied = false;
-  if (product && !product.memberBundle?.enabled && String(req.user._id) === String(serviceUser._id)) {
-    const selectedRow = (product.servicePrices || []).find(row => row.label === service.specificationLabel);
-    const configuredPrice = selectedRow ? selectedRow.partnerSelfPrice : product.partnerSelfPrice;
-    if (configuredPrice != null) {
-      const selfStatus = await require('../utils/partnerSelfPurchase').partnerSelfPurchaseStatus(req.user);
-      if (selfStatus.eligible) {
-        service.price = Number(configuredPrice);
-        partnerSelfPurchaseApplied = true;
-      }
-    }
-  }
-  if (servicePackage?.activation?.partnerSelfPrice != null
+  let partnerSelfPurchaseQuote = null;
+  let partnerSelfPurchaseCustomerPrice = null;
+  if ((product && !product.memberBundle?.enabled || servicePackage)
     && String(req.user._id) === String(serviceUser._id)) {
     const selfStatus = await require('../utils/partnerSelfPurchase').partnerSelfPurchaseStatus(req.user);
     if (selfStatus.eligible) {
-      service.price = Number(servicePackage.activation.partnerSelfPrice);
-      partnerSelfPurchaseApplied = true;
+      const quote = await require('../utils/partnerOwnPrice').ownPriceFor({
+        tenantId: req.user.tenantId, partner: selfStatus.partner, userId: req.user._id,
+        productId: product?._id || servicePackage._id, customerPrice: service.price,
+      });
+      if (quote) {
+        partnerSelfPurchaseCustomerPrice = service.price;
+        partnerSelfPurchaseQuote = quote;
+        service.price = quote.price;
+        partnerSelfPurchaseApplied = true;
+      }
     }
   }
 
@@ -719,6 +721,11 @@ router.post('/order', auth, async (req, res) => {
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
     servicePrice: service.price,
     partnerSelfPurchaseApplied,
+    partnerSelfPurchaseCustomerPrice,
+    partnerSelfPurchaseBasisPoints: partnerSelfPurchaseQuote?.basisPoints ?? null,
+    partnerSelfPurchasePeriodNumber: partnerSelfPurchaseQuote?.periodNumber ?? null,
+    partnerSelfPurchaseRuleId: partnerSelfPurchaseQuote?.ruleId ?? null,
+    partnerSelfPurchaseRuleVersion: partnerSelfPurchaseQuote?.ruleVersion ?? null,
     specificationLabel: service.specificationLabel || '',
     skuCode: service.skuCode || '',
     unitPrice,

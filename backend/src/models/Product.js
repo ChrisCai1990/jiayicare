@@ -26,9 +26,8 @@ const productSchema = new mongoose.Schema({
   images:        [{ type: String }],
   // An unpublished IBD draft can await commercial pricing; every published product still needs a price.
   originalPrice: { type: Number, required: function () { return this.status === 'on'; }, min: 0, default: null },
-  partnerSelfPrice: { type: Number, min: 0, default: null },
   servicePrices: [{
-    label: { type: String }, price: { type: Number }, partnerSelfPrice: { type: Number, min: 0, default: null },
+    label: { type: String }, price: { type: Number },
     businessAllocations: [{
       key: { type: String, required: true }, name: { type: String, required: true },
       businessType: { type: String, enum: ['service', 'product', 'enterprise'], default: 'service' },

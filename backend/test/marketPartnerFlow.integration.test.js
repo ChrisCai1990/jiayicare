@@ -675,12 +675,12 @@ test('online and offline partner payments, renewals, refunds and team incentives
       name: '合成合伙人本人', phone: '13900000003', contactPhone: '13900000003',
       onboardingCompleted: true, wechatMpOpenid: 'synthetic-partner-openid',
       assignedHealthPlanner: plannerId });
-    await mongoose.connection.db.collection('products').updateOne({ _id: onlineProductId },
-      { $set: { partnerSelfPrice: 80 } });
     const partnerBuyerToken = jwt.sign({ id: String(partnerBuyerId) }, process.env.JWT_SECRET);
     const myPromotion = async () => (await (await fetch(`${base}/api/services/my-partner-promotion`,
       { headers: { authorization: `Bearer ${partnerBuyerToken}` } })).json()).data;
-    assert.equal((await myPromotion()).selfPurchaseEligible, false);
+    const beforeBusiness = await myPromotion();
+    assert.equal(beforeBusiness.selfPurchaseEligible, false);
+    assert.equal(beforeBusiness.selfPrices.length, 0);
     await mongoose.connection.db.collection('orders').insertOne({ _id: oid(), tenantId,
       user: patientId, serviceId: String(onlineProductId), serviceName: '合成已完成客户业务',
       marketPartnerId: new mongoose.Types.ObjectId(onlinePartner.body.data._id),
@@ -688,7 +688,7 @@ test('online and offline partner payments, renewals, refunds and team incentives
       paidAt: new Date(Date.now() - 31 * 86400000) });
     const eligiblePromotion = await myPromotion();
     assert.equal(eligiblePromotion.selfPurchaseEligible, true);
-    assert.equal(eligiblePromotion.selfPrices.find(row => row.id === String(onlineProductId)).price, 80);
+    assert.equal(eligiblePromotion.selfPrices.find(row => row.id === String(onlineProductId)).price, 90);
     const customerToken = jwt.sign({ id: String(patientId) }, process.env.JWT_SECRET);
     const wrongClaim = await fetch(`${base}/api/services/partner-referrals/claim`, {
       method: 'POST', headers: { authorization: `Bearer ${customerToken}`,
@@ -748,14 +748,51 @@ test('online and offline partner payments, renewals, refunds and team incentives
       method: 'POST', headers: { authorization: `Bearer ${partnerBuyerToken}`,
         'content-type': 'application/json' },
       body: JSON.stringify({ serviceId: String(onlineProductId), paymentMethod: 'wechat_pay',
-        expectedAmount: 80, partnerCode: onlinePartner.body.data.referralCode }),
+        expectedAmount: 90, partnerCode: onlinePartner.body.data.referralCode }),
     });
     const ownCheckout = await ownCheckoutResponse.json();
     assert.equal(ownCheckoutResponse.status, 200, JSON.stringify(ownCheckout));
     const ownOrder = await Order.findById(ownCheckout.data.orderId);
-    assert.equal(ownOrder.servicePrice, 80);
+    assert.equal(ownOrder.servicePrice, 90);
     assert.equal(ownOrder.partnerSelfPurchaseApplied, true);
+    assert.equal(ownOrder.partnerSelfPurchaseCustomerPrice, 100);
+    assert.equal(ownOrder.partnerSelfPurchaseBasisPoints, 1000);
     assert.equal(ownOrder.marketPartnerId, null);
+    const personalRuleId = oid();
+    await mongoose.connection.db.collection('marketpartnerrules').insertOne({
+      _id: personalRuleId, tenantId, productId: onlineProductId,
+      partnerId: new mongoose.Types.ObjectId(onlinePartner.body.data._id),
+      productLine: 'onlineSingle', sourceType: 'product', version: 2,
+      status: 'active', disabled: false, kind: 'every', firstBasisPoints: 2000,
+      effectiveFrom: new Date(Date.now() - 86400000), effectiveUntil: null,
+      createdBy: clerkId,
+    });
+    assert.equal((await myPromotion()).selfPrices.find(row => row.id === String(onlineProductId)).price, 80,
+      '个人佣金规则应决定该合伙人的自购价');
+    await mongoose.connection.db.collection('marketpartnerrules').deleteOne({ _id: personalRuleId });
+    const annualOwnRuleId = oid();
+    const priorOwnOrderId = oid();
+    await mongoose.connection.db.collection('marketpartnerrules').insertOne({
+      _id: annualOwnRuleId, tenantId, productId: onlineProductId,
+      partnerId: new mongoose.Types.ObjectId(onlinePartner.body.data._id),
+      productLine: 'onlineSingle', sourceType: 'product', version: 3,
+      status: 'active', disabled: false, kind: 'annual', firstBasisPoints: 2000,
+      renewalBasisPoints: [{ year: 2, basisPoints: 1000 }],
+      effectiveFrom: new Date(Date.now() - 86400000), effectiveUntil: null,
+      createdBy: clerkId,
+    });
+    await mongoose.connection.db.collection('orders').insertOne({ _id: priorOwnOrderId,
+      tenantId, user: partnerBuyerId, serviceId: String(onlineProductId),
+      paymentStatus: 'paid', paidAmount: 100, refundStatus: 'none',
+      paidAt: new Date(Date.now() - 365 * 86400000) });
+    const annualOwnQuote = await require('../src/utils/partnerOwnPrice').ownPriceFor({
+      tenantId, partner: { ...onlinePartner.body.data, _id: onlinePartner.body.data._id,
+        productLine: 'onlineSingle' }, userId: partnerBuyerId, productId: onlineProductId,
+      customerPrice: 100 });
+    assert.equal(annualOwnQuote.periodNumber, 2);
+    assert.equal(annualOwnQuote.price, 90);
+    await mongoose.connection.db.collection('orders').deleteOne({ _id: priorOwnOrderId });
+    await mongoose.connection.db.collection('marketpartnerrules').deleteOne({ _id: annualOwnRuleId });
     const onlineOrderId = new mongoose.Types.ObjectId(checkout.data.orderId);
     const createdOrder = await Order.findById(onlineOrderId);
     assert.equal(String(createdOrder.marketPartnerId), String(match.attribution.partnerId));

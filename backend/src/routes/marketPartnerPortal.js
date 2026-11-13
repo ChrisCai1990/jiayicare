@@ -3,7 +3,6 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const MarketPartner = require('../models/MarketPartner');
 const MarketPartnerVerificationCode = require('../models/MarketPartnerVerificationCode');
-const MarketPartnerRule = require('../models/MarketPartnerRule');
 const MarketPartnerCommission = require('../models/MarketPartnerCommission');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
@@ -100,15 +99,8 @@ router.get('/my-overview', async (req, res) => {
 });
 
 router.get('/products', async (req, res) => {
-  const rules = await MarketPartnerRule.find({ tenantId: req.marketPartner.tenantId,
-    ...(req.marketPartner.segment ? { partnerId: req.marketPartner._id }
-      : { partnerId: null, productLine: req.marketPartner.productLine }),
-    status: 'active', disabled: { $ne: true }, effectiveFrom: { $lte: new Date() },
-    $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: new Date() } }] })
-    .select('productId sourceType firstBasisPoints repeatBasisPoints tierBasisPoints renewalBasisPoints').lean();
-  const promotable = rules.filter(rule => rule.firstBasisPoints > 0 || rule.repeatBasisPoints > 0
-    || (rule.tierBasisPoints || []).some(value => value > 0)
-    || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
+  const promotable = await require('../utils/partnerOwnPrice').promotableRulesForPartner(
+    req.marketPartner.tenantId, req.marketPartner);
   const products = await Product.find({ _id: { $in: promotable.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
     status: 'on', paymentChannel: { $ne: 'offline' } })
     .select('name').lean();
