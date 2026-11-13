@@ -277,6 +277,13 @@ test('online and offline partner payments, renewals, refunds and team incentives
       effectiveFrom: new Date(Date.now() - 86400000).toISOString() });
     assert.equal(rule.status, 201, JSON.stringify(rule.body));
     assert.equal((await call(clerkId, 'PATCH', `${prefix}/rules/${rule.body.data._id}/publish`, {})).status, 200);
+    const promotable = await call(clerkId, 'GET', `${prefix}/${partner.body.data._id}/promotable-products`);
+    assert.equal(promotable.status, 200, JSON.stringify(promotable.body));
+    assert.equal(promotable.body.data.rows.length, 1);
+    assert.equal(promotable.body.data.rows[0].name, '单次线下服务');
+    assert.equal(promotable.body.data.rows[0].firstPercent, 10);
+    assert.equal(promotable.body.data.rows[0].canPromote, true);
+    assert.equal((await call(outsiderId, 'GET', `${prefix}/${partner.body.data._id}/promotable-products`)).status, 404);
     const staffPatientId = oid(), outsiderPatientId = oid(), offlineNutritionistId = oid();
     await mongoose.connection.db.collection('admins').insertOne({ _id: offlineNutritionistId, tenantId,
       username: 'offline-nutritionist', name: '线下营养师', password: 'unused', role: 'nutritionist', staffStatus: 'active' });

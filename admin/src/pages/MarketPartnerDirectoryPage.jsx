@@ -14,6 +14,8 @@ export default function MarketPartnerDirectoryPage() {
   const [partners, setPartners] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [members, setMembers] = useState([])
+  const [promotable, setPromotable] = useState([])
+  const [detailLoading, setDetailLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [partnerForm, setPartnerForm] = useState(emptyPartner)
   const [editingPartner, setEditingPartner] = useState(null)
@@ -31,11 +33,16 @@ export default function MarketPartnerDirectoryPage() {
   useEffect(() => { loadPartners().catch(err => setError(err.message)) }, [])
   useEffect(() => {
     setEditingMember(null); setMemberForm(emptyMember)
-    if (!selectedId) { setMembers([]); return }
+    if (!selectedId) { setMembers([]); setPromotable([]); return }
     let cancelled = false
-    adminAPI.marketPartnerTeamMembers(selectedId)
-      .then(response => { if (!cancelled) setMembers(response.data || []) })
+    setDetailLoading(true)
+    Promise.all([adminAPI.marketPartnerTeamMembers(selectedId),
+      adminAPI.marketPartnerPromotableProducts(selectedId)])
+      .then(([memberResponse, productResponse]) => {
+        if (!cancelled) { setMembers(memberResponse.data || []); setPromotable(productResponse.data?.rows || []) }
+      })
       .catch(err => { if (!cancelled) setError(err.message) })
+      .finally(() => { if (!cancelled) setDetailLoading(false) })
     return () => { cancelled = true }
   }, [selectedId])
   const selected = partners.find(item => String(item._id) === selectedId)
@@ -45,7 +52,14 @@ export default function MarketPartnerDirectoryPage() {
 
   const run = async action => {
     setBusy(true); setError(''); setNotice('')
-    try { await action(); await loadPartners(); setNotice('已保存') }
+    try {
+      await action(); await loadPartners()
+      if (selectedId) {
+        const response = await adminAPI.marketPartnerPromotableProducts(selectedId)
+        setPromotable(response.data?.rows || [])
+      }
+      setNotice('已保存')
+    }
     catch (err) { setError(err.message || '操作失败') }
     finally { setBusy(false) }
   }
@@ -123,7 +137,7 @@ export default function MarketPartnerDirectoryPage() {
       </tr></thead><tbody>{visiblePartners.map(item => <tr key={item._id}>
         <td>{item.name}</td><td>{item.phone}</td><td>{segmentName(item.segment || item.productLine)}</td>
         <td>{item.referralCode}</td><td>{item.status}</td><td>
-          <button className="btn btn-sm" onClick={() => setSelectedId(String(item._id))}>查看团队</button>{' '}
+          <button className="btn btn-sm" onClick={() => setSelectedId(String(item._id))}>查看产品与团队</button>{' '}
           {item.status !== 'closed' && <button className="btn btn-sm" onClick={() => editPartner(item)}>编辑</button>}{' '}
           {item.status !== 'active' && item.status !== 'closed' && <button className="btn btn-sm" disabled={busy}
             onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'active'))}>启用</button>}
@@ -132,6 +146,25 @@ export default function MarketPartnerDirectoryPage() {
         </td>
       </tr>)}</tbody></table></div>
       {!visiblePartners.length && <p>暂无匹配合伙人</p>}
+    </section>
+    <section style={card}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>可推广产品与佣金{selected && ` · ${selected.name}`}</h2>
+      {!selected ? <p>在上方选择合伙人后查看。</p> : detailLoading ? <p>加载中...</p> : <>
+        {selected.status !== 'active' && <p style={{ color: '#a65b00' }}>该合伙人尚未启用，以下产品已配置规则，但目前不能使用推荐码推广。</p>}
+        <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr>
+          <th>产品／服务包</th><th>类别</th><th>推广佣金</th><th>计佣方式</th><th>状态</th>
+        </tr></thead><tbody>{promotable.map(item => <tr key={item.productId}>
+          <td>{item.name}</td><td>{item.category}</td>
+          <td>首次 {item.firstPercent}%{item.kind === 'annual' && item.renewals.length > 0
+            ? `；${item.renewals.map(year => `第${year.year}年 ${year.percent}%`).join('；')}` : ''}
+            {item.tierPercents.length > 0 && `；阶梯 ${item.tierPercents.join('%／')}%`}</td>
+          <td>{item.kind === 'annual' ? '年度首续' : item.kind === 'every' ? '每次' : '仅首次'}
+            {item.directReferralRequired && ' · 须亲自推荐'}</td>
+          <td>{item.canPromote ? '可推广' : '待启用'}</td>
+        </tr>)}</tbody></table></div>
+        {!promotable.length && <p>尚无已生效且在售的产品佣金规则。</p>}
+        <Link className="btn btn-ghost" to={`/commission-rules?tab=partner&partnerId=${encodeURIComponent(selectedId)}`}>设置／修改该合伙人产品佣金</Link>
+      </>}
     </section>
     <section style={card}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人团队{selected && ` · ${selected.name}`}</h2>

@@ -20,7 +20,7 @@ export default function PersonCommissionRulesPage() {
   const [packages, setPackages] = useState([])
   const [staffRules, setStaffRules] = useState([])
   const [partnerRules, setPartnerRules] = useState([])
-  const [personId, setPersonId] = useState('')
+  const [personId, setPersonId] = useState(searchParams.get('tab') === 'partner' ? searchParams.get('partnerId') || '' : '')
   const [personSearch, setPersonSearch] = useState('')
   const [category, setCategory] = useState('')
   const [selected, setSelected] = useState([])

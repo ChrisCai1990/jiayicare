@@ -286,6 +286,7 @@ export const adminAPI = {
   // 合作伙伴管理
   partners:           (params = {}) => req('/partners?' + new URLSearchParams(params).toString()),
   marketPartners: () => req('/market-partners'),
+  marketPartnerPromotableProducts: id => req(`/market-partners/${id}/promotable-products`),
   marketPartnerTeamMembers: partnerId => req(`/market-partners/team-members?partnerId=${encodeURIComponent(partnerId)}`),
   createMarketPartnerTeamMember: data => req('/market-partners/team-members', { method: 'POST', body: JSON.stringify(data) }),
   updateMarketPartnerTeamMember: (id, data) => req(`/market-partners/team-members/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

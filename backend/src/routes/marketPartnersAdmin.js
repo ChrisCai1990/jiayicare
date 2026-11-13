@@ -52,6 +52,43 @@ router.get('/team-members', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+router.get('/:id/promotable-products', async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ success: false, message: '无效合伙人' });
+  try {
+    const partner = await MarketPartner.findOne({ _id: req.params.id, tenantId: tenant(req) }).lean();
+    if (!partner) return res.status(404).json({ success: false, message: '合伙人不存在' });
+    const now = new Date();
+    const rules = await MarketPartnerRule.find({ tenantId: tenant(req), status: 'active',
+      ...(partner.segment ? { partnerId: partner._id } : { partnerId: null, productLine: partner.productLine }),
+      effectiveFrom: { $lte: now }, $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: now } }],
+    }).sort({ effectiveFrom: -1, version: -1 }).lean();
+    const productIds = rules.filter(rule => rule.sourceType !== 'servicePackage').map(rule => rule.productId);
+    const packageIds = rules.filter(rule => rule.sourceType === 'servicePackage').map(rule => rule.productId);
+    const [products, packages] = await Promise.all([
+      Product.find({ _id: { $in: productIds }, tenantId: tenant(req), status: 'on' })
+        .select('_id name category').lean(),
+      ServicePackage.find({ _id: { $in: packageIds }, active: true, 'activation.enabled': true })
+        .select('_id name').lean(),
+    ]);
+    const names = new Map([...products, ...packages].map(item => [String(item._id), item.name]));
+    const seen = new Set();
+    const rows = rules.filter(rule => {
+      const id = String(rule.productId);
+      if (!names.has(id) || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    }).map(rule => ({ productId: rule.productId, name: names.get(String(rule.productId)),
+      category: rule.category || rule.productLine, sourceType: rule.sourceType, kind: rule.kind,
+      firstPercent: rule.firstBasisPoints / 100,
+      tierPercents: (rule.tierBasisPoints || []).map(value => value / 100),
+      renewals: (rule.renewalBasisPoints || []).map(item => ({ year: item.year, percent: item.basisPoints / 100 })),
+      directReferralRequired: !!rule.directReferralRequired,
+      effectiveFrom: rule.effectiveFrom, effectiveUntil: rule.effectiveUntil, version: rule.version,
+      canPromote: partner.status === 'active' }));
+    res.json({ success: true, data: { partnerStatus: partner.status, rows } });
+  } catch (err) { fail(res, err); }
+});
+
 router.post('/team-members', async (req, res) => {
   const partnerId = String(req.body?.partnerId || '');
   const name = String(req.body?.name || '').trim().slice(0, 150);
