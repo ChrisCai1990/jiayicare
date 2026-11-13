@@ -5,7 +5,7 @@ const { execFileSync } = require('node:child_process');
 const mongoose = require('mongoose');
 const { sameIndex } = require('../utils/marketPartnerIndexes');
 
-const models = ['PartnerTeamRelation', 'PartnerTeamRule', 'PartnerTeamEarning',
+const models = ['PartnerTeam', 'PartnerTeamRelation', 'PartnerTeamRule', 'PartnerTeamEarning',
   'StaffServiceThresholdRule'].map(name => require(`../models/${name}`));
 
 async function main() {

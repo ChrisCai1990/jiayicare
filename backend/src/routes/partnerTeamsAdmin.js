@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
 const Admin = require('../models/Admin');
 const MarketPartner = require('../models/MarketPartner');
+const PartnerTeam = require('../models/PartnerTeam');
 const PartnerTeamRelation = require('../models/PartnerTeamRelation');
 const PartnerTeamRule = require('../models/PartnerTeamRule');
 const PartnerTeamEarning = require('../models/PartnerTeamEarning');
@@ -17,6 +18,53 @@ const valid = mongoose.isValidObjectId;
 const identity = async (tenantId, type, id) => type === 'staff'
   ? Admin.findOne({ tenantId, _id: id, staffStatus: 'active' }).select('_id name role').lean()
   : MarketPartner.findOne({ tenantId, _id: id, status: 'active' }).select('_id name referralCode').lean();
+
+router.get('/teams', async (req, res) => {
+  const tenantId = req.admin.tenantId;
+  const teams = await PartnerTeam.find({ tenantId, effectiveUntil: null }).sort({ createdAt: -1 }).lean();
+  const [staff, partners, counts] = await Promise.all([
+    Admin.find({ tenantId, _id: { $in: teams.filter(row => row.leaderType === 'staff').map(row => row.leaderId) } }).select('_id name').lean(),
+    MarketPartner.find({ tenantId, _id: { $in: teams.filter(row => row.leaderType === 'partner').map(row => row.leaderId) } }).select('_id name').lean(),
+    PartnerTeamRelation.aggregate([{ $match: { tenantId: new mongoose.Types.ObjectId(String(tenantId)), effectiveUntil: null } },
+      { $group: { _id: { leaderType: '$leaderType', leaderId: '$leaderId' }, count: { $sum: 1 } } }]),
+  ]);
+  const names = new Map([...staff.map(row => [`staff:${row._id}`, row.name]),
+    ...partners.map(row => [`partner:${row._id}`, row.name])]);
+  const members = new Map(counts.map(row => [`${row._id.leaderType}:${row._id.leaderId}`, row.count]));
+  res.json({ success: true, data: teams.map(row => ({ ...row,
+    leaderName: names.get(`${row.leaderType}:${row.leaderId}`) || '已停用人员',
+    memberCount: members.get(`${row.leaderType}:${row.leaderId}`) || 0,
+  })) });
+});
+
+router.post('/teams', async (req, res) => {
+  const { leaderType, leaderId } = req.body || {};
+  if (!['staff', 'partner'].includes(leaderType) || !valid(leaderId)) return bad(res, '请选择负责人');
+  const tenantId = req.admin.tenantId;
+  if (!await identity(tenantId, leaderType, leaderId)) return bad(res, '负责人未启用，或不属于本机构', 404);
+  if (await PartnerTeamRelation.exists({ tenantId, memberType: leaderType, memberId: leaderId, effectiveUntil: null }))
+    return bad(res, '该人员已归属其他团队，请先结束成员关系', 409);
+  try {
+    const team = await PartnerTeam.create({ tenantId, leaderType, leaderId,
+      effectiveFrom: new Date(), createdBy: req.admin._id });
+    res.status(201).json({ success: true, data: team });
+  } catch (error) {
+    if (error.code === 11000) return bad(res, '该负责人已有团队', 409);
+    return bad(res, '创建团队失败', 500);
+  }
+});
+
+router.post('/teams/:id/end', async (req, res) => {
+  if (!valid(req.params.id)) return bad(res, '团队不存在');
+  const team = await PartnerTeam.findOne({ _id: req.params.id, tenantId: req.admin.tenantId, effectiveUntil: null });
+  if (!team) return bad(res, '团队不存在', 404);
+  if (await PartnerTeamRelation.exists({ tenantId: req.admin.tenantId,
+    leaderType: team.leaderType, leaderId: team.leaderId, effectiveUntil: null }))
+    return bad(res, '请先结束团队内所有成员关系', 409);
+  team.effectiveUntil = new Date(); team.endedBy = req.admin._id;
+  await team.save();
+  res.json({ success: true, data: team });
+});
 
 router.get('/relations', async (req, res) => {
   const tenantId = req.admin.tenantId;
@@ -49,6 +97,10 @@ router.post('/relations', async (req, res) => {
   const [leader, member] = await Promise.all([identity(tenantId, leaderType, leaderId),
     identity(tenantId, memberType, memberId)]);
   if (!leader || !member) return bad(res, '负责人或成员未启用，或不属于本机构', 404);
+  const team = await PartnerTeam.findOne({ tenantId, leaderType, leaderId, effectiveUntil: null });
+  if (!team) return bad(res, '请先新增该负责人的团队', 409);
+  if (await PartnerTeam.exists({ tenantId, leaderType: memberType, leaderId: memberId, effectiveUntil: null }))
+    return bad(res, '该人员已是独立负责人，不能加入其他团队', 409);
   try {
     const row = await PartnerTeamRelation.create({ tenantId, leaderType, leaderId,
       memberType, memberId, effectiveFrom: new Date(), createdBy: req.admin._id });

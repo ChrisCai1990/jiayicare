@@ -14,13 +14,13 @@ export default function PartnerTeamsPage() {
   const [staff, setStaff] = useState([])
   const [partners, setPartners] = useState([])
   const [relations, setRelations] = useState([])
+  const [teams, setTeams] = useState([])
   const [summary, setSummary] = useState([])
   const [businessVolume, setBusinessVolume] = useState([])
   const [earnings, setEarnings] = useState({ rows: [], count: 0, page: 1, pageSize: 10 })
   const [leaderType, setLeaderType] = useState('staff')
   const [leaderId, setLeaderId] = useState('')
-  const [memberType, setMemberType] = useState('staff')
-  const [memberId, setMemberId] = useState('')
+  const [memberDrafts, setMemberDrafts] = useState({})
   const [selectedLeader, setSelectedLeader] = useState('')
   const [drafts, setDrafts] = useState({})
   const [payment, setPayment] = useState({})
@@ -30,15 +30,16 @@ export default function PartnerTeamsPage() {
   const people = type => type === 'staff' ? staff : partners
   const name = (type, id) => people(type).find(item => String(item._id) === String(id))?.name || '已停用人员'
   const load = async (page = 1) => {
-    const [employees, market, team, totals, volumes, ledger] = await Promise.all([
+    const [employees, market, team, teamList, totals, volumes, ledger] = await Promise.all([
       adminAPI.employees({ limit: 500 }), adminAPI.marketPartners(),
-      adminAPI.partnerTeamRelations(), adminAPI.partnerTeamSummary(),
+      adminAPI.partnerTeamRelations(), adminAPI.partnerTeams(), adminAPI.partnerTeamSummary(),
       adminAPI.partnerTeamBusinessVolume(),
       adminAPI.partnerTeamEarnings({ page }),
     ])
     setStaff((employees.data || []).filter(item => item.staffStatus === 'active'))
     setPartners((market.data || []).filter(item => item.status === 'active'))
     setRelations(team.data || [])
+    setTeams(teamList.data || [])
     setSummary(totals.data || [])
     setBusinessVolume(volumes.data || [])
     setEarnings(ledger.data || { rows: [], count: 0, page, pageSize: 10 })
@@ -61,37 +62,62 @@ export default function PartnerTeamsPage() {
   }
   const visible = useMemo(() => relations.filter(item => !selectedLeader
     || `${item.leaderType}:${item.leaderId}` === selectedLeader), [relations, selectedLeader])
-  const leaderOptions = [...new Map(relations.map(item => [`${item.leaderType}:${item.leaderId}`,
-    { key: `${item.leaderType}:${item.leaderId}`, label: `${item.leaderName} · ${typeName(item.leaderType)}` }])).values()]
+  const leaderOptions = teams.map(item => ({ key: `${item.leaderType}:${item.leaderId}`,
+    label: `${item.leaderName} · ${typeName(item.leaderType)}` }))
   const setDraft = (key, change) => setDrafts(current => ({ ...current,
     [key]: { ...current[key], ...change } }))
+  const setMemberDraft = (key, change) => setMemberDrafts(current => ({ ...current,
+    [key]: { memberType: 'staff', memberId: '', ...current[key], ...change } }))
 
   return <div className="page" style={{ maxWidth: 1240 }}>
     <div className="page-header"><div><div className="page-title">合伙人团队与负责人收益</div>
       <div className="page-subtitle">员工和市场人员共用团队关系；推广、服务分别设置负责人收益</div></div></div>
     {message && <p role="status" style={{ color: message === '已保存' ? '#176b4d' : '#b42318' }}>{message}</p>}
     <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>建立团队关系</h2>
-      <p style={{ color: '#667a6d' }}>市场成员须先有自己的<Link to="/market-partners">合伙人档案</Link>和推荐码，才能按个人记录业务量和佣金。每位成员同一时间只归一个负责人。</p>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>新增负责人团队</h2>
+      <p style={{ color: '#667a6d' }}>员工或市场合伙人都可独立成为负责人。市场人员须先建立<Link to="/market-partners">合伙人档案</Link>。每个人同一时间只能独立负责一个团队，或作为成员归属一个团队。</p>
       <div style={row}>
         <select aria-label="负责人类型" className="form-input" value={leaderType} onChange={event => { setLeaderType(event.target.value); setLeaderId('') }}>
           <option value="staff">员工负责人</option><option value="partner">市场负责人</option></select>
         <select aria-label="选择负责人" className="form-input" value={leaderId} onChange={event => setLeaderId(event.target.value)}>
           <option value="">选择负责人</option>{people(leaderType).map(item => <option value={item._id} key={item._id}>{item.name}</option>)}</select>
-        <select aria-label="成员类型" className="form-input" value={memberType} onChange={event => { setMemberType(event.target.value); setMemberId('') }}>
-          <option value="staff">员工成员</option><option value="partner">市场成员</option></select>
-        <select aria-label="选择成员" className="form-input" value={memberId} onChange={event => setMemberId(event.target.value)}>
-          <option value="">选择成员</option>{people(memberType).map(item => <option value={item._id} key={item._id}>{item.name}</option>)}</select>
-        <button className="btn btn-primary" disabled={busy || !leaderId || !memberId}
-          onClick={() => run(() => adminAPI.createPartnerTeamRelation({ leaderType, leaderId, memberType, memberId }))}>加入团队</button>
+        <button className="btn btn-primary" disabled={busy || !leaderId}
+          onClick={() => run(() => adminAPI.createPartnerTeam({ leaderType, leaderId }))}>新增负责人</button>
       </div>
     </section>
     <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>团队成员与规则</h2>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>负责人团队（{teams.length}）</h2>
       <select aria-label="筛选负责人" className="form-input" value={selectedLeader} onChange={event => setSelectedLeader(event.target.value)}
         style={{ maxWidth: 320, marginBottom: 12 }}><option value="">所有负责人</option>
         {leaderOptions.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
-      {!visible.length && <p>暂无生效团队关系</p>}
+      {!teams.length && <p>暂无负责人团队，请先新增。</p>}
+      {teams.filter(team => !selectedLeader || `${team.leaderType}:${team.leaderId}` === selectedLeader).map(team => {
+        const key = `${team.leaderType}:${team.leaderId}`
+        const draft = memberDrafts[key] || { memberType: 'staff', memberId: '' }
+        const members = relations.filter(item => `${item.leaderType}:${item.leaderId}` === key)
+        return <div key={team._id} style={{ borderTop: '1px solid #e5ebe7', padding: '14px 0' }}>
+          <div style={row}><strong>{team.leaderName}（{typeName(team.leaderType)}负责人）</strong>
+            <span>{members.length} 位成员</span>
+            <button className="btn btn-sm" disabled={busy || members.length > 0}
+              onClick={() => run(() => adminAPI.endPartnerTeam(team._id))}>结束空团队</button></div>
+          <div style={{ ...row, marginTop: 10 }}>
+            <select aria-label={`${team.leaderName}新增成员类型`} className="form-input" value={draft.memberType}
+              onChange={event => setMemberDraft(key, { memberType: event.target.value, memberId: '' })}>
+              <option value="staff">员工成员</option><option value="partner">市场成员</option></select>
+            <select aria-label={`${team.leaderName}选择新成员`} className="form-input" value={draft.memberId}
+              onChange={event => setMemberDraft(key, { memberId: event.target.value })}>
+              <option value="">选择成员</option>{people(draft.memberType).map(item => <option value={item._id} key={item._id}>{item.name}</option>)}</select>
+            <button className="btn btn-primary" disabled={busy || !draft.memberId}
+              onClick={() => run(() => adminAPI.createPartnerTeamRelation({ leaderType: team.leaderType,
+                leaderId: team.leaderId, memberType: draft.memberType, memberId: draft.memberId }))}>添加成员</button>
+          </div>
+          {members.length > 0 && <p style={{ color: '#667a6d' }}>成员：{members.map(item => `${item.memberName}（${typeName(item.memberType)}）`).join('、')}</p>}
+        </div>
+      })}
+    </section>
+    <section style={card}>
+      <h2 style={{ fontSize: 18, marginTop: 0 }}>成员关系与负责人收益规则</h2>
+      {!visible.length && <p>暂无生效成员关系</p>}
       {visible.map(relation => <div key={relation._id} style={{ borderTop: '1px solid #e5ebe7', padding: '14px 0' }}>
         <div style={row}><strong>{relation.leaderName}（{typeName(relation.leaderType)}）→ {relation.memberName}（{typeName(relation.memberType)}）</strong>
           <small>自 {relation.effectiveFrom?.slice(0, 10)} 生效</small>

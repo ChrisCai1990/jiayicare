@@ -53,6 +53,8 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await mongoose.connect(`mongodb://127.0.0.1:${mongoPort}/${database}`,
       { autoIndex: false, autoCreate: false });
     await auditMarketPartnerIndexes({ apply: true });
+    await require('../src/models/PartnerTeam').createIndexes();
+    await require('../src/models/PartnerTeamRelation').createIndexes();
     const tenantId = oid(), otherTenantId = oid(), clerkId = oid(), reviewerId = oid(),
       outsiderId = oid(), plannerId = oid(), patientId = oid(), productId = oid();
     await mongoose.connection.db.collection('tenants').insertMany([
@@ -96,6 +98,41 @@ test('online and offline partner payments, renewals, refunds and team incentives
         body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: response.status, body: await response.json() };
     };
+    const teamLeaderA = oid(), teamLeaderB = oid(), teamMemberA = oid(), teamMemberB = oid();
+    await mongoose.connection.db.collection('admins').insertMany([teamLeaderA, teamLeaderB,
+      teamMemberA, teamMemberB].map((id, index) => ({ _id: id, tenantId,
+      username: `team-person-${index}`, name: `团队人员${index}`, password: 'unused',
+      role: 'healthPlanner', staffStatus: 'active' })));
+    const teamRoute = '/api/admin/partner-teams';
+    assert.equal((await call(clerkId, 'POST', `${teamRoute}/teams`,
+      { leaderType: 'staff', leaderId: String(teamLeaderA) })).status, 201);
+    assert.equal((await call(clerkId, 'POST', `${teamRoute}/teams`,
+      { leaderType: 'staff', leaderId: String(teamLeaderB) })).status, 201);
+    assert.equal((await call(clerkId, 'POST', `${teamRoute}/teams`,
+      { leaderType: 'staff', leaderId: String(teamLeaderA) })).status, 409);
+    const listedTeams = await call(clerkId, 'GET', `${teamRoute}/teams`);
+    assert.equal(listedTeams.body.data.length, 2);
+    assert.ok(listedTeams.body.data.every(row => row.memberCount === 0));
+    for (const memberId of [teamMemberA, teamMemberB]) {
+      assert.equal((await call(clerkId, 'POST', `${teamRoute}/relations`, {
+        leaderType: 'staff', leaderId: String(teamLeaderA), memberType: 'staff',
+        memberId: String(memberId),
+      })).status, 201);
+    }
+    assert.equal((await call(clerkId, 'POST', `${teamRoute}/relations`, {
+      leaderType: 'staff', leaderId: String(teamLeaderB), memberType: 'staff',
+      memberId: String(teamMemberA),
+    })).status, 409);
+    assert.equal((await call(clerkId, 'POST', `${teamRoute}/teams`,
+      { leaderType: 'staff', leaderId: String(teamMemberA) })).status, 409);
+    assert.equal((await call(clerkId, 'POST', `${teamRoute}/relations`, {
+      leaderType: 'staff', leaderId: String(teamLeaderA), memberType: 'staff',
+      memberId: String(teamLeaderB),
+    })).status, 409);
+    assert.equal((await call(clerkId, 'POST', `${teamRoute}/teams/${listedTeams.body.data[0]._id}/end`)).status, 200);
+    const teamsWithMembers = await call(clerkId, 'GET', `${teamRoute}/teams`);
+    assert.equal(teamsWithMembers.body.data.length, 1);
+    assert.equal(teamsWithMembers.body.data[0].memberCount, 2);
     const prefix = '/api/admin/market-partners';
     const initialCatalog = await (await fetch(`${base}/api/services`)).json();
     assert.equal(initialCatalog.data.services.some(service => service.id === String(productId)), false,
@@ -1030,6 +1067,9 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await mongoose.connection.db.collection('admins').insertOne({ _id: thresholdLeaderId,
       tenantId, username: 'threshold-leader', name: '门槛合成负责人', password: 'unused',
       role: 'healthPlanner', staffStatus: 'active' });
+    assert.equal((await call(clerkId, 'POST', `${teamPrefix}/teams`, {
+      leaderType: 'staff', leaderId: String(thresholdLeaderId),
+    })).status, 201);
     const relation = await call(clerkId, 'POST', `${teamPrefix}/relations`, {
       leaderType: 'staff', leaderId: String(thresholdLeaderId),
       memberType: 'staff', memberId: String(thresholdStaffId) });
