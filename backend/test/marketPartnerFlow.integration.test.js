@@ -644,6 +644,12 @@ test('online and offline partner payments, renewals, refunds and team incentives
       { ...packagePayload, configuration: { ...packagePayload.configuration,
         businessAllocations: packagePayload.configuration.businessAllocations.map((item, index) =>
           index ? { ...item, revenueSharePercent: 30 } : item) } })).status, 400);
+    const unnamedPackage = await call(clerkId, 'PUT', `/api/admin/service-packages/${memberPackageId}`,
+      { ...packagePayload, configuration: { ...packagePayload.configuration,
+        businessAllocations: [{ key: 'medical', name: '', businessType: 'service',
+          teamRole: 'medicalAssistant', revenueSharePercent: 100 }] } });
+    assert.equal(unnamedPackage.status, 200, JSON.stringify(unnamedPackage.body));
+    assert.equal(unnamedPackage.body.data.configuration.businessAllocations[0].name, '就医团队管理服务');
     const configuredPackage = await call(clerkId, 'PUT', `/api/admin/service-packages/${memberPackageId}`,
       packagePayload);
     assert.equal(configuredPackage.status, 200, JSON.stringify(configuredPackage.body));

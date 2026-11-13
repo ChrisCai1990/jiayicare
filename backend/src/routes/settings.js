@@ -776,6 +776,17 @@ router.get('/service-packages', adminAuth, async (req, res) => {
   res.json({ success: true, data: list });
 });
 
+const PACKAGE_ALLOCATION_ROLE_NAMES = { familyDoctor: '健康顾问', nutritionist: '营养师',
+  healthManager: '健管专员', medicalAssistant: '就医团队' };
+
+function normalizePackageAllocationNames(configuration) {
+  if (!Array.isArray(configuration?.businessAllocations)) return configuration;
+  return { ...configuration, businessAllocations: configuration.businessAllocations.map(row => ({ ...row,
+    name: String(row.name || '').trim() || (row.businessType === 'product'
+      ? '产品／检测归属' : `${PACKAGE_ALLOCATION_ROLE_NAMES[row.teamRole] || '服务团队'}管理服务`),
+  })) };
+}
+
 async function validatePackageBusinessAllocations(rows, tenantId) {
   if (rows == null) return null;
   if (!Array.isArray(rows) || rows.length > 50) return '业务归属配置格式无效';
@@ -822,9 +833,10 @@ router.post('/service-packages', adminAuth, async (req, res) => {
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
-  const allocationError = await validatePackageBusinessAllocations(configuration?.businessAllocations, req.admin.tenantId);
+  const namedConfiguration = normalizePackageAllocationNames(configuration);
+  const allocationError = await validatePackageBusinessAllocations(namedConfiguration?.businessAllocations, req.admin.tenantId);
   if (allocationError) return res.status(400).json({ success: false, message: allocationError });
-  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
+  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, namedConfiguration);
   const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration });
   res.json({ success: true, data: item });
 });
@@ -834,9 +846,10 @@ router.put('/service-packages/:id', adminAuth, async (req, res) => {
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
-  const allocationError = await validatePackageBusinessAllocations(configuration?.businessAllocations, req.admin.tenantId);
+  const namedConfiguration = normalizePackageAllocationNames(configuration);
+  const allocationError = await validatePackageBusinessAllocations(namedConfiguration?.businessAllocations, req.admin.tenantId);
   if (allocationError) return res.status(400).json({ success: false, message: allocationError });
-  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, configuration);
+  const normalizedConfiguration = await normalizeServicePackageConfiguration(clientBrand, namedConfiguration);
   const item = await ServicePackage.findByIdAndUpdate(
     req.params.id,
     { name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {}, configuration: normalizedConfiguration },

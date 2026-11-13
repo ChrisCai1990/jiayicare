@@ -23,6 +23,9 @@ const ALLOCATION_ROLES = [
   ['familyDoctor', '健康顾问'], ['nutritionist', '营养师'],
   ['healthManager', '健管专员'], ['medicalAssistant', '就医团队'],
 ]
+const packageAllocationName = row => row.businessType === 'product'
+  ? '产品／检测归属'
+  : `${ALLOCATION_ROLES.find(([role]) => role === row.teamRole)?.[1] || '服务团队'}管理服务`
 
 function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
   const [search, setSearch] = useState('')
@@ -31,14 +34,16 @@ function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
     || !query || `${product.name} ${product.category || ''}`.toLowerCase().includes(query))
   return <div style={{ border: '1px solid #D9E4DD', borderRadius: 8, padding: 10, marginTop: 8 }}>
     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr auto', gap: 8 }}>
-      <input className="form-input" value={row.name || ''} placeholder="归属项目名称" onChange={event => onChange({ name: event.target.value })} />
+      <input className="form-input" value={row.name || ''} placeholder="项目名称可留空，按团队自动命名" onChange={event => onChange({ name: event.target.value })} />
       <select className="form-input" value={row.businessType || 'service'} onChange={event => onChange({ businessType: event.target.value })}>
         <option value="service">管理服务</option><option value="product">产品／检测</option>
       </select>
       <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>删除</button>
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 8, marginTop: 8 }}>
-      <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => onChange({ teamRole: event.target.value })}>
+      <select className="form-input" value={row.teamRole || 'healthManager'} onChange={event => onChange({ teamRole: event.target.value,
+        ...(!row.name?.trim() || row.name === packageAllocationName(row)
+          ? { name: packageAllocationName({ ...row, teamRole: event.target.value }) } : {}) })}>
         {ALLOCATION_ROLES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </select>
       <input key={`${row.key}:${price}`} className="form-input" type="number" min="0" step="0.01"
@@ -67,7 +72,7 @@ function PackageAllocationEditor({ rows, price, products, onChange }) {
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <label className="form-label">业务营收归属</label>
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange([...list, {
-        key: `allocation_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: '',
+        key: `allocation_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: '健管专员管理服务',
         businessType: 'service', teamRole: 'healthManager', childProductId: '', revenueSharePercent: 0,
       }])}>+ 添加归属项目</button>
     </div>
@@ -121,18 +126,21 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
-    const allocations = configuration.businessAllocations || []
+    const allocations = (configuration.businessAllocations || []).map(row => ({ ...row,
+      name: String(row.name || '').trim() || packageAllocationName(row) }))
     if (withActivation && allocations.length && (!Number(activation.price)
-      || allocations.some(row => !row.name?.trim() || Number(row.revenueSharePercent) <= 0
+      || allocations.some(row => Number(row.revenueSharePercent) <= 0
         || (row.businessType === 'product' && !row.childProductId))
       || Math.abs(allocations.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)) {
-      setError('请填写售价及每项归属金额；产品项目需关联产品库，金额合计须为售价的100%'); return
+      const message = '请填写售价及每项归属金额；产品项目需关联产品库，金额合计须为售价的100%'
+      setError(message); toast(message); return
     }
     setSaving(true); setError('')
     try {
       const activationPayload = { ...activation, features: activation.featuresText.split(/\r?\n/).map(v => v.trim()).filter(Boolean) }
       delete activationPayload.featuresText
-      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}), ...(withActivation ? { activation: activationPayload, configuration } : {}) } : { name }
+      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}), ...(withActivation ? { activation: activationPayload,
+        configuration: { ...configuration, businessAllocations: allocations } } : {}) } : { name }
       if (editId) { await updateFn(editId, payload); toast('已更新') }
       else { await createFn(payload); toast('已创建') }
       setShowModal(false); load()
