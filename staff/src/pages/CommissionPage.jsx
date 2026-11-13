@@ -19,6 +19,14 @@ export default function CommissionPage() {
   const [shareProductId, setShareProductId] = useState('')
   const [productSharePath, setProductSharePath] = useState('')
   const [limit, setLimit] = useState(20)
+  const [overview, setOverview] = useState(null)
+  const [overviewError, setOverviewError] = useState('')
+  const [month, setMonth] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).format(new Date()))
+
+  useEffect(() => {
+    staffAPI.getMyPartnerOverview(month).then(result => { setOverview(result.data); setOverviewError('') })
+      .catch(error => setOverviewError(error.message || '团队业务加载失败'))
+  }, [month])
 
   useEffect(() => {
     Promise.all([
@@ -54,6 +62,30 @@ export default function CommissionPage() {
     <div className="page">
       <div className="page-header">
         <h1 className="page-title">分佣中心</h1>
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card-header"><div className="card-title">我的团队与业务</div></div>
+        <div className="card-body">
+          <label>查看月份 <input className="form-input" type="month" value={month}
+            onChange={event => setMonth(event.target.value)} style={{ maxWidth: 190, marginLeft: 8 }} /></label>
+          {overviewError && <p role="alert">{overviewError}</p>}
+          {overview && <>
+            <p>{overview.role === 'leader' ? `我是团队负责人 · ${overview.team.memberCount} 位成员`
+              : overview.role === 'member' ? `所属团队负责人：${overview.leader?.name || '—'}` : '目前独立开展业务'}</p>
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+              <div>本人推广业务量 <strong>¥{(overview.self.promotionCents / 100).toFixed(2)}</strong></div>
+              <div>本人服务业务量 <strong>¥{(overview.self.serviceCents / 100).toFixed(2)}</strong></div>
+              <div>成员推广业务量 <strong>¥{(overview.team.promotionCents / 100).toFixed(2)}</strong></div>
+              <div>成员服务业务量 <strong>¥{(overview.team.serviceCents / 100).toFixed(2)}</strong></div>
+              <div>负责人收益应计／已发 <strong>¥{(overview.leaderEarnings.accruedCents / 100).toFixed(2)}／¥{(overview.leaderEarnings.paidCents / 100).toFixed(2)}</strong></div>
+            </div>
+            {overview.members.length > 0 && <div style={{ marginTop: 16 }}><strong>团队成员</strong>
+              {overview.members.map(item => <p key={`${item.personType}:${item.personId}`}>{item.name}（{item.personType === 'staff' ? '员工' : '市场'}） · 推广 ¥{(item.promotionCents / 100).toFixed(2)} · 服务 ¥{(item.serviceCents / 100).toFixed(2)}</p>)}
+            </div>}
+            <p style={{ fontSize: 12, color: '#8AA89C' }}>业务量按净实收归属展示；推广与服务可能来自同一订单，不可相加为企业营收。负责人收益与个人佣金分别核算。</p>
+          </>}
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>

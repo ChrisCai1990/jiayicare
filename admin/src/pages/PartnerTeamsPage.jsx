@@ -15,8 +15,6 @@ export default function PartnerTeamsPage() {
   const [partners, setPartners] = useState([])
   const [relations, setRelations] = useState([])
   const [teams, setTeams] = useState([])
-  const [summary, setSummary] = useState([])
-  const [businessVolume, setBusinessVolume] = useState([])
   const [earnings, setEarnings] = useState({ rows: [], count: 0, page: 1, pageSize: 10 })
   const [leaderType, setLeaderType] = useState('staff')
   const [leaderId, setLeaderId] = useState('')
@@ -30,18 +28,15 @@ export default function PartnerTeamsPage() {
   const people = type => type === 'staff' ? staff : partners
   const name = (type, id) => people(type).find(item => String(item._id) === String(id))?.name || '已停用人员'
   const load = async (page = 1) => {
-    const [employees, market, team, teamList, totals, volumes, ledger] = await Promise.all([
+    const [employees, market, team, teamList, ledger] = await Promise.all([
       adminAPI.employees({ limit: 500 }), adminAPI.marketPartners(),
-      adminAPI.partnerTeamRelations(), adminAPI.partnerTeams(), adminAPI.partnerTeamSummary(),
-      adminAPI.partnerTeamBusinessVolume(),
+      adminAPI.partnerTeamRelations(), adminAPI.partnerTeams(),
       adminAPI.partnerTeamEarnings({ page }),
     ])
     setStaff((employees.data || []).filter(item => item.staffStatus === 'active'))
     setPartners((market.data || []).filter(item => item.status === 'active'))
     setRelations(team.data || [])
     setTeams(teamList.data || [])
-    setSummary(totals.data || [])
-    setBusinessVolume(volumes.data || [])
     setEarnings(ledger.data || { rows: [], count: 0, page, pageSize: 10 })
     const next = {}
     for (const relation of team.data || []) for (const activity of ['promotion', 'service']) {
@@ -70,8 +65,9 @@ export default function PartnerTeamsPage() {
     [key]: { memberType: 'staff', memberId: '', ...current[key], ...change } }))
 
   return <div className="page" style={{ maxWidth: 1240 }}>
-    <div className="page-header"><div><div className="page-title">合伙人团队与负责人收益</div>
-      <div className="page-subtitle">员工和市场人员共用团队关系；推广、服务分别设置负责人收益</div></div></div>
+    <div className="page-header"><div><div className="page-title">团队设置与财务审核</div>
+      <div className="page-subtitle">员工和市场人员共用团队关系；推广、服务分别设置负责人收益</div></div>
+      <Link className="btn" to="/partner-team-overview">查看全员团队总览</Link></div>
     {message && <p role="status" style={{ color: message === '已保存' ? '#176b4d' : '#b42318' }}>{message}</p>}
     <section style={card}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>新增负责人团队</h2>
@@ -144,26 +140,6 @@ export default function PartnerTeamsPage() {
           </div>
         })}
       </div>)}
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>团队成员业务量</h2>
-      <p style={{ color: '#667a6d' }}>推广按订单唯一引入来源，服务按商品归属拆解和实际服务人分别呈现。成员没有服务费规则也保留服务业务量。</p>
-      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>负责人</th><th>成员</th><th>业务</th><th>订单／服务记录</th><th>净实收归属</th></tr></thead><tbody>
-        {businessVolume.map(item => <tr key={`${item.leaderType}:${item.leaderId}:${item.memberType}:${item.memberId}:${item.activity}`}>
-          <td>{name(item.leaderType, item.leaderId)}</td><td>{name(item.memberType, item.memberId)}</td>
-          <td>{activityName(item.activity)}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td>
-        </tr>)}
-      </tbody></table></div>{!businessVolume.length && <p>暂无已付款且有团队归属的业务</p>}
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>负责人收益汇总</h2>
-      <p style={{ color: '#667a6d' }}>下表为已生成个人佣金来源的负责人收益；成员业务量以上表为准。负责人收益是独立成本，不再加进企业营收。</p>
-      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>负责人</th><th>来源</th><th>成员业务量基数</th><th>应计收益</th><th>已发</th><th>已追回</th></tr></thead><tbody>
-        {summary.map(item => <tr key={`${item.leaderType}:${item.leaderId}:${item.activity}`}>
-          <td>{item.leaderName} · {typeName(item.leaderType)}</td><td>{activityName(item.activity)}</td>
-          <td>{yuan(item.basisCents)}</td><td>{yuan(item.accruedCents)}</td><td>{yuan(item.paidCents)}</td><td>{yuan(item.recoveredCents)}</td>
-        </tr>)}
-      </tbody></table></div>{!summary.length && <p>暂无负责人收益记录</p>}
     </section>
     <section style={card}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>逐笔核对</h2>

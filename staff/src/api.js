@@ -446,6 +446,7 @@ export const staffAPI = {
 
   // Commission
   getMyCommission:  (p = {}) => req('/staff/commission/me?' + qs(p)),
+  getMyPartnerOverview: (month) => req('/staff/commission/my-overview?' + qs({ month })),
   getReferralCode:  ()       => req('/staff/commission/code'),
   getCommissionShareProducts: () => req('/staff/commission/share-products'),
   createCommissionProductShare: (productId) => req('/staff/commission/product-share', { method: 'POST', body: JSON.stringify({ productId }) }),
