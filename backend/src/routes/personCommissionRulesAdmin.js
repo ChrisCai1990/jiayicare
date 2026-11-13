@@ -114,6 +114,32 @@ router.post('/staff', async (req, res) => {
   }
 });
 
+router.post('/staff/:id/remove-promotion', async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id) || !mongoose.isValidObjectId(req.body?.productId))
+    return res.status(400).json({ success: false, message: '员工佣金规则无效' });
+  const tenantId = req.admin.tenantId;
+  const current = await StaffCommissionRule.findOne({ _id: req.params.id, tenantId, effectiveUntil: null }).lean();
+  if (!current) return res.status(404).json({ success: false, message: '当前员工规则不存在' });
+  if (!(current.productIds || []).some(id => String(id) === String(req.body.productId)))
+    return res.status(409).json({ success: false, message: '该产品不属于此规则' });
+  const now = new Date();
+  const latest = await StaffCommissionRule.findOne({ tenantId, staffId: current.staffId,
+    category: current.category }).sort({ version: -1 }).select('version').lean();
+  try {
+    const row = await StaffCommissionRule.create({ tenantId, staffId: current.staffId,
+      category: current.category, productIds: [req.body.productId],
+      version: (latest?.version || 0) + 1, effectiveFrom: now,
+      referrerRate: 0, fulfillerRate: current.fulfillerRate, createdBy: req.admin._id });
+    await StaffCommissionRule.updateMany({ tenantId, staffId: current.staffId,
+      productIds: { $size: 1, $all: [req.body.productId] }, _id: { $ne: row._id }, effectiveUntil: null },
+    { $set: { effectiveUntil: now } });
+    res.status(201).json({ success: true, data: row });
+  } catch (error) {
+    res.status(error.code === 11000 ? 409 : 500).json({ success: false,
+      message: error.code === 11000 ? '规则版本已变化，请刷新后重试' : '移除推广佣金失败' });
+  }
+});
+
 router.get('/partners', async (req, res) => {
   const rows = await MarketPartnerRule.find({ tenantId: req.admin.tenantId,
     partnerId: { $ne: null } }).sort({ createdAt: -1 }).limit(1000).lean();
@@ -169,6 +195,34 @@ router.post('/partners', async (req, res) => {
   } catch (error) {
     res.status(error?.code === 11000 ? 409 : 500).json({ success: false,
       message: error?.code === 11000 ? '规则版本已变化，请刷新后重试' : '保存合伙人规则失败，请核对现有版本' });
+  }
+});
+
+router.post('/partners/:id/remove-promotion', async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id))
+    return res.status(400).json({ success: false, message: '合伙人佣金规则无效' });
+  const tenantId = req.admin.tenantId;
+  const current = await MarketPartnerRule.findOne({ _id: req.params.id, tenantId,
+    partnerId: { $ne: null }, status: 'active', effectiveUntil: null }).lean();
+  if (!current) return res.status(404).json({ success: false, message: '当前合伙人规则不存在' });
+  const now = new Date();
+  const latest = await MarketPartnerRule.findOne({ tenantId, productId: current.productId })
+    .sort({ version: -1 }).select('version').lean();
+  try {
+    const row = await MarketPartnerRule.create({ tenantId, productId: current.productId,
+      partnerId: current.partnerId, sourceType: current.sourceType,
+      productLine: current.productLine, category: current.category,
+      version: (latest?.version || 0) + 1, status: 'active', disabled: true,
+      effectiveFrom: now, kind: current.kind, firstBasisPoints: 0,
+      tierBasisPoints: [], renewalBasisPoints: [], directReferralRequired: current.directReferralRequired,
+      createdBy: req.admin._id, publishedBy: req.admin._id, publishedAt: now });
+    await MarketPartnerRule.updateMany({ tenantId, partnerId: current.partnerId,
+      productId: current.productId, _id: { $ne: row._id }, status: 'active', effectiveUntil: null },
+    { $set: { effectiveUntil: now, status: 'retired' } });
+    res.status(201).json({ success: true, data: row });
+  } catch (error) {
+    res.status(error.code === 11000 ? 409 : 500).json({ success: false,
+      message: error.code === 11000 ? '规则版本已变化，请刷新后重试' : '移除推广佣金失败' });
   }
 });
 

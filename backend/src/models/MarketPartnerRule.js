@@ -10,6 +10,7 @@ const schema = new mongoose.Schema({
   category: { type: String, default: '', trim: true },
   version: { type: Number, required: true, min: 1 },
   status: { type: String, enum: ['draft', 'active', 'retired'], default: 'draft' },
+  disabled: { type: Boolean, default: false },
   effectiveFrom: { type: Date, required: true },
   effectiveUntil: { type: Date, default: null },
   kind: { type: String, enum: ['annual', 'first', 'every'], required: true },

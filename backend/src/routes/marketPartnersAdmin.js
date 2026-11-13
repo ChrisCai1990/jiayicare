@@ -101,12 +101,15 @@ router.get('/:id/promotable-products', async (req, res) => {
     const partner = await MarketPartner.findOne({ _id: req.params.id, tenantId: tenant(req) }).lean();
     if (!partner) return res.status(404).json({ success: false, message: '合伙人不存在' });
     const now = new Date();
-    const rules = await MarketPartnerRule.find({ tenantId: tenant(req), status: 'active',
+    const rules = await MarketPartnerRule.find({ tenantId: tenant(req), status: 'active', disabled: { $ne: true },
       ...(partner.segment ? { partnerId: partner._id } : { partnerId: null, productLine: partner.productLine }),
       effectiveFrom: { $lte: now }, $or: [{ effectiveUntil: null }, { effectiveUntil: { $gt: now } }],
     }).sort({ effectiveFrom: -1, version: -1 }).lean();
-    const productIds = rules.filter(rule => rule.sourceType !== 'servicePackage').map(rule => rule.productId);
-    const packageIds = rules.filter(rule => rule.sourceType === 'servicePackage').map(rule => rule.productId);
+    const commissionRules = rules.filter(rule => rule.firstBasisPoints > 0
+      || (rule.tierBasisPoints || []).some(value => value > 0)
+      || (rule.renewalBasisPoints || []).some(value => value.basisPoints > 0));
+    const productIds = commissionRules.filter(rule => rule.sourceType !== 'servicePackage').map(rule => rule.productId);
+    const packageIds = commissionRules.filter(rule => rule.sourceType === 'servicePackage').map(rule => rule.productId);
     const [products, packages] = await Promise.all([
       Product.find({ _id: { $in: productIds }, tenantId: tenant(req), status: 'on' })
         .select('_id name category').lean(),
@@ -115,7 +118,7 @@ router.get('/:id/promotable-products', async (req, res) => {
     ]);
     const names = new Map([...products, ...packages].map(item => [String(item._id), item.name]));
     const seen = new Set();
-    const rows = rules.filter(rule => {
+    const rows = commissionRules.filter(rule => {
       const id = String(rule.productId);
       if (!names.has(id) || seen.has(id)) return false;
       seen.add(id);

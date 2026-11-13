@@ -1115,4 +1115,21 @@ test('online and offline partner payments, renewals, refunds and team incentives
     assert.equal(teamEarning.basisCents, 400000);
     assert.equal(teamEarning.accruedCents, 20000,
       'leader service reward must be independent of the member personal service fee');
+    const removedStaff = await call(clerkId, 'POST',
+      `${personPrefix}/staff/${otherStaffRule.body.data._id}/remove-promotion`,
+      { productId: String(otherProductId) });
+    assert.equal(removedStaff.status, 201, JSON.stringify(removedStaff.body));
+    assert.equal(removedStaff.body.data.referrerRate, 0);
+    assert.equal(removedStaff.body.data.fulfillerRate, 2,
+      'removing promotion must preserve the employee service fee');
+    assert.equal((await require('../src/models/StaffCommissionRule').findById(otherStaffRule.body.data._id)).effectiveUntil !== null, true);
+    const removedPartner = await call(clerkId, 'POST',
+      `${personPrefix}/partners/${segmentProductRule.body.data[0]._id}/remove-promotion`);
+    assert.equal(removedPartner.status, 201, JSON.stringify(removedPartner.body));
+    assert.equal(removedPartner.body.data.disabled, true);
+    assert.equal(await require('../src/utils/marketPartnerAttribution').activeRule(tenantId,
+      otherProductId, new Date(), segmentPartner.body.data._id), null);
+    const remainingPromotable = await call(clerkId, 'GET',
+      `${prefix}/${segmentPartner.body.data._id}/promotable-products`);
+    assert.equal(remainingPromotable.body.data.rows.some(row => String(row.productId) === String(otherProductId)), false);
   });
