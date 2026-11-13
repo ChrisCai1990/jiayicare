@@ -51,6 +51,16 @@ test('自动生成仅保存待审草稿，不改评估状态，不创建正式�
   assert.equal(state.calls, 1);
 });
 
+test('后续就医报告只能生成一条综合随访，不能变成多轮计划', async () => {
+  const { deps, row } = fixture({ reportId: 'report' });
+  deps.chat = async () => JSON.stringify({ followUps: [
+    { title: '第一次', content: '核对本次就医', date: '2099-10-01', category: 'medical_visit' },
+    { title: '第二次', content: '再次核对', date: '2099-11-01', category: 'review' },
+  ] });
+  await assert.rejects(generateDrafts(row, {}, deps), /一条综合随访/);
+  assert.deepEqual(row.followUpDrafts, []);
+});
+
 test('并发事件只有一个AI调用，另一个原子抢占失败', async () => {
   const { deps, state, row } = fixture();
   const result = await Promise.allSettled([runAssessmentDraft(row._id, { automatic: true }, deps), runAssessmentDraft(row._id, { automatic: true }, deps)]);

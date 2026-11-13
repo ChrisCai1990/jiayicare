@@ -4,12 +4,14 @@ const Draft = require('../src/models/ReportFollowUpDraft');
 const Report = require('../src/models/MedicalReport');
 const FollowUp = require('../src/models/FollowUp');
 const User = require('../src/models/User');
+const AnnualPlan = require('../src/models/AnnualPlan');
 const { materializeReportEvent, generateReportDraft, syncReportReviewTask } = require('../src/utils/reportFollowUpAutomation');
 const { sourceDigest } = require('../src/utils/reportFollowUpSource');
 const { publishReportFollowUps } = require('../src/utils/dynamicAssessmentFollowUps');
 const { isServiceRequest } = require('../src/utils/followUpServiceState');
 
 test('年度问题队列保留无建议异常，完成仅更新资料不派发执行随访', async t => {
+  t.mock.method(AnnualPlan, 'exists', async () => false);
   const report = { _id: 'report', user: 'patient', audit_status: 'audited', reportItems: [{ name: '胃镜', status: 'abnormal', findings: '胃炎' }], followUpSourceEvent: { sequence: 1 } };
   let current = { _id: 'draft', patientId: 'patient', reportId: 'report', purpose: 'annual_report_input', status: 'advisor_review', __v: 0, sourceSequence: 1, sourceKey: `report:1:${sourceDigest(report)}`, followUpAutomation: { status: 'queued' } };
   t.mock.method(Draft, 'findById', async () => current);
@@ -20,6 +22,24 @@ test('年度问题队列保留无建议异常，完成仅更新资料不派发�
   t.mock.method(FollowUp, 'updateOne', async () => { throw Error('不应派执行任务'); });
   const result = await require('../src/utils/reportFollowUpAutomation').generateReportIssues('draft', { automatic: true });
   assert.equal(result.status, 'advisor_review'); assert.equal(result.issueDrafts.length, 1); assert.equal(result.followUpAutomation.status, 'ready');
+});
+
+test('已有正式年度方案的后续报告进入单次随访，不进入年度问题队列', async t => {
+  const report = { _id: 'report', user: 'patient', audit_status: 'audited', reportItems: [], followUpSourceEvent: { status: 'queued', sequence: 1, digest: 'digest' } };
+  t.mock.method(AnnualPlan, 'exists', async query => { assert.equal(query.patientId, 'patient'); return true; });
+  for (const name of ['AbnormalReview', 'FollowUp', 'HealthPlan', 'Referral']) t.mock.method(require(`../src/models/${name}`), 'exists', async () => false);
+  t.mock.method(Draft, 'findOne', () => ({ lean: async () => null }));
+  t.mock.method(Draft, 'findOneAndUpdate', async (query, update) => {
+    assert.equal(update.$setOnInsert.purpose, 'issue_collaboration');
+    assert.match(update.$setOnInsert.followUpAutomation.message, /单次随访/);
+    return { _id: 'draft', ...update.$setOnInsert, followUpAutomation: { status: 'queued' } };
+  });
+  t.mock.method(Draft, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  t.mock.method(Draft, 'updateMany', async () => ({}));
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedFamilyDoctor: 'advisor' }) }) }));
+  t.mock.method(FollowUp, 'findOneAndUpdate', async () => ({}));
+  t.mock.method(Report, 'updateOne', async () => ({}));
+  await materializeReportEvent(report);
 });
 
 test('年度问题已确认不进入旧发布重试', async t => {
