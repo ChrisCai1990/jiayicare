@@ -7684,6 +7684,16 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
 });
 
 // ── 分佣中心 ───────────────────────────────────────────────
+router.get('/commission/my-overview', staffAuth, async (req, res) => {
+  try {
+    const data = await require('../utils/partnerSelfOverview').partnerSelfOverview({
+      tenantId: req.staff.tenantId, personType: 'staff',
+      personId: req.staff._id, month: req.query.month,
+    });
+    res.json({ success: true, data });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
 // GET /api/staff/commission/me — 我的分佣记录
 router.get('/commission/me', staffAuth, async (req, res) => {
   await require('../utils/commissionMaturity').refreshCommissions({ staffId: req.staff._id });

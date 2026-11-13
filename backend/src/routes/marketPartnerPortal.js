@@ -83,6 +83,16 @@ router.use(async (req, res, next) => {
 router.get('/me', (req, res) => res.json({ success: true, data: { name: req.marketPartner.name,
   productLine: req.marketPartner.productLine, referralCode: req.marketPartner.referralCode } }));
 
+router.get('/my-overview', async (req, res) => {
+  try {
+    const data = await require('../utils/partnerSelfOverview').partnerSelfOverview({
+      tenantId: req.marketPartner.tenantId, personType: 'partner',
+      personId: req.marketPartner._id, month: req.query.month,
+    });
+    res.json({ success: true, data });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
 router.get('/products', async (req, res) => {
   const rules = await MarketPartnerRule.find({ tenantId: req.marketPartner.tenantId,
     ...(req.marketPartner.segment ? { partnerId: req.marketPartner._id }

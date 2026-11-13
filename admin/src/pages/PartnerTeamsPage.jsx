@@ -15,34 +15,25 @@ export default function PartnerTeamsPage() {
   const [partners, setPartners] = useState([])
   const [relations, setRelations] = useState([])
   const [teams, setTeams] = useState([])
-  const [summary, setSummary] = useState([])
-  const [businessVolume, setBusinessVolume] = useState([])
-  const [earnings, setEarnings] = useState({ rows: [], count: 0, page: 1, pageSize: 10 })
   const [leaderType, setLeaderType] = useState('staff')
   const [leaderId, setLeaderId] = useState('')
   const [memberDrafts, setMemberDrafts] = useState({})
   const [selectedLeader, setSelectedLeader] = useState('')
   const [drafts, setDrafts] = useState({})
-  const [payment, setPayment] = useState({})
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
   const people = type => type === 'staff' ? staff : partners
   const name = (type, id) => people(type).find(item => String(item._id) === String(id))?.name || '已停用人员'
-  const load = async (page = 1) => {
-    const [employees, market, team, teamList, totals, volumes, ledger] = await Promise.all([
+  const load = async () => {
+    const [employees, market, team, teamList] = await Promise.all([
       adminAPI.employees({ limit: 500 }), adminAPI.marketPartners(),
-      adminAPI.partnerTeamRelations(), adminAPI.partnerTeams(), adminAPI.partnerTeamSummary(),
-      adminAPI.partnerTeamBusinessVolume(),
-      adminAPI.partnerTeamEarnings({ page }),
+      adminAPI.partnerTeamRelations(), adminAPI.partnerTeams(),
     ])
     setStaff((employees.data || []).filter(item => item.staffStatus === 'active'))
     setPartners((market.data || []).filter(item => item.status === 'active'))
     setRelations(team.data || [])
     setTeams(teamList.data || [])
-    setSummary(totals.data || [])
-    setBusinessVolume(volumes.data || [])
-    setEarnings(ledger.data || { rows: [], count: 0, page, pageSize: 10 })
     const next = {}
     for (const relation of team.data || []) for (const activity of ['promotion', 'service']) {
       const current = relation.rules.find(rule => rule.activity === activity)
@@ -56,7 +47,7 @@ export default function PartnerTeamsPage() {
 
   const run = async action => {
     setBusy(true); setMessage('')
-    try { await action(); await load(earnings.page); setMessage('已保存') }
+    try { await action(); await load(); setMessage('已保存') }
     catch (error) { setMessage(error.message || '操作失败') }
     finally { setBusy(false) }
   }
@@ -70,8 +61,9 @@ export default function PartnerTeamsPage() {
     [key]: { memberType: 'staff', memberId: '', ...current[key], ...change } }))
 
   return <div className="page" style={{ maxWidth: 1240 }}>
-    <div className="page-header"><div><div className="page-title">合伙人团队与负责人收益</div>
-      <div className="page-subtitle">员工和市场人员共用团队关系；推广、服务分别设置负责人收益</div></div></div>
+    <div className="page-header"><div><div className="page-title">团队规则设置</div>
+      <div className="page-subtitle">员工和市场人员共用团队关系；推广、服务分别设置负责人收益</div></div>
+      <Link className="btn" to="/partner-workbench/overview">打开业务工作台</Link></div>
     {message && <p role="status" style={{ color: message === '已保存' ? '#176b4d' : '#b42318' }}>{message}</p>}
     <section style={card}>
       <h2 style={{ fontSize: 18, marginTop: 0 }}>新增负责人团队</h2>
@@ -144,58 +136,6 @@ export default function PartnerTeamsPage() {
           </div>
         })}
       </div>)}
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>团队成员业务量</h2>
-      <p style={{ color: '#667a6d' }}>推广按订单唯一引入来源，服务按商品归属拆解和实际服务人分别呈现。成员没有服务费规则也保留服务业务量。</p>
-      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>负责人</th><th>成员</th><th>业务</th><th>订单／服务记录</th><th>净实收归属</th></tr></thead><tbody>
-        {businessVolume.map(item => <tr key={`${item.leaderType}:${item.leaderId}:${item.memberType}:${item.memberId}:${item.activity}`}>
-          <td>{name(item.leaderType, item.leaderId)}</td><td>{name(item.memberType, item.memberId)}</td>
-          <td>{activityName(item.activity)}</td><td>{item.orderCount}</td><td>{yuan(item.amountCents)}</td>
-        </tr>)}
-      </tbody></table></div>{!businessVolume.length && <p>暂无已付款且有团队归属的业务</p>}
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>负责人收益汇总</h2>
-      <p style={{ color: '#667a6d' }}>下表为已生成个人佣金来源的负责人收益；成员业务量以上表为准。负责人收益是独立成本，不再加进企业营收。</p>
-      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>负责人</th><th>来源</th><th>成员业务量基数</th><th>应计收益</th><th>已发</th><th>已追回</th></tr></thead><tbody>
-        {summary.map(item => <tr key={`${item.leaderType}:${item.leaderId}:${item.activity}`}>
-          <td>{item.leaderName} · {typeName(item.leaderType)}</td><td>{activityName(item.activity)}</td>
-          <td>{yuan(item.basisCents)}</td><td>{yuan(item.accruedCents)}</td><td>{yuan(item.paidCents)}</td><td>{yuan(item.recoveredCents)}</td>
-        </tr>)}
-      </tbody></table></div>{!summary.length && <p>暂无负责人收益记录</p>}
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>逐笔核对</h2>
-      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr><th>订单</th><th>负责人／成员</th><th>来源</th><th>规则</th><th>基数</th><th>应计／已发</th><th>状态</th><th>登记实际转账或追回</th></tr></thead><tbody>
-        {earnings.rows.map(item => <tr key={item._id}>
-          <td>{item.orderId?.orderNo || String(item.orderId)}<br />{item.orderId?.serviceName}</td>
-          <td>{name(item.leaderType, item.leaderId)}／{name(item.memberType, item.memberId)}</td>
-          <td>{activityName(item.activity)}</td><td>v{item.ruleVersion} · {item.calculationType === 'percentage'
-            ? `${item.basisPoints / 100}%` : yuan(item.fixedCents)}</td>
-          <td>{yuan(item.basisCents)}</td><td>{yuan(item.accruedCents)}／{yuan(item.paidCents - item.recoveredCents)}</td>
-          <td>{({ estimated: '预估', pending: '待发', paid: '已发', reversal_due: '待追回', cancelled: '已取消' })[item.status]}</td>
-          <td>{['pending', 'reversal_due'].includes(item.status) && <div style={row}>
-            <input className="form-input" type="number" min="0.01" step="0.01" placeholder="金额（元）"
-              aria-label={`${item._id}金额`} value={payment[item._id]?.amount || ''}
-              onChange={event => setPayment(old => ({ ...old, [item._id]: { ...old[item._id], amount: event.target.value } }))}
-              style={{ width: 115 }} />
-            <input className="form-input" placeholder="银行流水号" aria-label={`${item._id}流水号`}
-              value={payment[item._id]?.reference || ''}
-              onChange={event => setPayment(old => ({ ...old, [item._id]: { ...old[item._id], reference: event.target.value } }))}
-              style={{ width: 145 }} />
-            <button className="btn btn-sm" disabled={busy || !payment[item._id]?.amount || !payment[item._id]?.reference}
-              onClick={() => run(() => item.status === 'reversal_due'
-                ? adminAPI.recoverPartnerTeamEarning(item._id, payment[item._id])
-                : adminAPI.payPartnerTeamEarning(item._id, payment[item._id]))}>
-              {item.status === 'reversal_due' ? '登记追回' : '登记转账'}</button></div>}</td>
-        </tr>)}
-      </tbody></table></div>
-      {!earnings.rows.length && <p>暂无逐笔记录</p>}
-      <div style={row}><span>共 {earnings.count} 笔 · 第 {earnings.page} 页</span>
-        <button className="btn btn-sm" disabled={earnings.page <= 1} onClick={() => load(earnings.page - 1)}>上一页</button>
-        <button className="btn btn-sm" disabled={earnings.page * earnings.pageSize >= earnings.count}
-          onClick={() => load(earnings.page + 1)}>下一页</button></div>
     </section>
   </div>
 }

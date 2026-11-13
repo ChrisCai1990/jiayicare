@@ -146,7 +146,7 @@ export default function BusinessAccountingPage() {
             <td>{row.paidAt?.slice(0, 16).replace('T', ' ')}</td><td>{row.orderNo || row.id}<br />{row.customer}</td>
             <td>{row.product}{row.specification && ` · ${row.specification}`}</td><td>{channelName[row.channel] || row.channel || '未标注'}</td>
             <td>{row.sourceName}</td><td>{money(row.paidCents)}</td><td>{money(row.refundedCents)}</td><td>{money(row.netCents)}</td>
-            <td><Link to={`/market-partner-operations?order=${encodeURIComponent(row.orderNo || row.id)}`}>逐单核算</Link></td>
+            <td><Link to={`/partner-workbench/operations?order=${encodeURIComponent(row.orderNo || row.id)}`}>逐单核算</Link></td>
           </tr>) : <tr><td colSpan={9}>所选条件暂无订单</td></tr>}
         </tbody></table>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -157,7 +157,7 @@ export default function BusinessAccountingPage() {
         </>}
       </section>
       <div style={{ ...card, marginTop: 16, lineHeight: 1.8 }}>
-        <strong>后续核算接入</strong>：财务已确认营业收入、实际成本与毛利、员工已履约服务业绩、激励应付和实付仍需按统一账本接入。现有服务团队归属、佣金核对和单笔订单查询可在 <Link to="/market-partner-operations">合伙人业务登记与核算</Link> 查看。
+        <strong>后续核算接入</strong>：财务已确认营业收入、实际成本与毛利、员工已履约服务业绩、激励应付和实付仍需按统一账本接入。现有服务团队归属、佣金核对和单笔订单查询可在 <Link to="/partner-workbench/operations">合伙人业务登记与核算</Link> 查看。
       </div>
     </>}
   </div>

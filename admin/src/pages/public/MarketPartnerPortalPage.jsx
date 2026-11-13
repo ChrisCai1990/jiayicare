@@ -29,6 +29,8 @@ export default function MarketPartnerPortalPage() {
   const [products, setProducts] = useState([])
   const [commissions, setCommissions] = useState([])
   const [orders, setOrders] = useState([])
+  const [overview, setOverview] = useState(null)
+  const [month, setMonth] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).format(new Date()))
   const [tab, setTab] = useState('commissions')
 
   useEffect(() => {
@@ -38,6 +40,12 @@ export default function MarketPartnerPortalPage() {
       .then(([identity, items, fees, sales]) => { setMe(identity); setProducts(items); setCommissions(fees); setOrders(sales) })
       .catch(err => { setError(err.message); sessionStorage.removeItem('jy_market_partner_token'); setToken('') })
   }, [token])
+
+  useEffect(() => {
+    if (!token) return
+    call(`/my-overview?month=${encodeURIComponent(month)}`, undefined, token)
+      .then(setOverview).catch(err => setError(err.message))
+  }, [token, month])
 
   const sendCode = async () => {
     setError(''); setNotice(''); setBusy(true)
@@ -77,6 +85,27 @@ export default function MarketPartnerPortalPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><strong>{me?.name || '合伙人'}</strong><button onClick={logout}>退出</button></div>
           <p>授权产品线：{me?.productLine || '—'}　推荐码：{me?.referralCode || '—'}</p>
           <p style={{ fontSize: 13, color: '#607568', marginBottom: 0 }}>推荐商品入口请复制到微信小程序内打开；佣金以财务审核与实际打款为准。</p>
+        </section>
+        <section style={card}>
+          <h2 style={{ fontSize: 18, marginTop: 0 }}>我的团队与业务</h2>
+          <label>查看月份 <input type="month" value={month} onChange={event => setMonth(event.target.value)} style={{ ...field, maxWidth: 190 }} /></label>
+          {overview && <>
+            <p>{overview.role === 'leader' ? `我是团队负责人 · ${overview.team.memberCount} 位成员`
+              : overview.role === 'member' ? `所属团队负责人：${overview.leader?.name || '—'}` : '目前独立开展业务'}</p>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <div>本人推广业务量<br /><strong>{money(overview.self.promotionCents)}</strong></div>
+              <div>成员推广业务量<br /><strong>{money(overview.team.promotionCents)}</strong></div>
+              <div>成员服务业务量<br /><strong>{money(overview.team.serviceCents)}</strong></div>
+              <div>负责人收益应计／已发<br /><strong>{money(overview.leaderEarnings.accruedCents)}／{money(overview.leaderEarnings.paidCents)}</strong></div>
+            </div>
+            {overview.members.length > 0 && <div style={{ marginTop: 16 }}><strong>团队成员</strong>
+              {overview.members.map(item => <div key={`${item.personType}:${item.personId}`}
+                style={{ borderTop: '1px solid #e8efea', padding: '8px 0' }}>
+                {item.name}（{item.personType === 'staff' ? '员工' : '市场'}） · 推广 {money(item.promotionCents)} · 服务 {money(item.serviceCents)}
+              </div>)}
+            </div>}
+            <p style={{ fontSize: 12, color: '#607568', marginBottom: 0 }}>业务量按净实收归属展示；推广与服务可能来自同一订单，不可相加为企业营收。负责人收益与本人佣金分别核算。</p>
+          </>}
         </section>
         <section style={card}><h2 style={{ fontSize: 18, marginTop: 0 }}>可推荐商品</h2>
           {products.length ? products.map(item => <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid #e8efea' }}>
