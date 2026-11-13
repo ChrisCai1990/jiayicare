@@ -97,6 +97,15 @@ export const serviceGroupAPI = {
   upload: (id, data) => req(`/staff/service-groups/${id}/reports`, { method: 'POST', body: data }),
 }
 
+export const inAppServiceGroupAPI = {
+  list: (page = 1) => req(`/staff/in-app-service-groups?page=${page}`),
+  create: patientId => req('/staff/in-app-service-groups', { method: 'POST', body: JSON.stringify({ patientId }) }),
+  messages: id => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages`),
+  send: (id, content) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
+    method: 'POST', body: JSON.stringify({ content }),
+  }),
+}
+
 export const staffAPI = {
   expertConsultationCases: () => req('/expert-consultations/staff'),
   createExpertConsultation: data => req('/expert-consultations/staff', { method: 'POST', body: JSON.stringify(data) }),

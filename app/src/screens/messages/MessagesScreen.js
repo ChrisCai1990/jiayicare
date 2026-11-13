@@ -789,6 +789,11 @@ export default function MessagesScreen({ navigation }) {
         style={{ flex: 1 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMessages(); }} tintColor={colors.primary} />}
       >
+        <TouchableOpacity onPress={() => navigation.navigate('ServiceGroups')}
+          style={[styles.sectionCard, { marginTop: 8, padding: 16 }]}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>我的服务群</Text>
+          <Text style={{ marginTop: 4, color: colors.textMuted }}>与您的健康服务团队沟通</Text>
+        </TouchableOpacity>
         <View style={[styles.sectionCard, { marginTop: 8 }]}>
           {convList.map((conv, i) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
@@ -845,6 +850,10 @@ export default function MessagesScreen({ navigation }) {
         onPress={(msg) => {
           setShowNotifModal(false);
           if (msg.type === 'plan') navigation.navigate('ServicePlans', { annualPlanId: msg.sourceAnnualPlanId || null, planId: msg.planId || null, planYear: msg.planYear, direct: true });
+          else if (msg.action?.type === 'service_group') {
+            if (msg.unread) messagesAPI.markRead(msg._id).then(loadMessages).catch(() => {});
+            navigation.navigate('ServiceGroups');
+          }
           else setSelectedMsg(msg);
         }}
         onMarkRead={async (msg) => {

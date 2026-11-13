@@ -49,6 +49,7 @@ import DailyCheckinPage from './pages/DailyCheckinPage'
 import MetabolicPilotPage from './pages/MetabolicPilotPage'
 import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
 import ServiceAssistantPage from './pages/ServiceAssistantPage'
+import InAppServiceGroupsPage from './pages/InAppServiceGroupsPage'
 import ContentReviewsPage from './pages/ContentReviewsPage'
 import ContentReviewHistoryPage from './pages/ContentReviewHistoryPage'
 import MedicalResourceKnowledgePage from './pages/MedicalResourceKnowledgePage'
@@ -63,6 +64,7 @@ export function useStaff() { return useContext(AuthCtx) }
 // 未列出的路由（工作台/消息/个人中心/会员详情等）不做模块级权限拦截。
 export const ROUTE_MODULE = {
   '/service-assistant': 'service_assistant',
+  '/in-app-service-groups': 'service_assistant',
   '/patients': 'patients',
   '/followups': 'followups',
   '/plans': 'plans',
@@ -220,6 +222,7 @@ export default function App() {
               <Route index element={<Navigate to="/home" replace />} />
               <Route path="home" element={<HomePage />} />
               <Route path="service-assistant" element={<ErrorBoundary><ServiceAssistantPage /></ErrorBoundary>} />
+              <Route path="in-app-service-groups" element={<ErrorBoundary><InAppServiceGroupsPage /></ErrorBoundary>} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<ErrorBoundary><PatientDetailPage /></ErrorBoundary>} />

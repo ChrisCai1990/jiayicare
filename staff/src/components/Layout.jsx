@@ -13,6 +13,7 @@ import { hasModulePermission } from '../modulePermission'
 const ALL_NAV = [
   { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
   { label: '家庭服务助手', icon: 'services', path: '/service-assistant', roles: [], moduleKey: 'service_assistant' },
+  { label: '系统服务群', icon: 'services', path: '/in-app-service-groups', roles: [], moduleKey: 'service_assistant' },
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
   { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },
   { label: '服务方案',     icon: 'plans', path: '/plans',           roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans' },
@@ -38,7 +39,7 @@ const ALL_NAV = [
 
 const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/patients', '/notifications', '/profile']
 const NAV_GROUPS = [
-  { id: 'care', label: '会员服务', paths: ['/followups', '/plans', '/reports', '/service-records', '/expert-consultations', '/daily-checkin'] },
+  { id: 'care', label: '会员服务', paths: ['/in-app-service-groups', '/followups', '/plans', '/reports', '/service-records', '/expert-consultations', '/daily-checkin'] },
   { id: 'resources', label: '资源与推送', paths: ['/medical-resource-knowledge', '/specialty-library', '/knowledge', '/questionnaires', '/products', '/inventory'] },
   { id: 'operations', label: '运营协作', paths: ['/commission', '/marketing', '/visitor-leads', '/team', '/availability', '/operations'] },
 ]
