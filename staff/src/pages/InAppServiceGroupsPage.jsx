@@ -94,7 +94,7 @@ export default function InAppServiceGroupsPage() {
 
   return <main className="service-assistant">
     <h1>系统服务群</h1>
-    <p>团队负责人为每位客户勾选入群人员；客户在嘉医汇 App 或小程序发消息。未入群的服务人员不能查看或回复，负责人可只读监管。</p>
+    <p>客户的健康顾问、营养师或所属团队导师可勾选入群人员；客户在嘉医汇 App 或小程序发消息。未入群的服务人员不能查看或回复，负责人可只读监管。</p>
     {canConfigure && <>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <input aria-label="查找客户" value={search} onChange={e => setSearch(e.target.value)} placeholder="查找负责的客户" />
@@ -106,7 +106,7 @@ export default function InAppServiceGroupsPage() {
     </>}
     {configuration && <section aria-label="配置服务群成员" style={{ padding: 16, background: '#fff', marginTop: 12 }}>
       <h2>{configuration.patientName} · 选择入群成员</h2>
-      <p>只有当前分配的服务人员可入群；至少选择一名本团队成员。</p>
+      <p>只有当前分配的服务人员可入群；团队导师配置时至少选择一名本团队成员。</p>
       {configuration.candidates.map(person => <label key={person._id} style={{ display: 'block', margin: '8px 0' }}>
         <input type="checkbox" checked={memberIds.includes(String(person._id))}
           onChange={event => setMemberIds(previous => event.target.checked

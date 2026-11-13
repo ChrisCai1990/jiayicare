@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { canCustomerAccess, canStaffAccess, canMentorObserve, needsStaffReply } = require('../src/utils/inAppServiceGroupPolicy');
+const { canCustomerAccess, canStaffAccess, canMentorObserve, isAssignedLeader, needsStaffReply } = require('../src/utils/inAppServiceGroupPolicy');
 
 const group = { patientId: 'patient-a', tenantId: 'tenant-a', status: 'active', memberIds: ['staff-a'] };
 const patient = { _id: 'patient-a', tenantId: 'tenant-a', assignedHealthManager: 'staff-a' };
@@ -23,12 +23,20 @@ test('当前服务人员可回复，交接或停用后失去权限', () => {
   assert.equal(canStaffAccess(group, patient, { ...staff, tenantId: 'tenant-b' }), false);
 });
 
-test('已分配但未勾选入群的人员无法读写，负责人不因其分配关系获得监管权', () => {
+test('已分配但未勾选入群的人员无法读写，导师只监管本团队入群服务', () => {
   const other = { ...staff, _id: 'staff-b' };
   const bothAssigned = { ...patient, assignedNutritionist: 'staff-b' };
   assert.equal(canStaffAccess(group, bothAssigned, other), false);
   assert.equal(canMentorObserve(group, bothAssigned, mentor, ['staff-b']), false);
   assert.equal(canMentorObserve(group, bothAssigned, mentor, ['staff-a']), true);
+});
+
+test('客户当前健康顾问和营养师均可作为建群负责人', () => {
+  const assigned = { ...patient, assignedFamilyDoctor: 'advisor-a', assignedNutritionist: 'nutrition-a' };
+  assert.equal(isAssignedLeader(assigned, { _id: 'advisor-a' }), true);
+  assert.equal(isAssignedLeader(assigned, { _id: 'nutrition-a' }), true);
+  assert.equal(isAssignedLeader(assigned, { _id: 'staff-a' }), false);
+  assert.equal(isAssignedLeader({ ...assigned, assignedNutritionist: null }, { _id: 'nutrition-a' }), false);
 });
 
 test('导师只可监管本团队当前服务的同机构客户', () => {
