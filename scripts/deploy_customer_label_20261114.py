@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'miniprogram' / 'dist'
 SITE = '/var/www/jiayicare-static/mobile-preview-joinwehealth'
 EXPECTED_INDEX_SHA = '198fa798a58bb01b8892c31a6ec31f278c23e2a41dd497fb7f6f2d270ab67c05'
-EXPECTED_SERVER_COMMIT = '25423ccd73a'
+EXPECTED_SERVER_COMMIT = '2d18af0a696'
 
 
 def sha(data):
