@@ -45,6 +45,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   router.post('/:id/generate', staffAuth, wrap(async (req, res) => {
     const row = await load(req);
     if (req.body.issueMode === true) {
+      fail('年度问题请在完整体检全部解读后统一生成；单份报告仅生成单次随访');
       if (await workflow.hasPublishedAnnualPlan(row.patientId)) fail('客户已有年度方案，后续就医请走单次随访');
       if (!['advisor_review', 'no_action', 'excluded'].includes(row.status) || req.body.revision !== row.__v
         || ['running', 'queued'].includes(row.followUpAutomation?.status)) fail('草稿正在处理或状态已更新，请刷新');
@@ -66,6 +67,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     let row = await load(req);
     const action = req.body.action;
     if (['save_issues', 'confirm_issues', 'manual_issues', 'resolve_coverage'].includes(action)) {
+      fail('年度问题请在完整体检全部解读后统一生成；单份报告仅生成单次随访');
       if (await workflow.hasPublishedAnnualPlan(row.patientId)) fail('客户已有年度方案，后续就医请走单次随访');
       const issues = require('../utils/reportIssues');
       row = issues.reviewView(row);

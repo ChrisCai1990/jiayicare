@@ -18,7 +18,14 @@ test('single tests and notes do not become a physical exam', () => {
  assert.equal(eligibility(split.map((r,i)=>({...r,checkDate:`2026-06-0${i+1}`})),now).allowed,false);
 });
 test('explicit reviewed exam retains calendar twelve-month boundary', () => {
- const r={audit_status:'audited',documentCategory:'physical_exam',checkDate:'2025-10-07'};
+ const r={audit_status:'audited',documentCategory:'physical_exam',checkDate:'2025-10-07',examConclusion:'体检综合结论',advisorInterpretationConfirmedAt:new Date()};
  assert.equal(eligibility([r],now).allowed,true);
  assert.equal(eligibility([{...r,checkDate:'2025-10-06'}],now).allowed,false);
+ assert.equal(eligibility([{...r,examConclusion:''}],now).allowed,false);
+});
+test('完整体检批次有任一份未解读时不能生成年度方案', () => {
+ const reports=split.map((r,i)=>({...r,documentCategory:'lab_report',advisorInterpretationConfirmedAt:i===0?null:new Date()}));
+ assert.equal(eligibility(reports,now).allowed,false);
+ assert.deepEqual(eligibility(reports,now).pendingInterpretation,['0']);
+ assert.equal(eligibility(reports.map(r=>({...r,advisorInterpretationConfirmedAt:new Date()})),now).allowed,true);
 });

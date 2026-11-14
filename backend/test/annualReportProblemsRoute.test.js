@@ -50,6 +50,7 @@ test('综合审核接口验证权限、来源版本及逐项审核，客户端�
 });
 test('生成异步202、防重复；超时重试换令牌保留历史且旧版本不能覆盖', async t => {
   actor = { _id: advisor, role: 'familyDoctor' }; visible = [patient];
+  t.mock.method(require('../src/utils/annualReviewEligibility'), 'check', async () => ({ allowed: true }));
   const current = mockStore(t, { _id: 'review', patientId: patient, year: 2026, __v: 2, status: 'approved', topics: [topic] });
   t.mock.method(service, 'loadContext', async () => context);
   let calls = 0; t.mock.method(service, 'generate', async () => { calls++; });

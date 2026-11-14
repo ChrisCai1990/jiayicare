@@ -10618,6 +10618,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (issue) return res.status(400).json({ success:false, message:issue });
     }
     const targetYear = year || new Date().getFullYear();
+    const checkup = await require('../utils/annualReviewEligibility').check(req.params.id);
+    if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
     if (moduleData.management_targets?.records !== undefined) {
       const records = moduleData.management_targets.records;
       if (!Array.isArray(records) || records.length > 32 || records.some(row => !String(row?.goal || '').trim() || !String(row?.focus || '').trim()
@@ -14383,6 +14385,8 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权生成该会员的年度方案' });
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const checkup = await require('../utils/annualReviewEligibility').check(user._id);
+    if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
 
     const targetYear = Number(req.body.year) || new Date().getFullYear();
     if (!req.body.supplement) {

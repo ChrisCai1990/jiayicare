@@ -30,6 +30,8 @@ module.exports = ({ visible }) => {
   }));
   router.post('/generate', wrap(async (req, res) => {
     const scope = req.annualProblemScope;
+    const checkup = await require('../utils/annualReviewEligibility').check(scope.patientId);
+    if (!checkup.allowed) fail(checkup.message);
     const context = await service.loadContext(scope.patientId, scope.year);
     if (!context.reports.length) fail('本年度暂无已审核且已标明年度的报告', 400);
     let row;
