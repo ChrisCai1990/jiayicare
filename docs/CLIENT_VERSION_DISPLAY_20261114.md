@@ -14,3 +14,9 @@
 - 2026-11-14 用户接受新版开发者许可协议；浏览器刷新确认接受日期为11月14日，商务页免费App协议有效、更新提示消失。
 - 1.0.3（6）已成功上传 App Store Connect，提交回执7e16ad35-9fd3-49a0-b40b-c513b484e138，对应构建3f782026-bda7-447b-ba42-3a38fe87039c。苹果正在处理安装包，尚未提交App Review或正式发布。日志：工作区release-receipts/ios-version-submit-business-active-20261114.log。
 
+
+## 正式提审结果
+- 2026-11-14 16:06（北京时间），App Store Connect 已提交1.0.3（6），状态：等待审核。提交ID：8e3931de-a51a-44bd-85eb-984207d633a7。
+- 保留原审核账号、描述和联系信息，更新新增内容和版本排查说明；原自动发布设置保留，审核通过后自动向所有用户发布。尚未审核通过或上线。
+- 回执：https://appstoreconnect.apple.com/apps/6818768929/distribution/reviewsubmissions/details/8e3931de-a51a-44bd-85eb-984207d633a7
+
