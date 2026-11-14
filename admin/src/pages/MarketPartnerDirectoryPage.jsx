@@ -149,7 +149,7 @@ export default function MarketPartnerDirectoryPage() {
         <td>{segmentName(item.segment || item.productLine)}</td>
         <td>{liaisonByPartner.get(String(item._id)) || '未指定'}</td>
         <td><span className={`partner-ui__badge${item.status === 'active' ? '' : ' partner-ui__badge--amber'}`}>
-          {({ active: '已启用', suspended: '已暂停', pending: '待审核', closed: '已结束' })[item.status] || item.status}</span></td><td>
+          {({ active: '已启用', draft: '待启用', suspended: '已暂停', pending: '待审核', closed: '已结束' })[item.status] || item.status}</span></td><td>
           <button className="btn btn-sm" aria-pressed={selectedId === String(item._id)} onClick={() => {
             setSelectedId(String(item._id)); setLiaisonPartnerId(String(item._id)) }}>查看详情</button>{' '}
           {item.status !== 'closed' && <button className="btn btn-sm" onClick={() => editPartner(item)}>编辑</button>}{' '}
