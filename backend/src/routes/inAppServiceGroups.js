@@ -1,3 +1,4 @@
+const { TYPES, typeOf, titleOf, memberIdsFor } = require('../utils/serviceGroupTypes');
 const express = require('express');
 const mongoose = require('mongoose');
 const customerAuth = require('../middleware/auth');
@@ -56,6 +57,7 @@ async function groupAndPatient(groupId, tenantId) {
 }
 function summary(group, patient, staffMembers, supervised = false, canConfigure = false) {
   return { id: group._id, patientId: patient._id, patientName: patient.name,
+    serviceType: typeOf(group), name: titleOf(group, patient), categoryLabel: TYPES[typeOf(group)]?.label || '原服务群',
     staff: staffMembers.map(person => ({ id: person._id, name: person.name, role: person.role, avatar: person.avatar || '' })),
     lastMessageAt: group.lastMessageAt || null,
     waitingForStaff: needsStaffReply(group),
@@ -112,7 +114,9 @@ customerRouter.get('/', wrap(async (req, res) => {
   const groups = await Group.find({ tenantId: req.user.tenantId, patientId: req.user._id,
     status: 'active', 'memberIds.0': { $exists: true } }).lean();
   res.json({ success: true, data: await Promise.all(groups.map(async group =>
-    summary(group, req.user, await groupStaff(group, req.user)))) });
+    ({ ...summary(group, req.user, await groupStaff(group, req.user)),
+      unreadCount: await InboxMessage.countDocuments({ user: req.user._id, unread: true, 'action.type': 'service_group', 'action.groupId': String(group._id) }),
+      preview: (await Message.findOne({ groupId: group._id, tenantId: group.tenantId }).sort({ createdAt: -1, _id: -1 }).select('content').lean())?.content?.slice(0, 100) || '' }))) });
 }));
 customerRouter.post('/', wrap(async (req, res) => {
   fail('请等待健管专员配置服务群成员', 409);
@@ -167,6 +171,10 @@ staffRouter.get('/', wrap(async (req, res) => {
   const patients = await User.find(patientQuery).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   const groupQuery = { tenantId: req.staff.tenantId,
     patientId: { $in: patients.map(patient => patient._id) }, status: 'active' };
+  if (req.query.serviceType) {
+    if (!TYPES[req.query.serviceType] && req.query.serviceType !== 'legacy') fail('服务群类型无效', 400);
+    groupQuery.serviceType = req.query.serviceType;
+  }
   const groups = await Group.find(groupQuery)
     .sort({ lastMessageAt: -1, createdAt: -1, _id: -1 })
     .skip((page - 1) * pageSize).limit(pageSize + 1).lean();
@@ -193,9 +201,16 @@ staffRouter.get('/configuration/:patientId', wrap(async (req, res) => {
     .select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   if (!patient || !leaderCanConfigure(patient, req.staff))
     fail('仅客户当前健管专员可配置群成员');
-  const group = await Group.findOne({ _id: patient._id, tenantId: patient.tenantId }).lean();
-  res.json({ success: true, data: { patientId: patient._id, patientName: patient.name,
-    candidates: await currentStaff(patient), memberIds: group?.memberIds || [],
+  const serviceType = req.query.serviceType;
+  if (!TYPES[serviceType] && serviceType !== 'legacy') fail('请选择服务群类型', 400);
+  const group = await Group.findOne({ patientId: patient._id, tenantId: patient.tenantId, serviceType, status: 'active' }).lean();
+  if (serviceType === 'legacy' && !group) fail('原服务群不存在', 404);
+  const current = await currentStaff(patient);
+  const expected = memberIdsFor(patient, serviceType);
+  const candidates = serviceType === 'legacy' ? current : current.filter(person => expected.includes(String(person._id)));
+  const ready = serviceType === 'legacy' || (!!patient[TYPES[serviceType].field] && !!patient.assignedHealthManager && candidates.length === expected.length);
+  res.json({ success: true, data: { patientId: patient._id, patientName: patient.name, serviceType,
+    name: titleOf({ serviceType }, patient), ready, candidates, memberIds: group?.memberIds || candidates.map(person => person._id),
     membershipVersion: group?.membershipVersion || 0 } });
 }));
 staffRouter.post('/', wrap(async (req, res) => {
@@ -205,6 +220,8 @@ staffRouter.post('/', wrap(async (req, res) => {
     isDeleted: { $ne: true } }).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   if (!patient || !leaderCanConfigure(patient, req.staff))
     fail('仅客户当前健管专员可配置群成员');
+  const serviceType = req.body?.serviceType;
+  if (!TYPES[serviceType] && serviceType !== 'legacy') fail('请选择服务群类型', 400);
   const candidates = await currentStaff(patient);
   const rawIds = req.body?.memberIds;
   if (!Array.isArray(rawIds) || !rawIds.length || rawIds.length > 20 ||
@@ -212,10 +229,17 @@ staffRouter.post('/', wrap(async (req, res) => {
     new Set(rawIds.map(String)).size !== rawIds.length) fail('请选择有效的入群成员', 400);
   const members = candidates.filter(person => rawIds.some(id => same(id, person._id)));
   if (members.length !== rawIds.length) fail('入群人员必须是当前服务人员', 400);
+  if (serviceType !== 'legacy') {
+    const expected = memberIdsFor(patient, serviceType);
+    if (!patient[TYPES[serviceType].field] || !patient.assignedHealthManager ||
+      expected.length !== members.length || expected.some(id => !members.some(person => same(id, person._id))))
+      fail('请先分配对应专业人员和健管专员，并将双方选入本群', 400);
+  }
   const version = Number(req.body?.membershipVersion);
   if (!Number.isSafeInteger(version) || version < 0) fail('请刷新群成员名单后重试', 409);
-  const existing = await Group.findOne({ _id: patient._id, tenantId: patient.tenantId })
+  const existing = await Group.findOne({ patientId: patient._id, tenantId: patient.tenantId, serviceType, status: 'active' })
     .select('membershipVersion status').lean();
+  if (serviceType === 'legacy' && !existing) fail('不能新建原服务群，请选择服务类型', 400);
   if (existing?.status === 'closed') fail('服务群已关闭', 409);
   if (version !== (existing?.membershipVersion || 0))
     fail('群成员名单已变化，请刷新后重试', 409);
@@ -224,10 +248,10 @@ staffRouter.post('/', wrap(async (req, res) => {
     : 0;
   let group;
   try {
-    group = await Group.findOneAndUpdate({ _id: patient._id, tenantId: patient.tenantId,
+    group = await Group.findOneAndUpdate({ patientId: patient._id, tenantId: patient.tenantId, serviceType,
       membershipVersion: membershipFilter, status: 'active' },
     { $set: { memberIds: members.map(person => person._id), configuredByStaffId: req.staff._id },
-      $setOnInsert: { _id: patient._id, tenantId: patient.tenantId,
+      $setOnInsert: { tenantId: patient.tenantId, serviceType,
         patientId: patient._id, createdByStaffId: req.staff._id },
       $inc: { membershipVersion: 1 } },
     { upsert: !existing, new: true, setDefaultsOnInsert: true });

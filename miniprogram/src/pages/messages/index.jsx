@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, ttsAPI } from '../../services/api';
+import { inAppServiceGroupAPI, messagesAPI, pushRecordsAPI, questionnaireAPI, servicesAPI, userAPI, ttsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n';
 import useNavBar from '../../hooks/useNavBar';
@@ -145,6 +145,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
   };
 
   const [messages, setMessages] = useState([]);
+  const [serviceGroups, setServiceGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [threadRole, setThreadRole] = useState(null);
@@ -176,6 +177,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
     const requestId = ++listRequestRef.current;
     listLoadingRef.current = true;
     try {
+      inAppServiceGroupAPI.list().then(result => { if (requestId === listRequestRef.current && result.success) setServiceGroups(result.data || []); }).catch(() => {});
       const beneficiaryUserId = storedArchiveId(user?._id);
       setMessages(previous => previous.filter(message => !message.isPushRecord
         || (message.beneficiaryUserId || '') === beneficiaryUserId));
@@ -331,7 +333,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
 
   const markReadAndOpenDetail = async (msg) => {
     if (msg.action?.type === 'service_group') {
-      Taro.navigateTo({ url: '/pages/messages/service-group/index' }).catch(() => Taro.showToast({ title: '服务群暂时无法打开', icon: 'none' }));
+      Taro.navigateTo({ url: `/pages/messages/service-group/index?groupId=${encodeURIComponent(msg.action?.groupId || '')}` }).catch(() => Taro.showToast({ title: '服务群暂时无法打开', icon: 'none' }));
       return;
     }
     if (msg.type !== 'plan' && msg.action?.type !== 'service_group') setDetailMsg(msg);
@@ -352,7 +354,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
       });
     }
     if (msg.action?.type === 'service_group') {
-      Taro.navigateTo({ url: '/pages/messages/service-group/index' }).catch(() => {
+      Taro.navigateTo({ url: `/pages/messages/service-group/index?groupId=${encodeURIComponent(msg.action?.groupId || '')}` }).catch(() => {
         Taro.showToast({ title: '服务群暂时无法打开，请稍后重试', icon: 'none' });
       });
     }
@@ -374,11 +376,11 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
       </View>}
 
       {!!loadError && <Text onClick={loadMessages} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{loadError}</Text>}
-      <View onClick={() => Taro.navigateTo({ url: '/pages/messages/service-group/index' })}
+      {(serviceGroups.length ? serviceGroups : [{ id: '', name: '我的服务群', unreadCount: groupUnread, preview: groupNotices[0]?.content }]).map(item => <View key={item.id} onClick={() => Taro.navigateTo({ url: `/pages/messages/service-group/index?groupId=${encodeURIComponent(item.id)}` })}
         style={{ margin: `0 ${spacing.md}px ${spacing.md}px`, padding: '14px 16px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.primary}30` }}>
-        <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>我的服务群 › {groupUnread > 0 && <Text style={{ color: '#DC3545', fontSize: '14px' }}>● {groupUnread} 条未读</Text>}</Text>
-        <Text style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: colors.textMuted }}>{groupNotices[0]?.content || '与当前健康服务团队沟通，团队负责人可查看'}</Text>
-      </View>
+        <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{item.name} › {item.unreadCount > 0 && <Text style={{ color: '#DC3545', fontSize: '14px' }}>● {item.unreadCount} 条未读</Text>}</Text>
+        <Text style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: colors.textMuted }}>{item.preview || '与当前服务团队沟通'}</Text>
+      </View>)}
       {notifMessages.some(m => m.unread && m.action?.type !== 'service_group' && (m.type !== 'questionnaire' || questionnaireMessages.includes(m))) && <View onClick={() => { setNotifTab('全部'); setShowNotif(true); }} style={{ margin: '0 16px 12px', padding: '12px', backgroundColor: '#FFF4F3', borderRadius: '12px' }}><Text style={{ color: '#B42318' }}>● 您有未读通知，点击查看具体消息 ›</Text></View>}
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>{t('加载中...')}</Text>

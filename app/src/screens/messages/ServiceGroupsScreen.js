@@ -61,7 +61,7 @@ export default function ServiceGroupsScreen({ navigation }) {
       <TouchableOpacity onPress={() => selected ? (selectedRef.current = null, setSelected(null)) : navigation.goBack()}>
         <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
       </TouchableOpacity>
-      <Text style={styles.title}>{selected ? '我的服务群' : '服务群'}</Text>
+      <Text style={styles.title}>{selected ? selected.name || '我的服务群' : '服务群'}</Text>
       <TouchableOpacity onPress={() => selected ? read(selected.id) : refresh()}>
         <Ionicons name="refresh" size={22} color={colors.primary} />
       </TouchableOpacity>
@@ -71,7 +71,7 @@ export default function ServiceGroupsScreen({ navigation }) {
       <Text style={styles.note}>您发送的消息由当前服务团队处理，团队负责人可在嘉医汇系统内查看服务沟通记录。</Text>
       {loading && <ActivityIndicator color={colors.primary} />}
       {groups.map(group => <TouchableOpacity key={group.id} style={styles.group} onPress={() => open(group)}>
-        <Text style={styles.groupTitle}>我的服务群</Text>
+        <Text style={styles.groupTitle}>{group.name || '我的服务群'}{group.unreadCount > 0 ? ` · ${group.unreadCount}条未读` : ''}</Text>
         <Text style={styles.note}>团队成员：{group.staff.map(person => person.name).join('、')}</Text>
         <Text style={styles.note}>{stamp(group.lastMessageAt) || '暂无消息'}{group.waitingForStaff ? ' · 等待团队回复' : ''}</Text>
       </TouchableOpacity>)}

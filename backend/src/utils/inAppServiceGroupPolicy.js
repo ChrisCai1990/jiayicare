@@ -1,3 +1,4 @@
+const { isEnded } = require('./serviceGroupTypes');
 const assignmentFields = [
   'assignedFamilyDoctor', 'assignedNutritionist', 'assignedSpecialist',
   'assignedTcmDoctor', 'assignedPsychologist', 'assignedRehabSpecialist',
@@ -9,7 +10,8 @@ const canUseGroupModule = permissions => !!permissions?.patients?.view;
 const isAssignedHealthManager = (patient, staff) => !!patient && !!staff &&
   same(patient.assignedHealthManager, staff._id);
 const isAssignedLeader = (patient, staff) => !!patient && !!staff &&
-  (same(patient.assignedFamilyDoctor, staff._id) ||
+  (same(patient.assignedSpecialist, staff._id) ||
+    same(patient.assignedFamilyDoctor, staff._id) ||
     same(patient.assignedNutritionist, staff._id) ||
     same(patient.assignedMedicalAssistant, staff._id) ||
     same(patient.assignedHealthManager, staff._id));
@@ -36,7 +38,7 @@ function canMentorObserve(group, patient, mentor, mentoredIds) {
       mentoredIds.some(teamId => same(id, teamId)));
 }
 function needsStaffReply(group) {
-  return !!group?.lastCustomerMessageAt &&
+  return !isEnded(group) && !!group?.lastCustomerMessageAt &&
     (!group.lastStaffMessageAt || +new Date(group.lastCustomerMessageAt) > +new Date(group.lastStaffMessageAt));
 }
 module.exports = { assignmentFields, assignedIds, canUseGroupModule, isAssignedHealthManager, isAssignedLeader, canCustomerAccess, canStaffAccess,

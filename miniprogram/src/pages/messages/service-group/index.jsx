@@ -14,6 +14,8 @@ const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
 export default function ServiceGroupPage() {
   const { statusBarHeight } = useNavBar();
   const [group, setGroup] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const selectedId = useRef(Taro.getCurrentInstance()?.router?.params?.groupId || '');
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -56,9 +58,13 @@ export default function ServiceGroupPage() {
     refreshing.current = true;
     try {
       const response = await api.list();
-      const current = (response.data || [])[0] || null;
+      const available = response.data || [];
+      setGroups(available);
+      const activeId = selectedId.current;
+      const current = available.find(item => String(item.id) === String(activeId)) || null;
       setGroup(current);
       const result = current ? await api.messages(current.id) : { data: [] };
+      if (activeId !== selectedId.current) return;
       const rows = result.data || [];
       setMessages(rows);
       if (!opened.current && rows.length) {
@@ -85,6 +91,8 @@ export default function ServiceGroupPage() {
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
+  const openGroup = item => { selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft(''); setGroup(item); refresh(); };
+  const back = () => { if (selectedId.current) { selectedId.current = ''; setGroup(null); setMessages([]); refresh(); } else Taro.navigateBack(); };
   const send = async () => {
     const content = draft.trim();
     if (!group || !content || busy) return;
@@ -101,8 +109,8 @@ export default function ServiceGroupPage() {
 
   return <View style={{ height: process.env.TARO_ENV === 'h5' ? '100dvh' : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
     <View style={{ padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Text onClick={() => Taro.navigateBack()} style={{ color: colors.primary, fontSize: '15px' }}>‹ 返回</Text>
-      <Text style={{ color: colors.textPrimary, fontSize: '18px', fontWeight: 700 }}>我的服务群</Text>
+      <Text onClick={back} style={{ color: colors.primary, fontSize: '15px' }}>‹ 返回</Text>
+      <Text style={{ color: colors.textPrimary, fontSize: '16px', fontWeight: 700, flex: 1, textAlign: 'center' }}>{group?.name || '我的服务群'}</Text>
       <Text onClick={refresh} style={{ color: colors.primary, fontSize: '14px' }}>刷新</Text>
     </View>
     <Text style={{ display: 'block', flexShrink: 0, padding: '10px 16px', color: colors.textMuted, fontSize: '12px' }}>
@@ -116,9 +124,14 @@ export default function ServiceGroupPage() {
     </View>}
     {!!error && <Text onClick={refresh} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{error} · 点击重试</Text>}
     {loading ? <Text style={{ padding: '16px', color: colors.textMuted }}>正在加载…</Text>
-      : !group ? <Text style={{ display: 'block', padding: '20px', color: colors.textMuted, fontSize: '14px' }}>
-        团队负责人尚未为您配置服务群成员，请联系服务团队。配置完成后点击右上角刷新。
-      </Text>
+      : !group ? <ScrollView scrollY style={{ flex: 1, height: 0, minHeight: 0, padding: '12px', boxSizing: 'border-box' }}>
+        {groups.map(item => <View key={item.id} onClick={() => openGroup(item)} style={{ background: '#fff', borderRadius: '12px', padding: '16px', marginBottom: '12px' }}>
+          <Text style={{ display: 'block', fontWeight: 700 }}>{item.name || '我的服务群'} › {item.unreadCount > 0 && <Text style={{ color: '#DC3545' }}>● {item.unreadCount} 条未读</Text>}</Text>
+          <Text style={{ display: 'block', color: colors.textMuted, fontSize: '12px', marginTop: '6px' }}>{item.staff.map(person => person.name).join('、')}</Text>
+          <Text style={{ display: 'block', color: colors.textMuted, fontSize: '12px', marginTop: '6px' }}>{item.preview || '暂无消息'}</Text>
+        </View>)}
+        {groups.length === 0 && <Text>健管专员尚未为您配置服务群，请联系服务团队。</Text>}
+      </ScrollView>
       : <>
         <View style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <ScrollView id="service-group-scroll" scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget}
