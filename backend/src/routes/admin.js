@@ -99,12 +99,14 @@ router.get('/saas-plan', adminAuth, async (req, res) => {
   const tenant = await Tenant.findById(tenantId).select('name code status legalName serviceScope serviceScopeNote commercialPlan commercialTerms extraStaffSeats extraAdminSeats').lean();
   if (!tenant || (req.admin.role !== 'platformSuper' && String(tenant._id) !== String(req.admin.tenantId))) return res.sendStatus(404);
   const usage = await seatUsage(tenant._id);
+  const accounts = await Admin.find({ tenantId: tenant._id, role: { $in: ['superadmin', 'finance'] } })
+    .select('username name role staffStatus createdAt').sort({ createdAt: -1 }).lean();
   const standard = tenant.commercialPlan === 'standard';
   const terms = standard ? tenantTerms(tenant) : null;
   return res.json({ success: true, data: { standard: standardPlan,
     tenant: { ...tenant, legalName: tenant.legalName || (tenant.code === 'jiayihui' ? '杭州嘉医汇健康管理有限公司' : ''),
       serviceScope: tenant.serviceScope || (tenant.code === 'jiayihui' ? ['admin', 'staff', 'customer'] : []),
-      serviceProfileSaved: Array.isArray(tenant.serviceScope), usage, terms, staffLimit: standard ? terms.includedStaffSeats + (tenant.extraStaffSeats || 0) : null,
+      serviceProfileSaved: Array.isArray(tenant.serviceScope), usage, accounts, terms, staffLimit: standard ? terms.includedStaffSeats + (tenant.extraStaffSeats || 0) : null,
       adminLimit: standard ? terms.includedAdminSeats + (tenant.extraAdminSeats || 0) : null,
       estimatedMonthlySeatFeeYuan: standard ? estimatedMonthlySeatFee(usage, terms) : null } } });
 });
@@ -1759,13 +1761,15 @@ async function createInstitutionAdmin(req, res, tenantId) {
   if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
   if (!['active', 'setup'].includes(tenant.status)) return res.status(409).json({ success: false, message: '待接入机构尚未开放配置账号' });
   if (!await canAddSeat(tenant._id, 'admin')) return res.status(409).json({ success: false, message: '机构管理员账号额度已满' });
-  const { username, password, name } = req.body || {};
+  const { username, password, name, role = 'superadmin' } = req.body || {};
+  if (!['superadmin', 'finance'].includes(role)) return res.status(400).json({ success: false, message: '管理员角色无效' });
+  if (role === 'finance' && tenant.status !== 'active') return res.status(409).json({ success: false, message: '机构运营中才能开通财务工作台' });
   if (!username || !name || typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, message: '填写用户名、姓名及 10 至 128 位初始密码' });
   if (await runWithoutTenantScope(() => Admin.exists({ username }))) return res.status(409).json({ success: false, message: '用户名已被占用' });
-  const account = await Admin.create({ username, password, name, role: 'superadmin', tenantId: tenant._id, mustChangePassword: true });
+  const account = await Admin.create({ username, password, name, role, tenantId: tenant._id, mustChangePassword: true });
   await mongoose.connection.db.collection('platform_access_audits').insertOne({ actorId: req.admin._id, tenantId: tenant._id,
-    action: 'create_institution_admin', createdAdminId: account._id, at: new Date(), ip: req.ip });
-  res.json({ success: true, data: { _id: account._id, username: account.username, name: account.name } });
+    action: 'create_institution_admin', createdAdminId: account._id, createdRole: role, at: new Date(), ip: req.ip });
+  res.json({ success: true, data: { _id: account._id, username: account.username, name: account.name, role } });
 }
 
 router.post('/tenants/:id/admins', adminAuth, requirePlatformSuper, async (req, res) => {

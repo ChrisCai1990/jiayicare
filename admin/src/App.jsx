@@ -9,6 +9,7 @@ import MarketPartnerPortalPage from './pages/public/MarketPartnerPortalPage'
 import MarketPartnerManagementPage from './pages/MarketPartnerManagementPage'
 import MarketPartnerDirectoryPage from './pages/MarketPartnerDirectoryPage'
 import BusinessAccountingPage from './pages/BusinessAccountingPage'
+import FinanceCooperationPage from './pages/FinanceCooperationPage'
 import PartnerTeamsPage from './pages/PartnerTeamsPage'
 import PartnerTeamOverviewPage from './pages/PartnerTeamOverviewPage'
 import PartnerWorkbench from './pages/public/PartnerWorkbench'
@@ -127,7 +128,8 @@ function RequireAuth({ children }) {
   const location = useLocation()
   if (!admin || !token) return <Navigate to="/login" replace />
   if (admin.mustChangePassword && location.pathname !== '/change-password') return <Navigate to="/change-password" replace />
-  if (!admin.mustChangePassword && location.pathname === '/change-password') return <Navigate to={admin.role === 'platformSuper' ? '/tenants' : '/dashboard'} replace />
+  if (!admin.mustChangePassword && location.pathname === '/change-password') return <Navigate to={admin.role === 'platformSuper' ? '/tenants' : admin.role === 'finance' ? '/finance/cooperation' : '/dashboard'} replace />
+  if (admin.role === 'finance' && !['/finance/cooperation', '/finance/business', '/change-password', '/'].includes(location.pathname)) return <Navigate to="/finance/cooperation" replace />
   if (admin.tenantStatus === 'setup' && !['/setup', '/settings/company', '/settings/departments', '/settings/roles', '/settings/employees', '/saas-plan', '/change-password'].includes(location.pathname)) return <Navigate to="/setup" replace />
   if (admin.role === 'platformSuper' && location.pathname !== '/tenants' && location.pathname !== '/agreements' && location.pathname !== '/saas-plan' && location.pathname !== '/clinical-standards' && location.pathname !== '/settings/ai-usage' && location.pathname !== '/change-password' && location.pathname !== '/') {
     return <Navigate to="/tenants" replace />
@@ -137,7 +139,7 @@ function RequireAuth({ children }) {
 
 function HomeRoute() {
   const { admin } = useAdmin()
-  return <Navigate to={admin?.role === 'platformSuper' ? '/tenants' : admin?.tenantStatus === 'setup' ? '/setup' : '/dashboard'} replace />
+  return <Navigate to={admin?.role === 'platformSuper' ? '/tenants' : admin?.role === 'finance' ? '/finance/cooperation' : admin?.tenantStatus === 'setup' ? '/setup' : '/dashboard'} replace />
 }
 
 function LegacyPartnerRoute({ target }) {
@@ -177,6 +179,8 @@ export default function App() {
               <Route index element={<HomeRoute />} />
               <Route path="setup" element={<InstitutionSetupPage />} />
               <Route path="change-password" element={<ChangePasswordPage />} />
+              <Route path="finance/cooperation" element={<FinanceCooperationPage />} />
+              <Route path="finance/business" element={<BusinessAccountingPage />} />
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="health-data-import" element={<HealthDataImportPage />} />
               <Route path="patients" element={<PatientsPage />} />

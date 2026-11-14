@@ -15,6 +15,7 @@ const adminSchema = new mongoose.Schema({
     enum: [
       'platformSuper',   // 平台超管（SaaS运营方，可跨所有机构管理，不受 tenantId 隔离）
       'superadmin',      // 超级管理员（单机构最高权限，归属具体 tenantId）
+      'finance',         // 机构财务：本机构合作信息与经营数据只读
       'doctor', 'manager', // 旧管理员角色（兼容）
       'familyDoctor',    // 健康顾问
       'nutritionist',    // 营养师

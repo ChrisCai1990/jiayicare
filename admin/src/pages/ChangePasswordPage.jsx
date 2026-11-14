@@ -21,7 +21,7 @@ export default function ChangePasswordPage() {
     try {
       await adminAPI.changePassword(oldPassword, newPassword)
       login({ ...admin, mustChangePassword: false })
-      navigate(admin.role === 'platformSuper' ? '/tenants' : '/dashboard', { replace: true })
+      navigate(admin.role === 'platformSuper' ? '/tenants' : admin.role === 'finance' ? '/finance/cooperation' : '/dashboard', { replace: true })
     } catch (err) {
       setError(err.message || '修改失败')
     } finally {

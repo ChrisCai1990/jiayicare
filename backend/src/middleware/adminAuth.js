@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
 const Tenant = require('../models/Tenant');
 const { tenantContext } = require('../utils/tenantScope');
-const { platformAdminMayAccess } = require('../utils/adminAccess');
+const { platformAdminMayAccess, financeAdminMayAccess } = require('../utils/adminAccess');
 const { hasTenantChannel } = require('../utils/tenantChannel');
 
 module.exports = async (req, res, next) => {
@@ -38,6 +38,9 @@ module.exports = async (req, res, next) => {
     }
     if (admin.role === 'platformSuper' && !platformAdminMayAccess(req.originalUrl)) {
       return res.status(403).json({ success: false, message: '平台管理员不能访问机构业务数据，请使用所属机构账号' });
+    }
+    if (admin.role === 'finance' && !financeAdminMayAccess(req.originalUrl, req.method)) {
+      return res.status(403).json({ success: false, message: '财务账号仅可查看本机构合作信息与经营数据' });
     }
     if (admin.mustChangePassword && String(req.originalUrl).split('?')[0] !== '/api/admin/me/password') {
       return res.status(403).json({ success: false, message: '请先修改初始密码' });
