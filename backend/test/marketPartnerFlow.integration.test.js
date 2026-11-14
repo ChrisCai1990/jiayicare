@@ -896,6 +896,9 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const memberLinks = (await memberProducts.json()).data;
     assert.equal(memberLinks.length, 1);
     assert.equal(memberLinks[0].id, String(memberPackageId));
+    assert.equal(memberLinks[0].commission.firstBasisPoints, 2000);
+    assert.deepEqual(memberLinks[0].commission.renewalBasisPoints,
+      [{ year: 2, basisPoints: 1000 }, { year: 3, basisPoints: 500 }]);
     assert.match(memberLinks[0].miniProgramPath,
       new RegExp(`productId=${memberPackageId}&partnerCode=${memberPartner.body.data.referralCode}$`));
     const memberClaim = await fetch(`${base}/api/services/partner-referrals/claim`, {

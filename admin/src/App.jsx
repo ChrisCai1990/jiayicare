@@ -159,7 +159,9 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/hr/*" element={<HrApp />} />
             <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
-            <Route path="/market-partner" element={<MarketPartnerPortalPage />} />
+            <Route path="/market-partner" element={<Navigate to="/market-partner/cooperation" replace />} />
+            <Route path="/market-partner/cooperation" element={<MarketPartnerPortalPage view="cooperation" />} />
+            <Route path="/market-partner/business" element={<MarketPartnerPortalPage view="business" />} />
             <Route path="/partner-workbench" element={<RequireAuth><PartnerWorkbench /></RequireAuth>}>
               <Route index element={<Navigate to="overview" replace />} />
               <Route path="overview" element={<PartnerTeamOverviewPage />} />
