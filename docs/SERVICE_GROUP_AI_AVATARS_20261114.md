@@ -56,3 +56,8 @@ Edit this exact 3D cartoon female Jiayihui avatar, preserve her face, hair, expr
 - 25条长消息、390×844及393×650窗口验证最新消息底部在滚动区边界内；首条未读定位另跑同样布局验证。测试基于合成浏览器，需用户真机确认。
 - 苹果H5线上48文件校验成功，index SHA256 198fa798a58bb01b8892c31a6ec31f278c23e2a41dd497fb7f6f2d270ab67c05；华为预发布H5 7db90314a4dd96b0c672321b1177197a79d7e9c6c729712535f22e34fda42e74。本轮不改后端，生产Git仍25423ccd73a；主仓源码56e8b0ed，小程序源码同步但未新增上传。
 - 验证记录：app-h5-push-release-20261112/.tmp-occlusion-final.log与.tmp-unread-position.log；发布脚本scripts/deploy_group_scroll_20261114.py。
+
+## 2026-11-14 用户端移除本人客户标签
+- 用户端服务群本人消息仅显示姓名与时间；医护端仍显示客户，服务人员与AI角色保留。Taro及Expo源代码同步（3a673538），不改消息数据。
+- 苹果H5已构建发布并校验48文件，index SHA256 94d20ea598c0794cef6684f9b7c49c1133964c2ea70bd3c7ac24a89f94c2e50a；华为预发布H5 934f5ca6dbd5f8a5ff0d633a966b1c4a23ba86af6004e4b36302f3a566d8e666。
+- 生产已由其他任务推进至2d18af0a696（合作工作台）；本次只读检查差异后严格按原H5哈希发布独立页面目录，没有覆盖生产Git或医护代码。小程序及Expo源改动尚未独立发布。
