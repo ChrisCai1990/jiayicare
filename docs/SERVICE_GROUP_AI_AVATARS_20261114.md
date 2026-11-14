@@ -36,3 +36,9 @@ Edit this exact 3D cartoon female Jiayihui avatar, preserve her face, hair, expr
 - 苹果H5公开入口48文件校验及发布成功，index SHA256 d0090c8f0901bd5443010abc74f30e92bb66d5d501de1c1c247c5e0018c89d15；华为预发布H5同步，SHA256 eba0394dd199a48868f92dbfdcb7e13fb03b3043b663a049d48af8aef8cb4e4e。
 - 小程序1.0.20261114.2已上传（1123669字节），包含13.3及14.1改动。两项构建产物测试及预检通过，未提交微信审核或正式发布。后续体验/提审以14.2为候选。
 - 部署回执release-receipts/xiaojia-response-fix-final-20261114.log，上传回执xiaojia-response-mini-upload-20261114.json。真实手机响应耗时待客户验证。
+
+## 2026-11-14 医护消息提醒与版本展示核验
+- 医护服务群原仅列表内普通待回复文字，未纳入全局通知。新增独立reminders API按当前机构、有效客户、当前入群关系及监管权限统计全部待人工回复群，不受100条列表分页限制。
+- 首页消息通知计数与侧栏消息通知包含待回复群；会员服务折叠标题、系统服务群入口显示数量，通知页提供直达待回复群入口，群卡片红色待人工回复。前台5秒更新，失败保留上次提醒。AI回复/查看对话不消除待回复，真人回复后刷新清除。
+- 生产7da1d795279e3b03dae57764a0effe09b96e202d部署完成，健康检查通过；8项既有权限规则测试及JSX解析通过。线上静态页面使用拦截API的合成数据浏览器验证：群入口徽标、群卡片提醒及通知页跳转入口通过；未发送真实客户消息。回执release-receipts/staff-group-reminders-20261114.log；合成脚本staff-group-reminders-smoke.cjs。
+- 版本展示：核对ios-push-fix-20261112的3c3f87f，app.json为1.0.2(5)，SharedH5App桥目前没有get-app-info或版本注入接口。不能以此源码信息代替每台设备的真实安装版本。需要下一原生安装包添加真实版本/构建号读取，并由H5展示；本轮尚未实现或提交该新安装包。
