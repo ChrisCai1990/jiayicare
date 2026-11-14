@@ -5,13 +5,14 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import uuid
 
 from ssh_config import connect
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_BASE = 'd7317c18e62ba985569cbaa3f71dbe7d6abbf465'
+EXPECTED_BASE = '0fbb8193f199b2c249d4abbc1a868f8a580e1ed9'
 REMOTE = '/var/www/jiayicare'
 
 
@@ -70,4 +71,6 @@ def main():
 
 
 if __name__ == '__main__':
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     main()
