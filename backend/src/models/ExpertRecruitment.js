@@ -19,6 +19,11 @@ const schema = new mongoose.Schema({
     reviewStatus: { type: String, enum: ['pending', 'pass', 'fail'], default: 'pending' },
     reviewNote: String, reviewedAt: Date, reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
   }],
+  signedAgreements: [{
+    name: String, key: { type: String, select: false }, mimeType: String, size: Number, sha256: String,
+    signedDate: String, agreementNo: String, archivedAt: Date,
+    archivedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+  }],
   supplementUpdatedAt: Date,
   response: {
     name: String, phone: String, contactPhone: String, institutionName: String, departmentName: String,

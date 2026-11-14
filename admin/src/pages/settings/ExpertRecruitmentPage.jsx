@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import ExpertQualificationsEditor from '../../components/ExpertQualificationsEditor'
+import ExpertSignedAgreements from '../../components/ExpertSignedAgreements'
 
 const statusText = { invited: '待填写', submitted: '待审核', approved: '已入库', rejected: '未通过', revoked: '已撤销' }
 const verdictText = { pass: '通过', pending: '待核实', fail: '不通过' }
@@ -138,6 +139,7 @@ export default function ExpertRecruitmentPage() {
               </> : <>{selected.response?.education || '未填写'}{['submitted', 'approved', 'rejected'].includes(selected.status) && <button className="btn" disabled={busy} style={{ marginLeft: 12 }} onClick={() => { setEducation(selected.response?.education || ''); setEditingEducation(true) }}>{selected.response?.education ? '修改' : '补填'}</button>}</>}
             </>}/>
             {selected.status === 'approved' && <div style={{ margin: '12px 0' }}><button className="btn btn-primary" disabled={busy} onClick={() => run(() => adminAPI.syncExpertRecruitmentProfile(id(selected)), '已同步到专家资料')}>同步已审核资料到专家档案</button><p>将已核对的职称、擅长、专业、年限及已补填的学历和语言同步到关联专家。保留院区、简介、联系方式和已谈妥报酬；证件仍在资质附件中受限查看。</p></div>}
+            {selected.status === 'approved' && <ExpertSignedAgreements key={selectedId} recruitment={selected} onUpdated={load}/>}
             <Info label="擅长" value={selected.response?.registrationScope?.trim() || selected.response?.expertise?.join('、')}/>
             {['submitted', 'approved'].includes(selected.status) && <div style={{ margin: '14px 0' }}>
               <button className="btn" onClick={() => setShowQualifications(value => !value)}>{showQualifications ? '收起' : '查看／补充资质附件与语言'}</button>
