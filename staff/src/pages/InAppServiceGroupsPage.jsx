@@ -3,9 +3,13 @@ import { API_ORIGIN, inAppServiceGroupAPI as api, staffAPI } from '../api';
 import './ServiceAssistantPage.css';
 import './InAppServiceGroupsPage.css';
 
+const categories = [['advisor','健康顾问','嘉医服务群'],['nutrition','营养师','营养干预服务群'],['medical','就医专员','就医服务群'],['specialty','专科医师','专病管理群']];
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '暂无消息';
 
 export default function InAppServiceGroupsPage() {
+  const [category, setCategory] = useState('');
+  const categoryRef = useRef('');
+  categoryRef.current = category;
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -31,8 +35,10 @@ export default function InAppServiceGroupsPage() {
   const refresh = async () => {
     if (refreshing.current) return;
     refreshing.current = true;
+    const requestedCategory = categoryRef.current;
     try {
-      const pages = await Promise.all(Array.from({ length: loadedPages.current }, (_, i) => api.list(i + 1)));
+      const pages = await Promise.all(Array.from({ length: loadedPages.current }, (_, i) => api.list(i + 1, requestedCategory)));
+      if (requestedCategory !== categoryRef.current) return;
       setGroups(pages.flatMap(res => res.data || []));
       setHasMore(!!pages.at(-1)?.hasMore);
       setCanConfigure(!!pages[0]?.canConfigure);
@@ -45,7 +51,7 @@ export default function InAppServiceGroupsPage() {
     setBusy(true);
     try {
       const nextPage = loadedPages.current + 1;
-      const res = await api.list(nextPage);
+      const res = await api.list(nextPage, categoryRef.current);
       loadedPages.current = nextPage;
       setGroups(previous => [...previous, ...(res.data || [])]);
       setHasMore(!!res.hasMore);
@@ -58,7 +64,7 @@ export default function InAppServiceGroupsPage() {
       if (currentId.current === id) setMessages(res.data || []);
     } catch (e) { setError(e.message || '群消息读取失败'); }
   };
-  useEffect(() => { refresh(); const timer = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 5000); return () => clearInterval(timer); }, []);
+  useEffect(() => { loadedPages.current = 1; setGroups([]); refresh(); const timer = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 5000); return () => clearInterval(timer); }, [category]);
   useEffect(() => {
     if (!selected) return;
     const timer = setInterval(() => { if (document.visibilityState === 'visible') loadMessages(selected.id); }, 5000);
@@ -79,10 +85,10 @@ export default function InAppServiceGroupsPage() {
       setPatients(res.data?.patients || []); setError(''); }
     catch (e) { setError(e.message || '客户查询失败'); }
   };
-  const editMembers = async patientId => {
+  const editMembers = async (patientId, type = category || 'advisor') => {
     setBusy(true); setError('');
     try {
-      const res = await api.configuration(patientId);
+      const res = await api.configuration(patientId, type);
       setConfiguration(res.data);
       setMemberIds((res.data.memberIds || []).map(String));
     } catch (e) { setError(e.message || '群成员读取失败'); }
@@ -93,7 +99,7 @@ export default function InAppServiceGroupsPage() {
     setBusy(true); setError('');
     try {
       const res = await api.configure({ patientId: configuration.patientId,
-        memberIds, membershipVersion: configuration.membershipVersion });
+        memberIds, serviceType: configuration.serviceType, membershipVersion: configuration.membershipVersion });
       setConfiguration(null); setPatients([]); setSearch('');
       await refresh(); open(res.data);
     } catch (e) { setError(e.message || '保存群成员失败，请刷新后重试'); }
@@ -112,6 +118,9 @@ export default function InAppServiceGroupsPage() {
 
   return <main className="service-assistant in-app-service-groups">
     <h1>系统服务群</h1>
+    <nav className="sg-filters" aria-label="服务类型">
+      {[['','全部'],...categories.map(([key,label]) => [key,label]),['legacy','原服务群']].map(([key,label]) => <button key={key} aria-pressed={category === key} onClick={() => { setCategory(key); setSelected(null); currentId.current = ''; setConfiguration(null); }}>{label}</button>)}
+    </nav>
     <p>客户的健管专员负责建群和选择入群人员；健康顾问、营养师及就医专员担任团队负责人时，可监管本团队成员的服务对话。未入群人员不能回复。</p>
     {canConfigure && <>
     <div className="sg-search-row">
@@ -125,7 +134,12 @@ export default function InAppServiceGroupsPage() {
     </div>
     </>}
     {configuration && <section aria-label="配置服务群成员" className="sg-configuration">
-      <h2>{configuration.patientName} · 选择入群成员</h2>
+      <h2>{configuration.name} · 配置成员</h2>
+      <select aria-label="建群类型" value={configuration.serviceType} onChange={e => editMembers(configuration.patientId, e.target.value)}>
+        {categories.map(([key,label,suffix]) => <option key={key} value={key}>{label} · {suffix}</option>)}
+        {configuration.serviceType === 'legacy' && <option value="legacy">原服务群</option>}
+      </select>
+      {!configuration.ready && <p role="alert">请先为客户分配本类专业人员和健管专员，再创建服务群。</p>}
       <p>只有当前分配给该客户的服务人员可入群。</p>
       <div className="sg-candidates">{configuration.candidates.map(person => <label key={person._id} className="sg-candidate">
         <input type="checkbox" checked={memberIds.includes(String(person._id))}
@@ -134,7 +148,7 @@ export default function InAppServiceGroupsPage() {
         {person.name} · {person.role}
       </label>)}</div>
       <div className="sg-configuration-actions">
-        <button type="button" className="sa-primary" disabled={busy || memberIds.length === 0} onClick={saveMembers}>保存群成员</button>
+        <button type="button" className="sa-primary" disabled={busy || !configuration.ready || memberIds.length === 0} onClick={saveMembers}>保存群成员</button>
         <button type="button" onClick={() => setConfiguration(null)}>取消</button>
       </div>
     </section>}
@@ -154,7 +168,7 @@ export default function InAppServiceGroupsPage() {
         {visibleGroups.map(group => <button key={group.id} type="button" onClick={() => open(group)}
           className={`sg-group-item${selected?.id === group.id ? ' is-selected' : ''}`}
           aria-pressed={selected?.id === group.id}>
-          <strong>{group.patientName}的服务群</strong>{group.waitingForStaff && <span style={{ background: '#DC3545', color: 'white', borderRadius: 12, padding: '3px 9px', fontSize: 12, display: 'inline-block' }}>● 待人工回复</span>}
+          <strong>{group.name || `${group.patientName}的服务群`}</strong>{group.waitingForStaff && <span style={{ background: '#DC3545', color: 'white', borderRadius: 12, padding: '3px 9px', fontSize: 12, display: 'inline-block' }}>● 待人工回复</span>}
           {group.supervised && <small>团队监管 · 只读</small>}
           <small>{group.staff.map(person => person.name).join('、')}</small>
           <small>{stamp(group.lastMessageAt)}{group.waitingForStaff ? ' · 待团队回复' : ''}</small>
@@ -164,9 +178,9 @@ export default function InAppServiceGroupsPage() {
       <section aria-label="群消息" className="sg-chat-panel">
         {selected ? <>
           <div className="sg-chat-header">
-            <div><h2>{selected.patientName}的服务群</h2>
+            <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
               <small>团队成员：{selected.staff.map(person => person.name).join('、')}</small></div>
-            {selected.canConfigure && <button type="button" onClick={() => editMembers(selected.patientId)}>调整群成员</button>}
+            {selected.canConfigure && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
           </div>
           {selected.assistant && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: '#eef9f9' }}>
             <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} style={{ width: 40, height: 40, borderRadius: '50%' }} />

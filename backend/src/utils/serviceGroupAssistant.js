@@ -1,3 +1,4 @@
+const { isEnded } = require('./serviceGroupTypes');
 const Group = require('../models/InAppServiceGroup');
 const Message = require('../models/InAppServiceGroupMessage');
 const User = require('../models/User');
@@ -7,7 +8,7 @@ const identity = Object.freeze({ name: '小嘉', role: 'AI健康管家', avatar:
   introduction: '您好，我是小嘉，健管专员的AI助手，您的AI健康管家。' });
 
 function canReply(group, trigger, now = new Date()) {
-  return !!group && group.status === 'active' && (group.memberIds || []).length > 0 &&
+  return !!group && !isEnded(group, now) && group.status === 'active' && (group.memberIds || []).length > 0 &&
     !(group.humanActiveUntil && +new Date(group.humanActiveUntil) > +now) &&
     +new Date(group.lastCustomerMessageAt) === +new Date(trigger.createdAt) &&
     !(group.lastStaffMessageAt && +new Date(group.lastStaffMessageAt) >= +new Date(trigger.createdAt));
