@@ -16,13 +16,17 @@ function newAccess() {
 }
 const safe = row => ({ education: row.response?.education || '', languages: row.response?.languages || [],
   certificates: (row.certificates || []).map(c => ({ _id: c._id, category: c.category, name: files.normalizeName(c.name), size: c.size, reviewStatus: c.reviewStatus, reviewNote: c.reviewNote })),
+  status: row.status,
+  signedAgreements: row.status === 'approved' ? (row.signedAgreements || []).map(file => ({
+    _id: file._id, name: files.normalizeName(file.name), signedDate: file.signedDate, archivedAt: file.archivedAt,
+  })) : [],
   expiresAt: row.supplementExpiresAt });
 const scope = (req, work) => req.admin ? work() : runWithoutTenantScope(work);
 async function access(req, res, next) {
   if (req.admin && !['superadmin', 'manager'].includes(req.admin.role)) return res.status(403).json({ message: '无专家资料操作权限' });
   if (req.admin && !mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: '记录编号无效' });
   const query = req.admin ? { _id: req.params.id } : { supplementTokenHash: hash(req.params.token), supplementExpiresAt: { $gt: new Date() } };
-  const row = await scope(req, () => Recruitment.findOne({ ...query, status: { $in: allowedStatuses } }).select(req.admin ? '+certificates.key +signedAgreements.key' : '+certificates.key'));
+  const row = await scope(req, () => Recruitment.findOne({ ...query, status: { $in: allowedStatuses } }).select('+certificates.key +signedAgreements.key'));
   if (!row) return res.status(404).json({ message: '补充链接已失效或记录不可访问，请联系专科合伙人重新获取' });
   req.recruitment = row;
   res.set('Cache-Control', 'no-store');
@@ -92,7 +96,6 @@ router.patch('/admin/:id/certificates/:fileId', adminAuth, access, async (req, r
 });
 
 // Signed paper contracts are archived by an authorized manager after admission.
-// They are deliberately outside the candidate's supplement-token routes.
 router.post('/admin/:id/signed-agreements', adminAuth, access, uploadSigned, async (req, res) => {
   const row = req.recruitment;
   if (row.status !== 'approved') return res.status(409).json({ message: '仅已审核入库的专家可归档合作协议' });
@@ -120,6 +123,16 @@ router.post('/admin/:id/signed-agreements', adminAuth, access, uploadSigned, asy
 });
 router.get('/admin/:id/signed-agreements/:fileId', adminAuth, access, async (req, res) => {
   if (req.recruitment.status !== 'approved') return res.status(409).json({ message: '仅已审核入库的专家可查看合作协议' });
+  if (!mongoose.isValidObjectId(req.params.fileId)) return res.status(400).json({ message: '协议编号无效' });
+  const file = req.recruitment.signedAgreements?.id(req.params.fileId);
+  if (!file) return res.status(404).json({ message: '协议不存在' });
+  const result = await files.stream(file.key);
+  res.set({ 'Content-Type': file.mimeType, 'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(files.normalizeName(file.name))}` });
+  result.stream.on('error', () => res.destroy()).pipe(res);
+});
+router.get('/supplement/:token/signed-agreements/:fileId', access, async (req, res) => {
+  if (req.recruitment.status !== 'approved') return res.status(404).json({ message: '合作协议尚未归档' });
   if (!mongoose.isValidObjectId(req.params.fileId)) return res.status(400).json({ message: '协议编号无效' });
   const file = req.recruitment.signedAgreements?.id(req.params.fileId);
   if (!file) return res.status(404).json({ message: '协议不存在' });

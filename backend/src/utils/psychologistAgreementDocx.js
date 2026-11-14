@@ -45,6 +45,7 @@ function createPsychologistAgreementDocx({ name, singleFee }) {
   const body = [
     paragraph('心理咨询师合作协议', 'Title'),
     paragraph('甲方：杭州嘉医汇健康管理有限公司'),
+    paragraph('统一社会信用代码：91330109MA2CDMRE9E    法定代表人：金娟'),
     paragraph(`乙方：${name}    身份证号：________________________`),
     paragraph('双方就甲方客户的非医疗心理咨询服务达成如下协议。乙方应在签署前核对个人信息、单次报酬及全部条款。'),
     paragraph('一  合作期限与性质', 'Heading1'),
