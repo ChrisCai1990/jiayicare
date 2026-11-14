@@ -59,9 +59,27 @@ test('paper agreement archive refuses unapproved, unconfirmed, future dated and 
   assert.equal(removed, 1);
 });
 
-test('agreement routes require an authorized administrator and never expose supplement-token access', async () => {
+test('archive requires an administrator; personal link lists only approved agreement metadata', async () => {
   assert.equal(route.stack.length, 4);
-  assert.equal(router.stack.some(layer => layer.route?.path?.includes('/supplement/:token/signed-agreements')), false);
+  const list = router.stack.find(layer => layer.route?.path === '/supplement/:token').route.stack.at(-1).handle;
+  const candidateDownload = router.stack.find(layer => layer.route?.path === '/supplement/:token/signed-agreements/:fileId').route;
+  assert.equal(candidateDownload.stack.length, 2);
+  assert.equal(candidateDownload.methods.get, true);
+  assert.equal(candidateDownload.methods.post, undefined);
+  const fileId = new mongoose.Types.ObjectId();
+  const approved = request().recruitment;
+  approved.signedAgreements = [{ _id: fileId, key: 'private/secret.pdf', name: '已签协议.pdf', signedDate: todayChina, sha256: 'secret-hash' }];
+  const listed = response();
+  list({ recruitment: approved }, listed);
+  assert.equal(listed.body.data.signedAgreements[0].name, '已签协议.pdf');
+  assert.equal(JSON.stringify(listed.body).includes('private/secret.pdf'), false);
+  assert.equal(JSON.stringify(listed.body).includes('secret-hash'), false);
+  const pending = response();
+  list({ recruitment: { ...approved, status: 'submitted' } }, pending);
+  assert.deepEqual(pending.body.data.signedAgreements, []);
+  const denied = response();
+  await candidateDownload.stack.at(-1).handle({ recruitment: { ...approved, status: 'submitted' }, params: { fileId: String(fileId) } }, denied);
+  assert.equal(denied.statusCode, 404);
   const forbidden = response();
   await access({ admin: { role: 'staff' }, params: { id: String(new mongoose.Types.ObjectId()) } }, forbidden, () => {});
   assert.equal(forbidden.statusCode, 403);
