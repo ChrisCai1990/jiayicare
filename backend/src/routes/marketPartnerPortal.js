@@ -109,8 +109,17 @@ router.get('/products', async (req, res) => {
     active: true, 'activation.enabled': true, 'activation.durationMonths': 12,
     'configuration.membershipTier': 'consumer365', 'configuration.includes365': true })
     .select('name').lean();
-  res.json({ success: true, data: [...products, ...packages].map(item => ({ id: String(item._id), name: item.name,
-    miniProgramPath: `/pages/services/mall/index?productId=${item._id}&partnerCode=${req.marketPartner.referralCode}` })) });
+  const rulesByProduct = new Map(promotable.map(rule => [String(rule.productId), rule]));
+  res.json({ success: true, data: [...products, ...packages].map(item => {
+    const rule = rulesByProduct.get(String(item._id));
+    return { id: String(item._id), name: item.name,
+      miniProgramPath: `/pages/services/mall/index?productId=${item._id}&partnerCode=${req.marketPartner.referralCode}`,
+      commission: { kind: rule.kind, version: rule.version, firstBasisPoints: rule.firstBasisPoints,
+        repeatBasisPoints: rule.repeatBasisPoints, tierBasisPoints: rule.tierBasisPoints || [],
+        renewalBasisPoints: (rule.renewalBasisPoints || []).map(row => ({ year: row.year, basisPoints: row.basisPoints })),
+        directReferralRequired: !!rule.directReferralRequired,
+        effectiveFrom: rule.effectiveFrom, effectiveUntil: rule.effectiveUntil } };
+  }) });
 });
 
 router.get('/commissions', async (req, res) => {
