@@ -95,18 +95,21 @@ export default function SaasPlanPage() {
           <button className="btn btn-primary" disabled={busy} onClick={() => action(() => adminAPI.setTenantSeats(tenantId, extras))}>保存账号额度</button>
         </div><p style={{ color: '#667' }}>增加额度只允许开户；额外账号费按实际启用且超出包含名额的账号估算。</p>
       </>}
-      {['active', 'setup'].includes(tenant.status) && <>
-        <h3 style={{ marginTop: 24 }}>新增机构超管账号</h3><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end' }}>
-          <label>用户名<input className="form-input" value={newAdmin.username} onChange={e => setNewAdmin({ ...newAdmin, username: e.target.value })} /></label>
-          <label>姓名<input className="form-input" value={newAdmin.name} onChange={e => setNewAdmin({ ...newAdmin, name: e.target.value })} /></label>
-          <label>初始密码<input className="form-input" type="password" value={newAdmin.password} onChange={e => setNewAdmin({ ...newAdmin, password: e.target.value })} /></label>
-          <button className="btn" disabled={busy || tenant.usage.admins >= tenant.adminLimit} onClick={() => action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin))}>创建账号</button>
-        </div><p style={{ color: '#667' }}>机构超管可在本机构额度内创建另一个超管账号；超额由平台先扩容。初始密码须 10–128 位，首次登录强制修改。财务专用角色尚未开放，请勿用超管账号代替财务账号。</p>
-      </>}
       {tenant.status === 'suspended' && <p className="sp-footnote">以上仅为报价草案，账号名额尚未开放。</p>}
       {tenant.status === 'setup' && <p className="sp-footnote">机构配置账号可使用；客户业务仍须完成跨机构隔离验收。</p>}
       </>}
       </section>
+      {['active', 'setup'].includes(tenant.status) && <section className="card sp-account-management" aria-labelledby="institution-admin-title">
+        <div className="sp-section-title"><div><span className="sp-eyebrow">账号管理</span><h2 id="institution-admin-title">新增机构超管账号</h2></div></div>
+        <p className="sp-footnote">当前启用 {tenant.usage.admins} 个机构超管账号{tenant.adminLimit == null ? ' · 本机构独立协议' : ` · 可用额度 ${tenant.adminLimit} 个`}。新账号登录管理端，首次登录须修改密码。</p>
+        <div className="sp-admin-form">
+          <label>用户名<input className="form-input" value={newAdmin.username} onChange={e => setNewAdmin({ ...newAdmin, username: e.target.value })} autoComplete="off" /></label>
+          <label>姓名<input className="form-input" value={newAdmin.name} onChange={e => setNewAdmin({ ...newAdmin, name: e.target.value })} autoComplete="off" /></label>
+          <label>初始密码<input className="form-input" type="password" value={newAdmin.password} onChange={e => setNewAdmin({ ...newAdmin, password: e.target.value })} autoComplete="new-password" /></label>
+          <button className="btn btn-primary" disabled={busy || !newAdmin.username.trim() || !newAdmin.name.trim() || newAdmin.password.length < 10 || (tenant.adminLimit != null && tenant.usage.admins >= tenant.adminLimit)} onClick={() => action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin))}>创建超管账号</button>
+        </div>
+        <p className="sp-footnote">此处创建的是机构超管，不是财务账号。财务专用角色尚未开放，请勿用超管账号代替。</p>
+      </section>}
     </>}
     {plan && <details className="card sp-template"><summary>新机构标准模板 <span>仅用于以后新建的机构</span></summary>
       <p>平台订阅 {yuan(plan.monthlyPlatformYuan)}/月，首次上线 {yuan(plan.setupYuan)}；最多 {plan.activeClientLimit} 名在管客户，含 {plan.includedStaffSeats} 个服务账号和 {plan.includedAdminSeats} 个管理员账号。超额账号 {yuan(plan.extraSeatMonthlyYuan)}/人/月。可选 AI {yuan(plan.aiMonthlyYuan)}/月，含第三方成本额度 {yuan(plan.aiIncludedSupplierCostYuan)}/月。</p>
