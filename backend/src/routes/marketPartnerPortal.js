@@ -87,6 +87,7 @@ router.use(async (req, res, next) => {
 
 router.get('/me', (req, res) => res.json({ success: true, data: { name: req.marketPartner.name,
   productLine: req.marketPartner.productLine, referralCode: req.marketPartner.referralCode } }));
+router.use('/cooperation', require('./cooperationWorkbench').marketRouter);
 
 router.get('/my-overview', async (req, res) => {
   try {

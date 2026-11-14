@@ -38,6 +38,7 @@ import TeamPage from './pages/TeamPage'
 import AvailabilityPage from './pages/AvailabilityPage'
 import ExpertConsultationsPage from './pages/ExpertConsultationsPage'
 import ProfilePage from './pages/ProfilePage'
+import CooperationWorkbenchPage from './pages/CooperationWorkbenchPage'
 import NotificationsPage from './pages/NotificationsPage'
 import FeedbackPage from './pages/FeedbackPage'
 import MarketingPage from './pages/MarketingPage'
@@ -201,7 +202,7 @@ function RequirePasswordChanged({ children }) {
 function RequireModule({ children }) {
   const { staff } = useStaff()
   const loc = useLocation()
-  if (staff?.role === 'psychologist' && !['/expert-consultations', '/psychology', '/ai-workspace'].includes(loc.pathname)) return <Navigate to="/expert-consultations?view=psychology" replace />
+  if (staff?.role === 'psychologist' && !['/expert-consultations', '/psychology', '/ai-workspace', '/cooperation'].includes(loc.pathname)) return <Navigate to="/expert-consultations?view=psychology" replace />
   const matched = Object.keys(ROUTE_MODULE).find(
     p => loc.pathname === p || loc.pathname.startsWith(p + '/')
   )
@@ -253,6 +254,7 @@ export default function App() {
               <Route path="availability" element={<AvailabilityPage />} />
               <Route path="expert-consultations" element={<ExpertConsultationsPage />} />
               <Route path="profile" element={<ProfilePage />} />
+              <Route path="cooperation" element={<CooperationWorkbenchPage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="feedback" element={<FeedbackPage />} />
               <Route path="marketing" element={<MarketingPage />} />
