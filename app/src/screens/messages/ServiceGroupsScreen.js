@@ -82,7 +82,7 @@ export default function ServiceGroupsScreen({ navigation }) {
         {messages.map(message => <View key={message.id} style={[styles.bubble,
           message.senderType === 'customer' ? styles.mine : styles.staff]}>
           {message.senderAvatar && <Image source={{ uri: mediaUrl(message.senderAvatar) }} style={{ width: 36, height: 36, borderRadius: 18, marginBottom: 6 }} />}
-          <Text style={styles.sender}>{message.senderName} · {({ai:'嘉医汇AI健康管家',familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',customer:'客户'})[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</Text>
+          <Text style={styles.sender}>{message.senderName}{message.senderType !== 'customer' && ` · ${({ai:'嘉医汇AI健康管家',familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
           <Text style={styles.body}>{message.content}</Text>
         </View>)}
       </ScrollView>
