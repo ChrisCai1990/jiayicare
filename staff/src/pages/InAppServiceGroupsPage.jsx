@@ -12,7 +12,7 @@ export default function InAppServiceGroupsPage() {
   const [search, setSearch] = useState('');
   const [patients, setPatients] = useState([]);
   const [draft, setDraft] = useState('');
-  const [scope, setScope] = useState('all');
+  const [scope, setScope] = useState(() => new URLSearchParams(window.location.search).get('scope') === 'pending' ? 'pending' : 'all');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -21,8 +21,11 @@ export default function InAppServiceGroupsPage() {
   const [memberIds, setMemberIds] = useState([]);
   const currentId = useRef('');
   const loadedPages = useRef(1);
+  const refreshing = useRef(false);
 
   const refresh = async () => {
+    if (refreshing.current) return;
+    refreshing.current = true;
     try {
       const pages = await Promise.all(Array.from({ length: loadedPages.current }, (_, i) => api.list(i + 1)));
       setGroups(pages.flatMap(res => res.data || []));
@@ -30,6 +33,7 @@ export default function InAppServiceGroupsPage() {
       setCanConfigure(!!pages[0]?.canConfigure);
     }
     catch (e) { setError(e.message || '服务群读取失败'); }
+    finally { refreshing.current = false; }
   };
   const loadMore = async () => {
     if (busy || !hasMore) return;
@@ -49,10 +53,10 @@ export default function InAppServiceGroupsPage() {
       if (currentId.current === id) setMessages(res.data || []);
     } catch (e) { setError(e.message || '群消息读取失败'); }
   };
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); const timer = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 5000); return () => clearInterval(timer); }, []);
   useEffect(() => {
     if (!selected) return;
-    const timer = setInterval(() => { loadMessages(selected.id); refresh(); }, 10000);
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') loadMessages(selected.id); }, 5000);
     return () => clearInterval(timer);
   }, [selected?.id]);
   useEffect(() => {
@@ -93,7 +97,7 @@ export default function InAppServiceGroupsPage() {
   const send = async () => {
     if (!selected || !draft.trim() || busy) return;
     setBusy(true); setError('');
-    try { await api.send(selected.id, draft.trim()); setDraft(''); await loadMessages(selected.id); await refresh(); }
+    try { await api.send(selected.id, draft.trim()); setDraft(''); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
     catch (e) { setError(e.message || '发送失败'); }
     finally { setBusy(false); }
   };
@@ -145,7 +149,7 @@ export default function InAppServiceGroupsPage() {
         {visibleGroups.map(group => <button key={group.id} type="button" onClick={() => open(group)}
           className={`sg-group-item${selected?.id === group.id ? ' is-selected' : ''}`}
           aria-pressed={selected?.id === group.id}>
-          <strong>{group.patientName}的服务群</strong>
+          <strong>{group.patientName}的服务群</strong>{group.waitingForStaff && <span style={{ background: '#DC3545', color: 'white', borderRadius: 12, padding: '3px 9px', fontSize: 12, display: 'inline-block' }}>● 待人工回复</span>}
           {group.supervised && <small>团队监管 · 只读</small>}
           <small>{group.staff.map(person => person.name).join('、')}</small>
           <small>{stamp(group.lastMessageAt)}{group.waitingForStaff ? ' · 待团队回复' : ''}</small>

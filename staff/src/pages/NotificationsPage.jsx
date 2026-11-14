@@ -1,3 +1,4 @@
+import { useGroupReminders } from '../components/NotificationSummary'
 import ConsultationReadStatus from '../components/ConsultationReadStatus'
 import ReferralScreeningList, { ScreeningResult } from '../components/ReferralScreeningList'
 import DateField from '../../../shared/DateField.jsx'
@@ -59,6 +60,7 @@ function ReferralGroupedList({ referrals, priorityStatuses = [], priorityPredica
 }
 
 export default function NotificationsPage() {
+  const groupReminders = useGroupReminders()
   const nav = useNavigate()
   const location = useLocation()
   const toast = useToast()
@@ -178,6 +180,8 @@ export default function NotificationsPage() {
         )}
       </div>
 
+      {groupReminders.total > 0 && <button className="btn btn-secondary" style={{ color: '#B42318', borderColor: '#DC3545', marginBottom: 16 }} onClick={() => nav('/in-app-service-groups?scope=pending')}>● 服务群待人工回复 {groupReminders.total} 个（我的服务 {groupReminders.pending} · 团队监管 {groupReminders.supervised}） · 查看</button>}
+      {groupReminders.error && <p role="alert">服务群提醒更新失败，保留上次结果</p>}
       {/* 汇总徽章 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
         {[

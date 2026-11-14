@@ -132,6 +132,25 @@ customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
 }));
 
 staffRouter.use(staffAuth, wrap(async (req, res, next) => { await permitStaff(req); next(); }));
+staffRouter.get('/reminders', wrap(async (req, res) => {
+  const mentoredIds = await mentorStaffIds(req.staff);
+  const visibleIds = [req.staff._id, ...mentoredIds];
+  const query = { tenantId: req.staff.tenantId, isDeleted: { $ne: true } };
+  if (req.staff.role !== 'superadmin') query.$or = assignmentFields.map(field => ({ [field]: { $in: visibleIds } }));
+  const patients = await User.find(query).select('tenantId isDeleted ' + assignmentFields.join(' ')).lean();
+  const patientMap = new Map(patients.map(p => [String(p._id), p]));
+  const groups = await Group.find({ tenantId: req.staff.tenantId, status: 'active',
+    patientId: { $in: patients.map(p => p._id) }, 'memberIds.0': { $exists: true },
+    lastCustomerMessageAt: { $ne: null } }).lean();
+  let pending = 0, supervised = 0;
+  for (const group of groups) {
+    if (!needsStaffReply(group)) continue;
+    const patient = patientMap.get(String(group.patientId));
+    if (canStaffAccess(group, patient, req.staff)) pending++;
+    else if (canMentorObserve(group, patient, req.staff, mentoredIds) || leaderCanObserve(patient, req.staff, group)) supervised++;
+  }
+  res.json({ success: true, data: { pending, supervised, total: pending + supervised } });
+}));
 staffRouter.get('/', wrap(async (req, res) => {
   const page = Math.max(1, Math.min(10000, Number.parseInt(req.query.page, 10) || 1));
   const pageSize = 100;

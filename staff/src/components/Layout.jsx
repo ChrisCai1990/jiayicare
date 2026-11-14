@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
 import { staffAPI } from '../api'
-import { NotificationSummaryProvider, useNotificationSummary } from './NotificationSummary'
+import { NotificationSummaryProvider, useNotificationSummary, useGroupReminders } from './NotificationSummary'
 import AppIcon from './AppIcon'
 import { getSetupNav } from '../setupNav'
 import { hasModulePermission } from '../modulePermission'
@@ -69,6 +69,7 @@ function LayoutContent() {
   }, [staff?._id])
   const { count: notifBadge } = useNotificationSummary()
   const workbench = useWorkbenchReminder()
+  const groupReminders = useGroupReminders()
   const visibleNav = setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
     if (item.trialOnly && !aiWorkspaceEnabled) return false
     if (staff?.role === 'psychologist') return item.path === '/expert-consultations' || item.path === '/ai-workspace'
@@ -118,6 +119,7 @@ function LayoutContent() {
         <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
         <span className="sidebar-item-label">{item.label}</span>
         {item.path === '/home' && (workbench.pending || workbench.error) && <span className={`sidebar-workbench-dot${workbench.pending ? '' : ' is-unknown'}`} role="status" aria-label={workbench.pending ? '有待处理任务' : '待办更新失败，请进入工作台重试'} title={workbench.error ? '待办更新失败，保留上次提醒；请进入工作台重试' : '有待处理任务；完成或转交后更新'} />}
+        {item.path === '/in-app-service-groups' && groupReminders.total > 0 && <span className="sidebar-notification-badge" title="待人工回复的服务群">{groupReminders.total}</span>}
         {item.path === '/notifications'  && notifBadge > 0 && (
           <span className="sidebar-notification-badge">{notifBadge}</span>
         )}
@@ -167,7 +169,7 @@ function LayoutContent() {
                 aria-controls={`sidebar-group-${group.id}`}
                 onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}
               >
-                <span>{group.label}</span>
+                <span>{group.label}</span>{group.id === 'care' && groupReminders.total > 0 && <span className="sidebar-notification-badge">{groupReminders.total}</span>}
                 <span className="sidebar-group-count">{group.items.length}</span>
                 <span className="sidebar-group-chevron" aria-hidden="true">⌄</span>
               </button>
