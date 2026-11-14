@@ -1,3 +1,4 @@
+import AvatarUpload from '../../../components/AvatarUpload';
 import React, { useState } from 'react';
 import { View, Text, Input, Button, Textarea } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -276,6 +277,7 @@ export default function EditProfilePage() {
       </View>
 
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
+      <AvatarUpload />
       <SectionLabel>基本信息</SectionLabel>
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px` }}>
         <Field label="姓名" value={name} onInput={setName} placeholder="请输入姓名" />

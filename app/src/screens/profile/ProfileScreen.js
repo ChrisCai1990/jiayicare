@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity,
+  View, Text, ScrollView, TouchableOpacity, Image,
   StyleSheet, SafeAreaView, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { ordersAPI, userAPI } from '../../services/api';
+import { mediaUrl, ordersAPI, userAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
 import { useLanguage } from '../../i18n';
 
@@ -369,7 +369,7 @@ export default function ProfileScreen({ navigation }) {
             <Ionicons name="pencil-outline" size={16} color={colors.white} />
           </TouchableOpacity>
           <View style={styles.headerContent}>
-            <AvatarOnDark name={user?.name || '用'} size={76} />
+            {user?.avatar ? <Image source={{ uri: mediaUrl(user.avatar) }} style={{ width: 76, height: 76, borderRadius: 38 }} /> : <AvatarOnDark name={user?.name || '用'} size={76} />}
             <Text style={styles.userName}>{user?.name || '用户'}</Text>
             <Text style={styles.userSub}>
               {[user?.age && `${user.age}岁`, user?.gender !== '未知' && user?.gender, user?.phone].filter(Boolean).join(' · ')}

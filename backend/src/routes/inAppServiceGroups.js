@@ -10,6 +10,7 @@ const User = require('../models/User');
 const Admin = require('../models/Admin');
 const Team = require('../models/Team');
 const StaffRole = require('../models/StaffRole');
+const assistant = require('../utils/serviceGroupAssistant');
 const { assignmentFields, assignedIds, canUseGroupModule, isAssignedHealthManager, isAssignedLeader, canCustomerAccess, canStaffAccess,
   canMentorObserve, needsStaffReply, same } = require('../utils/inAppServiceGroupPolicy');
 
@@ -25,7 +26,7 @@ const contentOf = value => typeof value === 'string' ? value.trim() : '';
 
 async function currentStaff(patient) {
   return Admin.find({ _id: { $in: assignedIds(patient) }, tenantId: patient.tenantId,
-    staffStatus: 'active' }).select('_id name role').lean();
+    staffStatus: 'active' }).select('_id name role avatar').lean();
 }
 async function groupStaff(group, patient) {
   return (await currentStaff(patient)).filter(person =>
@@ -55,10 +56,10 @@ async function groupAndPatient(groupId, tenantId) {
 }
 function summary(group, patient, staffMembers, supervised = false, canConfigure = false) {
   return { id: group._id, patientId: patient._id, patientName: patient.name,
-    staff: staffMembers.map(person => ({ id: person._id, name: person.name, role: person.role })),
+    staff: staffMembers.map(person => ({ id: person._id, name: person.name, role: person.role, avatar: person.avatar || '' })),
     lastMessageAt: group.lastMessageAt || null,
     waitingForStaff: needsStaffReply(group),
-    supervised, canConfigure };
+    supervised, canConfigure, assistant: assistant.identity };
 }
 function leaderCanConfigure(patient, staff) {
   return staff.role === 'superadmin' || isAssignedHealthManager(patient, staff);
@@ -70,7 +71,15 @@ function leaderCanObserve(patient, staff, group) {
 async function recentMessages(group) {
   const rows = await Message.find({ groupId: group._id, tenantId: group.tenantId })
     .sort({ createdAt: -1, _id: -1 }).limit(100).lean();
+  const staffIds = rows.filter(row => row.senderType === 'staff').map(row => row.senderId);
+  const [people, customer] = await Promise.all([
+    Admin.find({ _id: { $in: staffIds }, tenantId: group.tenantId }).select('_id avatar role').lean(),
+    User.findOne({ _id: group.patientId, tenantId: group.tenantId }).select('avatar').lean(),
+  ]);
+  const personMap = new Map(people.map(person => [String(person._id), person]));
   return rows.reverse().map(row => ({ id: row._id, senderType: row.senderType,
+    senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
+    senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
     senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
 }
 async function send(group, senderType, sender, content) {
@@ -117,7 +126,9 @@ customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.user.tenantId);
   if (!canCustomerAccess(group, req.user)) fail('无权发送服务群消息');
   if (!(await groupStaff(group, patient)).length) fail('当前没有可接收消息的入群人员', 409);
-  res.status(201).json({ success: true, data: await send(group, 'customer', req.user, req.body?.content) });
+  const message = await send(group, 'customer', req.user, req.body?.content);
+  res.status(201).json({ success: true, data: message });
+  void assistant.reply(group._id, message);
 }));
 
 staffRouter.use(staffAuth, wrap(async (req, res, next) => { await permitStaff(req); next(); }));
@@ -215,10 +226,17 @@ staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
     patientId: patient._id, viewerId: req.staff._id, messageCount: data.length });
   res.json({ success: true, data, supervised });
 }));
+staffRouter.post('/:groupId/presence', wrap(async (req, res) => {
+  const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
+  if (!canStaffAccess(group, patient, req.staff)) fail('仅当前入群服务人员可接待');
+  await Group.updateOne({ _id: group._id }, { $max: { humanActiveUntil: new Date(Date.now() + 90000) } });
+  res.json({ success: true });
+}));
 staffRouter.post('/:groupId/messages', wrap(async (req, res) => {
   await permitStaff(req);
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
   if (!canStaffAccess(group, patient, req.staff)) fail('仅当前服务人员可以回复');
+  await Group.updateOne({ _id: group._id }, { $max: { humanActiveUntil: new Date(Date.now() + 90000) } });
   res.status(201).json({ success: true, data: await send(group, 'staff', req.staff, req.body?.content) });
 }));
 

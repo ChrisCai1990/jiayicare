@@ -98,6 +98,7 @@ export const authAPI = {
 
 // ── User ─────────────────────────────────────────────────────────
 export const userAPI = {
+  uploadAvatar: (content) => request('/user/me/avatar', { method: 'POST', body: JSON.stringify({ content }) }),
   getMembershipBenefits: () => request('/user/membership-benefits'),
   getMe:           ()             => request('/user/me'),
   getHealthFund:   ()             => request('/user/health-fund'),

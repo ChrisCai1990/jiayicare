@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { inAppServiceGroupAPI as api, staffAPI } from '../api';
+import { API_ORIGIN, inAppServiceGroupAPI as api, staffAPI } from '../api';
 import './ServiceAssistantPage.css';
 import './InAppServiceGroupsPage.css';
 
@@ -55,6 +55,14 @@ export default function InAppServiceGroupsPage() {
     const timer = setInterval(() => { loadMessages(selected.id); refresh(); }, 10000);
     return () => clearInterval(timer);
   }, [selected?.id]);
+  useEffect(() => {
+    if (!selected || selected.supervised) return;
+    const pulse = () => { if (document.visibilityState === 'visible') api.presence(selected.id).catch(() => {}); };
+    pulse();
+    const timer = setInterval(pulse, 30000);
+    document.addEventListener('visibilitychange', pulse);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', pulse); };
+  }, [selected?.id, selected?.supervised]);
   const open = group => { currentId.current = group.id; setSelected(group); setMessages([]); setDraft(''); setError(''); loadMessages(group.id); };
   const findPatient = async () => {
     if (!search.trim()) return setPatients([]);
@@ -151,11 +159,18 @@ export default function InAppServiceGroupsPage() {
               <small>团队成员：{selected.staff.map(person => person.name).join('、')}</small></div>
             {selected.canConfigure && <button type="button" onClick={() => editMembers(selected.patientId)}>调整群成员</button>}
           </div>
+          {selected.assistant && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: '#eef9f9' }}>
+            <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} style={{ width: 40, height: 40, borderRadius: '50%' }} />
+            <small>小嘉｜嘉医汇AI健康管家 · {selected.supervised ? '仅监管查看不影响AI接待' : '您正在接待此群，小嘉暂停回复；离开后恢复自动接待'}</small>
+          </div>}
           <div className="sg-messages">
             {messages.length === 0 && <p className="sg-empty-messages">暂无消息，可以开始沟通。</p>}
             {messages.map(message => <article key={message.id}
               className={`sg-message${message.senderType === 'staff' ? ' is-staff' : ''}`}>
-              <small>{message.senderName} · {stamp(message.createdAt)}</small>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                {message.senderAvatar && <img alt="" src={message.senderAvatar.startsWith('/') ? API_ORIGIN + message.senderAvatar : message.senderAvatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />}
+                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
+              </div>
               <div>{message.content}</div>
             </article>)}
           </div>

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput,
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Image,
   KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme';
-import { inAppServiceGroupAPI as api } from '../../services/api';
+import { mediaUrl, inAppServiceGroupAPI as api } from '../../services/api';
 
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -81,7 +81,8 @@ export default function ServiceGroupsScreen({ navigation }) {
       <ScrollView ref={listRef} style={styles.list} onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}>
         {messages.map(message => <View key={message.id} style={[styles.bubble,
           message.senderType === 'customer' ? styles.mine : styles.staff]}>
-          <Text style={styles.sender}>{message.senderName} · {stamp(message.createdAt)}</Text>
+          {message.senderAvatar && <Image source={{ uri: mediaUrl(message.senderAvatar) }} style={{ width: 36, height: 36, borderRadius: 18, marginBottom: 6 }} />}
+          <Text style={styles.sender}>{message.senderName} · {({ai:'嘉医汇AI健康管家',familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',customer:'客户'})[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</Text>
           <Text style={styles.body}>{message.content}</Text>
         </View>)}
       </ScrollView>
