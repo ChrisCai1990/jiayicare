@@ -9,3 +9,8 @@
 - 5项版本专项测试与3种浏览器模拟新包/旧包/网页状态、剪贴板复制通过。iOS平台bundle导出通过，真实设备安装验收尚未完成。
 - 参考官方接口：https://docs.expo.dev/versions/latest/sdk/application/ 。
 - 实际发布与小程序状态待回填。
+
+## 苹果上传结果
+- 2026-11-14 用户接受新版开发者许可协议；浏览器刷新确认接受日期为11月14日，商务页免费App协议有效、更新提示消失。
+- 1.0.3（6）已成功上传 App Store Connect，提交回执7e16ad35-9fd3-49a0-b40b-c513b484e138，对应构建3f782026-bda7-447b-ba42-3a38fe87039c。苹果正在处理安装包，尚未提交App Review或正式发布。日志：工作区release-receipts/ios-version-submit-business-active-20261114.log。
+
