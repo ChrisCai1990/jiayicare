@@ -13,6 +13,14 @@ const schema = new mongoose.Schema({
   lastCustomerMessageAt: Date,
   lastStaffMessageAt: Date,
   humanActiveUntil: Date,
+  sourceKeys: { type: [String], default: [] },
+  closedAt: Date,
+  closedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+  closureNote: String,
+  lifecycleAudit: [{ _id: false, action: String, sourceKey: String, by: mongoose.Schema.Types.ObjectId, at: Date, note: String }],
+  operationToken: String,
+  operationUntil: Date,
+  pendingNotices: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { timestamps: true });
 schema.index({ tenantId: 1, patientId: 1, serviceType: 1 }, { unique: true, partialFilterExpression: { status: 'active' }, name: 'one_active_service_type' });
 

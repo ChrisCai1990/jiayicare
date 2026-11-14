@@ -175,3 +175,22 @@
 @media (max-width: 768px) {
   .service-assistant.in-app-service-groups { height: calc(100dvh - 96px); }
 }
+
+.sg-lifecycle {flex-shrink:0;max-height:24vh;overflow:auto;background:#eef9f9;border-radius:12px;padding:12px;margin-bottom:8px;}
+.sg-lifecycle summary {cursor:pointer;font-weight:700;}
+.sg-task {display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #d7e5e1;padding:8px;}
+.sg-mention-badge {color:#b42318;font-size:12px;background:#fff0ed;padding:3px 7px;border-radius:6px;}
+.sg-mention-links button {padding:3px 6px;font-size:12px;color:#187e87;background:#eaf8f8;}
+.sg-mention-picker {position:relative;align-self:flex-end;}
+.sg-mention-picker>div {position:absolute;bottom:100%;left:0;z-index:3;background:white;box-shadow:0 2px 12px #0002;width:180px;max-height:220px;overflow:auto;}
+.sg-mention-picker>div button {display:block;width:100%;}
+.sg-configuration {max-height:35vh;overflow:auto;flex-shrink:0;}
+
+.sg-confirmation {position:fixed;z-index:1000;inset:10vh max(16px,calc((100vw - 700px)/2)) auto;max-height:80vh;overflow:auto;background:white;border:1px solid #bdd5ce;border-radius:16px;padding:24px;box-shadow:0 0 0 100vmax #0006;}
+.sg-confirmation textarea{display:block;width:100%;min-height:80px;margin:12px 0;}
+.in-app-service-groups .sg-filters{margin:6px 0;gap:6px;}
+.in-app-service-groups>p{font-size:13px;}
+
+.sg-manual{flex-shrink:0;margin:4px 0;}
+.sg-manual summary{cursor:pointer;font-size:13px;color:#1e6b50;}
+.in-app-service-groups>h1{font-size:28px;margin:0 0 8px;}

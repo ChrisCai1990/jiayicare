@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Image,
-  KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
+  KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme';
 import { mediaUrl, inAppServiceGroupAPI as api } from '../../services/api';
@@ -13,6 +13,8 @@ export default function ServiceGroupsScreen({ navigation }) {
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [mentionIds,setMentionIds]=useState([]);
+  const [showMentions,setShowMentions]=useState(false);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -46,12 +48,12 @@ export default function ServiceGroupsScreen({ navigation }) {
     return () => clearInterval(timer);
   }, [selected?.id]);
   const open = group => {
-    selectedRef.current = group.id; setSelected(group); setMessages([]); setError(''); read(group.id);
+    selectedRef.current = group.id; setSelected(group); setMessages([]); setDraft(''); setMentionIds([]); setShowMentions(false); setError(''); read(group.id);
   };
   const send = async () => {
     if (!selected || !draft.trim() || busy) return;
     setBusy(true); setError('');
-    try { await api.send(selected.id, draft.trim()); setDraft(''); await read(selected.id); await refresh(); }
+    try { await api.send(selected.id, draft.trim(), mentionIds.filter(id=>selected.staff.some(p=>String(p.id)===id&&draft.includes('@'+p.name)))); setMentionIds([]); setDraft(''); await read(selected.id); await refresh(); }
     catch (e) { setError(e.message || '发送失败，请重试'); }
     finally { setBusy(false); }
   };
@@ -71,7 +73,7 @@ export default function ServiceGroupsScreen({ navigation }) {
       <Text style={styles.note}>您发送的消息由当前服务团队处理，团队负责人可在嘉医汇系统内查看服务沟通记录。</Text>
       {loading && <ActivityIndicator color={colors.primary} />}
       {groups.map(group => <TouchableOpacity key={group.id} style={styles.group} onPress={() => open(group)}>
-        <Text style={styles.groupTitle}>{group.name || '我的服务群'}{group.unreadCount > 0 ? ` · ${group.unreadCount}条未读` : ''}</Text>
+        <Text style={styles.groupTitle}>{group.name || '我的服务群'}{group.status==='closed'?' · 已归档':''}{group.mentionCount>0?' · 有人@我':''}{group.unreadCount > 0 ? ` · ${group.unreadCount}条未读` : ''}</Text>
         <Text style={styles.note}>团队成员：{group.staff.map(person => person.name).join('、')}</Text>
         <Text style={styles.note}>{stamp(group.lastMessageAt) || '暂无消息'}{group.waitingForStaff ? ' · 等待团队回复' : ''}</Text>
       </TouchableOpacity>)}
@@ -84,15 +86,20 @@ export default function ServiceGroupsScreen({ navigation }) {
           {message.senderAvatar && <Image source={{ uri: mediaUrl(message.senderAvatar) }} style={{ width: 36, height: 36, borderRadius: 18, marginBottom: 6 }} />}
           <Text style={styles.sender}>{message.senderName}{message.senderType !== 'customer' && ` · ${({ai:'嘉医汇AI健康管家',familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
           <Text style={styles.body}>{message.content}</Text>
+          {message.mentions?.map(p=><Text key={p.id} style={{color:'#187e87'}} onPress={()=>Alert.alert(p.name,p.role || '服务成员')}>@{p.name}</Text>)}
         </View>)}
       </ScrollView>
+      {selected.status==='closed'?<Text style={styles.note}>本次服务已结束，历史记录仅供查看。</Text>:<>
+      {showMentions&&<View>{selected.staff.map(p=><TouchableOpacity key={p.id} onPress={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(t=>t+'@'+p.name+' ');setShowMentions(false);}}><Text style={{padding:10}}>{p.name}</Text></TouchableOpacity>)}</View>}
       <View style={styles.composer}>
+        <TouchableOpacity onPress={()=>setShowMentions(!showMentions)}><Text style={{padding:10}}>@</Text></TouchableOpacity>
         <TextInput value={draft} onChangeText={setDraft} multiline maxLength={2000}
           placeholder="给服务团队发消息" style={styles.input} />
         <TouchableOpacity style={styles.send} onPress={send} disabled={busy || !draft.trim()}>
           <Text style={styles.startText}>发送</Text>
         </TouchableOpacity>
       </View>
+      </>}
     </>}
   </KeyboardAvoidingView>;
 }

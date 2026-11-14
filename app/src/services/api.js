@@ -186,8 +186,8 @@ export const messagesAPI = {
 export const inAppServiceGroupAPI = {
   list: () => request('/in-app-service-groups'),
   messages: id => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`),
-  send: (id, content) => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
-    method: 'POST', body: JSON.stringify({ content }),
+  send: (id, content, mentionIds = []) => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
+    method: 'POST', body: JSON.stringify({ content, mentionIds }),
   }),
 };
 

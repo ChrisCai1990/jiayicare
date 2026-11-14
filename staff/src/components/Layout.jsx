@@ -120,7 +120,7 @@ function LayoutContent() {
         <span className="sidebar-item-icon"><AppIcon name={item.icon} /></span>
         <span className="sidebar-item-label">{item.label}</span>
         {item.path === '/home' && (workbench.pending || workbench.error) && <span className={`sidebar-workbench-dot${workbench.pending ? '' : ' is-unknown'}`} role="status" aria-label={workbench.pending ? '有待处理任务' : '待办更新失败，请进入工作台重试'} title={workbench.error ? '待办更新失败，保留上次提醒；请进入工作台重试' : '有待处理任务；完成或转交后更新'} />}
-        {item.path === '/in-app-service-groups' && groupReminders.total > 0 && <span className="sidebar-notification-badge" title="待人工回复的服务群">{groupReminders.total}</span>}
+        {item.path === '/in-app-service-groups' && groupReminders.total > 0 && <span className="sidebar-notification-badge" title="服务群待办与@提醒">{groupReminders.total}</span>}
         {item.path === '/notifications'  && notifBadge > 0 && (
           <span className="sidebar-notification-badge">{notifBadge}</span>
         )}
