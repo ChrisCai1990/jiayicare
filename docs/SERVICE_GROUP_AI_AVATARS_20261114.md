@@ -49,3 +49,10 @@ Edit this exact 3D cartoon female Jiayihui avatar, preserve her face, hair, expr
 - 苹果H5已发布并校验48文件，index SHA256 c2bc751b8342df5cfcb07618912ba0de7d30b7714db4ce36cc3146607e8c9d44；华为预发布H5 537d96ec262677b4fb5e27ff9e721bf10c0a0a6a629aea8dd56ca95f5f348029。合成H5未读入口点击及首条未读提示验证通过，非真实账号验收。
 - 小程序源码已同步，本轮尚未构建上传，新逻辑不包含在此前14.2开发版中。版本展示原生接口仍待下一安装包。
 - 回执release-receipts/group-composer-unread-20261114.log；医护布局检查脚本staff-composer-smoke.cjs；App合成验证app-h5-push-release-20261112/group-unread-smoke.cjs。
+
+## 2026-11-14 App消息被输入栏遮盖的后续修复
+- 长对话合成复现确认：ScrollView实际scrollTop为0，首次scrollIntoView在loading占位尚未切换时设置，未定位到最新消息。改为loading结束且节点布局完成后nextTick定位并120ms补定位；H5直接计算滚动容器内偏移，小程序保留原生scrollTop/scrollIntoView。
+- 消息区使用独立flex容器与100%高度ScrollView，输入区禁止收缩，100dvh限制视口。首次进入定位未读/最新，发送后及底部接收新消息跟随；向上阅读时保留位置。
+- 25条长消息、390×844及393×650窗口验证最新消息底部在滚动区边界内；首条未读定位另跑同样布局验证。测试基于合成浏览器，需用户真机确认。
+- 苹果H5线上48文件校验成功，index SHA256 198fa798a58bb01b8892c31a6ec31f278c23e2a41dd497fb7f6f2d270ab67c05；华为预发布H5 7db90314a4dd96b0c672321b1177197a79d7e9c6c729712535f22e34fda42e74。本轮不改后端，生产Git仍25423ccd73a；主仓源码56e8b0ed，小程序源码同步但未新增上传。
+- 验证记录：app-h5-push-release-20261112/.tmp-occlusion-final.log与.tmp-unread-position.log；发布脚本scripts/deploy_group_scroll_20261114.py。
