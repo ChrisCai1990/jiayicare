@@ -15,7 +15,7 @@ const config = {
   sourceRoot: 'src',
   outputRoot: 'dist',
   plugins: [],
-  defineConstants: {},
+  defineConstants: { 'process.env.JIAYICARE_PAGE_BUILD': JSON.stringify(require('./pageBuild')(require('path').resolve(__dirname,'..'))) },
   copy: {
     patterns: [],
     options: {},
