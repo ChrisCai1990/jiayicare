@@ -45,6 +45,7 @@ import MarketingPage from './pages/MarketingPage'
 import VisitorLeadsPage from './pages/VisitorLeadsPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
+import SingleReportFollowUpPage from './pages/SingleReportFollowUpPage'
 import MonthlyServiceReviewPage from './pages/MonthlyServiceReviewPage'
 import PlanModulesPage from './pages/PlanModulesPage'
 import DailyCheckinPage from './pages/DailyCheckinPage'
@@ -239,6 +240,7 @@ export default function App() {
               <Route path="specialty-library" element={<SpecialtyLibraryPage />} />
               <Route path="plans/mgmt/:id" element={<AnnualMgmtPlanPage />} />
               <Route path="patients/:id/annual-health" element={<AnnualMgmtPlanPage patientMode />} />
+              <Route path="patients/:id/report-followup" element={<ErrorBoundary><SingleReportFollowUpPage /></ErrorBoundary>} />
               <Route path="patients/:id/monthly-reviews" element={<ErrorBoundary><MonthlyServiceReviewPage /></ErrorBoundary>} />
               <Route path="plans/:id/modules" element={<PlanModulesPage />} />
               <Route path="plans/:id" element={<PlanDetailPage />} />

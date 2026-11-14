@@ -34,7 +34,7 @@ export function ReportIssueCard({ issue, index, disabled, onChange }) {
   </article>
 }
 
-export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
+export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleOnly = false }) {
   const [rows, setRows] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [screening, setScreening] = useState({ rows: [], patientId: null, error: '', loading: true })
   const [dirtyRows, setDirtyRows] = useState({}), [reviewed, setReviewed] = useState({})
@@ -89,10 +89,10 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
   const reference = screening.patientId === patientId ? approvedScreeningReference(screening.rows, year) : null
   const reviewDraftId = new URLSearchParams(window.location.search).get('reviewDraftId')
   const reviewAnnualInputs = new URLSearchParams(window.location.search).get('reviewAnnualInputs') === '1'
-  const visibleRows = reviewDraftId ? rows.filter(row => String(row._id) === reviewDraftId)
-    : reviewAnnualInputs ? rows.filter(row => row.purpose === PURPOSE && ['advisor_review', 'no_action', 'excluded'].includes(row.status)) : rows
+  const visibleRows = reviewDraftId ? rows.filter(row => String(row._id) === reviewDraftId && (!singleOnly || row.purpose !== PURPOSE))
+    : reviewAnnualInputs ? rows.filter(row => row.purpose === PURPOSE && ['advisor_review', 'no_action', 'excluded'].includes(row.status)) : singleOnly ? rows.filter(row => row.purpose !== PURPOSE) : rows
   return <section id="report-followup-drafts" className="report-issues">
-    <header className="report-issues-heading"><div><h3>{reviewDraftId && visibleRows.length === 1 && visibleRows[0].purpose !== PURPOSE ? '本次就医 · 单次随访' : '报告问题与后续随访'}</h3><p>已有年度方案的客户，后续就医只核对本次报告并安排一次随访；首次资料的问题建议供年度方案参考。</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存编辑，是否继续？')) load() }}>刷新状态</button></header>
+    <header className="report-issues-heading"><div><h3>{singleOnly || (reviewDraftId && visibleRows.length === 1 && visibleRows[0].purpose !== PURPOSE) ? '本次就医 · 单次随访' : '报告问题与后续随访'}</h3><p>{singleOnly ? '请核对本次报告来源与随访草稿，确认后派发一条后续随访。' : '已有年度方案的客户，后续就医只核对本次报告并安排一次随访；首次资料的问题建议供年度方案参考。'}</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存编辑，是否继续？')) load() }}>刷新状态</button></header>
     {visibleRows.some(row => row.purpose === PURPOSE) && <div className="report-screening-reference"><h4>{year}年度筛查小结 · 定位参考</h4>
       {screening.error ? <p role="alert">{screening.error}</p> : screening.loading ? <p>正在读取年度筛查小结…</p> : reference ? <>
         <p className="report-issue-summary">已审核{reference.createdAt ? ` · ${String(reference.createdAt).slice(0, 10)}` : ''}。结合原报告核对，后续新发现仍需补充。</p>
@@ -100,7 +100,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit }) {
       </> : <p>本年度暂无已审核小结，可先核对下方报告问题。</p>}
     </div>}
     {error && <p role="alert" className="report-issues-error">{error}</p>}
-    {!rows.length && <p>暂无问题整理记录。新报告审核后生成；历史资料不会自动批量重跑。</p>}
+    {!rows.length && <p>{singleOnly ? '暂无单次随访记录。' : '暂无问题整理记录。新报告审核后生成；历史资料不会自动批量重跑。'}</p>}
     {reviewDraftId && !busy && rows.length > 0 && !visibleRows.length && <p role="alert">这条审核任务已处理或不属于当前客户，请返回工作台刷新任务。</p>}
     {reviewAnnualInputs && !busy && !visibleRows.length && <p>该客户的年度方案报告问题均已处理，请返回工作台刷新任务。</p>}
     {visibleRows.map(row => {

@@ -16279,7 +16279,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           patientName: task.patientId?.name || '未知', patientId: String(task.patientId?._id || ''),
           summary: `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${task.patientId?._id}/annual-health?reviewDraftId=${task.sourceId}#report-followup-drafts`,
+          link: `/patients/${task.patientId?._id}/report-followup?reviewDraftId=${task.sourceId}`,
         });
       });
       annualReviewByPatient.forEach((items, patientId) => {
