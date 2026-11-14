@@ -349,7 +349,7 @@ router.get('/my-partner-promotion', auth, async (req, res) => {
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
   const appPayment = req.body.paymentScene === 'app';
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', partnerCode = '', desiredServiceDate, serviceRequirements, serviceProviderConsent, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', partnerCode = '', desiredServiceDate, serviceRequirements, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
   if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
@@ -510,10 +510,6 @@ router.post('/order', auth, async (req, res) => {
   }
 
   const serviceProvider = service.serviceProvider || 'platform';
-  if (serviceProvider === 'jiayihui_health' && serviceProviderConsent !== true) {
-    return res.status(400).json({ success: false, code: 'SERVICE_PROVIDER_CONSENT_REQUIRED', message: '请先确认本次服务由杭州嘉医汇健康管理有限公司提供' });
-  }
-
   const isPkg = !!servicePackage || !!PACKAGE_CATALOG.find(p => p.id === serviceId);
   const orderFulfillmentType = service.skuFulfillmentType || service.fulfillmentType || (isPkg ? 'subscription_service' : 'offline_service');
   const requiresServiceConfirmation = ['offline_service', 'remote_service'].includes(orderFulfillmentType);
