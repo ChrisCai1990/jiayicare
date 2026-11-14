@@ -93,5 +93,18 @@ test('generated Word agreement contains reviewed fee and is a readable ZIP docum
   assert.equal(docx.readUInt32LE(0), 0x04034b50);
   assert.ok(docx.includes(Buffer.from('word/document.xml')));
   assert.ok(docx.length > 3000);
+  let offset = 0;
+  let documentXml = '';
+  while (docx.readUInt32LE(offset) === 0x04034b50) {
+    const compressedSize = docx.readUInt32LE(offset + 18);
+    const nameLength = docx.readUInt16LE(offset + 26);
+    const extraLength = docx.readUInt16LE(offset + 28);
+    const name = docx.subarray(offset + 30, offset + 30 + nameLength).toString();
+    const start = offset + 30 + nameLength + extraLength;
+    if (name === 'word/document.xml') documentXml = require('node:zlib').inflateRawSync(docx.subarray(start, start + compressedSize)).toString();
+    offset = start + compressedSize;
+  }
+  assert.match(documentXml, /本月25日如遇节假日，顺延至其后首个工作日/);
+  assert.doesNotMatch(documentXml, /银行工作日/);
   assert.throws(() => createPsychologistAgreementDocx({ name: '', singleFee: 300 }));
 });

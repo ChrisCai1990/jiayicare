@@ -2091,10 +2091,46 @@ router.get('/products', adminAuth, async (req, res) => {
   if (name) filter.name = new RegExp(name, 'i');
   if (category) filter.category = category;
   if (status) filter.status = status;
-  const products = await Product.find(filter).sort({ sortOrder: 1, createdAt: -1 }).lean();
+  const products = await Product.find(filter).select('-costPlanVersions').sort({ sortOrder: 1, createdAt: -1 }).lean();
   const materials = await require('../models/InventoryMaterial').find({ tenantId: req.admin.tenantId, linkedProductIds: { $in: products.map(p => p._id) } }).select('linkedProductIds').lean();
   const linkedIds = new Set(materials.flatMap(m => m.linkedProductIds.map(String)));
   res.json({ success: true, data: products.map(p => ({ ...p, usesSharedInventory: linkedIds.has(String(p._id)) })) });
+});
+
+// 产品标准成本按版本配置；它是预算，不代替订单实际成本凭据。
+router.get('/products/:id/cost-plan', adminAuth, async (req, res) => {
+  if (!['superadmin', 'finance'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '仅机构超管和财务可查看成本设置' });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '产品 ID 无效' });
+  const product = await Product.findOne({ _id: req.params.id, tenantId: req.admin.tenantId })
+    .select('name servicePrices skus costPlanVersion costPlanVersions').lean();
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  res.json({ success: true, data: { productId: product._id, name: product.name,
+    version: product.costPlanVersion || 0,
+    plan: (product.costPlanVersions || []).at(-1) || null,
+    history: (product.costPlanVersions || []).map(row => ({ version: row.version, createdAt: row.createdAt, createdBy: row.createdBy })) } });
+});
+
+router.post('/products/:id/cost-plan', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅机构超管可设置产品标准成本' });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '产品 ID 无效' });
+  const product = await Product.findOne({ _id: req.params.id, tenantId: req.admin.tenantId })
+    .select('servicePrices skus costPlanVersion updatedAt').lean();
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  let normalized;
+  try { normalized = require('../utils/productCostPlan').normalizeProductCostPlan(req.body, product); }
+  catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+  if (normalized.expectedVersion !== (product.costPlanVersion || 0))
+    return res.status(409).json({ success: false, message: '成本设置已由其他管理员更新，请刷新' });
+  const nextVersion = normalized.expectedVersion + 1;
+  const updated = await Product.findOneAndUpdate({ _id: product._id, tenantId: req.admin.tenantId,
+    updatedAt: product.updatedAt,
+    costPlanVersion: normalized.expectedVersion === 0 ? { $in: [0, null] } : normalized.expectedVersion },
+  { $set: { costPlanVersion: nextVersion }, $push: { costPlanVersions: {
+    version: nextVersion, defaultItems: normalized.defaultItems, scopes: normalized.scopes,
+    note: normalized.note, createdBy: req.admin._id, createdAt: new Date(),
+  } } }, { new: true }).select('costPlanVersion costPlanVersions').lean();
+  if (!updated) return res.status(409).json({ success: false, message: '产品或成本设置已更新，请刷新后重试' });
+  res.json({ success: true, data: { version: updated.costPlanVersion, plan: updated.costPlanVersions.at(-1) } });
 });
 
 // 从客户可见详情生成待人工审核的推荐规则，不落库、不自动启用。

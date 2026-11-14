@@ -22,7 +22,8 @@ function financeAdminMayAccess(path, method) {
     '/api/admin/market-partners/team-revenue',
     '/api/admin/partner-teams/summary',
     '/api/admin/partner-teams/people-volume',
-  ].includes(pathname) || /^\/api\/admin\/market-partners\/[0-9a-fA-F]{24}\/promotable-products$/.test(pathname);
+  ].includes(pathname) || /^\/api\/admin\/market-partners\/[0-9a-fA-F]{24}\/promotable-products$/.test(pathname)
+    || /^\/api\/admin\/products\/[0-9a-fA-F]{24}\/cost-plan$/.test(pathname);
 }
 
 module.exports = { platformAdminMayAccess, financeAdminMayAccess };

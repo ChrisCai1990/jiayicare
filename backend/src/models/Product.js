@@ -62,6 +62,22 @@ const productSchema = new mongoose.Schema({
     defaultCost: { type: Number, default: 0, min: 0 },
     location: { type: String, default: '' },
   },
+  // 管理口径的产品标准成本，逐版追加；实际成本另凭订单/履约单据入账。
+  costPlanVersion: { type: Number, default: 0 },
+  costPlanVersions: [{
+    version: { type: Number, required: true },
+    defaultItems: [{ category: String, name: String, amountCents: Number, _id: false }],
+    scopes: [{
+      scopeType: { type: String, enum: ['servicePrice', 'sku'] },
+      scopeKey: String,
+      items: [{ category: String, name: String, amountCents: Number, _id: false }],
+      _id: false,
+    }],
+    note: { type: String, default: '' },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+    createdAt: { type: Date, default: Date.now },
+    _id: false,
+  }],
   sales:         { type: Number, default: 0 },
   status:        { type: String, enum: ['on', 'off'], default: 'off' },
   fulfillmentType: {
