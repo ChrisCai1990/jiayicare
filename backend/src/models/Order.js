@@ -8,6 +8,12 @@ const orderSchema = new mongoose.Schema({
   serviceId:   { type: String, required: true },
   serviceName: { type: String, required: true },
   servicePrice:{ type: Number }, // 订单总价（历史单次服务订单也等于单次价）
+  partnerSelfPurchaseApplied: { type: Boolean, default: false },
+  partnerSelfPurchaseCustomerPrice: { type: Number, default: null },
+  partnerSelfPurchaseBasisPoints: { type: Number, default: null },
+  partnerSelfPurchasePeriodNumber: { type: Number, default: null },
+  partnerSelfPurchaseRuleId: { type: mongoose.Schema.Types.ObjectId, ref: 'MarketPartnerRule', default: null },
+  partnerSelfPurchaseRuleVersion: { type: Number, default: null },
   specificationLabel: { type: String, default: '' }, // 下单时规格快照
   unitPrice:    { type: Number, default: 0 },
   totalUnits:   { type: Number, default: 1, min: 1 },

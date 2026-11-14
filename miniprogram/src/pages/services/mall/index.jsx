@@ -69,6 +69,7 @@ function ServiceCard({ item, onDetail, onPay, isAuthenticated }) {
           <View>
             <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.danger }}>¥</Text>
             <Text style={{ fontSize: '24px', fontWeight: 800, color: colors.danger }}>{item.price}</Text>
+            {item.partnerSelfPrice != null && <Text style={{ display: 'block', fontSize: '11px', color: colors.primary }}>本人购买价 ¥{item.partnerSelfPrice}</Text>}
             {hasDiscount && <Text style={{ fontSize: '12px', color: colors.textMuted, textDecoration: 'line-through', marginLeft: '6px' }}>¥{item.originalPrice}</Text>}
             {hasDiscount && <Text style={{ fontSize: '11px', color: colors.danger, marginLeft: '4px' }}>{discount}折</Text>}
           </View>
@@ -119,6 +120,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated, 
               <View>
                 {item.price < item.originalPrice && <Text style={{ fontSize: '12px', color: colors.textMuted, textDecoration: 'line-through', marginRight: '6px' }}>¥{item.originalPrice}</Text>}
                 <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.danger }}>¥{item.price}</Text>
+                {item.partnerSelfPrice != null && <Text style={{ display: 'block', fontSize: '12px', color: colors.primary }}>本人购买价 ¥{item.partnerSelfPrice}</Text>}
               </View>
             ) : (
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.warning }}>登录后查看价格</Text>
@@ -214,7 +216,10 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', partnerCode = '',
     return () => { live = false; };
   }, [isPay, benefitsRefresh]);
 
-  const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
+  const currentPrice = hasSpecs
+    ? (!familyPayment && item.servicePrices[specIdx]?.partnerSelfPrice != null
+      ? item.servicePrices[specIdx].partnerSelfPrice : item.servicePrices[specIdx]?.price ?? item.price)
+    : (!familyPayment && item.partnerSelfPrice != null ? item.partnerSelfPrice : item.price);
   const currentSpecLabel = hasSpecs ? item.servicePrices[specIdx]?.label : '';
   const selectedSku = (item.skus || []).find((sku) => sku.label === currentSpecLabel && sku.active !== false);
   const fulfillmentType = selectedSku?.fulfillmentType || item.fulfillmentType || 'offline_service';
@@ -354,17 +359,17 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', partnerCode = '',
                     border: `1.5px solid ${active ? colors.primary : colors.border}`, backgroundColor: active ? colors.primary10 : '#fff',
                   }}>
                     <Text style={{ fontSize: '14px', color: colors.textPrimary, fontWeight: active ? 700 : 500 }}>{sp.label}</Text>
-                    <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.danger }}>¥{sp.price}</Text>
+                    <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.danger }}>¥{!familyPayment && sp.partnerSelfPrice != null ? sp.partnerSelfPrice : sp.price}</Text>
                   </View>
                 );
               })}
             </View>
           ) : (
             <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
-              <Text style={{ fontSize: '14px', color: colors.textSecondary }}>服务费用</Text>
+              <Text style={{ fontSize: '14px', color: colors.textSecondary }}>{!familyPayment && item.partnerSelfPrice != null ? '合伙人自购价' : '服务费用'}</Text>
               <View>
                 {item.price < item.originalPrice && <Text style={{ fontSize: '12px', color: colors.textMuted, textDecoration: 'line-through', marginRight: '6px' }}>¥{item.originalPrice}</Text>}
-                <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.danger }}>¥{item.price}</Text>
+                <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.danger }}>¥{currentPrice}</Text>
               </View>
             </View>
           )}
@@ -466,7 +471,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', partnerCode = '',
           {isPay && (couponDiscount > 0 || fundApplied > 0 || sharedApplied > 0) && (
             <View style={{ backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
               <View style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <Text style={{ fontSize: '13px', color: colors.textSecondary }}>商品原价</Text>
+                <Text style={{ fontSize: '13px', color: colors.textSecondary }}>{!familyPayment && (item.partnerSelfPrice != null || item.servicePrices?.[specIdx]?.partnerSelfPrice != null) ? '合伙人自购价' : '商品原价'}</Text>
                 <Text style={{ fontSize: '13px', color: colors.textPrimary, fontWeight: 600 }}>¥{currentPrice}</Text>
               </View>
               {couponDiscount > 0 && (
@@ -590,14 +595,23 @@ export default function ServiceMallPage() {
     Promise.all([
       servicesAPI.list(),
       user ? servicesAPI.packages().catch(() => ({ success: false, data: [] })) : Promise.resolve({ success: true, data: [] }),
-    ]).then(([res, packageRes]) => {
+      user ? servicesAPI.myPartnerPromotion().catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+    ]).then(([res, packageRes, promotionRes]) => {
       if (!active) return;
       if (!res.success) throw new Error(res.message || '服务加载失败');
       const packages = (packageRes.success ? packageRes.data || [] : [])
         .filter(item => item.membershipTier === 'consumer365' && item.includes365 && Number(item.durationMonths) === 12 && item.canJoin365 === true)
         .map(item => ({ ...item, servicePackage: true, category: '会员服务',
           subtitle: item.duration, description: (item.features || []).join('；'), fulfillmentType: 'subscription_service' }));
-      const allServices = [...(res.data?.services || []), ...packages];
+      const selfPrices = new Map((promotionRes.data?.selfPrices || []).map(row => [row.id, row]));
+      const allServices = [...(res.data?.services || []), ...packages].map(item => {
+        const ownPrice = selfPrices.get(item.id);
+        if (!ownPrice) return item;
+        const byLabel = new Map((ownPrice.specifications || []).map(row => [row.label, row.price]));
+        return { ...item, partnerSelfPrice: ownPrice.price,
+          servicePrices: (item.servicePrices || []).map(row => ({ ...row,
+            partnerSelfPrice: byLabel.has(row.label) ? byLabel.get(row.label) : null })) };
+      });
       setServices(allServices);
       const tree = res.data?.categoryTree || (res.data?.categories || []).filter((name) => name !== '全部').map((name) => ({ id: name, name, children: [] }));
       setCategoryTree(packages.length && !tree.some(item => item.name === '会员服务')
@@ -767,7 +781,7 @@ export default function ServiceMallPage() {
       )}
 
       {selectedService && (
-        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''} partnerCode={routeParams.partnerCode || ''}
+        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''} partnerCode={selectedService.id === routeParams.productId ? routeParams.partnerCode || '' : ''}
           initialBeneficiaryUserId={selectedService.id === routeParams.productId && routeParams.beneficiaryUserId ? routeParams.beneficiaryUserId : storedArchiveId(user?._id)}
           pushRecordId={selectedService.id === routeParams.productId ? routeParams.pushRecordId || '' : ''}
           onClose={() => setSelectedService(null)} />

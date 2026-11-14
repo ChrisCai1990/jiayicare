@@ -19,7 +19,6 @@ async function call(path, body, token) {
 
 export default function MarketPartnerPortalPage() {
   const [token, setToken] = useState(() => sessionStorage.getItem('jy_market_partner_token') || '')
-  const [referralCode, setReferralCode] = useState('')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
@@ -49,14 +48,14 @@ export default function MarketPartnerPortalPage() {
 
   const sendCode = async () => {
     setError(''); setNotice(''); setBusy(true)
-    try { await call('/send-code', { referralCode, phone }); setNotice('验证码已发送至登记手机号') }
+    try { await call('/send-code', { phone }); setNotice('验证码已发送至登记手机号') }
     catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
   const login = async () => {
     setError(''); setBusy(true)
     try {
-      const result = await call('/login', { referralCode, phone, code })
+      const result = await call('/login', { phone, code })
       sessionStorage.setItem('jy_market_partner_token', result.token)
       setToken(result.token)
     } catch (err) { setError(err.message) }
@@ -75,8 +74,7 @@ export default function MarketPartnerPortalPage() {
       {notice && <p style={{ color: '#176b4d' }}>{notice}</p>}
       {!token ? <section style={card}>
         <h2 style={{ fontSize: 18, marginTop: 0 }}>手机号登录</h2>
-        <label>推荐码<input style={field} value={referralCode} onChange={e => setReferralCode(e.target.value.toUpperCase())} maxLength={12} /></label>
-        <label style={{ display: 'block', marginTop: 12 }}>登记手机号<input style={field} type="tel" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} /></label>
+        <label>登记手机号<input style={field} type="tel" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} /></label>
         <button style={{ ...button, marginTop: 14 }} disabled={busy} onClick={sendCode}>发送验证码</button>
         <label style={{ display: 'block', marginTop: 12 }}>验证码<input style={field} inputMode="numeric" value={code} onChange={e => setCode(e.target.value)} maxLength={6} /></label>
         <button style={{ ...button, marginTop: 14, width: '100%' }} disabled={busy} onClick={login}>登录并查账</button>
@@ -84,7 +82,7 @@ export default function MarketPartnerPortalPage() {
         <section style={card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><strong>{me?.name || '合伙人'}</strong><button onClick={logout}>退出</button></div>
           <p>授权产品线：{me?.productLine || '—'}　推荐码：{me?.referralCode || '—'}</p>
-          <p style={{ fontSize: 13, color: '#607568', marginBottom: 0 }}>推荐商品入口请复制到微信小程序内打开；佣金以财务审核与实际打款为准。</p>
+          <p style={{ fontSize: 13, color: '#607568', marginBottom: 0 }}>在用户小程序“我的推广”选择商品并分享给客户；佣金以财务审核与实际打款为准。</p>
         </section>
         <section style={card}>
           <h2 style={{ fontSize: 18, marginTop: 0 }}>我的团队与业务</h2>
@@ -109,8 +107,7 @@ export default function MarketPartnerPortalPage() {
         </section>
         <section style={card}><h2 style={{ fontSize: 18, marginTop: 0 }}>可推荐商品</h2>
           {products.length ? products.map(item => <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid #e8efea' }}>
-            <strong>{item.name}</strong><div style={{ fontSize: 12, overflowWrap: 'anywhere', marginTop: 4 }}>{item.miniProgramPath}</div>
-            <button style={{ marginTop: 5 }} onClick={() => navigator.clipboard?.writeText(item.miniProgramPath)}>复制小程序路径</button>
+            <strong>{item.name}</strong>
           </div>) : <p>暂无已授权的在售商品</p>}
         </section>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>

@@ -293,9 +293,55 @@ router.post('/partner-referrals/claim', auth, async (req, res) => {
   const match = await require('../utils/marketPartnerAttribution').claim({
     tenantId: req.user.tenantId, patientId: req.user._id,
     productId: product?._id || servicePackage._id, code,
+    excludedPhones: [req.user.phone],
   });
   if (!match) return res.status(404).json({ success: false, message: '推荐码无效或未授权该商品' });
   res.json({ success: true, data: { productId, productLine: match.rule.productLine } });
+});
+
+// 合伙人以登记手机号登录用户端后，取得本人可分享的在售商品。
+router.get('/my-partner-promotion', auth, async (req, res) => {
+  const { partner, eligible, ambiguous } = await require('../utils/partnerSelfPurchase').partnerSelfPurchaseStatus(req.user);
+  if (ambiguous) return res.status(409).json({ success: false,
+    message: '该手机号关联多个合伙人档案，请联系管理员核对' });
+  if (!partner) return res.json({ success: true, data: null });
+  const now = new Date();
+  const promotable = await require('../utils/partnerOwnPrice').promotableRulesForPartner(
+    req.user.tenantId, partner, now);
+  const [products, packages] = await Promise.all([
+    Product.find({ _id: { $in: promotable.filter(row => row.sourceType !== 'servicePackage').map(row => row.productId) },
+      tenantId: req.user.tenantId, status: 'on', paymentChannel: { $ne: 'offline' } })
+      .select('name images originalPrice servicePrices memberBundle').lean(),
+    ServicePackage.find({ _id: { $in: promotable.filter(row => row.sourceType === 'servicePackage').map(row => row.productId) },
+      active: true, 'activation.enabled': true, 'activation.durationMonths': 12,
+      'configuration.membershipTier': 'consumer365', 'configuration.includes365': true })
+      .select('name activation.price').lean(),
+  ]);
+  const ownPriceFor = require('../utils/partnerOwnPrice').ownPriceFor;
+  const selfPrices = eligible ? (await Promise.all([
+    ...products.map(async item => {
+      const product = item;
+      if (product?.memberBundle?.enabled) return null;
+      const specifications = await Promise.all((product?.servicePrices || []).map(async row => ({
+        label: row.label, ...(await ownPriceFor({ tenantId: req.user.tenantId, partner, userId: req.user._id,
+          productId: item._id, customerPrice: row.price }) || {}),
+      })));
+      const base = await ownPriceFor({ tenantId: req.user.tenantId, partner, userId: req.user._id,
+        productId: item._id, customerPrice: product?.servicePrices?.[0]?.price ?? product?.originalPrice });
+      return base ? { id: String(item._id), price: base.price,
+        specifications: specifications.filter(row => row.price != null) } : null;
+    }),
+    ...packages.map(async item => {
+      const quote = await ownPriceFor({ tenantId: req.user.tenantId, partner, userId: req.user._id,
+        productId: item._id, customerPrice: item.activation?.price });
+      return quote ? { id: String(item._id), price: quote.price, specifications: [] } : null;
+    }),
+  ])).filter(Boolean) : [];
+  res.json({ success: true, data: { name: partner.name, referralCode: partner.referralCode,
+    selfPurchaseEligible: eligible,
+    selfPrices,
+    products: [...products, ...packages]
+    .map(item => ({ id: String(item._id), name: item.name, image: item.images?.[0] || '' })) } });
 });
 
 // POST /api/services/order — 提交服务预约（支持单项服务 & 服务包）
@@ -441,6 +487,26 @@ router.post('/order', auth, async (req, res) => {
   if (pushedItem && pushedItem.price != null && Number.isFinite(Number(pushedItem.price))
     && Math.round(Number(pushedItem.price) * 100) !== Math.round(Number(service.price) * 100)) {
     return res.status(409).json({ success: false, message: '推荐商品价格已变化，请联系医护人员重新推送后付款' });
+  }
+
+  let partnerSelfPurchaseApplied = false;
+  let partnerSelfPurchaseQuote = null;
+  let partnerSelfPurchaseCustomerPrice = null;
+  if ((product && !product.memberBundle?.enabled || servicePackage)
+    && String(req.user._id) === String(serviceUser._id)) {
+    const selfStatus = await require('../utils/partnerSelfPurchase').partnerSelfPurchaseStatus(req.user);
+    if (selfStatus.eligible) {
+      const quote = await require('../utils/partnerOwnPrice').ownPriceFor({
+        tenantId: req.user.tenantId, partner: selfStatus.partner, userId: req.user._id,
+        productId: product?._id || servicePackage._id, customerPrice: service.price,
+      });
+      if (quote) {
+        partnerSelfPurchaseCustomerPrice = service.price;
+        partnerSelfPurchaseQuote = quote;
+        service.price = quote.price;
+        partnerSelfPurchaseApplied = true;
+      }
+    }
   }
 
   const serviceProvider = service.serviceProvider || 'platform';
@@ -616,6 +682,7 @@ router.post('/order', auth, async (req, res) => {
       tenantId: serviceUser.tenantId, patientId: serviceUser._id,
       productId: product?._id || servicePackage._id,
       code: partnerCode, at: new Date(),
+      excludedPhones: [req.user.phone, serviceUser.phone].filter(Boolean),
     }) : null;
   if (marketPartnerMatch) referrerId = null;
   const marketPartnerContribution = marketPartnerMatch && product
@@ -653,6 +720,12 @@ router.post('/order', auth, async (req, res) => {
     serviceId:    service.id,
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
     servicePrice: service.price,
+    partnerSelfPurchaseApplied,
+    partnerSelfPurchaseCustomerPrice,
+    partnerSelfPurchaseBasisPoints: partnerSelfPurchaseQuote?.basisPoints ?? null,
+    partnerSelfPurchasePeriodNumber: partnerSelfPurchaseQuote?.periodNumber ?? null,
+    partnerSelfPurchaseRuleId: partnerSelfPurchaseQuote?.ruleId ?? null,
+    partnerSelfPurchaseRuleVersion: partnerSelfPurchaseQuote?.ruleVersion ?? null,
     specificationLabel: service.specificationLabel || '',
     skuCode: service.skuCode || '',
     unitPrice,

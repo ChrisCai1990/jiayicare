@@ -1,10 +1,30 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { adminAPI } from '../api'
+import './partnerWorkspace.css'
 
 const ROLES = [['familyDoctor', '健康顾问'], ['nutritionist', '营养师'], ['healthManager', '健管专员'], ['medicalAssistant', '就医专员'], ['psychologist', '心理咨询师'], ['rehabSpecialist', '运动复健师'], ['specialist', '专科医师'], ['tcmDoctor', '中医师']]
-const inputStyle = { padding: '9px 10px', border: '1px solid #cbd8d1', borderRadius: 6, minWidth: 150 }
-const boxStyle = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
+const inputStyle = { padding: '10px 12px', border: '1px solid #d5e2d8', borderRadius: 10, minWidth: 150 }
+const boxStyle = { background: '#fff', border: '1px solid #dce9df', borderRadius: 18, padding: 22, marginBottom: 16, boxShadow: '0 5px 22px #23473508' }
+
+function PartnerPicker({ partners, value, onChange, label }) {
+  const [search, setSearch] = useState('')
+  const term = search.trim().toLowerCase()
+  const visible = partners.filter(item => String(item.referralCode) === String(value)
+    || `${item.name || ''} ${item.phone || ''} ${item.referralCode || ''}`.toLowerCase().includes(term))
+  const selected = partners.find(item => String(item.referralCode) === String(value))
+  return <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 5, minWidth: 210 }}>
+    <input style={inputStyle} type="search" aria-label={`搜索${label}`} placeholder="搜索合伙人姓名或推荐码"
+      value={search} onChange={event => setSearch(event.target.value)} />
+    <select style={inputStyle} aria-label={label} value={value} onChange={event => onChange(event.target.value)} required>
+      <option value="">选择合伙人</option>
+      {visible.map(item => <option key={item._id} value={item.referralCode}>
+        {item.name} · {item.referralCode}
+      </option>)}
+    </select>
+    {selected && <small style={{ color: '#62776b' }}>已带入推荐码 {selected.referralCode}</small>}
+  </div>
+}
 
 export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [searchParams] = useSearchParams()
@@ -20,6 +40,7 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [offlineRefunds, setOfflineRefunds] = useState([])
   const [lossReviews, setLossReviews] = useState([])
   const [products, setProducts] = useState([])
+  const [partners, setPartners] = useState([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -36,14 +57,15 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
   const [accountingError, setAccountingError] = useState('')
 
   const refresh = async () => {
-    const [r, productsResponse, commissionsResponse, receiptsResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse, teamRevenueResponse] = await Promise.all([
-      adminAPI.marketPartnerRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(), adminAPI.marketPartnerTeamRevenue(),
+    const [r, productsResponse, commissionsResponse, receiptsResponse, offlineOrdersResponse, offlineRefundsResponse, lossReviewsResponse, attributedOrdersResponse, customerHistoriesResponse, leadEventsResponse, teamRevenueResponse, partnerResponse] = await Promise.all([
+      adminAPI.marketPartnerRules(), adminAPI.products({}), adminAPI.marketPartnerCommissions(), adminAPI.marketPartnerReceipts(), adminAPI.marketPartnerOfflineOrders(), adminAPI.marketPartnerOfflineRefunds(), adminAPI.marketPartnerLossReviews(), adminAPI.marketPartnerAttributedOrders(), adminAPI.marketPartnerCustomerHistories(), adminAPI.marketPartnerLeadEvents(), adminAPI.marketPartnerTeamRevenue(), adminAPI.marketPartners(),
     ])
     setRules(r.data || [])
     setProducts(productsResponse.data || [])
     setCommissions(commissionsResponse.data?.rows || [])
     setReceipts(receiptsResponse.data || [])
     setTeamRevenue(teamRevenueResponse.data || [])
+    setPartners((partnerResponse.data || []).filter(item => item.status === 'active' && item.referralCode))
     setOfflineOrders(offlineOrdersResponse.data || [])
     setAttributedOrders(attributedOrdersResponse.data || [])
     setCustomerHistories(customerHistoriesResponse.data || [])
@@ -125,7 +147,7 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
       <form onSubmit={e => { e.preventDefault(); run(() => adminAPI.submitMarketPartnerLeadEvent(leadEvent)) }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <input style={inputStyle} aria-label="沟通客户ID" placeholder="客户ID" value={leadEvent.patientId} onChange={e => setLeadEvent({ ...leadEvent, patientId: e.target.value })} required />
         <select style={inputStyle} aria-label="沟通商品" value={leadEvent.productId} onChange={e => setLeadEvent({ ...leadEvent, productId: e.target.value })} required><option value="">选择商品</option>{products.filter(item => item.status === 'on').map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
-        <input style={inputStyle} aria-label="沟通合伙人码" placeholder="合伙人推荐码" value={leadEvent.partnerCode} onChange={e => setLeadEvent({ ...leadEvent, partnerCode: e.target.value })} required />
+        <PartnerPicker partners={partners} value={leadEvent.partnerCode} label="沟通合伙人" onChange={partnerCode => setLeadEvent({ ...leadEvent, partnerCode })} />
         <label><input type="checkbox" checked={leadEvent.directReferral} onChange={e => setLeadEvent({ ...leadEvent, directReferral: e.target.checked })} /> 亲自促成</label>
         <input style={{ ...inputStyle, minWidth: 280 }} aria-label="沟通证据" placeholder="首次沟通具体内容与依据" value={leadEvent.evidence} onChange={e => setLeadEvent({ ...leadEvent, evidence: e.target.value })} required />
         <button className="btn btn-primary" disabled={busy}>登记首次沟通</button>
@@ -175,7 +197,7 @@ export default function MarketPartnerManagementPage({ view = 'operations' }) {
         <select style={inputStyle} aria-label="线下商品" value={offlineOrder.productId} onChange={e => setOfflineOrder({ ...offlineOrder, productId: e.target.value })} required><option value="">选择线下商品</option>{products.filter(item => item.status === 'on' && ['offline', 'both'].includes(item.paymentChannel)).map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>
         <input style={inputStyle} aria-label="合同规格" placeholder="规格（可留空）" value={offlineOrder.specificationLabel} onChange={e => setOfflineOrder({ ...offlineOrder, specificationLabel: e.target.value })} />
         <input style={inputStyle} aria-label="合同金额元" type="number" min="0.01" step="0.01" placeholder="商品价格 元" value={offlineOrder.priceYuan} onChange={e => setOfflineOrder({ ...offlineOrder, priceYuan: e.target.value })} required />
-        <input style={inputStyle} aria-label="线下推荐码" placeholder="合伙人推荐码" value={offlineOrder.partnerCode} onChange={e => setOfflineOrder({ ...offlineOrder, partnerCode: e.target.value })} required />
+        <PartnerPicker partners={partners} value={offlineOrder.partnerCode} label="线下订单合伙人" onChange={partnerCode => setOfflineOrder({ ...offlineOrder, partnerCode })} />
         <input style={inputStyle} aria-label="线下合同编号" placeholder="合同编号" value={offlineOrder.contractReference} onChange={e => setOfflineOrder({ ...offlineOrder, contractReference: e.target.value })} required />
         <button className="btn btn-primary" disabled={busy}>建立待付款订单</button>
       </form>

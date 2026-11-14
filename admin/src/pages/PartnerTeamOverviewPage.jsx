@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminAPI } from '../api'
+import './partnerWorkspace.css'
 
 const money = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 const key = (type, id) => `${type}:${id}`
-const card = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 14 }
 
 export default function PartnerTeamOverviewPage() {
   const [staff, setStaff] = useState([])
@@ -46,51 +46,60 @@ export default function PartnerTeamOverviewPage() {
       && row.memberType === memberType && String(row.memberId) === String(memberId)
       && row.activity === activity).reduce((sum, row) => sum + row.amountCents, 0)
 
-  return <div className="page" style={{ maxWidth: 1240 }}>
+  return <div className="page">
     <div className="page-header"><div><div className="page-title">合伙人团队总览</div>
       <div className="page-subtitle">按人员查看团队、推广与服务业务量；企业营收请到经营与分账总览核对</div></div>
-      <Link className="btn btn-primary" to="/partner-teams">团队规则设置</Link></div>
+      <Link className="btn btn-ghost" to="/partner-teams">团队规则设置 ↗</Link></div>
     {error && <p role="alert" style={{ color: '#b42318' }}>{error}</p>}
-    <section style={card}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button className="btn" aria-pressed={type === 'staff'} onClick={() => { setType('staff'); setPage(1) }}>员工（{staff.length}）</button>
-        <button className="btn" aria-pressed={type === 'partner'} onClick={() => { setType('partner'); setPage(1) }}>市场合伙人（{partners.length}）</button>
+    <section className="partner-ui__card partner-ui__toolbar">
+      <div className="partner-ui__tabs" role="group" aria-label="人员类型">
+        <button aria-pressed={type === 'staff'} onClick={() => { setType('staff'); setPage(1) }}>员工 {staff.length}</button>
+        <button aria-pressed={type === 'partner'} onClick={() => { setType('partner'); setPage(1) }}>市场合伙人 {partners.length}</button>
+      </div>
         <input className="form-input" aria-label="搜索人员" placeholder="搜索姓名或手机号" value={search}
           onChange={event => { setSearch(event.target.value); setPage(1) }} style={{ maxWidth: 280 }} />
-      </div>
     </section>
+    <div className="partner-ui__metrics">
+      <div className="partner-ui__metric"><span>当前人员</span><strong>{visible.length}</strong></div>
+      <div className="partner-ui__metric"><span>负责团队</span><strong>{teams.filter(row => row.leaderType === type).length}</strong></div>
+      <div className="partner-ui__metric"><span>团队成员关系</span><strong>{relations.filter(row => row.leaderType === type).length}</strong></div>
+      <div className="partner-ui__metric partner-ui__metric--accent"><span>负责人收益应计</span><strong>{money(earnings.filter(row => row.leaderType === type).reduce((sum, row) => sum + row.accruedCents, 0))}</strong></div>
+    </div>
     {visible.slice((current - 1) * 10, current * 10).map(person => {
       const personKey = key(type, person._id)
       const team = teams.find(row => key(row.leaderType, row.leaderId) === personKey)
       const parent = relations.find(row => key(row.memberType, row.memberId) === personKey)
       const members = relations.filter(row => key(row.leaderType, row.leaderId) === personKey)
       const leaderEarnings = earnings.filter(row => key(row.leaderType, row.leaderId) === personKey)
-      return <section key={personKey} style={card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <strong>{person.name} · {type === 'staff' ? '员工' : '市场合伙人'}</strong>
-          <span>{team ? `负责人 · ${members.length} 位成员` : parent
-            ? `成员 · 负责人 ${lookup(parent.leaderType, parent.leaderId)}` : '独立人员'}</span>
+      return <section key={personKey} className="partner-ui__card">
+        <div className="partner-ui__person-head">
+          <div><div className="partner-ui__person-name">{person.name}</div>
+            <span className="partner-ui__muted">{type === 'staff' ? '员工' : '市场合伙人'}</span></div>
+          <span className={`partner-ui__badge${team ? '' : ' partner-ui__badge--amber'}`}>{team ? `负责人 · ${members.length} 位成员` : parent
+            ? `团队成员 · 负责人 ${lookup(parent.leaderType, parent.leaderId)}` : '独立人员'}</span>
         </div>
-        <p>本人推广业务量 {money(amount(type, person._id, 'promotion'))} · 本人服务业务量 {money(amount(type, person._id, 'service'))}</p>
+        <div className="partner-ui__metrics">
+          <div className="partner-ui__metric"><span>本人推广业务量</span><strong>{money(amount(type, person._id, 'promotion'))}</strong></div>
+          <div className="partner-ui__metric"><span>本人服务业务量</span><strong>{money(amount(type, person._id, 'service'))}</strong></div>
+          {team && <><div className="partner-ui__metric"><span>成员归属推广 / 服务</span><strong>{money(members.reduce((sum, row) => sum + teamAmount(type, person._id, row.memberType, row.memberId, 'promotion'), 0))} / {money(members.reduce((sum, row) => sum + teamAmount(type, person._id, row.memberType, row.memberId, 'service'), 0))}</strong></div>
+            <div className="partner-ui__metric partner-ui__metric--accent"><span>负责人收益应计 / 已发</span><strong>{money(leaderEarnings.reduce((sum, row) => sum + row.accruedCents, 0))} / {money(leaderEarnings.reduce((sum, row) => sum + row.paidCents - row.recoveredCents, 0))}</strong></div></>}
+        </div>
         {team && <>
-          <p>成员归属推广业务量 {money(members.reduce((sum, row) => sum + teamAmount(type, person._id, row.memberType, row.memberId, 'promotion'), 0))}
-            {' · '}成员归属服务业务量 {money(members.reduce((sum, row) => sum + teamAmount(type, person._id, row.memberType, row.memberId, 'service'), 0))}
-            {' · '}负责人收益应计 {money(leaderEarnings.reduce((sum, row) => sum + row.accruedCents, 0))}
-            {' · '}已发 {money(leaderEarnings.reduce((sum, row) => sum + row.paidCents - row.recoveredCents, 0))}</p>
-          <div style={{ borderTop: '1px solid #e5ebe7', paddingTop: 10 }}>
-            <strong>团队成员</strong>{members.length ? members.map(row => <div key={row._id} style={{ padding: '5px 0' }}>
-              {row.memberName}（{row.memberType === 'staff' ? '员工' : '市场'}） · 归属推广 {money(teamAmount(type, person._id, row.memberType, row.memberId, 'promotion'))} · 归属服务 {money(teamAmount(type, person._id, row.memberType, row.memberId, 'service'))}
+          <div className="partner-ui__members">
+            <strong>团队成员</strong>{members.length ? members.map(row => <div key={row._id} className="partner-ui__member">
+              <span>{row.memberName} <small className="partner-ui__muted">{row.memberType === 'staff' ? '员工' : '市场合伙人'}</small></span>
+              <span className="partner-ui__muted">推广 {money(teamAmount(type, person._id, row.memberType, row.memberId, 'promotion'))} · 服务 {money(teamAmount(type, person._id, row.memberType, row.memberId, 'service'))}</span>
             </div>) : <p>暂无成员</p>}
           </div>
         </>}
       </section>
     })}
-    {!visible.length && <section style={card}>暂无匹配人员</section>}
-    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+    {!visible.length && <section className="partner-ui__card">暂无匹配人员</section>}
+    <div className="partner-ui__pagination">
       <button className="btn" disabled={current <= 1} onClick={() => setPage(current - 1)}>上一页</button>
       <span>第 {current} / {pages} 页 · 共 {visible.length} 人</span>
       <button className="btn" disabled={current >= pages} onClick={() => setPage(current + 1)}>下一页</button>
     </div>
-    <p style={{ color: '#667a6d', marginTop: 16 }}>推广与服务是同一笔实收的不同归属视角，不可相加为企业营收。负责人收益是单独的激励成本。</p>
+    <p className="partner-ui__muted">推广与服务是同一笔实收的不同归属视角，不可相加为企业营收。负责人收益是单独的激励成本。</p>
   </div>
 }

@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminAPI } from '../api'
+import './partnerWorkspace.css'
 
 const money = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
-const card = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18 }
+const card = { background: '#fff', border: '1px solid #dce9df', borderRadius: 18, padding: 22, boxShadow: '0 5px 22px #23473508' }
 const channelName = { wechat: '微信商城', onsite: '线下收款', alipay: '支付宝', healthFund: '健康基金' }
 const roleName = { familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员' }
 
 function DataTable({ title, headers, rows, render }) {
-  return <section style={{ ...card, marginTop: 16, overflowX: 'auto' }}>
+  return <section style={{ ...card, marginTop: 16 }}>
     <h2 style={{ fontSize: 18, marginTop: 0 }}>{title}</h2>
-    <table className="table"><thead><tr>{headers.map(head => <th key={head}>{head}</th>)}</tr></thead>
-      <tbody>{rows.length ? rows.map(render) : <tr><td colSpan={headers.length}>所选期间暂无记录</td></tr>}</tbody></table>
+    <div className="partner-ui__table-wrap"><table className="table"><thead><tr>{headers.map(head => <th key={head}>{head}</th>)}</tr></thead>
+      <tbody>{rows.length ? rows.map(render) : <tr><td colSpan={headers.length}>所选期间暂无记录</td></tr>}</tbody></table></div>
   </section>
 }
 

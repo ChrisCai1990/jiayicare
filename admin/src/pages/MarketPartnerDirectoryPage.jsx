@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { adminAPI } from '../api'
+import './partnerWorkspace.css'
 
 const segments = [['medical', '就医板块'], ['nutrition', '营养板块'],
   ['annual', '年度管理板块'], ['consultation', '咨询板块']]
 const segmentName = value => segments.find(([key]) => key === value)?.[1] || value || '历史未归类'
-const card = { background: '#fff', border: '1px solid #dbe5de', borderRadius: 10, padding: 18, marginBottom: 16 }
 const row = { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }
 const emptyPartner = { name: '', phone: '', segment: 'medical', contractReference: '' }
-const emptyMember = { name: '', phone: '', status: 'active', reason: '' }
 
 export default function MarketPartnerDirectoryPage() {
   const [partners, setPartners] = useState([])
@@ -19,15 +18,14 @@ export default function MarketPartnerDirectoryPage() {
   const [liaisonStaffId, setLiaisonStaffId] = useState('')
   const [staffSearch, setStaffSearch] = useState('')
   const [selectedId, setSelectedId] = useState('')
-  const [members, setMembers] = useState([])
   const [promotable, setPromotable] = useState([])
   const [detailLoading, setDetailLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [showForm, setShowForm] = useState(false)
   const [partnerForm, setPartnerForm] = useState(emptyPartner)
   const [editingPartner, setEditingPartner] = useState(null)
   const [partnerReason, setPartnerReason] = useState('')
-  const [memberForm, setMemberForm] = useState(emptyMember)
-  const [editingMember, setEditingMember] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -44,14 +42,12 @@ export default function MarketPartnerDirectoryPage() {
   }
   useEffect(() => { loadPartners().catch(err => setError(err.message)) }, [])
   useEffect(() => {
-    setEditingMember(null); setMemberForm(emptyMember)
-    if (!selectedId) { setMembers([]); setPromotable([]); return }
+    if (!selectedId) { setPromotable([]); return }
     let cancelled = false
     setDetailLoading(true)
-    Promise.all([adminAPI.marketPartnerTeamMembers(selectedId),
-      adminAPI.marketPartnerPromotableProducts(selectedId)])
-      .then(([memberResponse, productResponse]) => {
-        if (!cancelled) { setMembers(memberResponse.data || []); setPromotable(productResponse.data?.rows || []) }
+    adminAPI.marketPartnerPromotableProducts(selectedId)
+      .then(productResponse => {
+        if (!cancelled) setPromotable(productResponse.data?.rows || [])
       })
       .catch(err => { if (!cancelled) setError(err.message) })
       .finally(() => { if (!cancelled) setDetailLoading(false) })
@@ -64,6 +60,11 @@ export default function MarketPartnerDirectoryPage() {
   const visiblePartners = useMemo(() => partners.filter(item =>
     `${item.name} ${item.phone} ${item.referralCode} ${segmentName(item.segment || item.productLine)} ${liaisonByPartner.get(String(item._id)) || ''}`
       .toLowerCase().includes(search.trim().toLowerCase())), [partners, liaisonByPartner, search])
+  const totalPages = Math.max(1, Math.ceil(visiblePartners.length / 10))
+  const currentPage = Math.min(page, totalPages)
+  const displayedPartners = visiblePartners.slice((currentPage - 1) * 10, currentPage * 10)
+  const selectedTeam = accountingTeams.find(item => item.leaderType === 'partner'
+    && String(item.leaderId) === selectedId)
 
   const run = async action => {
     setBusy(true); setError(''); setNotice('')
@@ -89,6 +90,7 @@ export default function MarketPartnerDirectoryPage() {
         setSelectedId(String(response.data._id))
       }
       setEditingPartner(null); setPartnerForm(emptyPartner); setPartnerReason('')
+      setShowForm(false)
     })
   }
   const editPartner = item => {
@@ -96,25 +98,15 @@ export default function MarketPartnerDirectoryPage() {
     setPartnerForm({ name: item.name, phone: item.phone, segment: item.segment || '',
       productLine: item.productLine, contractReference: item.contractReference || '' })
     setPartnerReason('')
+    setShowForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-  const saveMember = event => {
-    event.preventDefault()
-    if (!selectedId) return
-    run(async () => {
-      if (editingMember) await adminAPI.updateMarketPartnerTeamMember(editingMember._id, {
-        ...memberForm, reason: memberForm.reason, updatedAt: editingMember.updatedAt })
-      else await adminAPI.createMarketPartnerTeamMember({ partnerId: selectedId,
-        name: memberForm.name, phone: memberForm.phone })
-      const response = await adminAPI.marketPartnerTeamMembers(selectedId)
-      setMembers(response.data || [])
-      setEditingMember(null); setMemberForm(emptyMember)
-    })
   }
 
   return <div className="page">
     <div className="page-header"><div><div className="page-title">市场合伙人</div>
-      <div className="page-subtitle">合伙人档案和团队成员名册</div></div></div>
+      <div className="page-subtitle">管理合伙人档案与内部对接关系，查看每人的可推广产品</div></div>
+      <button className="btn btn-primary" onClick={() => setShowForm(value => !value)}>
+        {showForm ? '收起表单' : '+ 新增合伙人'}</button></div>
     <div style={{ ...row, marginBottom: 16 }}>
       <Link className="btn btn-ghost" to="/commission-rules?tab=partner">设置合伙人佣金</Link>
       <Link className="btn btn-ghost" to="/partner-teams">设置团队关系与负责人收益</Link>
@@ -122,9 +114,10 @@ export default function MarketPartnerDirectoryPage() {
     </div>
     {error && <p role="alert" style={{ color: '#b42318' }}>{error}</p>}
     {notice && <p role="status" style={{ color: '#176b4d' }}>{notice}</p>}
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>{editingPartner ? '编辑合伙人' : '新增合伙人'}</h2>
-      <form onSubmit={savePartner} style={row}>
+    {showForm && <section className="partner-ui__card">
+      <h2>{editingPartner ? '编辑合伙人' : '新增合伙人'}</h2>
+      <p className="partner-ui__muted">启用前须填写合作合同编号。板块标识合作方向，具体推广产品在佣金规则页设置。</p>
+      <form onSubmit={savePartner}><div className="partner-ui__form-grid">
         <input className="form-input" aria-label="合伙人名称" placeholder="姓名或机构名" value={partnerForm.name}
           onChange={event => setPartnerForm({ ...partnerForm, name: event.target.value })} required />
         <input className="form-input" aria-label="合伙人手机号" placeholder="手机号" value={partnerForm.phone}
@@ -138,23 +131,27 @@ export default function MarketPartnerDirectoryPage() {
           onChange={event => setPartnerForm({ ...partnerForm, contractReference: event.target.value })} />
         {editingPartner && <input className="form-input" aria-label="合伙人资料修改原因" placeholder="修改原因及依据"
           value={partnerReason} onChange={event => setPartnerReason(event.target.value)} required />}
+      </div><div className="partner-ui__form-actions">
         <button className="btn btn-primary" disabled={busy}>{editingPartner ? '保存修改' : '创建待审核合伙人'}</button>
         {editingPartner && <button type="button" className="btn btn-ghost" onClick={() => {
-          setEditingPartner(null); setPartnerForm(emptyPartner); setPartnerReason('') }}>取消</button>}
+          setEditingPartner(null); setPartnerForm(emptyPartner); setPartnerReason(''); setShowForm(false) }}>取消</button>}
+      </div>
       </form>
-      <p style={{ color: '#667a6d', marginBottom: 0 }}>启用前须填写合作合同编号。板块仅标识合伙人方向，具体产品佣金在佣金规则页设置。</p>
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人档案</h2>
+    </section>}
+    <div className="partner-ui__directory"><section className="partner-ui__card">
+      <h2>合伙人档案 <span className="partner-ui__muted">· {visiblePartners.length} 位</span></h2>
       <input className="form-input" type="search" aria-label="搜索合伙人" placeholder="搜索名称、手机、板块、对接人或推荐码"
-        value={search} onChange={event => setSearch(event.target.value)} style={{ marginBottom: 12, maxWidth: 380 }} />
-      <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr>
-        <th>名称</th><th>手机号</th><th>板块</th><th>内部对接人</th><th>推荐码</th><th>状态</th><th>操作</th>
-      </tr></thead><tbody>{visiblePartners.map(item => <tr key={item._id}>
-        <td>{item.name}</td><td>{item.phone}</td><td>{segmentName(item.segment || item.productLine)}</td>
+        value={search} onChange={event => { setSearch(event.target.value); setPage(1) }} style={{ marginBottom: 14, maxWidth: 420 }} />
+      <div className="partner-ui__table-wrap"><table className="table"><thead><tr>
+        <th>合伙人</th><th>合作板块</th><th>内部对接</th><th>状态</th><th>操作</th>
+      </tr></thead><tbody>{displayedPartners.map(item => <tr key={item._id} className={selectedId === String(item._id) ? 'is-selected' : ''}>
+        <td><strong>{item.name}</strong><br /><small className="partner-ui__muted">{item.phone}</small></td>
+        <td>{segmentName(item.segment || item.productLine)}</td>
         <td>{liaisonByPartner.get(String(item._id)) || '未指定'}</td>
-        <td>{item.referralCode}</td><td>{item.status}</td><td>
-          <button className="btn btn-sm" onClick={() => { setSelectedId(String(item._id)); setLiaisonPartnerId(String(item._id)) }}>查看产品与团队</button>{' '}
+        <td><span className={`partner-ui__badge${item.status === 'active' ? '' : ' partner-ui__badge--amber'}`}>
+          {({ active: '已启用', suspended: '已暂停', pending: '待审核', closed: '已结束' })[item.status] || item.status}</span></td><td>
+          <button className="btn btn-sm" aria-pressed={selectedId === String(item._id)} onClick={() => {
+            setSelectedId(String(item._id)); setLiaisonPartnerId(String(item._id)) }}>查看详情</button>{' '}
           {item.status !== 'closed' && <button className="btn btn-sm" onClick={() => editPartner(item)}>编辑</button>}{' '}
           {item.status !== 'active' && item.status !== 'closed' && <button className="btn btn-sm" disabled={busy}
             onClick={() => run(() => adminAPI.setMarketPartnerStatus(item._id, 'active'))}>启用</button>}
@@ -163,8 +160,37 @@ export default function MarketPartnerDirectoryPage() {
         </td>
       </tr>)}</tbody></table></div>
       {!visiblePartners.length && <p>暂无匹配合伙人</p>}
+      <div className="partner-ui__pagination"><span>第 {currentPage} / {totalPages} 页</span>
+        <button className="btn btn-sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</button>
+        <button className="btn btn-sm" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>下一页</button></div>
     </section>
-    <section style={card}>
+    <aside className="partner-ui__card partner-ui__detail">
+      <h2>{selected ? selected.name : '合伙人详情'}</h2>
+      {!selected ? <p className="partner-ui__muted">从左侧选择合伙人，即可查看可推广产品、佣金与团队关系。</p> : <>
+        <div className="partner-ui__form-actions"><span className="partner-ui__badge">{segmentName(selected.segment || selected.productLine)}</span>
+          <span className="partner-ui__muted">推荐码 {selected.referralCode || '—'}</span></div>
+        <p className="partner-ui__muted">内部对接人：{liaisonByPartner.get(selectedId) || '未指定'}<br />
+          核算团队：{selectedTeam ? `${selectedTeam.memberCount} 位成员` : '未建立'}</p>
+        <h3 style={{ fontSize: 15, margin: '18px 0 8px' }}>可推广产品与佣金 · {promotable.length} 项</h3>
+        {detailLoading ? <p>正在加载…</p> : <div className="partner-ui__detail-list">
+          {promotable.map(item => <div className="partner-ui__product" key={item.productId}>
+            <strong>{item.name}</strong><small>{item.category} · {item.kind === 'annual' ? '年度首续' : item.kind === 'every' ? '每次' : '仅首次'}
+              {item.directReferralRequired && ' · 须亲自推荐'}</small>
+            <small>首次 {item.firstPercent}%{item.kind === 'annual' && item.renewals.length > 0
+              ? `；${item.renewals.map(year => `第${year.year}年 ${year.percent}%`).join('；')}` : ''}
+              {item.kind === 'every' && item.repeatPercent != null ? `；再次亲自推荐 ${item.repeatPercent}%` : ''}
+              {item.tierPercents.length > 0 && `；阶梯 ${item.tierPercents.join('%／')}%`}</small>
+          </div>)}
+          {!promotable.length && <p className="partner-ui__muted">暂无已生效且在售的推广佣金规则。</p>}
+        </div>}
+        {selected.status !== 'active' && <p className="partner-ui__muted">该合伙人尚未启用，推荐码当前不能用于推广。</p>}
+        <div className="partner-ui__form-actions">
+          <Link className="btn btn-primary" to={`/commission-rules?tab=partner&partnerId=${encodeURIComponent(selectedId)}`}>编辑推广佣金</Link>
+          <Link className="btn btn-ghost" to="/partner-teams">设置核算团队</Link>
+        </div>
+      </>}
+    </aside></div>
+    <section className="partner-ui__card">
       <h2 style={{ fontSize: 18, marginTop: 0 }}>内部市场对接人</h2>
       <p style={{ color: '#667a6d' }}>一名员工可对接多个市场合伙人；每位市场合伙人当前只指定一名内部对接人。对接关系独立于合伙人自己的团队，不改变客户归属、业务量或佣金。</p>
       <div style={row}>
@@ -186,7 +212,7 @@ export default function MarketPartnerDirectoryPage() {
           onClick={() => run(() => adminAPI.createMarketPartnerLiaison({ partnerId: liaisonPartnerId,
             staffId: liaisonStaffId }))}>指定对接人</button>
       </div>
-      <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr>
+      <div className="partner-ui__table-wrap" style={{ marginTop: 16 }}><table className="table"><thead><tr>
         <th>内部员工</th><th>市场合伙人</th><th>合伙人团队</th><th>生效时间</th><th>操作</th>
       </tr></thead><tbody>{liaisons.map(item => {
         const team = accountingTeams.find(row => String(row.leaderId) === String(item.partnerId?._id)
@@ -201,52 +227,6 @@ export default function MarketPartnerDirectoryPage() {
             }}>结束／更换</button></td></tr>
       })}</tbody></table></div>
       {!liaisons.length && <p>尚未指定内部对接人</p>}
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>可推广产品与佣金{selected && ` · ${selected.name}`}</h2>
-      {!selected ? <p>在上方选择合伙人后查看。</p> : detailLoading ? <p>加载中...</p> : <>
-        {selected.status !== 'active' && <p style={{ color: '#a65b00' }}>该合伙人尚未启用，以下产品已配置规则，但目前不能使用推荐码推广。</p>}
-        <div style={{ overflowX: 'auto' }}><table className="table"><thead><tr>
-          <th>产品／服务包</th><th>类别</th><th>推广佣金</th><th>计佣方式</th><th>状态</th>
-        </tr></thead><tbody>{promotable.map(item => <tr key={item.productId}>
-          <td>{item.name}</td><td>{item.category}</td>
-          <td>首次 {item.firstPercent}%{item.kind === 'annual' && item.renewals.length > 0
-            ? `；${item.renewals.map(year => `第${year.year}年 ${year.percent}%`).join('；')}` : ''}
-            {item.tierPercents.length > 0 && `；阶梯 ${item.tierPercents.join('%／')}%`}</td>
-          <td>{item.kind === 'annual' ? '年度首续' : item.kind === 'every' ? '每次' : '仅首次'}
-            {item.directReferralRequired && ' · 须亲自推荐'}</td>
-          <td>{item.canPromote ? '可推广' : '待启用'}</td>
-        </tr>)}</tbody></table></div>
-        {!promotable.length && <p>尚无已生效且在售的产品佣金规则。</p>}
-        <Link className="btn btn-ghost" to={`/commission-rules?tab=partner&partnerId=${encodeURIComponent(selectedId)}`}>设置／修改该合伙人产品佣金</Link>
-      </>}
-    </section>
-    <section style={card}>
-      <h2 style={{ fontSize: 18, marginTop: 0 }}>合伙人团队{selected && ` · ${selected.name}`}</h2>
-      {!selected ? <p>在上方选择合伙人后登记团队成员。</p> : <>
-        <p style={{ color: '#667a6d' }}>这里保留历史联系人名册，不参与业务归因。参与核算的成员须建立自己的合伙人档案，并在<Link to="/partner-teams">合伙人团队</Link>中关联负责人和设置规则。</p>
-        <form onSubmit={saveMember} style={row}>
-          <input className="form-input" aria-label="团队成员姓名" placeholder="成员姓名" value={memberForm.name}
-            onChange={event => setMemberForm({ ...memberForm, name: event.target.value })} required />
-          <input className="form-input" aria-label="团队成员手机号" placeholder="成员手机号" value={memberForm.phone}
-            onChange={event => setMemberForm({ ...memberForm, phone: event.target.value })} required />
-          {editingMember && <><select className="form-input" aria-label="团队成员状态" value={memberForm.status}
-            onChange={event => setMemberForm({ ...memberForm, status: event.target.value })}>
-            <option value="active">在团队</option><option value="suspended">已暂停</option>
-          </select><input className="form-input" aria-label="团队成员修改原因" placeholder="修改原因及依据"
-            value={memberForm.reason} onChange={event => setMemberForm({ ...memberForm, reason: event.target.value })} required /></>}
-          <button className="btn btn-primary" disabled={busy}>{editingMember ? '保存成员修改' : '添加团队成员'}</button>
-          {editingMember && <button type="button" className="btn btn-ghost" onClick={() => {
-            setEditingMember(null); setMemberForm(emptyMember) }}>取消</button>}
-        </form>
-        <div style={{ overflowX: 'auto', marginTop: 14 }}><table className="table"><thead><tr>
-          <th>成员</th><th>手机号</th><th>状态</th><th>操作</th>
-        </tr></thead><tbody>{members.map(item => <tr key={item._id}><td>{item.name}</td><td>{item.phone}</td>
-          <td>{item.status === 'active' ? '在团队' : '已暂停'}</td><td><button className="btn btn-sm" onClick={() => {
-            setEditingMember(item); setMemberForm({ name: item.name, phone: item.phone, status: item.status, reason: '' })
-          }}>编辑</button></td></tr>)}</tbody></table></div>
-        {!members.length && <p>暂未登记团队成员</p>}
-      </>}
     </section>
   </div>
 }

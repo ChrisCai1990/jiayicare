@@ -1,6 +1,7 @@
 import React from 'react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAdmin } from '../../App'
+import '../partnerWorkspace.css'
 
 const sections = [
   ['/partner-workbench/overview', '团队与人员'],
@@ -14,17 +15,18 @@ export default function PartnerWorkbench() {
   const { admin } = useAdmin()
   const location = useLocation()
   if (admin?.role !== 'superadmin') return <Navigate to="/dashboard" replace />
-  return <div style={{ minHeight: '100vh', background: '#f4f6f7', padding: '24px 18px' }}>
-    <header style={{ maxWidth: 1280, margin: '0 auto 20px' }}>
-      <h1 style={{ margin: '0 0 8px' }}>嘉医汇业务工作台</h1>
-      <p style={{ color: '#667a6d', margin: '0 0 14px' }}>机构超级管理员查看全员业务并处理登记与审核</p>
-      <nav style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {sections.map(([path, label]) => <Link key={path} className="btn"
-          style={location.pathname === path ? { background: '#087b5a', color: '#fff' } : {}}
-          to={path}>{label}</Link>)}
-        <Link className="btn" to="/partner-teams">返回 Admin 规则设置</Link>
-      </nav>
+  return <div className="partner-workspace"><div className="partner-workspace__shell">
+    <header className="partner-workspace__hero">
+      <div className="partner-workspace__eyebrow">JIAYICARE · BUSINESS WORKSPACE</div>
+      <h1>嘉医汇业务工作台</h1>
+      <p>查看团队、业务与结算，处理登记和财务核对</p>
     </header>
-    <div style={{ maxWidth: 1280, margin: '0 auto' }}><Outlet /></div>
+    <nav className="partner-workspace__nav" aria-label="业务工作台导航">
+      {sections.map(([path, label]) => <Link key={path} aria-current={location.pathname === path ? 'page' : undefined}
+        to={path}>{label}</Link>)}
+      <Link className="partner-workspace__back" to="/partner-teams">返回规则设置 ↗</Link>
+    </nav>
+    <Outlet />
+  </div>
   </div>
 }

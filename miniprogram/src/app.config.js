@@ -34,6 +34,7 @@ export default defineAppConfig({
     'pages/profile/benefits/index',
     'pages/profile/family/index',
     'pages/profile/invite/index',
+    'pages/profile/partner-promotion/index',
     'pages/questionnaire/index',
     'pages/records/ai-health/index',
     'pages/records/medical-reports/index',

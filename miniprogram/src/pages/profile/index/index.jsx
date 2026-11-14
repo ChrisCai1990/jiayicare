@@ -3,7 +3,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { useAuth } from '../../../context/AuthContext';
-import { ordersAPI, userAPI } from '../../../services/api';
+import { ordersAPI, servicesAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { getOrderBadgeCounts } from '../../../utils/orderStatus';
@@ -57,6 +57,7 @@ export default function ProfilePage() {
   const { user, token, loading: authLoading, logout, updateUser } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
   const [orderCounts, setOrderCounts] = useState({ payment: 0, service: 0, progress: 0, afterSale: 0 });
+  const [partnerPromotion, setPartnerPromotion] = useState(false);
 
   useDidShow(() => {
     userAPI.getMe().then((res) => {
@@ -71,6 +72,10 @@ export default function ProfilePage() {
   };
 
   useDidShow(() => { loadOrderCounts(); });
+  useDidShow(() => {
+    if (!token) { setPartnerPromotion(false); return; }
+    servicesAPI.myPartnerPromotion().then(res => setPartnerPromotion(!!res?.data)).catch(() => setPartnerPromotion(false));
+  });
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry) || user?.serviceAccess?.source === 'verified_renewal';
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
@@ -257,6 +262,7 @@ export default function ProfilePage() {
           <MenuItem icon="🌐" iconColor="#2563EB" label={t('语言')} value={language === 'en-US' ? 'English' : '简体中文'} onClick={chooseLanguage} />
           <MenuItem icon="🎁" iconColor="#8e44ad" label="会员权益" onClick={() => nav('/pages/profile/benefits/index')} />
           <MenuItem icon="users" iconColor="#D97706" label="邀请好友" value="分享专属邀请链接" onClick={() => nav('/pages/profile/invite/index')} />
+          {partnerPromotion && <MenuItem icon="briefcase" iconColor={colors.primary} label="我的推广" value="分享授权商品" onClick={() => nav('/pages/profile/partner-promotion/index')} />}
           <MenuItem icon="🔔" iconColor="#7C3AED" label="通知设置" onClick={() => nav('/pages/profile/notifications/index')} />
           <MenuItem icon="🔒" iconColor="#22A06B" label="账号安全" onClick={() => nav('/pages/profile/security/index')} />
           <MenuItem icon="🔒" iconColor="#22A06B" label="AI与语音授权" value="本人授权、查看或撤回" onClick={manageAiDataConsent} />

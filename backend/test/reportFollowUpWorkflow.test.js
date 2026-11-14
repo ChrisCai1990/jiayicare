@@ -5,10 +5,27 @@ const Report = require('../src/models/MedicalReport');
 const FollowUp = require('../src/models/FollowUp');
 const User = require('../src/models/User');
 const AnnualPlan = require('../src/models/AnnualPlan');
-const { materializeReportEvent, generateReportDraft, syncReportReviewTask } = require('../src/utils/reportFollowUpAutomation');
+const { materializeReportEvent, generateReportDraft, syncReportReviewTask, assertReportDraftSource } = require('../src/utils/reportFollowUpAutomation');
 const { sourceDigest } = require('../src/utils/reportFollowUpSource');
 const { publishReportFollowUps } = require('../src/utils/dynamicAssessmentFollowUps');
 const { isServiceRequest } = require('../src/utils/followUpServiceState');
+
+test('待顾问解读的体检报告只保留来源事件，不提前生成年度问题草稿', async t => {
+  const report = { _id: 'report', user: 'patient', documentCategory: 'physical_exam', audit_status: 'audited', advisorInterpretationConfirmedAt: null, followUpSourceEvent: { status: 'queued', sequence: 1, digest: 'digest' } };
+  t.mock.method(Report, 'updateOne', async (query, update) => {
+    assert.equal(query.advisorInterpretationConfirmedAt, null);
+    assert.equal(update.$set['followUpSourceEvent.status'], 'waiting_interpretation');
+  });
+  t.mock.method(Draft, 'findOneAndUpdate', async () => { throw Error('确认解读前不能生成草稿'); });
+  await materializeReportEvent(report);
+});
+
+test('历史提前生成的年度草稿在确认解读前不能审核', async t => {
+  const report = { _id: 'report', user: 'patient', documentCategory: 'physical_exam', audit_status: 'audited', advisorInterpretationConfirmedAt: null, followUpSourceEvent: { sequence: 1 } };
+  const draft = { patientId: 'patient', reportId: 'report', sourceSequence: 1, sourceKey: `report:1:${sourceDigest(report)}`, purpose: 'annual_report_input' };
+  t.mock.method(Report, 'findById', () => ({ lean: async () => report }));
+  await assert.rejects(assertReportDraftSource(draft), /先完成本次报告的健康顾问解读确认/);
+});
 
 test('年度问题队列保留无建议异常，完成仅更新资料不派发执行随访', async t => {
   t.mock.method(AnnualPlan, 'exists', async () => false);

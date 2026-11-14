@@ -1,6 +1,7 @@
 const { createHash } = require('node:crypto');
 const CLINICAL_FIELDS = ['title', 'checkDate', 'institution', 'documentCategory', 'examDescription', 'examConclusion', 'examMainConclusions', 'reportItems', 'sourceOrderId', 'sourceHealthPlanId', 'planId', 'sourceServiceRecordId'];
 const CATEGORIES = ['outpatient_record', 'inpatient_record', 'lab_report', 'exam_report', 'physical_exam'];
+const needsAdvisorInterpretation = report => report.documentCategory !== 'outpatient_record' && CATEGORIES.includes(report.documentCategory);
 const plain = value => value?.toObject ? value.toObject() : value;
 function reportSnapshot(report) {
   return {
@@ -38,4 +39,4 @@ async function reportExclusion(report, dependencies = {}) {
   if (await Referral.exists({ patientId: report.user, 'consultation.sourceReportId': report._id, status: { $ne: 'rejected' } })) return '此报告已用于会诊，避免与会诊随访重复。';
   return '';
 }
-module.exports = { CLINICAL_FIELDS, CATEGORIES, reportSnapshot, sourceDigest, markReportFollowUpEvent, isReportSourceCurrent, reportExclusion };
+module.exports = { CLINICAL_FIELDS, CATEGORIES, needsAdvisorInterpretation, reportSnapshot, sourceDigest, markReportFollowUpEvent, isReportSourceCurrent, reportExclusion };

@@ -375,6 +375,7 @@ export const checkupAPI = {
 
 // ── Services / 服务商城 ───────────────────────────────────────────
 export const servicesAPI = {
+  myPartnerPromotion: () => request('/services/my-partner-promotion'),
   createProductShare: (productId) => request('/services/product-shares', { method: 'POST', body: JSON.stringify({ productId }) }),
   claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
   claimPartnerReferral: (productId, partnerCode) => request('/services/partner-referrals/claim', { method: 'POST', body: JSON.stringify({ productId, partnerCode }) }),
