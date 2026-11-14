@@ -10372,8 +10372,8 @@ router.get('/monthly-service-reviews/workbench', staffAuth, async (req, res) => 
     const assignedReviews = await MonthlyServiceReview.find({ 'actions.assigneeId': req.staff._id, status: 'confirmed', ...rollout.patientFilter() }).select('patientId annualPlanId month actions').lean();
     const actions = assignedReviews.flatMap(review => review.actions.filter(action => action.status === 'pending' && String(action.assigneeId) === String(req.staff._id)).map(action => ({ reviewId: review._id, annualPlanId: review.annualPlanId, patientId: review.patientId, month: review.month, actionId: action._id, title: action.title, dueAt: action.dueAt })));
     const cycle = await require('./managementReviews').workbench(req.staff);
-    const isPilot = require('../utils/managementReviewPolicy').enabled;
-    res.json({ success: true, data: { pending: [...pending.filter(x=>!isPilot(x.patientId)), ...cycle.pending], actions: [...actions.filter(x=>!isPilot(x.patientId)), ...cycle.actions] } });
+    const showLegacy = rollout.legacyWorkbenchVisible;
+    res.json({ success: true, data: { pending: [...pending.filter(x=>showLegacy(x.patientId)), ...cycle.pending], actions: [...actions.filter(x=>showLegacy(x.patientId)), ...cycle.actions] } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

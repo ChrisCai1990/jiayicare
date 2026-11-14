@@ -19,6 +19,13 @@ function enabledForPatient(value, env = process.env) {
   return config.mode === 'all' || (config.mode === 'allowlist' && config.ids.includes(patientId(value)));
 }
 
+// Restored patients use PhaseAssessment. Their retained monthly-review drafts
+// are historical records and must not be projected as new planner work.
+function legacyWorkbenchVisible(value, env = process.env) {
+  const management = require('./managementReviewPolicy');
+  return !management.enabled(value, env) && !management.restored(value, env);
+}
+
 function patientFilter(field = 'patientId', env = process.env) {
   const config = policy(env);
   if (config.mode === 'disabled') return { [field]: { $in: [] } };
@@ -28,4 +35,4 @@ function patientFilter(field = 'patientId', env = process.env) {
   return { [field]: { $in: config.ids.filter(id => healthRollout.enabledForPatient(id, env)) } };
 }
 
-module.exports = { policy, enabledForPatient, patientFilter };
+module.exports = { policy, enabledForPatient, patientFilter, legacyWorkbenchVisible };
