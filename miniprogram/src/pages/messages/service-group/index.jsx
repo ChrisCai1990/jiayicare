@@ -1,5 +1,5 @@
 import { manageAiDataConsent } from '../../../utils/aiDataConsent';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Textarea, Image } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
@@ -20,7 +20,10 @@ export default function ServiceGroupPage() {
   const [error, setError] = useState('');
   const [visible, setVisible] = useState(true);
 
+  const refreshing = useRef(false);
   const refresh = useCallback(async () => {
+    if (refreshing.current) return;
+    refreshing.current = true;
     try {
       const response = await api.list();
       const current = (response.data || [])[0] || null;
@@ -28,7 +31,7 @@ export default function ServiceGroupPage() {
       setMessages(current ? (await api.messages(current.id)).data || [] : []);
       setError('');
     } catch (e) { setError(e.message || '服务群读取失败'); }
-    finally { setLoading(false); }
+    finally { refreshing.current = false; setLoading(false); }
   }, []);
 
   useDidShow(() => setVisible(true));
@@ -36,7 +39,7 @@ export default function ServiceGroupPage() {
   useEffect(() => {
     if (!visible) return;
     refresh();
-    const timer = setInterval(refresh, 10000);
+    const timer = setInterval(refresh, 2000);
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
