@@ -43,6 +43,11 @@ export default function PartnerPromotionPage() {
     {!loading && error && <Text style={{ display: 'block', padding: '24px', color: colors.danger }}>{error}</Text>}
     {!loading && profile && <View style={{ padding: `${spacing.lg}px` }}>
       <Text style={{ display: 'block', marginBottom: '12px', fontSize: '14px', color: colors.textSecondary }}>{profile.name} · 已授权 {profile.products.length} 项商品</Text>
+      <View style={{ marginBottom: '14px', padding: '16px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}` }}>
+        <Text style={{ display: 'block', fontWeight: 700 }}>我的合作工作台</Text>
+        <Text style={{ display: 'block', marginTop: '7px', fontSize: '13px', color: colors.textSecondary }}>团队、业务、佣金及已签协议可在网页工作台查看；使用登记的合伙人手机号登录。</Text>
+        <Button size="mini" style={{ marginTop: '10px' }} onClick={() => Taro.setClipboardData({ data: 'https://admin.jiaycare.com/market-partner' })}>复制工作台地址</Button>
+      </View>
       <Input value={keyword} onInput={event => setKeyword(event.detail.value)} placeholder="搜索授权商品"
         style={{ padding: '12px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, marginBottom: '12px' }} />
       {products.length === 0 && <Text style={{ color: colors.textMuted }}>暂无匹配商品</Text>}

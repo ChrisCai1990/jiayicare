@@ -35,7 +35,7 @@ router.post('/send-code', async (req, res) => {
   recordSmsAttempt(phone, req.ip);
   const { partner, ambiguous } = await partnerForPhone(phone);
   if (ambiguous) return res.status(409).json({ success: false, message: '该手机号关联多个合伙人档案，请联系管理员核对' });
-  if (!partner) return res.status(404).json({ success: false, message: '未找到已开通的合伙人账号' });
+  if (!partner) return res.status(404).json({ success: false, message: '该手机号尚无已启用的市场合伙人账号，请管理员在合伙人档案中核对状态并点击“启用”' });
   const code = String(crypto.randomInt(100000, 1000000));
   await MarketPartnerVerificationCode.findOneAndUpdate({ partnerId: partner._id },
     { $set: { codeHash: hashCode(partner._id, code), expiresAt: new Date(Date.now() + 300000), attempts: 0 } },
@@ -87,6 +87,7 @@ router.use(async (req, res, next) => {
 
 router.get('/me', (req, res) => res.json({ success: true, data: { name: req.marketPartner.name,
   productLine: req.marketPartner.productLine, referralCode: req.marketPartner.referralCode } }));
+router.use('/cooperation', require('./cooperationWorkbench').marketRouter);
 
 router.get('/my-overview', async (req, res) => {
   try {

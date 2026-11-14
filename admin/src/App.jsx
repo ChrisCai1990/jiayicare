@@ -16,6 +16,7 @@ import PartnerTeamEarningsPage from './pages/public/PartnerTeamEarningsPage'
 import ExpertInvitationPage from './pages/public/ExpertInvitationPage'
 import ExpertSupplementPage from './pages/public/ExpertSupplementPage'
 import ExpertRecruitmentPage from './pages/settings/ExpertRecruitmentPage'
+import CooperationAgreementsPage from './pages/CooperationAgreementsPage'
 import DashboardPage from './pages/DashboardPage'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
@@ -217,6 +218,7 @@ export default function App() {
               <Route path="settings/employees"   element={<EmployeePage />} />
               <Route path="settings/medical-resources" element={<MedicalResourcesPage />} />
               <Route path="settings/expert-recruitment" element={<ExpertRecruitmentPage />} />
+              <Route path="settings/cooperation-agreements" element={<CooperationAgreementsPage />} />
               <Route path="settings/medical-resource-knowledge" element={<MedicalResourceKnowledgePage />} />
               <Route path="settings/medical-delivery-resources" element={<MedicalDeliveryResourcesPage />} />
               <Route path="settings/members"  element={<MemberSettingsPage />} />

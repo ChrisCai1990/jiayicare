@@ -38,9 +38,10 @@ const ALL_NAV = [
   { label: '消息通知',     icon: 'notifications', path: '/notifications', roles: [] },
   { label: '分派给我的反馈', icon: 'notifications', path: '/feedback', roles: [] },
   { label: '个人中心',     icon: 'profile', path: '/profile',       roles: [] },
+  { label: '我的合作',     icon: 'commission', path: '/cooperation', roles: [] },
 ]
 
-const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/ai-workspace', '/patients', '/notifications', '/profile']
+const PRIMARY_NAV_PATHS = ['/home', '/service-assistant', '/ai-workspace', '/patients', '/notifications', '/profile', '/cooperation']
 const NAV_GROUPS = [
   { id: 'care', label: '会员服务', paths: ['/in-app-service-groups', '/followups', '/plans', '/reports', '/service-records', '/expert-consultations', '/daily-checkin'] },
   { id: 'resources', label: '资源与推送', paths: ['/medical-resource-knowledge', '/specialty-library', '/knowledge', '/questionnaires', '/products', '/inventory'] },
@@ -72,7 +73,7 @@ function LayoutContent() {
   const groupReminders = useGroupReminders()
   const visibleNav = setup ? getSetupNav(staff) : ALL_NAV.filter(item => {
     if (item.trialOnly && !aiWorkspaceEnabled) return false
-    if (staff?.role === 'psychologist') return item.path === '/expert-consultations' || item.path === '/ai-workspace'
+    if (staff?.role === 'psychologist') return item.path === '/expert-consultations' || item.path === '/ai-workspace' || item.path === '/cooperation'
     if (!item.moduleKey) return item.roles.length === 0 || item.roles.includes(staff?.role)
     if (staff?.customPermissions) return hasModulePermission(staff, item.moduleKey, 'view')
     return item.roles.length === 0 || item.roles.includes(staff?.role)

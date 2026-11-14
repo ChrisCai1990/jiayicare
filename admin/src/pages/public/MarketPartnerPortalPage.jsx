@@ -29,14 +29,15 @@ export default function MarketPartnerPortalPage() {
   const [commissions, setCommissions] = useState([])
   const [orders, setOrders] = useState([])
   const [overview, setOverview] = useState(null)
+  const [cooperation, setCooperation] = useState(null)
   const [month, setMonth] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).format(new Date()))
   const [tab, setTab] = useState('commissions')
 
   useEffect(() => {
     if (!token) return
     Promise.all([call('/me', undefined, token), call('/products', undefined, token),
-      call('/commissions', undefined, token), call('/orders', undefined, token)])
-      .then(([identity, items, fees, sales]) => { setMe(identity); setProducts(items); setCommissions(fees); setOrders(sales) })
+      call('/commissions', undefined, token), call('/orders', undefined, token), call('/cooperation/me', undefined, token)])
+      .then(([identity, items, fees, sales, profile]) => { setMe(identity); setProducts(items); setCommissions(fees); setOrders(sales); setCooperation(profile) })
       .catch(err => { setError(err.message); sessionStorage.removeItem('jy_market_partner_token'); setToken('') })
   }, [token])
 
@@ -61,7 +62,18 @@ export default function MarketPartnerPortalPage() {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
-  const logout = () => { sessionStorage.removeItem('jy_market_partner_token'); setToken(''); setMe(null) }
+  const logout = () => { sessionStorage.removeItem('jy_market_partner_token'); setToken(''); setMe(null); setCooperation(null) }
+  const downloadAgreement = async row => {
+    setBusy(true); setError('')
+    try {
+      const res = await fetch(`${API_BASE}/cooperation/files/${row.id}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', referrerPolicy: 'no-referrer' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || '下载失败')
+      const url = URL.createObjectURL(await res.blob())
+      const link = document.createElement('a')
+      link.href = url; link.download = row.name || '已签合作协议'; document.body.appendChild(link); link.click(); link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
   const card = { background: '#fff', border: '1px solid #d9e5de', borderRadius: 12, padding: 16, marginBottom: 12 }
   const field = { width: '100%', padding: '11px 12px', border: '1px solid #c6d6ce', borderRadius: 8, marginTop: 8, boxSizing: 'border-box' }
   const button = { border: 0, background: '#176b4d', color: '#fff', borderRadius: 8, padding: '11px 16px', cursor: 'pointer' }
@@ -83,6 +95,14 @@ export default function MarketPartnerPortalPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}><strong>{me?.name || '合伙人'}</strong><button onClick={logout}>退出</button></div>
           <p>授权产品线：{me?.productLine || '—'}　推荐码：{me?.referralCode || '—'}</p>
           <p style={{ fontSize: 13, color: '#607568', marginBottom: 0 }}>在用户小程序“我的推广”选择商品并分享给客户；佣金以财务审核与实际打款为准。</p>
+        </section>
+        <section style={card}>
+          <h2 style={{ fontSize: 18, marginTop: 0 }}>我的合作协议</h2>
+          {cooperation?.profile?.contractReference && <p>合同编号：{cooperation.profile.contractReference}</p>}
+          {cooperation?.agreements?.length ? cooperation.agreements.map(row => <div key={row.id} style={{ borderTop: '1px solid #E5EDE9', padding: '10px 0' }}>
+            <strong>{row.title}</strong> · 签署于 {row.signedDate}<div>{row.name}</div>
+            <button type="button" style={button} disabled={busy} onClick={() => downloadAgreement(row)}>下载手签协议</button>
+          </div>) : <p>尚未归档已签文件，请联系嘉医汇核对。</p>}
         </section>
         <section style={card}>
           <h2 style={{ fontSize: 18, marginTop: 0 }}>我的团队与业务</h2>

@@ -97,6 +97,7 @@ app.use('/api/services',      require('./routes/services'));
 app.use('/api/visitor-assistant', require('./routes/visitorAssistant'));
 app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
 app.use('/api/market-partner', require('./routes/marketPartnerPortal'));
+app.use('/api/admin/cooperation-agreements', require('./routes/cooperationWorkbench').adminRouter);
 app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
 app.use('/api/enterprise-hr', require('./routes/enterpriseServiceRecords').hrRouter);
 app.use('/api/ops-dashboard', require('./routes/opsDashboard'));
@@ -128,6 +129,7 @@ app.use('/api/staff/nutrition-assessments', require('./routes/nutritionAssessmen
 app.use('/api/staff', require('./routes/weightProgressPhotos').staffRouter);
 app.use('/api/weight-progress-photos', require('./routes/weightProgressPhotos').userRouter);
 app.use('/api/staff',         staffRouter);
+app.use('/api/staff/cooperation', require('./routes/cooperationWorkbench').staffRouter);
 app.use('/api/staff/inventory', require('./routes/inventory').staffRouter);
 app.use('/api/staff/specialty-library', require('./routes/specialtyLibrary').staffRouter);
 app.use('/api/staff/clinical-standards', require('./routes/clinicalStandardsStaff'));
