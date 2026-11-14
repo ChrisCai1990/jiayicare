@@ -66,7 +66,7 @@ export function useStaff() { return useContext(AuthCtx) }
 // 未列出的路由（工作台/消息/个人中心/会员详情等）不做模块级权限拦截。
 export const ROUTE_MODULE = {
   '/service-assistant': 'service_assistant',
-  '/in-app-service-groups': 'service_assistant',
+  '/in-app-service-groups': 'patients',
   '/patients': 'patients',
   '/followups': 'followups',
   '/plans': 'plans',

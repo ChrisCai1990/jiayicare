@@ -10,7 +10,7 @@ const User = require('../models/User');
 const Admin = require('../models/Admin');
 const Team = require('../models/Team');
 const StaffRole = require('../models/StaffRole');
-const { assignmentFields, assignedIds, isAssignedLeader, canCustomerAccess, canStaffAccess,
+const { assignmentFields, assignedIds, canUseGroupModule, isAssignedLeader, canCustomerAccess, canStaffAccess,
   canMentorObserve, needsStaffReply, same } = require('../utils/inAppServiceGroupPolicy');
 
 const customerRouter = express.Router();
@@ -39,13 +39,11 @@ async function mentorStaffIds(staff) {
     teamId: { $in: teams.map(team => team._id) }, staffStatus: 'active' }).select('_id').lean();
   return people.map(person => person._id);
 }
-async function permitStaff(req, action = 'view') {
+async function permitStaff(req) {
   if (req.staff.role === 'superadmin' || !req.staff.customRoleId) return;
   const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();
-  if (!role?.permissions?.patients?.view || !role?.permissions?.service_assistant?.view)
+  if (!canUseGroupModule(role?.permissions))
     fail('当前角色无权使用服务群');
-  if (action === 'send' && !(role.permissions.service_assistant.send || role.permissions.service_assistant.create))
-    fail('当前角色无权发送服务群消息');
 }
 async function groupAndPatient(groupId, tenantId) {
   const group = await Group.findOne({ _id: validId(groupId), tenantId, status: 'active' }).lean();
@@ -154,7 +152,7 @@ staffRouter.get('/', wrap(async (req, res) => {
       patients.some(patient => leaderCanConfigure(patient, req.staff, mentoredIds)) });
 }));
 staffRouter.get('/configuration/:patientId', wrap(async (req, res) => {
-  await permitStaff(req, 'send');
+  await permitStaff(req);
   const patient = await User.findOne({ _id: validId(req.params.patientId),
     tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
     .select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
@@ -166,7 +164,7 @@ staffRouter.get('/configuration/:patientId', wrap(async (req, res) => {
     membershipVersion: group?.membershipVersion || 0 } });
 }));
 staffRouter.post('/', wrap(async (req, res) => {
-  await permitStaff(req, 'send');
+  await permitStaff(req);
   const patientId = validId(req.body?.patientId);
   const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId,
     isDeleted: { $ne: true } }).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
@@ -222,7 +220,7 @@ staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   res.json({ success: true, data, supervised });
 }));
 staffRouter.post('/:groupId/messages', wrap(async (req, res) => {
-  await permitStaff(req, 'send');
+  await permitStaff(req);
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
   if (!canStaffAccess(group, patient, req.staff)) fail('仅当前服务人员可以回复');
   res.status(201).json({ success: true, data: await send(group, 'staff', req.staff, req.body?.content) });

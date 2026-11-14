@@ -14,7 +14,7 @@ import { hasModulePermission } from '../modulePermission'
 const ALL_NAV = [
   { label: '工作台',       icon: 'home', path: '/home',             roles: [] },
   { label: '家庭服务助手', icon: 'services', path: '/service-assistant', roles: [], moduleKey: 'service_assistant' },
-  { label: '系统服务群', icon: 'services', path: '/in-app-service-groups', roles: [], moduleKey: 'service_assistant' },
+  { label: '系统服务群', icon: 'services', path: '/in-app-service-groups', roles: [], moduleKey: 'patients' },
   { label: 'AI 工作台 · 试用', icon: 'brain', path: '/ai-workspace', roles: [], trialOnly: true },
   { label: '我的会员',     icon: 'patients', path: '/patients',     roles: [],                                                                                  moduleKey: 'patients' },
   { label: '随访管理',     icon: 'followups', path: '/followups',   roles: [],                                                                                  moduleKey: 'followups' },

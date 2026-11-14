@@ -5,6 +5,7 @@ const assignmentFields = [
 ];
 const same = (a, b) => String(a?._id || a || '') === String(b?._id || b || '');
 const assignedIds = patient => assignmentFields.map(key => patient?.[key]).filter(Boolean);
+const canUseGroupModule = permissions => !!permissions?.patients?.view;
 const isAssignedLeader = (patient, staff) => !!patient && !!staff &&
   (same(patient.assignedFamilyDoctor, staff._id) ||
     same(patient.assignedNutritionist, staff._id));
@@ -34,5 +35,5 @@ function needsStaffReply(group) {
   return !!group?.lastCustomerMessageAt &&
     (!group.lastStaffMessageAt || +new Date(group.lastCustomerMessageAt) > +new Date(group.lastStaffMessageAt));
 }
-module.exports = { assignmentFields, assignedIds, isAssignedLeader, canCustomerAccess, canStaffAccess,
+module.exports = { assignmentFields, assignedIds, canUseGroupModule, isAssignedLeader, canCustomerAccess, canStaffAccess,
   canMentorObserve, needsStaffReply, same };

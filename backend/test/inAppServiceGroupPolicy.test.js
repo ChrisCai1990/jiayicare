@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { canCustomerAccess, canStaffAccess, canMentorObserve, isAssignedLeader, needsStaffReply } = require('../src/utils/inAppServiceGroupPolicy');
+const { canCustomerAccess, canStaffAccess, canMentorObserve, canUseGroupModule, isAssignedLeader, needsStaffReply } = require('../src/utils/inAppServiceGroupPolicy');
+
+test('服务群独立于家庭服务助手权限，仍要求会员查看权限', () => {
+  assert.equal(canUseGroupModule({ patients: { view: true }, service_assistant: { view: false } }), true);
+  assert.equal(canUseGroupModule({ patients: { view: false }, service_assistant: { view: true } }), false);
+});
 
 const group = { patientId: 'patient-a', tenantId: 'tenant-a', status: 'active', memberIds: ['staff-a'] };
 const patient = { _id: 'patient-a', tenantId: 'tenant-a', assignedHealthManager: 'staff-a' };
