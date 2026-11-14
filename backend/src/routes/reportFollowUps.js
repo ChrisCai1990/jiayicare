@@ -122,7 +122,7 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       if (action === 'approve' && ['queued', 'running', 'failed'].includes(row.followUpAutomation?.status)) fail('请先完成草稿或人工接管');
       let drafts = row.followUpDrafts;
       if (action === 'approve') {
-        try { drafts = validateAssessmentFollowUpDrafts(req.body.followUpDrafts); }
+        try { drafts = validateAssessmentFollowUpDrafts(req.body.followUpDrafts, { structuredVisit: true }); }
         catch (error) { fail(error.message, 400); }
         if (drafts.length > 1) fail('后续就医仅保留一次随访，请合并本次就医的跟进内容', 400);
       }

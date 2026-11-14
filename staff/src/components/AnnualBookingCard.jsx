@@ -10,7 +10,7 @@ export function BookingSummary({ booking }) {
   if (!booking.entries) return <p>{booking.date} {booking.time} · {booking.hospital} · {booking.department} · {booking.expert || '未指定专家'} {booking.note}</p>
   return <div>{booking.entries.map(e => <div key={e.id} style={{ padding: '10px 0', borderBottom: '1px solid #E0D9CE' }}>
     <b>{e.type === 'exam' ? '检查' : '门诊'} · {e.title}</b>
-    <div>{e.hospital || '医院待确认'} · {e.department || '科室待顾问确认'} · {e.expert || '未指定专家'}</div>
+    <div>{e.hospital || '医院待确认'}{e.campus ? ` · ${e.campus}` : ''} · {e.department || '科室待顾问确认'} · {e.expert || '未指定专家'}</div>
     <div>{e.status === 'booked' ? `已预约：${e.date} ${e.time}` : e.mode === 'onsite' ? '待就医专员现场预约（未完成）' : '无需预约'}</div>
     {e.note && <div>交接说明：{e.note}</div>}
     {e.onsiteResult?.note && <div>现场结果：{e.onsiteResult.note}</div>}
@@ -36,7 +36,7 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
     {planTools.bookingReady(booked) ? <><b>预约安排已确认</b><BookingSummary booking={booked} /><p>现场预约仍待执行；预约安排不代表就医或检查完成。</p></> : canEdit && itemTools.needsBooking(task) ? <div style={{ display: 'grid', gap: 16 }}>
       {slots.map((s, i) => { const e = entries[i]; return <section key={s.id} style={{ background: '#F6FBF8', padding: 16, border: '1px solid #DCE9E2', borderRadius: 10, display: 'grid', gap: 10 }}>
         <b>{s.type === 'exam' ? '检查预约' : '门诊预约'} · {s.title}</b>
-        <div>医院：{s.hospital || '未指定'}<br />{s.type === 'exam' ? '检查科室' : '就医/开单科室'}：{s.department || '待顾问确认'}<br />{s.candidates?.length ? '顾问候选专家' : s.type === 'exam' ? '检查专家' : '门诊专家'}：{s.candidates?.map(item => item.name).join('、') || s.expert || '未指定专家'}</div>
+        <div>医院：{s.hospital || '未指定'}{s.campus ? ` · ${s.campus}` : ''}<br />{s.type === 'exam' ? '检查科室' : '就医/开单科室'}：{s.department || '待顾问确认'}<br />{s.candidates?.length ? '顾问候选专家' : s.type === 'exam' ? '检查专家' : '门诊专家'}：{s.candidates?.map(item => item.name).join('、') || s.expert || '未指定专家'}</div>
         {!s.department && <small style={{ color: '#B45309' }}>预约前需由顾问明确科室，现场办理也不能跳过。</small>}
         <label>办理方式<select className="form-input" value={e.mode} onChange={ev => change(s.id, 'mode', ev.target.value)}>
           <option value="prebook">健管专员提前预约</option>

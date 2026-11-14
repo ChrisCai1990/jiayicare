@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { publishAssessmentFollowUps } = require('../src/utils/dynamicAssessmentFollowUps');
+const { publishAssessmentFollowUps, publishReportFollowUps } = require('../src/utils/dynamicAssessmentFollowUps');
 const { validateAssessmentFollowUpDrafts } = require('../src/utils/assessmentFollowUpDrafts');
 
 const draft = { title: '核对报告', content: '核对专科评估要求补充的报告', date: '2026-10-01', category: 'information', requiresService: false };
@@ -86,4 +86,23 @@ test('并发唯一键冲突仅在目标任务已存在时作为成功处理', as
   assert.equal((await publishAssessmentFollowUps(row, { _id: 'advisor' }, models)).created, 0);
   models.rows.clear();
   await assert.rejects(publishAssessmentFollowUps(row, { _id: 'advisor' }, models), /duplicate/);
+});
+
+test('单次就医须明确资源和服务类型，发布后预约与规划师事项关联同一随访', async () => {
+  const visit = { hospital: '医院甲', campus: '东院区', department: '神经内科', expert: '专家甲',
+    reason: '核对报告', notes: '携带原件', bookingRequired: true, serviceMode: 'single', serviceType: 'escort_visit' };
+  const row = { ...draft, category: 'medical_visit', visitPlan: visit };
+  assert.throws(() => validateAssessmentFollowUpDrafts([{ ...row, visitPlan: { ...visit, campus: '' } }], { structuredVisit: true }), /院区/);
+  assert.throws(() => validateAssessmentFollowUpDrafts([{ ...row, visitPlan: { ...visit, serviceType: '' } }], { structuredVisit: true }), /协助类型/);
+  const models = fixture();
+  await publishReportFollowUps(assessment([row]), { _id: 'advisor' }, models);
+  const [parent, request] = [...models.rows.values()];
+  assert.equal(parent.deliveryMode, 'single');
+  assert.equal(parent.formData.bookingRequest.campus, '东院区');
+  assert.match(parent.plannedContent, /院区：东院区/);
+  assert.equal(request.formData.linkedFollowUpActionKey, parent.assessmentActionKey);
+  assert.equal(request.formData.serviceRequest.itemSnapshot.expert, '专家甲');
+  assert.equal(require('../../shared/annualServiceItem.cjs').isBookingRequest(request), true);
+  assert.equal(require('../../shared/annualServiceItem.cjs').isAssistance(parent), true);
+  assert.equal(require('../../shared/annualDispatch.cjs').isRequest(request), true);
 });

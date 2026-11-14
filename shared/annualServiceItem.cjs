@@ -12,6 +12,8 @@ function followUpKey(task) {
   return label ? `${match[1]}:${match[2]}:${label}` : null;
 }
 function isAssistance(task) {
+  if (task?.sourceType === 'report_followup' && task.workflowKey === 'report_followup:dynamic_followup')
+    return !!task.formData?.bookingRequest?.required;
   return task.sourceType === 'scheduled' && !!task.sourceAnnualPlanId
     && (['single', 'managed'].includes(task.deliveryMode) || task.formData?.bookingRequest?.required === true)
     && appointmentModules.includes(String(task.sourceScheduleKey || '').split(':')[0]);
@@ -21,6 +23,8 @@ function needsBooking(task) {
     && !task.serviceTracking?.linkId && !require('./annualBookingPlan.cjs').bookingReady(task.annualBooking);
 }
 function isBookingRequest(task) {
+  if (task?.sourceType === 'report_followup' && task.workflowKey === 'report_followup:service_request')
+    return !!task.formData?.linkedFollowUpActionKey && !!task.formData?.serviceRequest?.itemSnapshot;
   return task.sourceType === 'annual_service' && task.workflowKey === 'service_request' && appointmentModules.includes(task.formData?.serviceRequest?.moduleKey);
 }
 function isManagerRequest(task) { return task?.sourceType === 'annual_service' && task.workflowKey === 'service_request' && task.formData?.serviceRequest?.moduleKey === 'personalized_followups' && task.formData.serviceRequest.itemSnapshot?.managementFollowUpVersion === 1; }

@@ -42,6 +42,21 @@ function setup(stage='booking', rolloutEnabled=true){
   const api=runtime({Flow,Task,Report,User,Admin:model(admins),enabled:()=>rolloutEnabled});
   return {flows,tasks,reports,api,Flow,Task};
 }
+test('单次报告随访可按同一预约、派单、资料审核流程接入，且只认本报告关联键', async () => {
+  const s = setup(); s.flows.clear(); s.tasks.clear();
+  const key = 'report:dynamic:0:2026-12-02';
+  s.tasks.set('request', { _id: 'request', patientId: 'patient', assignedTo: 'healthPlanner', sourceType: 'report_followup', sourceId: 'report',
+    workflowKey: 'report_followup:service_request', status: 'planned', updatedAt: 0,
+    formData: { linkedFollowUpActionKey: key, serviceRequest: { mode: 'single', moduleKey: 'medical_treatment', itemSnapshot: { items: '复诊' } } } });
+  s.tasks.set('parent', { _id: 'parent', patientId: 'patient', assignedTo: 'healthManager', sourceType: 'report_followup', sourceId: 'report',
+    workflowKey: 'report_followup:dynamic_followup', assessmentActionKey: key, deliveryMode: 'single', status: 'planned', updatedAt: 0,
+    plannedContent: '医院：医院甲\n院区：东院区\n科室：内科\n专家：专家甲\n原因：核对报告' });
+  const flow = await s.api.start('request', actor('planner'));
+  assert.equal(flow.state.stage, 'booking');
+  assert.equal(flow.parentId, 'parent');
+  assert.equal(s.tasks.get('parent').careFlowId, 'request');
+  assert.equal([...s.tasks.values()].filter(task => task.workflowKey === 'care_flow:booking').length, 1);
+});
 test('ad-hoc medical reminder can complete its scoped flow outside the annual-plan allowlist',async()=>{
  const s=setup('booking',false);s.flows.clear();s.tasks.clear();
  s.tasks.set('flow',{_id:'flow',patientId:'patient',assignedTo:'healthManager',sourceType:null,followUpSchemeId:'manual-reminder',
