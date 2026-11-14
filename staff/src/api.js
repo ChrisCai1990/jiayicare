@@ -98,6 +98,7 @@ export const serviceGroupAPI = {
 }
 
 export const inAppServiceGroupAPI = {
+  reminders: () => req('/staff/in-app-service-groups/reminders'),
   presence: id => req(`/staff/in-app-service-groups/${id}/presence`, { method: 'POST' }),
   list: (page = 1) => req(`/staff/in-app-service-groups?page=${page}`),
   configuration: patientId => req(`/staff/in-app-service-groups/configuration/${encodeURIComponent(patientId)}`),

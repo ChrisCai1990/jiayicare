@@ -1,5 +1,6 @@
+import { refreshUnreadBadge } from '../../../utils/unreadBadge';
 import { manageAiDataConsent } from '../../../utils/aiDataConsent';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Textarea, Image } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
@@ -19,16 +20,32 @@ export default function ServiceGroupPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [visible, setVisible] = useState(true);
+  const [scrollTarget, setScrollTarget] = useState('');
+  const [unreadAnchor, setUnreadAnchor] = useState('');
+  const opened = useRef(false);
+  const lastMessage = useRef('');
 
+  const refreshing = useRef(false);
   const refresh = useCallback(async () => {
+    if (refreshing.current) return;
+    refreshing.current = true;
     try {
       const response = await api.list();
       const current = (response.data || [])[0] || null;
       setGroup(current);
-      setMessages(current ? (await api.messages(current.id)).data || [] : []);
+      const result = current ? await api.messages(current.id) : { data: [] };
+      const rows = result.data || [];
+      setMessages(rows);
+      if (!opened.current && rows.length) {
+        opened.current = true;
+        setUnreadAnchor(result.firstUnreadMessageId || '');
+        setScrollTarget('group-msg-' + (result.firstUnreadMessageId || rows[rows.length - 1].id));
+      }
+      const latest = rows[rows.length - 1]?.id || '';
+      if (latest !== lastMessage.current) { lastMessage.current = latest; refreshUnreadBadge(); }
       setError('');
     } catch (e) { setError(e.message || '服务群读取失败'); }
-    finally { setLoading(false); }
+    finally { refreshing.current = false; setLoading(false); }
   }, []);
 
   useDidShow(() => setVisible(true));
@@ -36,7 +53,7 @@ export default function ServiceGroupPage() {
   useEffect(() => {
     if (!visible) return;
     refresh();
-    const timer = setInterval(refresh, 10000);
+    const timer = setInterval(refresh, 2000);
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
@@ -73,9 +90,10 @@ export default function ServiceGroupPage() {
         团队负责人尚未为您配置服务群成员，请联系服务团队。配置完成后点击右上角刷新。
       </Text>
       : <>
-        <ScrollView scrollY style={{ flex: 1, height: 0, padding: '12px 16px', boxSizing: 'border-box' }}>
-          {messages.map(message => <View key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
+        <ScrollView scrollY scrollIntoView={scrollTarget} style={{ flex: 1, height: 0, padding: '12px 16px', boxSizing: 'border-box' }}>
+          {messages.map(message => <View id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
             padding: '10px 12px', borderRadius: `${radius.sm}px`, backgroundColor: message.senderType === 'customer' ? '#D8EFE4' : '#fff' }}>
+            {String(unreadAnchor) === String(message.id) && <Text style={{ display: 'block', color: '#B42318', fontSize: '12px', marginBottom: '6px' }}>以下为未读消息</Text>}
             {message.senderAvatar && <Image src={mediaUrl(message.senderAvatar)} mode="aspectFill" style={{ width: '36px', height: '36px', borderRadius: '50%', marginBottom: '5px' }} />}
             <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName} · {({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',customer:'客户',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</Text>
             <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.content}</Text>

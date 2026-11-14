@@ -54,3 +54,15 @@ test('客户连续发言时旧回答不发布，客户注销后不发布', async
     await reply(base._id, trigger, h.deps); assert.equal(h.saved.length, 0);
   }
 });
+
+test('纯招呼不调用模型且仅首次介绍；保留授权检查', async () => {
+  const h = harness();
+  await reply(base._id, { ...trigger, content: '你好' }, h.deps);
+  assert.equal(h.calls(), 0);
+  assert.equal(h.saved[0].content, identity.introduction + '\n\n有什么需要帮忙的，请告诉我。');
+  const later = harness();
+  later.deps.Message.exists = async filter => filter.senderType === 'ai';
+  await reply(base._id, { ...trigger, content: '在吗？' }, later.deps);
+  assert.equal(later.calls(), 0);
+  assert.equal(later.saved[0].content, '您好，我在。有什么需要帮忙的，请告诉我。');
+});
