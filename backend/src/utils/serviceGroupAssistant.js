@@ -54,9 +54,14 @@ async function reply(groupId, trigger, deps = {}) {
     if (String(latest?._id) !== String(trigger.id)) return;
     const body = removeIntroduction(answer.content) || '有什么需要帮忙的，请告诉我。';
     const content = [first ? identity.introduction : '', first && quick ? '有什么需要帮忙的，请告诉我。' : body].filter(Boolean).join('\n\n').slice(0, 2000);
+    const commit = async current => {
+    if (!canReply(current, trigger) || current.membershipVersion !== membershipVersion) return;
     await Messages.create({ tenantId: group.tenantId, groupId, patientId: group.patientId, senderType: 'ai',
       senderId: group._id, senderName: identity.name, content, replyTo: trigger.id });
     await Groups.updateOne({ _id: groupId }, { $max: { lastMessageAt: new Date() } });
+    };
+    if (deps.Group) await commit(group);
+    else await require('./serviceGroupEvents').withGroupLock(groupId, group.tenantId, commit);
   } catch (error) {
     if (error.code !== 'AI_DATA_CONSENT_REQUIRED' && error.code !== 11000)
       console.error('[service-group-ai]', error.code || 'REPLY_FAILED');

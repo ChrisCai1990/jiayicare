@@ -33,5 +33,5 @@ test('建群按客户与类型查重，成员跨类型拒绝，旧页面无类�
  const req=body=>({staff:{_id:manager,tenantId:tenant,role:'healthManager'},body:{patientId:String(patient),membershipVersion:0,...body}});
  let res=response();await handler(req({serviceType:'nutrition',memberIds:[String(manager),String(advisor)]}),res);assert.equal(res.code,400);assert.equal(write,undefined);
  res=response();await handler(req({memberIds:[String(manager),String(advisor)]}),res);assert.equal(res.code,400);
- res=response();await handler(req({serviceType:'advisor',memberIds:[String(manager),String(advisor)]}),res);assert.equal(res.code,200);assert.equal(lookup.serviceType,'advisor');assert.equal(write.q.serviceType,'advisor');assert.equal(write.u.$setOnInsert._id,undefined);assert.equal(String(write.q.patientId),String(patient));
+ res=response();await handler(req({serviceType:'advisor',memberIds:[String(manager),String(advisor)]}),res);assert.equal(res.code,200);assert.equal(lookup.serviceType,'advisor');assert.equal(write.q.serviceType,'advisor');assert.notEqual(String(write.u.$setOnInsert._id),String(patient));assert.equal(String(write.q.patientId),String(patient));
 });

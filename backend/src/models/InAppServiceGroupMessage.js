@@ -9,8 +9,13 @@ const schema = new mongoose.Schema({
   senderId: { type: mongoose.Schema.Types.ObjectId, required: true },
   senderName: { type: String, required: true, maxlength: 120 },
   content: { type: String, required: true, maxlength: 2000 },
+  mentions: [{ _id: false, id: mongoose.Schema.Types.ObjectId, kind: { type: String, enum: ['staff', 'customer'] }, name: String, role: String }],
+  mentionReadBy: [{ type: mongoose.Schema.Types.ObjectId }],
+  eventKey: { type: String, default: undefined },
 }, { timestamps: true });
 schema.index({ groupId: 1, createdAt: -1 });
 schema.index({ replyTo: 1 }, { unique: true, sparse: true });
+schema.index({ eventKey: 1 }, { unique: true, sparse: true });
+schema.index({ tenantId: 1, 'mentions.id': 1, createdAt: -1 });
 
 module.exports = mongoose.model('InAppServiceGroupMessage', schema);
