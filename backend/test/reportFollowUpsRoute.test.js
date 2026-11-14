@@ -75,6 +75,27 @@ test('失败草稿可由顾问原子接管，保留审计且不发布任务', as
   t.mock.method(Draft, 'findOneAndUpdate', async (q, u) => { assert.equal(q.__v, 0); assert.equal(u.$push.auditLog.action, 'take_over'); assert.equal(u.$set['followUpAutomation.status'], 'ready'); return row({ __v: 1 }); });
   assert.equal((await request(t, { action: 'take_over', revision: 0 })).status, 200);
 });
+test('无明确后续行动可确认无需随访，保存决定并关闭审核待办', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  let current = row({ status: 'no_action', followUpDrafts: [] });
+  t.mock.method(Draft, 'findById', async () => current);
+  t.mock.method(Draft, 'findOneAndUpdate', async (query, update) => {
+    assert.equal(query.status, 'no_action');
+    assert.equal(query.__v, 0);
+    assert.equal(update.$set.status, 'rejected');
+    assert.equal(update.$push.auditLog.action, 'reject');
+    current = { ...current, ...update.$set, __v: 1 };
+    return current;
+  });
+  let completed = false;
+  t.mock.method(workflow, 'completeReportReview', async () => { completed = true; });
+  t.mock.method(workflow, 'assertReportDraftSource', async () => { throw Error('拒绝随访无需再次发布来源'); });
+  const result = await request(t, { action: 'reject', revision: 0 });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.status, 'rejected');
+  assert.equal(completed, true);
+  assert.equal((await request(t, { action: 'reject', revision: 0 })).status, 409);
+});
 test('发布失败保留已批准快照，重试忽略客户端替换内容', async t => {
   actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
   let current = row(); let assigned = false; const titles = [];

@@ -4,7 +4,7 @@ import './ReportFollowUpDrafts.css'
 import { approvedScreeningReference, compactEvidence, evidenceSummary, groupedIssues, problemGroups } from '../utils/reportIssuePresentation'
 
 const PURPOSE = 'annual_report_input'
-const statusLabel = { advisor_review: '待顾问确认', approved: '已确认', rejected: '未采纳', excluded: '已有服务承接', superseded: '来源已更新', no_action: '待重新核对' }
+const statusLabel = { advisor_review: '待顾问确认', approved: '已确认', rejected: '未采纳', excluded: '已有服务承接', superseded: '来源已更新', no_action: '无明确后续行动·待确认' }
 
 export function ReportIssueCard({ issue, index, disabled, onChange }) {
   const proposal = issue.originalRecommendation || issue.suggestedRecommendation
@@ -125,7 +125,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
       const coverage = row.issueCoverage || [], drafts = row.issueDrafts || []
       const pending = coverage.filter(item => item.status === 'pending')
       return <article key={row._id} className="report-issues-report">
-        <header><h4>{row.title}</h4><span className="report-issue-tag">{historical ? '历史随访记录' : statusLabel[row.status]}</span></header>
+        <header><h4>{row.title}</h4><span className="report-issue-tag">{historical ? '历史随访记录' : !annual && row.status === 'rejected' ? '已确认无需随访' : statusLabel[row.status]}</span></header>
         <p>{annual ? row.followUpAutomation?.message : historical ? '保留原已审核随访及执行记录。' : row.followUpAutomation?.message || '请核对本次就医资料，填写一条综合随访。'}</p>
         {annual && <div className="report-issues-overview"><b>{drafts.filter(issue => issue.decision !== 'exclude').length}项待纳入管理的问题</b><span>{drafts.filter(issue => issue.decision !== 'exclude' && !issue.advisorRecommendation).length}项建议待确认</span>{pending.length > 0 && <span>{pending.length}项资料待核对</span>}</div>}
         {annual && groupedIssues(drafts).map(group => <section key={group.key} className="report-problem-group"><h4>{group.label}<span>{group.issues.length}个问题</span></h4>{group.issues.map((issue, index) => <ReportIssueCard key={issue.id} issue={issue} index={index} disabled={busy || !editable} onChange={patch => update(row._id, drafts.map(item => item.id === issue.id ? { ...item, ...patch } : item))} />)}</section>)}
@@ -153,6 +153,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
             {status === 'ready' && <>{!row.followUpDrafts?.length && <button disabled={busy} onClick={() => updateFollowUps(row._id, [{ title: '', content: '', date: '', category: 'information', requiresService: false }])}>添加单次随访</button>}<button disabled={busy || (row.followUpDrafts || []).length > 1} onClick={() => actFollowUp(row, 'approve')}>终审并发布</button><button disabled={busy} onClick={() => actFollowUp(row, 'reject')}>不需要后续随访</button></>}
           </div>}
           {historical && row.followUpPublication?.status !== 'published' && canEdit && <button disabled={busy} onClick={() => actFollowUp(row, 'approve')}>重试发布单次随访</button>}
+          {row.status === 'rejected' && <p className="report-issues-success">已确认本次无需后续随访，审核待办已关闭。</p>}
           </section>
           <ReportSourceSummary snapshot={row.sourceSnapshot} />
         </>}
