@@ -98,8 +98,8 @@ async function send(group, senderType, sender, content) {
     try {
       await InboxMessage.updateOne({ dedupeKey: `in-app-service-group:${message._id}` },
         { $setOnInsert: { user: group.patientId, type: 'system', sender: '健康服务团队',
-          title: '服务群有新回复', content: '您的服务团队在嘉医汇服务群回复了您。',
-          unread: true, action: { type: 'service_group', groupId: String(group._id) },
+          title: '服务群有新回复', content: body.slice(0, 120),
+          unread: true, action: { type: 'service_group', groupId: String(group._id), messageId: String(message._id) },
           dedupeKey: `in-app-service-group:${message._id}` } }, { upsert: true });
     } catch (error) { console.error('[in-app-service-group] inbox notification failed', error.message); }
   }
@@ -120,7 +120,13 @@ customerRouter.post('/', wrap(async (req, res) => {
 customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId);
   if (!canCustomerAccess(group, req.user)) fail('无权查看服务群');
-  res.json({ success: true, data: await recentMessages(group) });
+  const data = await recentMessages(group);
+  const keys = data.map(row => `in-app-service-group:${row.id}`);
+  const unread = await InboxMessage.find({ user: req.user._id, unread: true, dedupeKey: { $in: keys } }).select('_id dedupeKey').lean();
+  const unreadKeys = new Set(unread.map(row => row.dedupeKey));
+  const firstUnread = data.find(row => unreadKeys.has(`in-app-service-group:${row.id}`));
+  if (unread.length) await InboxMessage.updateMany({ user: req.user._id, _id: { $in: unread.map(row => row._id) }, unread: true }, { $set: { unread: false, readAt: new Date() } });
+  res.json({ success: true, data, firstUnreadMessageId: firstUnread?.id || null });
 }));
 customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.user.tenantId);

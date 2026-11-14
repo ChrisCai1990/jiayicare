@@ -20,7 +20,12 @@ export default function InAppServiceGroupsPage() {
   const [configuration, setConfiguration] = useState(null);
   const [memberIds, setMemberIds] = useState([]);
   const currentId = useRef('');
+  const messagePane = useRef(null);
+  const followLatest = useRef(true);
   const loadedPages = useRef(1);
+  useEffect(() => {
+    if (followLatest.current && messagePane.current) messagePane.current.scrollTop = messagePane.current.scrollHeight;
+  }, [messages]);
   const refreshing = useRef(false);
 
   const refresh = async () => {
@@ -67,7 +72,7 @@ export default function InAppServiceGroupsPage() {
     document.addEventListener('visibilitychange', pulse);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', pulse); };
   }, [selected?.id, selected?.supervised]);
-  const open = group => { currentId.current = group.id; setSelected(group); setMessages([]); setDraft(''); setError(''); loadMessages(group.id); };
+  const open = group => { followLatest.current = true; currentId.current = group.id; setSelected(group); setMessages([]); setDraft(''); setError(''); loadMessages(group.id); };
   const findPatient = async () => {
     if (!search.trim()) return setPatients([]);
     try { const res = await staffAPI.getPatients({ search: search.trim(), limit: 10 });
@@ -97,7 +102,7 @@ export default function InAppServiceGroupsPage() {
   const send = async () => {
     if (!selected || !draft.trim() || busy) return;
     setBusy(true); setError('');
-    try { await api.send(selected.id, draft.trim()); setDraft(''); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
+    try { await api.send(selected.id, draft.trim()); followLatest.current = true; setDraft(''); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
     catch (e) { setError(e.message || '发送失败'); }
     finally { setBusy(false); }
   };
@@ -167,7 +172,7 @@ export default function InAppServiceGroupsPage() {
             <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} style={{ width: 40, height: 40, borderRadius: '50%' }} />
             <small>小嘉｜嘉医汇AI健康管家 · {selected.supervised ? '仅监管查看不影响AI接待' : '您正在接待此群，小嘉暂停回复；离开后恢复自动接待'}</small>
           </div>}
-          <div className="sg-messages">
+          <div className="sg-messages" ref={messagePane} onScroll={event => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 48; }}>
             {messages.length === 0 && <p className="sg-empty-messages">暂无消息，可以开始沟通。</p>}
             {messages.map(message => <article key={message.id}
               className={`sg-message${message.senderType === 'staff' ? ' is-staff' : ''}`}>

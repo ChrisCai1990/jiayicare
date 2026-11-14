@@ -266,6 +266,8 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
 
   // 系统消息有时也会携带 conversationId。它仍然属于用户通知，不能因为
   // 关联了会话就从“健康管家”入口消失。
+  const groupNotices = messages.filter(m => m.action?.type === 'service_group');
+  const groupUnread = groupNotices.filter(m => m.unread).length;
   const notifMessages = messages.filter((m) => NOTIF_TYPES.has(m.type));
   const questionnaireMessages = notifMessages.filter((m) => (
     m.type === 'questionnaire' && (
@@ -305,7 +307,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
     setShowNotif(true);
     // 进入通知分类即视为已经查看该分类；待填问卷必须提交后才消除，因此不在这里清除。
     if (tab === '待填问卷') return;
-    const viewed = notificationsForTab(tab).filter((m) => m.unread && m._id);
+    const viewed = notificationsForTab(tab).filter((m) => m.unread && m._id && m.action?.type !== 'service_group');
     if (!viewed.length) return;
     const viewedIds = new Set(viewed.map((m) => String(m._id)));
     listRequestRef.current += 1;
@@ -328,6 +330,10 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
   };
 
   const markReadAndOpenDetail = async (msg) => {
+    if (msg.action?.type === 'service_group') {
+      Taro.navigateTo({ url: '/pages/messages/service-group/index' }).catch(() => Taro.showToast({ title: '服务群暂时无法打开', icon: 'none' }));
+      return;
+    }
     if (msg.type !== 'plan' && msg.action?.type !== 'service_group') setDetailMsg(msg);
     if (msg.unread) {
       listRequestRef.current += 1;
@@ -370,9 +376,10 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
       {!!loadError && <Text onClick={loadMessages} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{loadError}</Text>}
       <View onClick={() => Taro.navigateTo({ url: '/pages/messages/service-group/index' })}
         style={{ margin: `0 ${spacing.md}px ${spacing.md}px`, padding: '14px 16px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.primary}30` }}>
-        <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>我的服务群 ›</Text>
-        <Text style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: colors.textMuted }}>与当前健康服务团队沟通，团队负责人可查看</Text>
+        <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>我的服务群 › {groupUnread > 0 && <Text style={{ color: '#DC3545', fontSize: '14px' }}>● {groupUnread} 条未读</Text>}</Text>
+        <Text style={{ display: 'block', marginTop: '4px', fontSize: '12px', color: colors.textMuted }}>{groupNotices[0]?.content || '与当前健康服务团队沟通，团队负责人可查看'}</Text>
       </View>
+      {notifMessages.some(m => m.unread && m.action?.type !== 'service_group' && (m.type !== 'questionnaire' || questionnaireMessages.includes(m))) && <View onClick={() => { setNotifTab('全部'); setShowNotif(true); }} style={{ margin: '0 16px 12px', padding: '12px', backgroundColor: '#FFF4F3', borderRadius: '12px' }}><Text style={{ color: '#B42318' }}>● 您有未读通知，点击查看具体消息 ›</Text></View>}
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>{t('加载中...')}</Text>
       ) : (

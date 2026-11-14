@@ -1,7 +1,15 @@
 .service-assistant.in-app-service-groups {
   max-width: 1480px;
   width: 100%;
+  height: calc(100dvh - 68px);
+  min-height: 400px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
 }
+.in-app-service-groups > h1 { flex: none; }
+.in-app-service-groups > p { flex: none; margin: 8px 0; }
+.in-app-service-groups > .sg-configuration { max-height: 30vh; overflow-y: auto; flex: none; }
 
 .sg-search-row,
 .sg-search-results,
@@ -57,7 +65,8 @@
   display: grid;
   grid-template-columns: minmax(240px, 310px) minmax(0, 1fr);
   gap: 16px;
-  height: clamp(560px, 66vh, 780px);
+  flex: 1;
+  min-height: 0;
   min-width: 0;
 }
 .sg-group-list,
@@ -81,7 +90,8 @@
   border-color: #80b69a;
 }
 .sg-group-item strong { display: block; font-size: 15px; }
-.sg-chat-panel { display: flex; flex-direction: column; }
+.sg-chat-panel { display: flex; flex-direction: column; overflow: hidden; }
+.sg-chat-panel > :not(.sg-messages) { flex-shrink: 0; }
 .sg-chat-header {
   display: flex;
   align-items: flex-start;
@@ -122,14 +132,16 @@
   align-items: flex-end;
   gap: 10px;
   padding: 14px 16px;
+  background: #fff;
   border-top: 1px solid #e3eae5;
 }
 .service-assistant .sg-composer textarea {
   flex: 1;
   width: auto;
   min-width: 0;
-  min-height: 104px;
-  max-height: 220px;
+  min-height: 64px;
+  height: 80px;
+  max-height: 120px;
   margin: 0;
 }
 .service-assistant .sg-composer button { flex: 0 0 auto; min-width: 76px; }
@@ -141,15 +153,25 @@
 }
 
 @media (max-width: 800px) {
-  .sg-workspace { grid-template-columns: 1fr; height: auto; }
-  .sg-group-list { max-height: 250px; }
-  .sg-chat-panel { min-height: 500px; }
+  .sg-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(60px, 100px) minmax(0, 1fr); }
+  .sg-group-list { max-height: 100px; }
+  .sg-chat-panel { min-height: 0; }
 }
 
 @media (max-width: 520px) {
-  .service-assistant.in-app-service-groups { padding: 16px; }
+  .service-assistant.in-app-service-groups { padding: 0; }
   .sg-chat-header { padding: 12px; }
   .sg-messages { padding: 12px; }
   .sg-message { max-width: 92%; }
   .sg-composer { padding: 10px; }
+}
+@media (max-height: 700px) {
+  .in-app-service-groups > p { max-height: 42px; overflow-y: auto; font-size: 12px; }
+  .sg-filters { margin: 8px 0; }
+  .sg-chat-header { padding: 8px 12px; }
+  .service-assistant .sg-composer textarea { height: 64px; }
+  .sg-composer { padding: 8px 12px; }
+}
+@media (max-width: 768px) {
+  .service-assistant.in-app-service-groups { height: calc(100dvh - 96px); }
 }
