@@ -7,7 +7,9 @@ function ground(value,context){
  // Measurements remain source facts: do not replace them with thresholds or comparisons from old summaries.
  const facts=sections({records,reports,followups});out[0]=facts[0].map(x=>short(unlabeled(x)));
  const types=[['diet'],['exercise'],['sleep'],['smoking','smoke','alcohol','tobacco'],['mood','emotion']];
- types.forEach((names,i)=>{if(!records.some(r=>names.includes(r.type)))out[1][i]='本期暂无记录。';});
+ // The model can say "no records" even when the supplied evidence contains them.
+ // Ground every lifestyle dimension in the same period records, in both directions.
+ types.forEach((names,i)=>{out[1][i]=short(unlabeled(facts[1][i]));});
  const diet=records.filter(r=>r.type==='diet');
  if(diet.length&&diet.filter(r=>!text(r.value).replace(/【[^】]+】/g,'').trim()).length/diet.length>=0.8)out[1][0]='本期饮食文字记录多数仅标注餐次，不能仅据这些文字判断膳食结构或行为改变；如有图片，由营养师结合原记录核对。不适相关文字已纳入阶段变化。';
  const lifeRecords=records.some(r=>types.flat().includes(r.type));

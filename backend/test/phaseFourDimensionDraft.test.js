@@ -31,3 +31,8 @@ test('饮食记录里的不适原文也归入主诉，不以餐次标记推测�
  const output=ground(dimensions.map(labels=>labels.map(()=> 'AI草稿')),{recentHealthRecords:records});
  assert.match(output[0][3],/腹泻/);assert.match(output[1][0],/仅标注餐次/);
 });
+test('本期有生活方式记录时纠正模型误写的五项暂无记录',()=>{
+ const records=['diet','exercise','sleep','smoking','alcohol','mood'].map(type=>({type,recordedAt:'2026-10-16T12:00:00Z',value:'已记录'}));
+ const output=ground(dimensions.map(labels=>labels.map(()=> '本期暂无记录。')),{recentHealthRecords:records});
+ assert.ok(output[1].every(x=>x.includes('2026-10-16')&&!x.includes('暂无记录')));
+});

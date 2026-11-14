@@ -67,9 +67,14 @@ async function buildContext(user, scopes = [], options = {}) {
 async function buildStageAssessmentContext(user, days = 30, window = null) {
   const end = window?.end ? new Date(window.end) : new Date();
   const start = window?.start ? new Date(window.start) : new Date(end.getTime() - days * 86400000);
+  // A completed month can contain more than 240 daily check-ins. Taking the
+  // first 240 silently drops later dates and can turn real lifestyle data into
+  // a false "no records" conclusion. Keep the whole bounded monthly window.
+  const monthlyWindow = end.getTime() - start.getTime() <= 32 * 86400000;
+  const healthRecordsQuery = HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end }, deletedAt: null }).sort({ recordedAt: 1 })
+    .select('category type label value unit extra status note recordedAt recordedBy.source');
   const [records, followups, plan, reports, nutritionPlan] = await Promise.all([
-    HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end } }).sort({ recordedAt: 1 })
-      .select('category type label value unit extra status note recordedAt recordedBy.source').limit(240).lean(),
+    (monthlyWindow ? healthRecordsQuery : healthRecordsQuery.limit(240)).lean(),
     FollowUp.find({ patientId: user._id, date: { $gte: start, $lte: end } }).sort({ date: 1 })
       .select('date type status theme content plannedContent executedContent vitals checkInItems completedAt cancelReason isBlocked').limit(60).lean(),
     AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null, $lte: end } }).sort({ confirmedAt: -1 })
