@@ -1,3 +1,4 @@
+import VersionInfo from '../../../components/VersionInfo';
 import React, { useState } from 'react';
 import { View, Text, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -294,7 +295,7 @@ export default function ProfilePage() {
         >
           <Text style={{ fontSize: '15px', color: colors.danger, fontWeight: 600 }}>{t('退出登录')}</Text>
         </View>
-        <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, marginTop: `${spacing.md}px` }}>{process.env.TARO_ENV === 'h5' ? '嘉医汇健康管家' : '嘉医汇健康管家（小程序）'}</Text>
+        <VersionInfo />
       </View>
 
       {showLogout && (
