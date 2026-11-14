@@ -16,7 +16,11 @@ export default function ServiceGroupPage() {
   const [group, setGroup] = useState(null);
   const [groups, setGroups] = useState([]);
   const selectedId = useRef(Taro.getCurrentInstance()?.router?.params?.groupId || '');
+  const [older,setOlder]=useState(false);
   const [messages, setMessages] = useState([]);
+  const [archived, setArchived] = useState(false);
+  const [mentionIds, setMentionIds] = useState([]);
+  const [showMentions, setShowMentions] = useState(false);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -66,7 +70,8 @@ export default function ServiceGroupPage() {
       const result = current ? await api.messages(current.id) : { data: [] };
       if (activeId !== selectedId.current) return;
       const rows = result.data || [];
-      setMessages(rows);
+      setMessages(prev=>[...new Map([...prev,...rows].map(m=>[String(m.id),m])).values()].sort((a,b)=>+new Date(a.createdAt)-+new Date(b.createdAt)||String(a.id).localeCompare(String(b.id))));
+      if(!opened.current)setOlder(!!result.hasMore);
       if (!opened.current && rows.length) {
         opened.current = true;
         setUnreadAnchor(result.firstUnreadMessageId || '');
@@ -91,14 +96,20 @@ export default function ServiceGroupPage() {
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
-  const openGroup = item => { selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft(''); setGroup(item); refresh(); };
+  const openGroup = item => { selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft(''); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
   const back = () => { if (selectedId.current) { selectedId.current = ''; setGroup(null); setMessages([]); refresh(); } else Taro.navigateBack(); };
+  const loadEarlier = async () => {
+    const id=selectedId.current;
+    try {const result=await api.messages(id,messages[0]?.id);if(selectedId.current!==id)return;setOlder(!!result.hasMore);setMessages(prev=>[...new Map([...(result.data||[]),...prev].map(m=>[String(m.id),m])).values()]);}
+    catch(e){setError(e.message || '历史消息读取失败');}
+  };
   const send = async () => {
     const content = draft.trim();
     if (!group || !content || busy) return;
     setBusy(true); setError('');
     try {
-      await api.send(group.id, content);
+      await api.send(group.id, content, mentionIds.filter(id=>group.staff.some(p=>String(p.id)===id&&content.includes('@'+p.name))));
+      setMentionIds([]);setShowMentions(false);
       setDraft('');
       followLatest.current = true;
       await refresh();
@@ -125,8 +136,9 @@ export default function ServiceGroupPage() {
     {!!error && <Text onClick={refresh} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{error} · 点击重试</Text>}
     {loading ? <Text style={{ padding: '16px', color: colors.textMuted }}>正在加载…</Text>
       : !group ? <ScrollView scrollY style={{ flex: 1, height: 0, minHeight: 0, padding: '12px', boxSizing: 'border-box' }}>
-        {groups.map(item => <View key={item.id} onClick={() => openGroup(item)} style={{ background: '#fff', borderRadius: '12px', padding: '16px', marginBottom: '12px' }}>
-          <Text style={{ display: 'block', fontWeight: 700 }}>{item.name || '我的服务群'} › {item.unreadCount > 0 && <Text style={{ color: '#DC3545' }}>● {item.unreadCount} 条未读</Text>}</Text>
+        <View style={{display:'flex',gap:'16px',padding:'8px'}}><Text onClick={()=>setArchived(false)} style={{fontWeight:archived?400:700}}>服务中</Text><Text onClick={()=>setArchived(true)} style={{fontWeight:archived?700:400}}>已归档</Text></View>
+        {groups.filter(item=>archived ? item.status==='closed' : item.status!=='closed').map(item => <View key={item.id} onClick={() => openGroup(item)} style={{ background: '#fff', borderRadius: '12px', padding: '16px', marginBottom: '12px' }}>
+          <Text style={{ display: 'block', fontWeight: 700 }}>{item.name || '我的服务群'}{item.status==='closed'?' · 已归档':''} › {item.mentionCount>0&&<Text style={{color:'#B42318'}}>有人@我 </Text>} {item.unreadCount > 0 && <Text style={{ color: '#DC3545' }}>● {item.unreadCount} 条未读</Text>}</Text>
           <Text style={{ display: 'block', color: colors.textMuted, fontSize: '12px', marginTop: '6px' }}>{item.staff.map(person => person.name).join('、')}</Text>
           <Text style={{ display: 'block', color: colors.textMuted, fontSize: '12px', marginTop: '6px' }}>{item.preview || '暂无消息'}</Text>
         </View>)}
@@ -137,22 +149,28 @@ export default function ServiceGroupPage() {
         <ScrollView id="service-group-scroll" scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget}
           onScroll={event => { const detail = event.detail; if (process.env.TARO_ENV === 'h5') { const pane = document.getElementById('service-group-scroll'); if (pane) followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 64; } else { followLatest.current = paneHeight.current > 0 && detail.scrollHeight - detail.scrollTop - paneHeight.current < 64; } }}
           style={{ height: '100%', minHeight: 0, padding: '12px 16px 24px', boxSizing: 'border-box' }}>
+          {older&&<Text onClick={loadEarlier} style={{display:'block',textAlign:'center',padding:'10px',color:colors.primary}}>查看更早消息</Text>}
           {messages.map(message => <View id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
             padding: '10px 12px', borderRadius: `${radius.sm}px`, backgroundColor: message.senderType === 'customer' ? '#D8EFE4' : '#fff' }}>
             {String(unreadAnchor) === String(message.id) && <Text style={{ display: 'block', color: '#B42318', fontSize: '12px', marginBottom: '6px' }}>以下为未读消息</Text>}
             {message.senderAvatar && <Image src={mediaUrl(message.senderAvatar)} mode="aspectFill" style={{ width: '36px', height: '36px', borderRadius: '50%', marginBottom: '5px' }} />}
-            <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName}{message.senderType !== 'customer' && ` · ${({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
+            <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName}{message.senderType !== 'customer' && ` · ${({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',specialist:'专科医师',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
+            {!!message.mentions?.length&&<View style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'6px'}}>{message.mentions.map(p=><Text key={p.id} onClick={()=>Taro.showModal({title:p.name,content:p.role || '服务成员',showCancel:false})} style={{color:'#187e87',fontSize:'12px',padding:'3px',background:'#eaf8f8'}}>@{p.name}</Text>)}</View>}
             <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.content}</Text>
           </View>)}
         </ScrollView>
         </View>
+        {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
+        {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{group.staff.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>text.endsWith('@')?text+p.name+' ':text+'@'+p.name+' ');setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#fff' }}>
-          <Textarea value={draft} onInput={event => setDraft(event.detail.value)} maxlength={2000} autoHeight
+          <Text onClick={()=>setShowMentions(!showMentions)} style={{padding:'10px',color:colors.primary}}>@</Text>
+          <Textarea value={draft} onInput={event => {setDraft(event.detail.value);if(event.detail.value.endsWith('@'))setShowMentions(true);}} maxlength={2000} autoHeight
             placeholder="给服务团队发消息" style={{ flex: 1, minHeight: '38px', maxHeight: '100px', padding: '8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.xs}px` }} />
           <View onClick={send} style={{ padding: '10px 14px', backgroundColor: busy || !draft.trim() ? colors.textMuted : colors.primary, borderRadius: `${radius.xs}px` }}>
             <Text style={{ color: '#fff' }}>发送</Text>
           </View>
         </View>
+        </>}
       </>}
   </View>;
 }
