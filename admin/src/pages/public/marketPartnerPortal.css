@@ -1,0 +1,117 @@
+.market-partner-portal .market-partner-products {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.market-partner-portal .market-partner-product {
+  padding: 15px 17px;
+  border: 1px solid #e0ebe3;
+  border-radius: 12px;
+  background: #fbfdfb;
+}
+
+.market-partner-portal .market-partner-product strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #193c2d;
+  font-size: 16px;
+}
+
+.market-partner-portal .market-partner-product__term {
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+.market-partner-portal .market-partner-product__meta {
+  margin-top: 10px;
+  color: #617568;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.market-partner-portal .market-partner-pagination {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) auto minmax(112px, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 16px;
+  padding: 13px;
+  border: 1px solid #dce9df;
+  border-radius: 14px;
+  background: #f4f8f5;
+}
+
+.market-partner-portal .market-partner-pagination__button {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid #b5d3c0;
+  border-radius: 10px;
+  background: #fff;
+  color: #176b4d;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .16s, box-shadow .16s, transform .16s;
+}
+
+.market-partner-portal .market-partner-pagination__button:hover:not(:disabled) {
+  background: #e8f4eb;
+  box-shadow: 0 3px 10px #176b4d1c;
+  transform: translateY(-1px);
+}
+
+.market-partner-portal .market-partner-pagination__button:focus-visible {
+  outline: 3px solid #8fc7a9;
+  outline-offset: 2px;
+}
+
+.market-partner-portal .market-partner-pagination__button:disabled {
+  border-color: #e1e9e3;
+  background: #f7f9f7;
+  color: #9baaa0;
+  cursor: not-allowed;
+}
+
+.market-partner-portal .market-partner-pagination__button--next {
+  border-color: #176b4d;
+  background: #176b4d;
+  color: #fff;
+}
+
+.market-partner-portal .market-partner-pagination__button--next:hover:not(:disabled) {
+  background: #105c40;
+}
+
+.market-partner-portal .market-partner-pagination__status {
+  display: grid;
+  gap: 3px;
+  min-width: 160px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.market-partner-portal .market-partner-pagination__status strong {
+  color: #193c2d;
+  font-size: 17px;
+}
+
+.market-partner-portal .market-partner-pagination__status strong span,
+.market-partner-portal .market-partner-pagination__status small {
+  color: #617568;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+@media (max-width: 540px) {
+  .market-partner-portal .market-partner-pagination {
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+  }
+
+  .market-partner-portal .market-partner-pagination__status {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-width: 0;
+  }
+}

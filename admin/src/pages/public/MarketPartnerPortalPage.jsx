@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import './marketPartnerPortal.css'
 
 const API_BASE = `${import.meta.env.VITE_API_URL || '/api'}/market-partner`
 const money = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
@@ -12,10 +13,13 @@ const pageRows = (rows, page) => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_
 function PageControls({ total, page, onPageChange, noun = '条' }) {
   if (total <= PAGE_SIZE) return null
   const pages = Math.ceil(total / PAGE_SIZE)
-  return <nav aria-label={`${noun}分页`} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
-    <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</button>
-    <span>第 {page} / {pages} 页 · 共 {total} {noun} · 每页 {PAGE_SIZE} {noun}</span>
-    <button type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>下一页</button>
+  return <nav aria-label={`${noun}分页`} className="market-partner-pagination">
+    <button className="market-partner-pagination__button" type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>← 上一页</button>
+    <div className="market-partner-pagination__status">
+      <strong aria-current="page">{page} <span>/ {pages} 页</span></strong>
+      <small>共 {total} {noun} · 每页 {PAGE_SIZE} {noun}</small>
+    </div>
+    <button className="market-partner-pagination__button market-partner-pagination__button--next" type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>下一页 →</button>
   </nav>
 }
 const percent = basisPoints => `${(Number(basisPoints || 0) / 100).toFixed(2).replace(/\.00$/, '')}%`
@@ -124,7 +128,7 @@ export default function MarketPartnerPortalPage({ view = 'cooperation' }) {
   const memberPromotion = canSeeTeam ? Number(overview.team.promotionCents || 0) : 0
   const memberService = canSeeTeam ? Number(overview.team.serviceCents || 0) : 0
 
-  return <main style={{ minHeight: '100vh', background: '#f4f8f5', color: '#20352a', padding: '24px 16px', fontFamily: 'sans-serif' }}>
+  return <main className="market-partner-portal" style={{ minHeight: '100vh', background: '#f4f8f5', color: '#20352a', padding: '24px 16px', fontFamily: 'sans-serif' }}>
     <div style={{ maxWidth: 680, margin: '0 auto' }}>
       <h1 style={{ fontSize: 24, margin: '0 0 8px' }}>嘉医汇市场合伙人</h1>
       <p style={{ color: '#607568', marginTop: 0 }}>{view === 'cooperation' ? '合作资料、协议与可推荐商品' : '查看本人及团队的业务归属和佣金核算'}</p>
@@ -160,11 +164,11 @@ export default function MarketPartnerPortalPage({ view = 'cooperation' }) {
           <p style={{ fontSize: 13, color: '#607568' }}>当前可推荐 {products.length} 项商品</p>
           <label>查找商品<input type="search" value={productSearch} onChange={event => { setProductSearch(event.target.value); setProductPage(1) }}
             placeholder="输入商品名称" style={field} /></label>
-          {visibleProducts.length ? pageRows(visibleProducts, productPage).map(item => <div key={item.id} style={{ padding: '12px 0', borderTop: '1px solid #e8efea' }}>
+          {visibleProducts.length ? <div className="market-partner-products">{pageRows(visibleProducts, productPage).map(item => <div key={item.id} className="market-partner-product">
             <strong>{item.name}</strong>
-            {commissionTerms(item.commission).map((term, index) => <div key={index} style={{ marginTop: 5 }}>{term}</div>)}
-            <div style={{ marginTop: 5, fontSize: 12, color: '#607568' }}>当前规则版本 {item.commission?.version || '—'} · 生效日期 {date(item.commission?.effectiveFrom)}{item.commission?.effectiveUntil ? ` 至 ${date(item.commission.effectiveUntil)}` : ' 起持续有效'}</div>
-          </div>) : <p>{products.length ? '未找到匹配的商品。' : '暂无已授权的在售商品。'}</p>}
+            {commissionTerms(item.commission).map((term, index) => <div key={index} className="market-partner-product__term">{term}</div>)}
+            <div className="market-partner-product__meta">当前规则版本 {item.commission?.version || '—'} · 生效日期 {date(item.commission?.effectiveFrom)}{item.commission?.effectiveUntil ? ` 至 ${date(item.commission.effectiveUntil)}` : ' 起持续有效'}</div>
+          </div>)}</div> : <p>{products.length ? '未找到匹配的商品。' : '暂无已授权的在售商品。'}</p>}
           <PageControls total={visibleProducts.length} page={productPage} onPageChange={setProductPage} noun="项商品" />
           <p style={{ fontSize: 12, color: '#607568', marginBottom: 0 }}>这里显示当前有效的推荐规则。历史订单按当时锁定的规则核算，具体金额和审核状态请到“业务营收”查看。</p>
         </section>
