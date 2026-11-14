@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { canCustomerAccess, canStaffAccess, canMentorObserve, canUseGroupModule, isAssignedLeader, needsStaffReply } = require('../src/utils/inAppServiceGroupPolicy');
+const { canCustomerAccess, canStaffAccess, canMentorObserve, canUseGroupModule, isAssignedHealthManager, isAssignedLeader, needsStaffReply } = require('../src/utils/inAppServiceGroupPolicy');
 
 test('服务群独立于家庭服务助手权限，仍要求会员查看权限', () => {
   assert.equal(canUseGroupModule({ patients: { view: true }, service_assistant: { view: false } }), true);
@@ -36,16 +36,26 @@ test('已分配但未勾选入群的人员无法读写，导师只监管本团�
   assert.equal(canMentorObserve(group, bothAssigned, mentor, ['staff-a']), true);
 });
 
-test('客户当前健康顾问和营养师均可作为建群负责人', () => {
-  const assigned = { ...patient, assignedFamilyDoctor: 'advisor-a', assignedNutritionist: 'nutrition-a' };
+test('客户当前健管专员建群，健康顾问、营养师和就医专员保留监管关系', () => {
+  const assigned = { ...patient, assignedHealthManager: 'manager-a', assignedFamilyDoctor: 'advisor-a',
+    assignedNutritionist: 'nutrition-a', assignedMedicalAssistant: 'medical-a' };
+  assert.equal(isAssignedHealthManager(assigned, { _id: 'manager-a' }), true);
+  assert.equal(isAssignedHealthManager(assigned, { _id: 'advisor-a' }), false);
+  assert.equal(isAssignedHealthManager(assigned, { _id: 'nutrition-a' }), false);
+  assert.equal(isAssignedHealthManager(assigned, { _id: 'medical-a' }), false);
+  assert.equal(isAssignedLeader(assigned, { _id: 'manager-a' }), true);
   assert.equal(isAssignedLeader(assigned, { _id: 'advisor-a' }), true);
   assert.equal(isAssignedLeader(assigned, { _id: 'nutrition-a' }), true);
-  assert.equal(isAssignedLeader(assigned, { _id: 'staff-a' }), false);
+  assert.equal(isAssignedLeader(assigned, { _id: 'medical-a' }), true);
+  assert.equal(isAssignedLeader(assigned, { _id: 'staff-b' }), false);
   assert.equal(isAssignedLeader({ ...assigned, assignedNutritionist: null }, { _id: 'nutrition-a' }), false);
+  assert.equal(isAssignedLeader({ ...assigned, assignedHealthManager: null }, { _id: 'manager-a' }), false);
 });
 
 test('导师只可监管本团队当前服务的同机构客户', () => {
-  assert.equal(canMentorObserve(group, patient, mentor, ['staff-a']), true);
+  for (const role of ['familyDoctor', 'nutritionist', 'medicalAssistant']) {
+    assert.equal(canMentorObserve(group, patient, { ...mentor, role }, ['staff-a']), true);
+  }
   assert.equal(canStaffAccess(group, patient, mentor), false);
   assert.equal(canMentorObserve(group, patient, mentor, ['staff-b']), false);
   assert.equal(canMentorObserve(group, { ...patient, isDeleted: true }, mentor, ['staff-a']), false);

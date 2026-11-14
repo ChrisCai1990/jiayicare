@@ -1,0 +1,155 @@
+.service-assistant.in-app-service-groups {
+  max-width: 1480px;
+  width: 100%;
+}
+
+.sg-search-row,
+.sg-search-results,
+.sg-filters,
+.sg-configuration-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.service-assistant .sg-search-row input {
+  flex: 1 1 320px;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.sg-search-results { margin-top: 10px; }
+.sg-filters { margin: 18px 0 14px; }
+.service-assistant .sg-filters button[aria-pressed="true"] {
+  background: #e7f3ec;
+  border-color: #80b69a;
+  font-weight: 700;
+}
+
+.sg-configuration {
+  margin-top: 14px;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #d8e2dc;
+  border-radius: 12px;
+}
+.sg-configuration p { margin: 6px 0 12px; }
+.sg-candidates { display: flex; gap: 8px 16px; flex-wrap: wrap; }
+.service-assistant .sg-candidate {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #d8e2dc;
+  border-radius: 8px;
+  margin: 0;
+}
+.service-assistant .sg-candidate input {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+}
+.sg-configuration-actions { margin-top: 16px; }
+
+.sg-workspace {
+  display: grid;
+  grid-template-columns: minmax(240px, 310px) minmax(0, 1fr);
+  gap: 16px;
+  height: clamp(560px, 66vh, 780px);
+  min-width: 0;
+}
+.sg-group-list,
+.sg-chat-panel {
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  border: 1px solid #d8e2dc;
+  border-radius: 12px;
+}
+.sg-group-list { padding: 12px; overflow-y: auto; }
+.service-assistant .sg-group-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.service-assistant .sg-group-item.is-selected {
+  background: #e7f3ec;
+  border-color: #80b69a;
+}
+.sg-group-item strong { display: block; font-size: 15px; }
+.sg-chat-panel { display: flex; flex-direction: column; }
+.sg-chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e3eae5;
+}
+.sg-chat-header h2 { margin: 0 0 4px; }
+.sg-chat-header small { overflow-wrap: anywhere; }
+.sg-messages {
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+  overflow-y: auto;
+  background: #f8faf8;
+}
+.sg-message {
+  width: fit-content;
+  max-width: min(78%, 680px);
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  background: #fff;
+  border: 1px solid #e3eae5;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.sg-message.is-staff { margin-left: auto; background: #e7f3ec; }
+.sg-message div { white-space: pre-wrap; line-height: 1.6; }
+.service-assistant .sg-empty-messages,
+.service-assistant .sg-select-prompt {
+  color: #677c72;
+  text-align: center;
+}
+.service-assistant .sg-select-prompt { margin: auto 20px; }
+.sg-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid #e3eae5;
+}
+.service-assistant .sg-composer textarea {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 104px;
+  max-height: 220px;
+  margin: 0;
+}
+.service-assistant .sg-composer button { flex: 0 0 auto; min-width: 76px; }
+.service-assistant .sg-readonly {
+  margin: 0;
+  padding: 14px 18px;
+  border-top: 1px solid #e3eae5;
+  color: #677c72;
+}
+
+@media (max-width: 800px) {
+  .sg-workspace { grid-template-columns: 1fr; height: auto; }
+  .sg-group-list { max-height: 250px; }
+  .sg-chat-panel { min-height: 500px; }
+}
+
+@media (max-width: 520px) {
+  .service-assistant.in-app-service-groups { padding: 16px; }
+  .sg-chat-header { padding: 12px; }
+  .sg-messages { padding: 12px; }
+  .sg-message { max-width: 92%; }
+  .sg-composer { padding: 10px; }
+}

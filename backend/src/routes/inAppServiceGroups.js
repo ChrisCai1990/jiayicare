@@ -10,7 +10,7 @@ const User = require('../models/User');
 const Admin = require('../models/Admin');
 const Team = require('../models/Team');
 const StaffRole = require('../models/StaffRole');
-const { assignmentFields, assignedIds, canUseGroupModule, isAssignedLeader, canCustomerAccess, canStaffAccess,
+const { assignmentFields, assignedIds, canUseGroupModule, isAssignedHealthManager, isAssignedLeader, canCustomerAccess, canStaffAccess,
   canMentorObserve, needsStaffReply, same } = require('../utils/inAppServiceGroupPolicy');
 
 const customerRouter = express.Router();
@@ -60,9 +60,8 @@ function summary(group, patient, staffMembers, supervised = false, canConfigure 
     waitingForStaff: needsStaffReply(group),
     supervised, canConfigure };
 }
-function leaderCanConfigure(patient, staff, mentoredIds) {
-  return staff.role === 'superadmin' || isAssignedLeader(patient, staff) || assignedIds(patient).some(id =>
-    mentoredIds.some(memberId => same(id, memberId)));
+function leaderCanConfigure(patient, staff) {
+  return staff.role === 'superadmin' || isAssignedHealthManager(patient, staff);
 }
 function leaderCanObserve(patient, staff, group) {
   return isAssignedLeader(patient, staff) &&
@@ -107,7 +106,7 @@ customerRouter.get('/', wrap(async (req, res) => {
     summary(group, req.user, await groupStaff(group, req.user)))) });
 }));
 customerRouter.post('/', wrap(async (req, res) => {
-  fail('请等待团队负责人配置服务群成员', 409);
+  fail('请等待健管专员配置服务群成员', 409);
 }));
 customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId);
@@ -143,21 +142,21 @@ staffRouter.get('/', wrap(async (req, res) => {
     const direct = canStaffAccess(group, patient, req.staff);
     const supervised = !direct && (canMentorObserve(group, patient, req.staff, mentoredIds) ||
       leaderCanObserve(patient, req.staff, group));
-    const canConfigure = leaderCanConfigure(patient, req.staff, mentoredIds);
+    const canConfigure = leaderCanConfigure(patient, req.staff);
     if (direct || supervised)
       data.push(summary(group, patient, await groupStaff(group, patient), !direct, canConfigure));
   }
   res.json({ success: true, data, page, hasMore,
-    canConfigure: req.staff.role === 'superadmin' || mentoredIds.length > 0 ||
-      patients.some(patient => leaderCanConfigure(patient, req.staff, mentoredIds)) });
+    canConfigure: req.staff.role === 'superadmin' ||
+      patients.some(patient => leaderCanConfigure(patient, req.staff)) });
 }));
 staffRouter.get('/configuration/:patientId', wrap(async (req, res) => {
   await permitStaff(req);
   const patient = await User.findOne({ _id: validId(req.params.patientId),
     tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
     .select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
-  if (!patient || !leaderCanConfigure(patient, req.staff, await mentorStaffIds(req.staff)))
-    fail('仅客户所属团队负责人可配置群成员');
+  if (!patient || !leaderCanConfigure(patient, req.staff))
+    fail('仅客户当前健管专员可配置群成员');
   const group = await Group.findOne({ _id: patient._id, tenantId: patient.tenantId }).lean();
   res.json({ success: true, data: { patientId: patient._id, patientName: patient.name,
     candidates: await currentStaff(patient), memberIds: group?.memberIds || [],
@@ -168,9 +167,8 @@ staffRouter.post('/', wrap(async (req, res) => {
   const patientId = validId(req.body?.patientId);
   const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId,
     isDeleted: { $ne: true } }).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
-  const mentoredIds = await mentorStaffIds(req.staff);
-  if (!patient || !leaderCanConfigure(patient, req.staff, mentoredIds))
-    fail('仅客户所属团队负责人可配置群成员');
+  if (!patient || !leaderCanConfigure(patient, req.staff))
+    fail('仅客户当前健管专员可配置群成员');
   const candidates = await currentStaff(patient);
   const rawIds = req.body?.memberIds;
   if (!Array.isArray(rawIds) || !rawIds.length || rawIds.length > 20 ||
@@ -178,9 +176,6 @@ staffRouter.post('/', wrap(async (req, res) => {
     new Set(rawIds.map(String)).size !== rawIds.length) fail('请选择有效的入群成员', 400);
   const members = candidates.filter(person => rawIds.some(id => same(id, person._id)));
   if (members.length !== rawIds.length) fail('入群人员必须是当前服务人员', 400);
-  const directLeader = isAssignedLeader(patient, req.staff);
-  if (req.staff.role !== 'superadmin' && !directLeader && !members.some(person =>
-    mentoredIds.some(id => same(id, person._id)))) fail('至少选择一名本团队服务人员', 400);
   const version = Number(req.body?.membershipVersion);
   if (!Number.isSafeInteger(version) || version < 0) fail('请刷新群成员名单后重试', 409);
   const existing = await Group.findOne({ _id: patient._id, tenantId: patient.tenantId })
@@ -205,7 +200,8 @@ staffRouter.post('/', wrap(async (req, res) => {
     fail('群成员名单已变化，请刷新后重试', 409);
   }
   if (!group) fail('群成员名单已变化，请刷新后重试', 409);
-  res.json({ success: true, data: summary(group, patient, members, true, true) });
+  res.json({ success: true, data: summary(group, patient, members,
+    !canStaffAccess(group, patient, req.staff), true) });
 }));
 staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
