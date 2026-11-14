@@ -130,6 +130,7 @@ async function confirm(staff, body) {
    });
  }
  await flushNotices(group).catch(e=>console.error('[group-notice] queued for retry',e.code || 'FAILED'));
+ counts.delete(id(staff.tenantId)+':'+id(staff._id));
  return {id:group._id,status:group.status};
 }
 const counts=new Map();

@@ -270,6 +270,7 @@ staffRouter.post('/', wrap(async (req, res) => {
   let group;
   try {
     group = await Group.findOneAndUpdate({ patientId: patient._id, tenantId: patient.tenantId, serviceType,
+      ...(existing ? { $or: [{ operationUntil: { $exists: false } }, { operationUntil: { $lt: new Date() } }] } : {}),
       membershipVersion: membershipFilter, status: 'active' },
     { $set: { memberIds: members.map(person => person._id), configuredByStaffId: req.staff._id },
       $setOnInsert: { _id:newId, tenantId: patient.tenantId, serviceType,
