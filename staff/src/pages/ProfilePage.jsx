@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { serviceGroupAPI, staffAPI } from '../api'
+import { API_ORIGIN, serviceGroupAPI, staffAPI } from '../api'
 import { useStaff, useToast } from '../App'
 
 const ROLE_LABEL = {
@@ -19,6 +19,20 @@ export default function ProfilePage() {
       logout()
       nav('/login')
     }
+  }
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const uploadAvatar = async event => {
+    const file = event.target.files?.[0]; event.target.value = '';
+    if (!file) return;
+    if (!['image/jpeg','image/png'].includes(file.type) || file.size > 5 * 1024 * 1024) return toast('请选择5MB以内的 JPG 或 PNG 图片');
+    setAvatarBusy(true);
+    try {
+      const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+      const res = await staffAPI.uploadAvatar(content);
+      login({ ...staff, avatar: res.data.avatar });
+      toast('头像已更新');
+    } catch (error) { toast(error.message || '头像上传失败'); }
+    finally { setAvatarBusy(false); }
   }
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ name: staff?.name || '', title: staff?.title || '', department: staff?.department || '', phone: staff?.phone || '' })
@@ -130,10 +144,14 @@ export default function ProfilePage() {
             {/* 头像 */}
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
               <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#1E6B50', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: '#fff', fontWeight: 700 }}>
-                {initials}
+                {staff?.avatar ? <img alt="个人头像" src={staff.avatar.startsWith('/') ? API_ORIGIN + staff.avatar : staff.avatar} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : initials}
               </div>
             </div>
 
+            <label className="btn btn-secondary" style={{ display: 'block', textAlign: 'center', marginBottom: 18, cursor: 'pointer' }}>
+              {avatarBusy ? '上传中…' : '上传 / 更换头像'}
+              <input aria-label="上传个人头像" type="file" accept="image/jpeg,image/png" disabled={avatarBusy} onChange={uploadAvatar} style={{ display: 'none' }} />
+            </label>
             {editing ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>

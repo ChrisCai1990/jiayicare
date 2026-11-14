@@ -98,6 +98,7 @@ export const serviceGroupAPI = {
 }
 
 export const inAppServiceGroupAPI = {
+  presence: id => req(`/staff/in-app-service-groups/${id}/presence`, { method: 'POST' }),
   list: (page = 1) => req(`/staff/in-app-service-groups?page=${page}`),
   configuration: patientId => req(`/staff/in-app-service-groups/configuration/${encodeURIComponent(patientId)}`),
   configure: data => req('/staff/in-app-service-groups', { method: 'POST', body: JSON.stringify(data) }),
@@ -462,6 +463,7 @@ export const staffAPI = {
   getStaffList: (p = {}) => req('/staff/staff-list?' + qs(p)),
 
   // P3 — Personal Center
+  uploadAvatar: (content) => req('/staff/me/avatar', { method: 'POST', body: JSON.stringify({ content }) }),
   updateMe:     (data)  => req('/staff/me', { method: 'PUT', body: JSON.stringify(data) }),
   changePassword:(data) => req('/staff/me/password', { method: 'PUT', body: JSON.stringify(data) }),
 

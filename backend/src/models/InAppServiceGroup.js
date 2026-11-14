@@ -11,6 +11,7 @@ const schema = new mongoose.Schema({
   lastMessageAt: Date,
   lastCustomerMessageAt: Date,
   lastStaffMessageAt: Date,
+  humanActiveUntil: Date,
 }, { timestamps: true });
 schema.index({ tenantId: 1, patientId: 1 }, { unique: true });
 

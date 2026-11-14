@@ -1,3 +1,4 @@
+import AvatarUpload from '../../components/AvatarUpload';
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
@@ -326,6 +327,7 @@ export default function EditProfileScreen({ navigation }) {
         <View style={styles.form}>
 
           {/* ── 基本信息 ──────────────────────────────────────────── */}
+          <AvatarUpload />
           <Text style={styles.sectionLabel}>基本信息</Text>
           <View style={styles.card}>
             <Field label="姓名" value={name} onChangeText={setName} placeholder="请输入姓名" />

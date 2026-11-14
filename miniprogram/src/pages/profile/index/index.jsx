@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text } from '@tarojs/components';
+import { View, Text, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { useAuth } from '../../../context/AuthContext';
-import { ordersAPI, servicesAPI, userAPI } from '../../../services/api';
+import { mediaUrl, ordersAPI, servicesAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { getOrderBadgeCounts } from '../../../utils/orderStatus';
@@ -134,7 +134,7 @@ export default function ProfilePage() {
           width: '76px', height: '76px', borderRadius: '38px', backgroundColor: 'rgba(255,255,255,0.15)',
           margin: '16px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Text style={{ fontSize: '30px', color: '#fff', fontWeight: 700 }}>{(user?.name || '用')[0]}</Text>
+          {user?.avatar ? <Image src={mediaUrl(user.avatar)} mode="aspectFill" style={{ width: '76px', height: '76px', borderRadius: '50%' }} /> : <Text style={{ fontSize: '30px', color: '#fff', fontWeight: 700 }}>{(user?.name || '用')[0]}</Text>}
         </View>
         <View onClick={openProfile}>
           <Text style={{ fontSize: '22px', fontWeight: 700, color: '#fff', marginTop: `${spacing.sm}px`, display: 'block' }}>{user?.name || t('用户')}</Text>

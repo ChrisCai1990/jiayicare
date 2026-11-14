@@ -47,6 +47,7 @@ app.use(cors((req, callback) => {
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use('/api/uploads', express.static(UPLOADS_DIR));
+app.use('/api/brand', express.static(path.join(__dirname, '../../assets/brand')));
 app.use(express.json({
   limit: '25mb',
   verify: (req, res, buffer) => { req.rawBody = buffer.toString('utf8'); },

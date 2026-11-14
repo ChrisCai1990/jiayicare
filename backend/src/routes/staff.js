@@ -7875,6 +7875,8 @@ router.get('/operations/dashboard', staffAuth, async (req, res) => {
 
 // ── 个人中心 ───────────────────────────────────────────────
 // PUT /api/staff/me — 更新个人信息
+router.post('/me/avatar', staffAuth, require('../utils/profileAvatar').avatarHandler(Admin, 'staff'));
+
 router.put('/me', staffAuth, async (req, res) => {
   const allowed = ['name', 'title', 'department', 'avatar', 'phone', 'region'];
   const update = {};

@@ -296,6 +296,8 @@ router.get('/health-fund', auth, async (req, res) => {
 });
 
 // 更新用户信息（支持 healthProfile + 联系信息变更日志）
+router.post('/me/avatar', auth, require('../utils/profileAvatar').avatarHandler(User, 'user'));
+
 router.put('/me', auth, async (req, res) => {
   try {
     const { name, age, gender, height, weight,
