@@ -1,8 +1,9 @@
+import { manageAiDataConsent } from '../../../utils/aiDataConsent';
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, Textarea } from '@tarojs/components';
+import { View, Text, ScrollView, Textarea, Image } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
-import { inAppServiceGroupAPI as api } from '../../../services/api';
+import { mediaUrl, inAppServiceGroupAPI as api } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
@@ -61,6 +62,11 @@ export default function ServiceGroupPage() {
       {group ? `服务团队：${group.staff.map(person => person.name).join('、')}。团队负责人可查看沟通记录。`
         : '消息由当前服务团队处理，团队负责人可查看沟通记录。'}
     </Text>
+    {group?.assistant && <View style={{ display: 'flex', alignItems: 'center', padding: '10px 16px', gap: '10px', background: '#eef9f9' }}>
+      <Image src={mediaUrl(group.assistant.avatar)} mode="aspectFill" style={{ width: '44px', height: '44px', borderRadius: '50%' }} />
+      <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>小嘉｜嘉医汇AI健康管家</Text><Text style={{ fontSize: '11px', color: colors.textMuted }}>健管专员的AI助手，人工接待时暂停回复</Text></View>
+      <Text onClick={manageAiDataConsent} style={{ fontSize: '12px', color: colors.primary }}>AI授权</Text>
+    </View>}
     {!!error && <Text onClick={refresh} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{error} · 点击重试</Text>}
     {loading ? <Text style={{ padding: '16px', color: colors.textMuted }}>正在加载…</Text>
       : !group ? <Text style={{ display: 'block', padding: '20px', color: colors.textMuted, fontSize: '14px' }}>
@@ -70,7 +76,8 @@ export default function ServiceGroupPage() {
         <ScrollView scrollY style={{ flex: 1, height: 0, padding: '12px 16px', boxSizing: 'border-box' }}>
           {messages.map(message => <View key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
             padding: '10px 12px', borderRadius: `${radius.sm}px`, backgroundColor: message.senderType === 'customer' ? '#D8EFE4' : '#fff' }}>
-            <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName} · {stamp(message.createdAt)}</Text>
+            {message.senderAvatar && <Image src={mediaUrl(message.senderAvatar)} mode="aspectFill" style={{ width: '36px', height: '36px', borderRadius: '50%', marginBottom: '5px' }} />}
+            <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName} · {({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',customer:'客户',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</Text>
             <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.content}</Text>
           </View>)}
         </ScrollView>
