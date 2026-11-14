@@ -1756,7 +1756,7 @@ router.put('/tenants/:id/service-profile', adminAuth, requirePlatformSuper, asyn
 
 async function createInstitutionAdmin(req, res, tenantId) {
   const tenant = await Tenant.findById(tenantId).lean();
-  if (!tenant || tenant.commercialPlan !== 'standard') return res.status(404).json({ success: false, message: '标准套餐机构不存在' });
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
   if (!['active', 'setup'].includes(tenant.status)) return res.status(409).json({ success: false, message: '待接入机构尚未开放配置账号' });
   if (!await canAddSeat(tenant._id, 'admin')) return res.status(409).json({ success: false, message: '机构管理员账号额度已满' });
   const { username, password, name } = req.body || {};
