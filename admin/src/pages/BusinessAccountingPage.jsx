@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { adminAPI } from '../api'
 import { useAdmin } from '../App'
 import './partnerWorkspace.css'
+import './businessAccounting.css'
 
 const money = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 const card = { background: '#fff', border: '1px solid #dce9df', borderRadius: 18, padding: 22, boxShadow: '0 5px 22px #23473508' }
@@ -10,10 +11,10 @@ const channelName = { wechat: '微信商城', onsite: '线下收款', alipay: '�
 const roleName = { familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员' }
 
 function DataTable({ title, headers, rows, render }) {
-  return <section style={{ ...card, marginTop: 16 }}>
-    <h2 style={{ fontSize: 18, marginTop: 0 }}>{title}</h2>
+  return <section className="business-accounting__section">
+    <div className="business-accounting__section-head"><h2>{title}</h2><span>{rows.length} 项</span></div>
     <div className="partner-ui__table-wrap"><table className="table"><thead><tr>{headers.map(head => <th key={head}>{head}</th>)}</tr></thead>
-      <tbody>{rows.length ? rows.map(render) : <tr><td colSpan={headers.length}>所选期间暂无记录</td></tr>}</tbody></table></div>
+      <tbody>{rows.length ? rows.map(render) : <tr><td className="business-accounting__empty" colSpan={headers.length}>所选期间暂无记录</td></tr>}</tbody></table></div>
   </section>
 }
 
@@ -67,25 +68,34 @@ export default function BusinessAccountingPage() {
   const sources = data?.sources || {}
   const attributed = ['partner', 'staff', 'unassigned'].reduce((sum, key) => sum + Number(sources[key]?.netCents || 0), 0)
 
-  return <div style={{ maxWidth: 1200 }}>
-    <div className="page-header"><div><div className="page-title">经营与分账总览</div>
-      <div className="page-subtitle">企业现金经营视图 · 推广来源 · 产品与渠道</div></div></div>
-    <form onSubmit={event => { event.preventDefault(); load() }} style={{ ...card, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-      <label>付款日期从 <input aria-label="付款开始日期" type="date" value={from} onChange={event => setFrom(event.target.value)} /></label>
-      <label>至 <input aria-label="付款结束日期" type="date" value={to} onChange={event => setTo(event.target.value)} /></label>
-      <button className="btn btn-primary" disabled={loading}>查询</button>
-      <button type="button" className="btn" onClick={() => { setFrom(''); setTo(''); load('', '') }} disabled={loading}>全部期间</button>
+  return <div className="business-accounting">
+    <div className="business-accounting__hero"><div className="business-accounting__eyebrow">财务工作台 · 现金口径</div><div className="page-title">经营与分账总览</div>
+      <div className="page-subtitle">按付款期间查看企业净实收、推广来源和业务归属</div></div>
+    <form className="business-accounting__filters" onSubmit={event => { event.preventDefault(); load() }}>
+      <div className="business-accounting__filters-heading"><strong>付款日期</strong><span>按订单付款日期筛选</span></div>
+      <div className="business-accounting__filter-fields">
+        <label>开始日期<input aria-label="付款开始日期" type="date" value={from} max={to || undefined} onChange={event => setFrom(event.target.value)} /></label>
+        <span className="business-accounting__date-divider">至</span>
+        <label>结束日期<input aria-label="付款结束日期" type="date" value={to} min={from || undefined} onChange={event => setTo(event.target.value)} /></label>
+        <button className="btn btn-primary" disabled={loading}>{loading ? '查询中…' : '查询'}</button>
+        <button type="button" className="btn business-accounting__all" onClick={() => { setFrom(''); setTo(''); load('', '') }} disabled={loading}>全部期间</button>
+      </div>
     </form>
-    <p style={{ color: '#667a6d', lineHeight: 1.6 }}>当前为订单记录的现金净实收：实付现金减成功退款。期间按付款日期归属，后续退款会回溯冲减原付款期；不等于财务已确认营业收入。线下记录仍需与财务流水核对。</p>
+    <p className="business-accounting__basis"><strong>统计口径</strong> 现金净实收＝实付现金－成功退款；退款回溯冲减原付款期。此处不是财务已确认营业收入，线下记录仍需与财务流水核对。</p>
     {error && <p role="alert" style={{ color: '#b42318' }}>{error}</p>}
     {data && <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-        {[
-          ['现金实收', data.total.paidCents], ['成功退款', data.total.refundedCents], ['企业净实收', data.total.netCents],
-          ['外部合伙人带来', sources.partner?.netCents], ['内部员工推广', sources.staff?.netCents], ['无推广归属', sources.unassigned?.netCents],
-        ].map(([label, amount]) => <div key={label} style={card}><div style={{ color: '#667a6d' }}>{label}</div><strong style={{ fontSize: 23 }}>{money(amount)}</strong></div>)}
+      <div className="business-accounting__overview">
+        <div className="business-accounting__metric business-accounting__metric--primary"><span>企业净实收</span><strong>{money(data.total.netCents)}</strong><small>所选期间现金实收扣除成功退款</small></div>
+        <div className="business-accounting__metric"><span>现金实收</span><strong>{money(data.total.paidCents)}</strong><small>订单已付现金</small></div>
+        <div className="business-accounting__metric"><span>成功退款</span><strong>{money(data.total.refundedCents)}</strong><small>已成功退还的现金</small></div>
       </div>
-      <p style={{ color: attributed === data.total.netCents ? '#176b4d' : '#b42318' }}>推广来源合计 {money(attributed)}；企业净实收 {money(data.total.netCents)}；{attributed === data.total.netCents ? '对账一致' : '对账异常，请核查'}</p>
+      <div className="business-accounting__source-head"><div><h2>推广来源</h2><p>以下三类合计与企业净实收核对</p></div><span className={attributed === data.total.netCents ? 'business-accounting__reconcile is-ok' : 'business-accounting__reconcile is-error'}>{attributed === data.total.netCents ? '✓ 对账一致' : '! 对账异常，请核查'}</span></div>
+      <div className="business-accounting__sources">
+        {[
+          ['外部合伙人带来', sources.partner?.netCents], ['内部员工推广', sources.staff?.netCents], ['无推广归属', sources.unassigned?.netCents],
+        ].map(([label, amount]) => <div key={label} className="business-accounting__source"><span>{label}</span><strong>{money(amount)}</strong></div>)}
+      </div>
+      <p className="business-accounting__source-total">来源合计 <strong>{money(attributed)}</strong><span>企业净实收 {money(data.total.netCents)}</span></p>
       <DataTable title="外部市场合伙人推广业务" headers={['合伙人', '已付款订单数', '净实收归属']} rows={data.partners} render={row =>
         <tr key={row.id}><td>{row.name}</td><td>{row.orderCount}</td><td>{money(row.netCents)}</td></tr>} />
       <DataTable title="内部员工推广业务" headers={['员工', '已付款订单数', '净实收归属']} rows={data.staff} render={row =>
