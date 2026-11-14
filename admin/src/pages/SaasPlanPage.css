@@ -56,6 +56,9 @@
 .sp-account-management{padding:26px 28px!important;border-color:#cfe5d7!important;background:linear-gradient(135deg,#fff 65%,#f4faf6)!important}
 .sp-admin-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;align-items:end;gap:12px;margin-top:20px}
 .sp-admin-form .btn{min-height:42px;white-space:nowrap}
+.sp-password-hint{display:block;margin-top:5px;color:#657c70;font-size:12px}
+.sp-password-hint.is-error,.sp-account-error{color:#b42318}
+.sp-account-error{margin:10px 0 0;font-size:13px}
 .sp-account-list{display:grid;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid #e4eee7;font-size:13px}
 .sp-account-list>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #edf2ee;color:#486254}
 .sp-inner-details{border-top:1px solid #edf1ed;margin-top:20px;padding-top:17px}

@@ -22,6 +22,7 @@ export default function SaasPlanPage() {
   const [reason, setReason] = useState('')
   const [extras, setExtras] = useState({ extraStaffSeats: 0, extraAdminSeats: 0 })
   const [newAdmin, setNewAdmin] = useState({ username: '', name: '', password: '', role: 'finance' })
+  const [accountError, setAccountError] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
@@ -44,10 +45,18 @@ export default function SaasPlanPage() {
     }).catch(e => setError(e.message))
   }, [platform])
   useEffect(() => { load(tenantId).catch(e => setError(e.message)) }, [tenantId])
-  const action = async fn => {
+  const action = async (fn, accountAction = false) => {
     setBusy(true); setError(''); setMessage('')
-    try { await fn(); await load(tenantId); setMessage('已保存'); setReason(''); setProfileReason(''); setNewAdmin({ username: '', name: '', password: '', role: 'finance' }) }
-    catch (e) { setError(e.message) } finally { setBusy(false) }
+    try { await fn(); await load(tenantId); setMessage(accountAction ? '账号已创建' : '已保存'); setReason(''); setProfileReason(''); setNewAdmin({ username: '', name: '', password: '', role: 'finance' }); if (accountAction) setAccountError('') }
+    catch (e) { if (accountAction) setAccountError(e.message); else setError(e.message) } finally { setBusy(false) }
+  }
+  const createAdmin = () => {
+    if (!newAdmin.username.trim() || !newAdmin.name.trim()) { setAccountError('请填写用户名和姓名'); return }
+    if (newAdmin.password.length < 10 || newAdmin.password.length > 128) { setAccountError('初始密码需为 10 至 128 位，当前为 ' + newAdmin.password.length + ' 位'); return }
+    if (newAdmin.role === 'finance' && tenant.status !== 'active') { setAccountError('机构运营中才能开通财务工作台'); return }
+    if (tenant.adminLimit != null && tenant.usage.admins >= tenant.adminLimit) { setAccountError('机构管理员账号额度已满'); return }
+    setAccountError('')
+    action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin), true)
   }
   const plan = snapshot?.standard
   const tenant = snapshot?.tenant
@@ -104,12 +113,13 @@ export default function SaasPlanPage() {
         <div className="sp-section-title"><div><span className="sp-eyebrow">账号管理</span><h2 id="institution-admin-title">新增机构账号</h2></div></div>
         <p className="sp-footnote">当前启用 {tenant.usage.admins} 个机构管理账号{tenant.adminLimit == null ? ' · 本机构独立协议' : ` · 可用额度 ${tenant.adminLimit} 个`}。财务和超管分别授权，首次登录须修改密码。</p>
         <div className="sp-admin-form">
-          <label>账号角色<select className="form-input" value={newAdmin.role} onChange={e => setNewAdmin({ ...newAdmin, role: e.target.value })}><option value="finance" disabled={tenant.status !== 'active'}>机构财务</option><option value="superadmin">机构超管</option></select></label>
-          <label>用户名<input className="form-input" value={newAdmin.username} onChange={e => setNewAdmin({ ...newAdmin, username: e.target.value })} autoComplete="off" /></label>
-          <label>姓名<input className="form-input" value={newAdmin.name} onChange={e => setNewAdmin({ ...newAdmin, name: e.target.value })} autoComplete="off" /></label>
-          <label>初始密码<input className="form-input" type="password" value={newAdmin.password} onChange={e => setNewAdmin({ ...newAdmin, password: e.target.value })} autoComplete="new-password" /></label>
-          <button className="btn btn-primary" disabled={busy || !newAdmin.username.trim() || !newAdmin.name.trim() || newAdmin.password.length < 10 || (newAdmin.role === 'finance' && tenant.status !== 'active') || (tenant.adminLimit != null && tenant.usage.admins >= tenant.adminLimit)} onClick={() => action(() => platform ? adminAPI.createTenantAdmin(tenantId, newAdmin) : adminAPI.createOwnTenantAdmin(newAdmin))}>创建账号</button>
+          <label>账号角色<select className="form-input" value={newAdmin.role} onChange={e => { setNewAdmin({ ...newAdmin, role: e.target.value }); setAccountError('') }}><option value="finance" disabled={tenant.status !== 'active'}>机构财务</option><option value="superadmin">机构超管</option></select></label>
+          <label>用户名<input className="form-input" value={newAdmin.username} onChange={e => { setNewAdmin({ ...newAdmin, username: e.target.value }); setAccountError('') }} autoComplete="off" /></label>
+          <label>姓名<input className="form-input" value={newAdmin.name} onChange={e => { setNewAdmin({ ...newAdmin, name: e.target.value }); setAccountError('') }} autoComplete="off" /></label>
+          <label>初始密码<input className="form-input" type="password" minLength={10} maxLength={128} value={newAdmin.password} onChange={e => { setNewAdmin({ ...newAdmin, password: e.target.value }); setAccountError('') }} autoComplete="new-password" /><small className={newAdmin.password.length > 0 && newAdmin.password.length < 10 ? 'sp-password-hint is-error' : 'sp-password-hint'}>需 10 至 128 位{newAdmin.password.length > 0 && newAdmin.password.length < 10 ? `，当前 ${newAdmin.password.length} 位` : ''}</small></label>
+          <button className="btn btn-primary" disabled={busy} onClick={createAdmin}>创建账号</button>
         </div>
+        {accountError && <p className="sp-account-error" role="alert">{accountError}</p>}
         <p className="sp-footnote">机构财务仅能查看本机构合作信息与业务营收；合伙人、佣金规则和账号配置仍由机构超管负责。</p>
         <div className="sp-account-list"><strong>已有机构账号</strong>{(tenant.accounts || []).map(account => <div key={account._id}><span>{account.name} · {account.username}</span><span>{account.role === 'finance' ? '机构财务' : '机构超管'}{account.staffStatus === 'inactive' ? ' · 已停用' : ''}</span></div>)}</div>
       </section>}
