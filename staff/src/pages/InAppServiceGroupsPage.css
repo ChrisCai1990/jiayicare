@@ -182,7 +182,8 @@
 .sg-mention-badge {color:#b42318;font-size:12px;background:#fff0ed;padding:3px 7px;border-radius:6px;}
 .sg-mention-links button {padding:3px 6px;font-size:12px;color:#187e87;background:#eaf8f8;}
 .sg-mention-picker {position:relative;align-self:flex-end;}
-.sg-mention-picker>div {position:absolute;bottom:100%;left:0;z-index:3;background:white;box-shadow:0 2px 12px #0002;width:180px;max-height:220px;overflow:auto;}
+.sg-mention-picker>div {position:absolute;bottom:100%;left:0;z-index:3;background:white;box-shadow:0 2px 12px #0002;width:260px;max-width:75vw;max-height:220px;overflow:auto;}
+.sg-chat-header small,.sg-group-item small {overflow-wrap:anywhere;}
 .sg-mention-picker>div button {display:block;width:100%;}
 .sg-configuration {max-height:35vh;overflow:auto;flex-shrink:0;}
 

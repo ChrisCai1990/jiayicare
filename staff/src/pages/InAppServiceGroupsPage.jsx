@@ -5,6 +5,9 @@ import './InAppServiceGroupsPage.css';
 
 const categories = [['advisor','健康顾问','嘉医服务群'],['nutrition','营养师','营养干预服务群'],['medical','就医专员','就医服务群'],['specialty','专科医师','专病管理群']];
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '暂无消息';
+const roleLabel = person => person.kind === 'customer' ? '客户' : ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户' })[person.role] || person.role || '服务人员';
+const memberLabel = person => `${person.name} · ${roleLabel(person)}`;
+const customerCode = id => id ? `KH-${id}` : '待核对';
 
 export default function InAppServiceGroupsPage() {
   const [archive, setArchive] = useState(false);
@@ -120,7 +123,7 @@ export default function InAppServiceGroupsPage() {
   const send = async () => {
     if (!selected || !draft.trim() || busy) return;
     setBusy(true); setError('');
-    try { await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+p.name)))); setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft(''); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
+    try { await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+p.name+'（'+roleLabel(p)+'）')))); setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft(''); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
     catch (e) { setError(e.message || '发送失败'); }
     finally { setBusy(false); }
   };
@@ -132,7 +135,7 @@ export default function InAppServiceGroupsPage() {
     catch(e){setError(e.message || '确认失败，请刷新后重试');}finally{setBusy(false);}
   };
   const mentionCandidates = selected ? [...selected.staff, {...selected.customer,role:'客户'}].filter(p=>p.id) : [];
-  const mention = person => {setMentionIds(ids=>[...new Set([...ids,String(person.id)])]);setDraft(text=>text.endsWith('@')?text+person.name+' ':text+'@'+person.name+' ');setShowMentions(false);};
+  const mention = person => {setMentionIds(ids=>[...new Set([...ids,String(person.id)])]);const label=person.name+'（'+roleLabel(person)+'）';setDraft(text=>text.endsWith('@')?text+label+' ':text+'@'+label+' ');setShowMentions(false);};
   const visibleGroups = groups.filter(group => scope === 'all' ||
     scope === 'supervised' && group.supervised ||
     scope === 'pending' && group.waitingForStaff);
@@ -166,7 +169,7 @@ export default function InAppServiceGroupsPage() {
       <button type="button" onClick={refresh}>刷新</button>
     </div>
     <div className="sg-search-results">{patients.map(patient => <button key={patient._id} type="button" disabled={busy}
-      onClick={() => editMembers(patient._id)}>{patient.name} · 配置服务群成员</button>)}
+      onClick={() => editMembers(patient._id)}>{patient.name} · 客户 · {customerCode(patient._id)} · 配置服务群成员</button>)}
     </div>
     </details>}
     {configuration && <section aria-label="配置服务群成员" className="sg-configuration">
@@ -207,7 +210,8 @@ export default function InAppServiceGroupsPage() {
           <strong>{group.name || `${group.patientName}的服务群`}</strong>{group.waitingForStaff && <span style={{ background: '#DC3545', color: 'white', borderRadius: 12, padding: '3px 9px', fontSize: 12, display: 'inline-block' }}>● 待人工回复</span>}
           {group.mentionCount > 0 && <span className="sg-mention-badge">有人@我 · {group.mentionCount}</span>}{group.status==='closed'&&<small>已归档 · {stamp(group.closedAt)}</small>}
           {group.supervised && <small>团队监管 · 只读</small>}
-          <small>{group.staff.map(person => person.name).join('、')}</small>
+          <small>客户：{group.patientName} · {customerCode(group.patientId)}</small>
+          <small>{group.staff.map(memberLabel).join('、')}</small>
           <small>{stamp(group.lastMessageAt)}{group.waitingForStaff ? ' · 待团队回复' : ''}</small>
         </button>)}
         {hasMore && <button type="button" disabled={busy} onClick={loadMore}>加载更多服务群</button>}
@@ -216,7 +220,8 @@ export default function InAppServiceGroupsPage() {
         {selected ? <>
           <div className="sg-chat-header">
             <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
-              <small>团队成员：{selected.staff.map(person => person.name).join('、')}</small></div>
+              <small>客户：{selected.patientName} · {customerCode(selected.patientId)}</small><br />
+              <small>团队成员：{selected.staff.map(memberLabel).join('、')}</small></div>
             {selected.canConfigure && selected.status !== 'closed' && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
           </div>
           {selected.assistant && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: '#eef9f9' }}>
@@ -239,7 +244,7 @@ export default function InAppServiceGroupsPage() {
           </div>
           {selected.status==='closed' ? <p className="sg-readonly">本次服务已结束，历史记录仅供查看。</p> : selected.supervised ? <p className="sg-readonly">仅监管查看，未入群不能回复。</p>
             : <div className="sg-composer">
-              <div className="sg-mention-picker"><button aria-label="选择@成员" onClick={()=>setShowMentions(!showMentions)}> @成员</button>{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{p.name}</button>)}</div>}</div>
+              <div className="sg-mention-picker"><button aria-label="选择@成员" onClick={()=>setShowMentions(!showMentions)}> @成员</button>{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
               <textarea aria-label="服务群消息" value={draft} onChange={e => {setDraft(e.target.value);if(e.target.value.endsWith('@'))setShowMentions(true);}}
                 maxLength={2000} rows={4} placeholder="给客户发送消息…" />
               <button type="button" className="sa-primary" disabled={busy || !draft.trim()} onClick={send}>发送</button>
