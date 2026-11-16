@@ -2,3 +2,5 @@ User-agent: *
 Allow: /
 
 Sitemap: https://www.jiaycare.com/sitemap.xml
+
+Sitemap: https://jiaycare.com/knowledge/sitemap.xml

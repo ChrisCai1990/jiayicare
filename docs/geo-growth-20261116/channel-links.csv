@@ -1,0 +1,13 @@
+﻿渠道,方向,来源标识,咨询链接,状态
+公众号,就医协助,geo_wechat_medical,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_wechat_medical#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+公众号,84天管理,geo_wechat_metabolic,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_wechat_metabolic#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+公众号,年度管理,geo_wechat_annual,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_wechat_annual#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+知乎,就医协助,geo_zhihu_medical,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_zhihu_medical#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+知乎,84天管理,geo_zhihu_metabolic,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_zhihu_metabolic#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+知乎,年度管理,geo_zhihu_annual,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_zhihu_annual#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+小红书,就医协助,geo_xiaohongshu_medical,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_xiaohongshu_medical#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+小红书,84天管理,geo_xiaohongshu_metabolic,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_xiaohongshu_metabolic#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+小红书,年度管理,geo_xiaohongshu_annual,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_xiaohongshu_annual#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+合作机构,就医协助,geo_partner_medical,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_partner_medical#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+合作机构,84天管理,geo_partner_metabolic,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_partner_metabolic#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接
+合作机构,年度管理,geo_partner_annual,https://jiaycare.com/knowledge/ai-consultation.html?source=geo_partner_annual#handoff-form,未投放；平台允许外链时使用，否则由官方账号承接

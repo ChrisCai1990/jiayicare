@@ -1,0 +1,20 @@
+[
+  {
+    "path": "/knowledge",
+    "status": 301,
+    "target": "https://jiaycare.com/knowledge/",
+    "targetStatus": 200
+  },
+  {
+    "path": "/knowledge/",
+    "status": 301,
+    "target": "https://jiaycare.com/knowledge/",
+    "targetStatus": 200
+  },
+  {
+    "path": "/knowledge/guides/blood-pressure-recording-preparation.html?source=probe",
+    "status": 301,
+    "target": "https://jiaycare.com/knowledge/guides/blood-pressure-recording-preparation.html?source=probe",
+    "targetStatus": 200
+  }
+]
