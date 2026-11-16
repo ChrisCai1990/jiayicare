@@ -48,7 +48,7 @@ function ReportSourceSummary({ snapshot = {} }) {
   </details>
 }
 
-export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleOnly = false, onCompleted }) {
+export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleOnly = false, onCompleted, completionNotice, onNextTodo }) {
   const [rows, setRows] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [screening, setScreening] = useState({ rows: [], patientId: null, error: '', loading: true })
   const [dirtyRows, setDirtyRows] = useState({}), [reviewed, setReviewed] = useState({})
@@ -168,6 +168,10 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
           </div>}
           {historical && row.followUpPublication?.status !== 'published' && canEdit && <button disabled={busy} onClick={() => actFollowUp(row, 'approve')}>重试发布单次随访</button>}
           {row.status === 'rejected' && <p className="report-issues-success">已确认本次无需后续随访，审核待办已关闭。</p>}
+          {singleOnly && completionNotice?.draftId === String(row._id) && <div className="report-followup-next" role="status">
+            <span>{completionNotice.message}</span>
+            {completionNotice.nextTodo && <button type="button" onClick={onNextTodo}>处理下一项：{completionNotice.nextTodo.label}</button>}
+          </div>}
           </section>
           <ReportSourceSummary snapshot={row.sourceSnapshot} />
         </>}
