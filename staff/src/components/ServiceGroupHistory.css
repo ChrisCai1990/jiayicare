@@ -1,0 +1,9 @@
+.gh-overlay{position:fixed;inset:0;background:#163b3440;z-index:1500;display:flex;justify-content:flex-end}
+.gh-panel{width:min(600px,100vw);height:100dvh;background:#f7faf9;display:flex;flex-direction:column;box-shadow:-8px 0 24px #163b3420;color:#25473f}
+.gh-panel header{display:flex;align-items:center;justify-content:space-between;padding:20px;gap:12px;background:white;border-bottom:1px solid #dae6df}
+.gh-panel h2{font-size:20px;margin:0 0 6px}.gh-panel small{color:#6a817a}
+.gh-panel form{padding:16px;background:white}.gh-panel input,.gh-panel select{padding:10px;border:1px solid #cbded5;border-radius:8px;box-sizing:border-box;min-width:0;width:100%;font:inherit}
+.gh-panel button{padding:9px 14px;background:white;color:#176b58;border:1px solid #bed8cd;border-radius:8px;cursor:pointer;white-space:nowrap}.gh-panel button:disabled{opacity:.5;cursor:wait}
+.gh-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:12px}.gh-controls label{flex:1;min-width:120px;font-size:12px}.gh-controls input,.gh-controls select{display:block;margin-top:4px}
+.gh-results{flex:1;min-height:0;overflow:auto;padding:16px}.gh-results article{background:white;border:1px solid #d9e5df;padding:14px;border-radius:10px;margin-bottom:12px;overflow-wrap:anywhere}.gh-results article.gh-anchor{border:2px solid #249c93;background:#eefaf7}.gh-results p{white-space:pre-wrap;line-height:1.6}
+.gh-files{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.gh-files img{width:110px;height:100px;object-fit:contain;border:1px solid #e0e9e5}.gh-context-title{padding:10px 16px;display:flex;align-items:center;gap:10px}.gh-error{color:#b42318;padding:0 16px}

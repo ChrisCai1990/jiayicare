@@ -74,11 +74,14 @@ function leaderCanObserve(patient, staff, group) {
   return isAssignedLeader(patient, staff) &&
     (group.memberIds || []).length > 0;
 }
-async function recentMessages(group, before) {
-  const filter={ groupId: group._id, tenantId: group.tenantId };
+async function recentMessages(group, before, extra={}) {
+  const filter={ ...extra, groupId: group._id, tenantId: group.tenantId };
   if(before){const anchor=await Message.findOne({_id:validId(before),...filter}).select('createdAt').lean();if(!anchor)fail('消息不存在',404);filter.$or=[{createdAt:{$lt:anchor.createdAt}},{createdAt:anchor.createdAt,_id:{$lt:anchor._id}}];}
   const rows = await Message.find(filter)
     .sort({ createdAt: -1, _id: -1 }).limit(100).lean();
+  return serializeMessages(group,rows.reverse());
+}
+async function serializeMessages(group,rows) {
   const staffIds = rows.filter(row => row.senderType === 'staff').map(row => row.senderId);
   const [people, customer] = await Promise.all([
     Admin.find({ _id: { $in: staffIds }, tenantId: group.tenantId }).select('_id avatar role').lean(),
@@ -93,7 +96,7 @@ async function recentMessages(group, before) {
     return { id:row.materialReportId, title:report?.title || '医疗资料', status:materials.statusOf(report),
       mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signStoredUrl(url,report.ossKeys?.[i] || '')) };
   };
-  return rows.reverse().map(row => ({ id: row._id, senderType: row.senderType,
+  return rows.map(row => ({ id: row._id, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
     material: materialOf(row), mentions: row.mentions || [], senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
@@ -364,6 +367,41 @@ staffRouter.post('/', wrap(async (req, res) => {
   await events.flushNotices(group).catch(e=>console.error('[group-notice] queued',e.code || 'FAILED'));
   res.json({ success: true, data: summary(group, patient, members,
     !canStaffAccess(group, patient, req.staff), true) });
+}));
+async function readableStaffGroup(req) {
+  const {group,patient}=await groupAndPatient(req.params.groupId,req.staff.tenantId,true);
+  const direct=canStaffAccess({...group,status:'active'},patient,req.staff);
+  const observed=!direct&&(leaderCanObserve(patient,req.staff,group)||canMentorObserve({...group,status:'active'},patient,req.staff,await mentorStaffIds(req.staff)));
+  if(!direct&&!observed)fail('无权查看服务群');
+  return {group,patient,observed};
+}
+async function logHistoryView(req,group,count,observed) {
+  if(observed)await View.create({tenantId:group.tenantId,groupId:group._id,patientId:group.patientId,viewerId:req.staff._id,messageCount:count});
+}
+staffRouter.get('/:groupId/history',wrap(async(req,res)=>{
+  const {group,observed}=await readableStaffGroup(req);
+  const filter=require('../utils/groupMessageSearch').searchFilter(req.query);
+  if(['image','file'].includes(req.query.kind)) {
+    const reports=await MedicalReport.find({sourceInAppGroupId:group._id,user:group.patientId,tenantId:group.tenantId,
+      mimeType:req.query.kind==='image'?/^image\//:'application/pdf'}).select('_id').lean();
+    filter.materialReportId={$in:reports.map(r=>r._id)};
+  }
+  const data=await recentMessages(group,req.query.before,filter);
+  await logHistoryView(req,group,data.length,observed);
+  res.json({success:true,data:[...data].reverse(),hasMore:data.length===100,nextBefore:data[0]?.id || null});
+}));
+staffRouter.get('/:groupId/history/:messageId/context',wrap(async(req,res)=>{
+  const {group,observed}=await readableStaffGroup(req);
+  const scope={groupId:group._id,tenantId:group.tenantId};
+  const anchor=await Message.findOne({...scope,_id:validId(req.params.messageId)}).lean();
+  if(!anchor)fail('消息不存在',404);
+  const [before,after]=await Promise.all([
+    Message.find({...scope,$or:[{createdAt:{$lt:anchor.createdAt}},{createdAt:anchor.createdAt,_id:{$lt:anchor._id}}]}).sort({createdAt:-1,_id:-1}).limit(20).lean(),
+    Message.find({...scope,$or:[{createdAt:{$gt:anchor.createdAt}},{createdAt:anchor.createdAt,_id:{$gt:anchor._id}}]}).sort({createdAt:1,_id:1}).limit(20).lean()
+  ]);
+  const data=await serializeMessages(group,[...before.reverse(),anchor,...after]);
+  await logHistoryView(req,group,data.length,observed);
+  res.json({success:true,data,anchorId:anchor._id});
 }));
 staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId, true);

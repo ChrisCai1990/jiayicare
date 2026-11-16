@@ -98,6 +98,8 @@ export const serviceGroupAPI = {
 }
 
 export const inAppServiceGroupAPI = {
+  history: (id,query)=>req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/history?${new URLSearchParams(query)}`),
+  historyContext: (id,messageId)=>req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/history/${encodeURIComponent(messageId)}/context`),
   lifecycle: () => req('/staff/in-app-service-groups/lifecycle'),
   confirm: data => req('/staff/in-app-service-groups/lifecycle/confirm', {method:'POST',body:JSON.stringify(data)}),
   reminders: () => req('/staff/in-app-service-groups/reminders'),

@@ -172,6 +172,7 @@ app.listen(PORT, () => {
   }
   require('./utils/serviceGroupCleanup').startServiceGroupCleanup();
   require('./utils/serviceGroupEvents').startNoticeRetry();
+  require('./utils/serviceGroupReplyRetry').startReplyRetry();
   require('./utils/clinicalStandardMonitor').startClinicalStandardMonitor();
   require('./utils/wecomEmployeeReminders').start();
   require('./utils/wecomMessageAlerts').start();

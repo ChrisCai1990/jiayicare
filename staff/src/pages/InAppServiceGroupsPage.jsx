@@ -1,3 +1,4 @@
+import ServiceGroupHistory from '../components/ServiceGroupHistory';
 import React, { useEffect, useRef, useState } from 'react';
 import { API_ORIGIN, inAppServiceGroupAPI as api, staffAPI } from '../api';
 import './ServiceAssistantPage.css';
@@ -10,6 +11,7 @@ const memberLabel = person => `${person.name} · ${roleLabel(person)}`;
 const customerCode = id => id ? `KH-${id}` : '待核对';
 
 export default function InAppServiceGroupsPage() {
+  const [historyOpen,setHistoryOpen]=useState(false);
   const [archive, setArchive] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [confirmation, setConfirmation] = useState(null);
@@ -93,7 +95,7 @@ export default function InAppServiceGroupsPage() {
   }, [selected?.id]);
   useEffect(() => {
     if (!selected || selected.supervised || selected.status === 'closed') return;
-    const pulse = () => { if (document.visibilityState === 'visible') api.presence(selected.id).catch(() => {}); };
+    const pulse = () => { if (document.visibilityState === 'visible' && document.hasFocus()) api.presence(selected.id).catch(() => {}); };
     pulse();
     const timer = setInterval(pulse, 30000);
     document.addEventListener('visibilitychange', pulse);
@@ -229,10 +231,12 @@ export default function InAppServiceGroupsPage() {
       </section>
       <section aria-label="群消息" className="sg-chat-panel">
         {selected ? <>
+          {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} onClose={()=>setHistoryOpen(false)}/>}
           <div className="sg-chat-header">
             <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
               <small>客户：{selected.patientName} · {customerCode(selected.patientId)}</small>
               <small>团队成员：{selected.staff.map(memberLabel).join('、')}</small></div>
+            <button type="button" onClick={()=>setHistoryOpen(true)}>查找聊天记录</button>
             {selected.canConfigure && selected.status !== 'closed' && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
           </div>
           {selected.assistant && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: '#eef9f9' }}>
