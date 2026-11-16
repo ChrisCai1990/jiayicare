@@ -13,7 +13,7 @@ export default function ServiceGroupHistory({group,onClose}) {
   const request=useRef(0),applied=useRef({}),firstInput=useRef(null),anchor=useRef(null);
   const run=async(more=false,override={})=>{
     const serial=++request.current;
-    setBusy(true);setError('');setContext(null);
+    setCalendarOpen(false);setBusy(true);setError('');setContext(null);
     const query=more?applied.current:{...filters,...override};
     if(!more){applied.current=query;setRows([]);setNext(null);}
     try {
@@ -46,16 +46,16 @@ export default function ServiceGroupHistory({group,onClose}) {
       <form onSubmit={e=>{e.preventDefault();run();}}>
         <input ref={firstInput} aria-label="聊天关键词" value={filters.q} maxLength={80} placeholder="输入聊天关键词" onChange={e=>setFilters({...filters,q:e.target.value})}/>
         <div className="gh-controls">
-          {[['all','全部'],['image','图片'],['file','PDF']].map(([value,label])=><button type="button" key={value} aria-pressed={filters.kind===value} style={{background:filters.kind===value?'#def1e9':'#fff'}} onClick={()=>{setFilters({...filters,kind:value});run(false,{kind:value});}}>{label}</button>)}
-          <button type="button" onClick={()=>setCalendarOpen(!calendarOpen)}>{filters.date||'日期'}</button>
+          {[['all','全部'],['image','图片'],['file','PDF']].map(([value,label])=><button type="button" key={value} aria-pressed={!calendarOpen&&!filters.date&&filters.kind===value} style={{background:!calendarOpen&&!filters.date&&filters.kind===value?'#def1e9':'#fff'}} onClick={()=>{setFilters({...filters,kind:value,date:''});run(false,{kind:value,date:''});}}>{label}</button>)}
+          <button type="button" aria-pressed={calendarOpen||!!filters.date} style={{background:calendarOpen||filters.date?'#def1e9':'#fff'}} onClick={()=>setCalendarOpen(!calendarOpen)}>{filters.date||'日期'}</button>
           {filters.date&&<button type="button" onClick={()=>{setFilters({...filters,date:''});run(false,{date:''});}}>清除日期</button>}
           <button disabled={busy} type="submit">搜索</button>
         </div>
-        {calendarOpen&&<ChatDateCalendar value={filters.date} onCancel={()=>setCalendarOpen(false)} onConfirm={date=>{setFilters({...filters,date});setCalendarOpen(false);run(false,{date});}}/>}
+        {calendarOpen&&<ChatDateCalendar value={filters.date} onCancel={()=>setCalendarOpen(false)} onConfirm={date=>{setFilters({...filters,date,kind:'all'});run(false,{date,kind:'all'});}}/>}
       </form>
       {error&&<p role="alert" className="gh-error">{error}</p>}
-      {context&&<div className="gh-context-title"><button onClick={()=>setContext(null)}>返回搜索结果</button><small>原消息及前后各最多20条对话</small></div>}
-      <div className="gh-results" aria-busy={busy}>
+      {!calendarOpen&&context&&<div className="gh-context-title"><button onClick={()=>setContext(null)}>返回搜索结果</button><small>原消息及前后各最多20条对话</small></div>}
+      <div className="gh-results" aria-busy={busy} hidden={calendarOpen}>
         {busy&&<p role="status">正在读取…</p>}
         {!busy&&!(context?.data || rows).length&&<p>未找到聊天记录，请调整关键词、日期或类型。</p>}
         {(context?.data || rows).map(message=><article key={message.id} ref={String(message.id)===String(context?.anchorId)?anchor:null} className={String(message.id)===String(context?.anchorId)?'gh-anchor':''}>
