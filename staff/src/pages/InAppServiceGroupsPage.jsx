@@ -1,3 +1,4 @@
+import GroupVoiceMessage from '../components/GroupVoiceMessage';
 import ServiceGroupHistory from '../components/ServiceGroupHistory';
 import React, { useEffect, useRef, useState } from 'react';
 import { API_ORIGIN, inAppServiceGroupAPI as api, staffAPI } from '../api';
@@ -34,6 +35,9 @@ export default function InAppServiceGroupsPage() {
   const [messages, setMessages] = useState([]);
   const [search, setSearch] = useState('');
   const [patients, setPatients] = useState([]);
+  const [emojiOpen,setEmojiOpen]=useState(false);
+  const emojis=['😊','🙂','😄','🤗','🙏','🤝','👍','👌','💪','❤️','🌹','🌷','🌞','🎉','👏','✅','💐','🍀','☕','🌙'];
+  const mentionPosition=useRef(null);
   const [draft, setDraft] = useState('');
   const [scope, setScope] = useState(() => new URLSearchParams(window.location.search).get('scope') === 'pending' ? 'pending' : 'all');
   const [error, setError] = useState('');
@@ -143,7 +147,7 @@ export default function InAppServiceGroupsPage() {
     catch(e){setError(e.message || '确认失败，请刷新后重试');}finally{setBusy(false);}
   };
   const mentionCandidates = selected ? [...selected.staff, {...selected.customer,role:'客户'}, {...selected.assistant,role:'ai'}].filter(p=>p.id) : [];
-  const mention = person => {setMentionIds(ids=>[...new Set([...ids,String(person.id)])]);const label=person.name+'（'+roleLabel(person)+'）';setDraft(text=>text.endsWith('@')?text+label+' ':text+'@'+label+' ');setShowMentions(false);};
+  const mention = person => {setMentionIds(ids=>[...new Set([...ids,String(person.id)])]);const label=person.name+'（'+roleLabel(person)+'）';setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+label+' '+text.slice(at+1):text+'@'+label+' ';});setShowMentions(false);};
   const visibleGroups = groups.filter(group => scope === 'all' ||
     scope === 'supervised' && group.supervised ||
     scope === 'pending' && group.waitingForStaff);
@@ -253,7 +257,7 @@ export default function InAppServiceGroupsPage() {
                 <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
               </div>
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
-              <div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>
+              {message.audioUrl?<GroupVoiceMessage groupId={selected.id} message={message}/>:<div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>}
               {message.material && <div style={{marginTop:8}}>
                 <small>{message.material.status}</small>
                 <div style={{display:'flex',flexWrap:'wrap',gap:8}}>{(message.material.files||[]).map((url,i)=><a key={i} href={url} target="_blank" rel="noreferrer">{message.material.mimeType==='application/pdf'?'查看PDF':<img src={url} alt={`资料第${i+1}页`} style={{width:100,height:100,objectFit:'contain'}}/>}</a>)}</div>
@@ -264,8 +268,8 @@ export default function InAppServiceGroupsPage() {
           </div>
           {selected.status==='closed' ? <p className="sg-readonly">本次服务已结束，历史记录仅供查看。</p> : selected.supervised ? <p className="sg-readonly">仅监管查看，未入群不能回复。</p>
             : <div className="sg-composer">
-              <div className="sg-mention-picker"><button aria-label="选择@成员" onClick={()=>setShowMentions(!showMentions)}> @成员</button>{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
-              <textarea aria-label="服务群消息" value={draft} onChange={e => {setDraft(e.target.value);if(e.target.value.endsWith('@'))setShowMentions(true);}}
+              <div className="sg-mention-picker"><button type="button" aria-label="选择表情" onClick={()=>{setEmojiOpen(v=>!v);setShowMentions(false);}}>☺</button>{emojiOpen&&<div style={{display:'flex',flexWrap:'wrap'}}>{emojis.map(emoji=><button key={emoji} style={{width:48,minWidth:48,fontSize:22}} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))}>{emoji}</button>)}</div>}{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
+              <textarea aria-label="服务群消息" value={draft} onChange={e => {setDraft(e.target.value);const at=e.target.selectionStart-1;mentionPosition.current=e.target.value[at]==='@'?at:null;setShowMentions(mentionPosition.current!==null);if(mentionPosition.current!==null)setEmojiOpen(false);}}
                 maxLength={2000} rows={4} placeholder="给客户发送消息…" />
               <button type="button" className="sa-primary" disabled={busy || !draft.trim()} onClick={send}>发送</button>
             </div>}

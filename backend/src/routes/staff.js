@@ -17992,7 +17992,11 @@ async function runReportParseControlled(reportId) {
         await MedicalReport.updateOne({_id:report._id}, {$set:{aiStatus:'pending',parseJob:{status:'skipped',message:'资料类别无法确认或不属于本次类别，未提取内容，请健管专员核对原件。'}}});
         return;
       }
-      await MedicalReport.updateOne({_id:report._id}, {$set:{groupMaterialVerified:true}});
+      if (report.groupMaterialAutoCategory && typeof accepted==='string') {
+        report.documentCategory=accepted;report.type=accepted==='physical_exam'?'annual':'other';
+        report.title=require('../utils/inAppGroupMaterials').categories[accepted]+'（服务群提交）';
+      }
+      await MedicalReport.updateOne({_id:report._id}, {$set:{groupMaterialVerified:true,documentCategory:report.documentCategory,type:report.type,title:report.title}});
     } catch(error) {
       await MedicalReport.updateOne({_id:report._id}, {$set:{aiStatus:'failed',parseJob:{status:'failed',message:'资料类别核验未完成，请健管专员核对或重试。'}}});
       return;

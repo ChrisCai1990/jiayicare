@@ -48,6 +48,27 @@ test('history filters, pagination, permissions, context and offline recovery', {
  assert.equal((await customerCall(customer,{},String(rows[60]._id))).body.data.length,41);
  assert.equal((await customerCall({...customer,_id:oid()})).code,403);
  assert.equal((await customerCall({...customer,tenantId:oid()})).code,404);
+ // Voice endpoints enforce the same tenant/group scope; conversion stays display-only.
+ await Group.updateOne({_id:groupId},{$set:{status:'active'}});
+ const oss=require('../src/utils/oss'),ga=require('../src/utils/groupAudio'),consent=require('../src/utils/aiDataConsent'),mt=require('../src/utils/messageTranscription');
+ const saved={upload:oss.uploadBuffer,delete:oss.deleteFile,transcribe:ga.transcribe,permission:consent.assertPermission,read:mt.readAudio};
+ let uploadCalls=0,recognitions=0;
+ oss.uploadBuffer=async()=>{uploadCalls++;return {url:'https://synthetic.invalid/messages/audio/test.wav',key:'messages/audio/test.wav'}};oss.deleteFile=async()=>{};
+ ga.transcribe=async()=>{recognitions++;return '识别文字'};consent.assertPermission=async()=>{};mt.readAudio=async()=> 'synthetic';
+ t.after(()=>{oss.uploadBuffer=saved.upload;oss.deleteFile=saved.delete;ga.transcribe=saved.transcribe;consent.assertPermission=saved.permission;mt.readAudio=saved.read;});
+ const wav=Buffer.alloc(48);wav.write('RIFF');wav.write('WAVE',8);const audio={data:'data:audio/wav;base64,'+wav.toString('base64'),mimeType:'audio/wav',duration:2};
+ const post=async(path,actor,body={},messageId,router=customerRouter)=>{const out=res();await handler(router,path,'post')({[router===staffRouter?'staff':'user']:actor,params:{groupId:String(groupId),messageId},body},out,e=>{throw e});return out;};
+ assert.equal((await post('/:groupId/voice',{...customer,_id:oid()},{audio})).code,403);assert.equal(uploadCalls,0);
+ const voice=await post('/:groupId/voice',customer,{audio});assert.equal(voice.code,201);const voiceId=String(voice.body.data.id);
+ assert.equal((await customerCall(customer)).body.data.some(m=>String(m.id)===voiceId&&m.audioDuration===2),true);
+ assert.equal(require('../src/utils/serviceGroupAssistant').canReply(await Group.findById(groupId).lean(),voice.body.data),false);
+ assert.equal((await post('/:groupId/messages/:messageId/transcribe',{...customer,tenantId:oid()},{},voiceId)).code,404);
+ assert.equal((await post('/:groupId/messages/:messageId/transcribe',customer,{},voiceId)).body.data.text,'识别文字');
+ assert.equal((await Msg.findById(voiceId)).content,'[语音消息]');
+ assert.equal((await post('/:groupId/messages/:messageId/transcribe',staff,{},voiceId,staffRouter)).body.data.text,'识别文字');assert.equal(recognitions,1);
+ consent.assertPermission=async()=>{throw Object.assign(Error('consent missing'),{status:403})};
+ assert.equal((await post('/:groupId/messages/:messageId/transcribe',customer,{},voiceId)).code,403);
+ await Msg.deleteOne({_id:voiceId});
  // Recovery after presence expires; no model/network or real customer is used.
  const retry=require('../src/utils/serviceGroupReplyRetry'),assistant=require('../src/utils/serviceGroupAssistant');
  const old=assistant.reply;let calls=0;assistant.reply=async(g,tr)=>{calls++;await Msg.collection.insertOne({_id:oid(),groupId:g,tenantId:tenant,patientId:patient,senderType:'ai',replyTo:tr.id,createdAt:new Date()})};t.after(()=>assistant.reply=old);

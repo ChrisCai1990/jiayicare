@@ -98,6 +98,8 @@ export const serviceGroupAPI = {
 }
 
 export const inAppServiceGroupAPI = {
+  transcribe: (id,messageId) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/transcribe`, {method:'POST',timeout:60000,body:JSON.stringify({})}),
+
   history: (id,query)=>req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/history?${new URLSearchParams(query)}`),
   historyContext: (id,messageId)=>req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/history/${encodeURIComponent(messageId)}/context`),
   lifecycle: () => req('/staff/in-app-service-groups/lifecycle'),

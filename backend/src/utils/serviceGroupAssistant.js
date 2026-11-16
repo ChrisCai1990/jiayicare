@@ -11,6 +11,7 @@ function isMentioned(group, trigger) {
   return ['customer','staff'].includes(trigger.senderType) && (trigger.mentions || []).some(m=>m.kind==='ai' && same(m.id,group?._id));
 }
 function canReply(group, trigger, now = new Date()) {
+  if (trigger.audioUrl) return false;
   if (!group || isEnded(group,now) || group.status !== 'active' || !(group.memberIds || []).length || trigger.senderType==='ai') return false;
   if (isMentioned(group,trigger)) return true;
   return trigger.senderType !== 'staff' &&

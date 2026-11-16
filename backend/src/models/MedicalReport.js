@@ -79,6 +79,7 @@ const medicalReportSchema = new mongoose.Schema({
   sourceInAppGroupKey: { type: String, default: undefined },
   sourceInAppGroupId: { type: mongoose.Schema.Types.ObjectId, default: undefined },
   groupMaterialDigest: { type: String, default: undefined },
+  groupMaterialAutoCategory: { type: Boolean, default: undefined },
   groupMaterialVerified: { type: Boolean, default: undefined },
   sourceServiceGroup: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceGroup', default: null },
 

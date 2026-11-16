@@ -1,3 +1,4 @@
+import GroupVoiceMessage from './GroupVoiceMessage';
 import ChatDateCalendar from './ChatDateCalendar';
 import React, { useEffect, useRef, useState } from 'react';
 import { inAppServiceGroupAPI as api } from '../api';
@@ -60,7 +61,7 @@ export default function ServiceGroupHistory({group,onClose}) {
         {!busy&&!(context?.data || rows).length&&<p>未找到聊天记录，请调整关键词、日期或类型。</p>}
         {(context?.data || rows).map(message=><article key={message.id} ref={String(message.id)===String(context?.anchorId)?anchor:null} className={String(message.id)===String(context?.anchorId)?'gh-anchor':''}>
           <small>{message.senderName} · {roles[message.senderRole] || '服务成员'} · {stamp(message.createdAt)}</small>
-          <p>{message.content}</p>
+          {message.audioUrl?<GroupVoiceMessage groupId={group.id} message={message}/>:<p>{message.content}</p>}
           {message.material&&<div><small>{message.material.title} · {message.material.status}</small>
             <div className="gh-files">{(message.material.files||[]).map((url,i)=><a key={i} href={url} target="_blank" rel="noreferrer">{message.material.mimeType==='application/pdf'?'查看PDF原件':<img src={url} alt={`资料第${i+1}页`}/>}</a>)}</div>
           </div>}

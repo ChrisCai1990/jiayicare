@@ -5,7 +5,6 @@ import { inAppServiceGroupAPI } from '../services/api';
 import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePicker';
 import { ensureAiDataConsent } from '../utils/aiDataConsent';
 
-const categories = [['physical_exam','整份体检报告'],['lab_report','检验报告'],['exam_report','检查报告'],['outpatient_record','门诊病历'],['prescription_order','处方']];
 export default function GroupMaterialUpload({ groupId, onSent }) {
   const [busy,setBusy]=useState(false);
   const [pending,setPending]=useState(null);
@@ -16,11 +15,6 @@ export default function GroupMaterialUpload({ groupId, onSent }) {
     try {
       let data=pending;
       if(!data){
-        const choice=await Taro.showActionSheet({itemList:categories.map(c=>c[1])});
-        const category=categories[choice.tapIndex];
-        if(!category)return;
-        const confirm=await Taro.showModal({title:'上传'+category[1],content:'请选择您本人的同一份资料。识别结果由健管专员核对后归档；血压记录、饮食及其他图片不通过此入口识别。',confirmText:'选择资料'});
-        if(!confirm.confirm)return;
         await ensureAiDataConsent('health',{cancelText:'仅保存原件'});
         const source=await Taro.showActionSheet({itemList:['拍照 / 相册图片','PDF文件']});
         let result;
@@ -46,12 +40,12 @@ export default function GroupMaterialUpload({ groupId, onSent }) {
             files.push(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);}));
           }else{
             const raw=Taro.getFileSystemManager().readFileSync(path,'base64');
-            files.push('data:image/jpeg;base64,'+raw);
+            files.push((source.tapIndex===1?'data:application/pdf;base64,':'data:image/jpeg;base64,')+raw);
           }
         }
         if(!files.length)return;
         if(files.reduce((n,f)=>n+f.length,0)>21*1024*1024)throw new Error('资料总大小不能超过15MB，请减少图片数量');
-        data={category:category[0],files,requestId:'material_'+Date.now()+'_'+Math.random().toString(36).slice(2)};
+        data={category:'auto',files,requestId:'material_'+Date.now()+'_'+Math.random().toString(36).slice(2)};
         setPending(data);
       }
       await inAppServiceGroupAPI.uploadMaterial(groupId,data);

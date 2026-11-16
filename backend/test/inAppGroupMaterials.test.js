@@ -23,3 +23,13 @@ test('invalid payloads cannot submit chat text or forged categories for recognit
  assert.throws(()=>policy.validate({...base,files:Array(10).fill('invalid')}));
  assert.equal(policy.statusOf({aiStatus:'pending',audit_status:'unaudited'}),'待健管专员核对');
 });
+test('automatic categories require consistent supported pages and preserve unknown originals',async t=>{
+ const pdf=require('../src/utils/pdf'),old=pdf.fetchReportBuffers;pdf.fetchReportBuffers=async()=>[Buffer.from('a'),Buffer.from('b')];t.after(()=>pdf.fetchReportBuffers=old);
+ const report={_id:'synthetic',groupMaterialAutoCategory:true,documentCategory:'other_customer_material',mimeType:'image/png'};
+ assert.equal(await policy.checkCategory(report,async()=>'{"category":"prescription_order"}'),'prescription_order');
+ let n=0;assert.equal(await policy.checkCategory(report,async()=>JSON.stringify({category:n++?'lab_report':'physical_exam'})),'physical_exam');
+ n=0;assert.equal(await policy.checkCategory(report,async()=>JSON.stringify({category:n++?'outpatient_record':'lab_report'})),false);
+ assert.equal(await policy.checkCategory(report,async()=>'{"category":"other"}'),false);
+ assert.equal(await policy.checkCategory(report,async()=>'{"category":"constructor"}'),false);
+ const buffer=Buffer.from('%PDF-1.4 synthetic');const result=policy.validate({files:['data:application/pdf;base64,'+buffer.toString('base64')],requestId:'material_testing_auto'});assert.equal(result.files[0].mimeType,'application/pdf');
+});

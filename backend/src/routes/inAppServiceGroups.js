@@ -88,7 +88,7 @@ async function serializeMessages(group,rows) {
     User.findOne({ _id: group.patientId, tenantId: group.tenantId }).select('avatar').lean(),
   ]);
   const personMap = new Map(people.map(person => [String(person._id), person]));
-  const reports = await MedicalReport.find({ _id: { $in: rows.map(row=>row.materialReportId).filter(Boolean) }, user: group.patientId, tenantId:group.tenantId }).select('title documentCategory fileUrls ossKeys mimeType aiStatus audit_status parseJob').lean();
+  const reports = await MedicalReport.find({ _id: { $in: rows.map(row=>row.materialReportId).filter(Boolean) }, user: group.patientId, tenantId:group.tenantId }).select('title documentCategory fileUrls ossKeys mimeType aiStatus audit_status parseJob groupMaterialAutoCategory groupMaterialVerified').lean();
   const reportMap = new Map(reports.map(report=>[String(report._id),report]));
   const materialOf = row => {
     if (!row.materialReportId) return undefined;
@@ -99,12 +99,14 @@ async function serializeMessages(group,rows) {
   return rows.map(row => ({ id: row._id, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
+    audioUrl:row.audioUrl?require('../utils/oss').signStoredUrl(row.audioUrl):'',audioDuration:row.audioDuration||0,audioTranscript:row.audioTranscript||'',
     material: materialOf(row), mentions: row.mentions || [], senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
 }
-async function send(group, senderType, sender, content, rawMentions = []) {
+async function send(group, senderType, sender, content, rawMentions = [], audioFields = {}) {
  return events.withGroupLock(group._id, group.tenantId, async locked => {
   if (locked.status !== 'active') fail('服务群已归档，不能发送消息', 409);
   const patient = await User.findOne({_id:group.patientId,tenantId:group.tenantId}).lean();
+  if(senderType==='customer'&&!canCustomerAccess(locked,sender))fail('无权发送此服务群消息',403);
   const people = await groupStaff(locked,patient);
   const candidates = [...people.map(p=>({id:p._id,kind:'staff',name:p.name,role:events.roles[p.role] || '服务人员'})), {id:patient._id,kind:'customer',name:patient.name,role:'客户'}, {id:group._id,mentionKey:`ai:${group._id}`,kind:'ai',name:assistant.identity.name,role:'AI健康管家'}];
   if (!Array.isArray(rawMentions) || rawMentions.length > 22) fail('@成员无效',400);
@@ -114,7 +116,7 @@ async function send(group, senderType, sender, content, rawMentions = []) {
   const body = contentOf(content);
   if (!body || body.length > 2000) fail('请输入不超过2000字的消息', 400);
   if (mentions.some(m=>m.kind==='ai')) await require('../utils/aiDataConsent').assertPermission(patient._id,'assistant','qwen');
-  const message = await Message.create({ tenantId: group.tenantId, groupId: group._id,
+  const message = await Message.create({ ...audioFields, tenantId: group.tenantId, groupId: group._id,
     patientId: group.patientId, senderType, senderId: sender._id,
     senderName: sender.name || '服务成员', content: body, mentions });
   const at = message.createdAt;
@@ -129,7 +131,7 @@ async function send(group, senderType, sender, content, rawMentions = []) {
     } catch (error) { console.error('[in-app-service-group] inbox notification failed', error.message); }
   }
   return { id: message._id, senderType, senderId:sender._id, senderName: message.senderName,
-    content: message.content, mentions, createdAt: at };
+    content: message.content, audioUrl:message.audioUrl, mentions, createdAt: at };
  });
 }
 
@@ -138,6 +140,9 @@ customerRouter.post('/:groupId/materials', wrap(async (req,res) => {
   const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId);
   if (!canCustomerAccess(group,req.user)) fail('无权上传此服务群资料');
   const { files,digest } = materials.validate(req.body);
+  const automatic=!req.body.category||req.body.category==='auto';
+  const category=automatic?'other_customer_material':req.body.category;
+  const label=automatic?'医疗资料':materials.categories[category];
   const key=`group-material:${group._id}:${req.user._id}:${req.body.requestId}`;
   const oss=require('../utils/oss');
   let uploaded=[], retained=false, result;
@@ -154,7 +159,7 @@ customerRouter.post('/:groupId/materials', wrap(async (req,res) => {
       if (existing && existing.groupMaterialDigest !== digest) fail('上传标识已使用',409);
       if (!existing) {
         existing=await MedicalReport.create({user:patient._id,tenantId:group.tenantId,
-          title:materials.categories[req.body.category]+'（服务群提交）',type:req.body.category==='physical_exam'?'annual':'other',documentCategory:req.body.category,
+          title:label+'（服务群提交）',type:category==='physical_exam'?'annual':'other',documentCategory:category,groupMaterialAutoCategory:automatic,
           sourceType:'customer_upload',submittedByUser:patient._id,sourceInAppGroupKey:key,sourceInAppGroupId:group._id,groupMaterialDigest:digest,
           fileUrl:uploaded[0].url,fileUrls:uploaded.map(f=>f.url),ossKey:uploaded[0].key,ossKeys:uploaded.map(f=>f.key),
           mimeType:uploaded[0].mimeType,pages:uploaded.length,audit_status:'unaudited',aiStatus:'none',
@@ -163,7 +168,7 @@ customerRouter.post('/:groupId/materials', wrap(async (req,res) => {
       }
       const message=await Message.findOneAndUpdate({eventKey:key},{$setOnInsert:{tenantId:group.tenantId,groupId:group._id,
         patientId:patient._id,senderType:'customer',senderId:patient._id,senderName:patient.name || '客户',
-        content:`已提交${materials.categories[req.body.category]}`,materialReportId:existing._id,eventKey:key}}, {upsert:true,new:true});
+        content:`已提交${label}`,materialReportId:existing._id,eventKey:key}}, {upsert:true,new:true});
       await Group.updateOne({_id:group._id},{$max:{lastMessageAt:message.createdAt,lastCustomerMessageAt:message.createdAt}});
       return {id:message._id,reportId:existing._id};
     });
@@ -209,6 +214,39 @@ customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
   await Message.updateMany({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},mentions:{$elemMatch:{id:req.user._id,kind:'customer'}}},{$addToSet:{mentionReadBy:req.user._id}});
   res.json({ success: true, data, hasMore: data.length === 100, firstUnreadMessageId: firstUnread?.id || null });
 }));
+async function transcribeGroupMessage(req,res){
+ const {group,observed}=await readableHistoryGroup(req);
+ if(!mongoose.isValidObjectId(req.params.messageId))fail('无效语音消息',400);
+ await logHistoryView(req,group,1,observed);
+ const message=await Message.findOne({_id:req.params.messageId,groupId:group._id,tenantId:group.tenantId});
+ if(!message?.audioUrl)fail('语音不存在',404);
+ // Staff may view a customer-authorized transcript but cannot grant consent for them.
+ await require('../utils/aiDataConsent').assertPermission(group.patientId,'speech','aliyun-nls');
+ const text=message.audioTranscript||await require('../utils/groupAudio').transcribe(group.patientId,await require('../utils/messageTranscription').readAudio(require('../utils/oss'),message.audioUrl),message.audioMimeType);
+ await Message.updateOne({_id:message._id,groupId:group._id},{$set:{audioTranscript:text}});
+ res.json({success:true,data:{text}});
+}
+customerRouter.post('/:groupId/messages/:messageId/transcribe',wrap(transcribeGroupMessage));
+customerRouter.post('/:groupId/speech', wrap(async(req,res)=>{
+ const {group}=await groupAndPatient(req.params.groupId,req.user.tenantId);
+ if(!canCustomerAccess(group,req.user))fail('无权访问此服务群');
+ const audio=require('../utils/groupAudio').validate(req.body.audio);
+ const text=await require('../utils/groupAudio').transcribe(req.user._id,audio.buffer.toString('base64'),audio.mimeType);
+ res.json({success:true,data:{text}});
+}));
+customerRouter.post('/:groupId/voice', wrap(async(req,res)=>{
+ const {group,patient}=await groupAndPatient(req.params.groupId,req.user.tenantId);
+ if(!canCustomerAccess(group,req.user)||!(await groupStaff(group,patient)).length)fail('无权发送此服务群消息');
+ const audio=require('../utils/groupAudio').validate(req.body.audio),oss=require('../utils/oss');
+ const saved=await oss.uploadBuffer(audio.buffer,audio.mimeType,'messages/audio');
+ try{
+  const message=await send(group,'customer',req.user,'[语音消息]',[],{audioUrl:saved.url,audioDuration:audio.duration,audioMimeType:audio.mimeType});
+  res.status(201).json({success:true,data:message});
+ }catch(error){
+  if(!await Message.exists({groupId:group._id,audioUrl:saved.url}))await oss.deleteFile(saved.key);
+  throw error;
+ }
+}));
 customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.user.tenantId);
   if (!canCustomerAccess(group, req.user)) fail('无权发送服务群消息');
@@ -219,6 +257,7 @@ customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
 }));
 
 staffRouter.use(staffAuth, wrap(async (req, res, next) => { await permitStaff(req); next(); }));
+staffRouter.post('/:groupId/messages/:messageId/transcribe',wrap(transcribeGroupMessage));
 staffRouter.get('/reminders', wrap(async (req, res) => {
   const mentoredIds = await mentorStaffIds(req.staff);
   const visibleIds = [req.staff._id, ...mentoredIds];

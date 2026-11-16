@@ -47,6 +47,10 @@ test('group materials: permissions, supported categories, durable retry and manu
  const read=res();await handler(customerRouter,'/:groupId/messages','get')({user,params:{groupId:String(groupId)},query:{}},read,e=>{throw e});
  assert.equal(read.body.data.length,5);assert.ok(read.body.data.every(m=>m.material.files.length===1));
 
+ const automatic=await call(user,{files:[png],requestId:'material_auto_123456'});assert.equal(automatic.code,201);
+ const automaticReport=await Report.findById(automatic.body.data.reportId);assert.equal(automaticReport.documentCategory,'other_customer_material');assert.equal(automaticReport.groupMaterialAutoCategory,true);assert.equal(automaticReport.audit_status,'unaudited');assert.equal(automaticReport.reportItems.length,0);
+ assert.equal((await Msg.findById(automatic.body.data.id)).content,'已提交医疗资料');
+ const duplicate=await call(user,{category:'auto',files:[png],requestId:'material_auto_123456'});assert.equal(String(duplicate.body.data.reportId),String(automaticReport._id));
  const staffRoutes=require('../src/routes/staff');
  const schedule=staffRoutes.scheduleReportParse;const apiKey=process.env.QWEN_API_KEY;
  const queued=[];staffRoutes.scheduleReportParse=id=>queued.push(String(id));process.env.QWEN_API_KEY='synthetic-no-network';
@@ -72,5 +76,5 @@ test('group materials: permissions, supported categories, durable retry and manu
  const ordinary=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'正常接待',mentionIds:[]}},ordinary,e=>{throw e});assert.equal(ordinary.code,201);assert.equal(calls.length,1);
  await Group.updateOne({_id:groupId},{$set:{status:'closed'}});
  assert.equal((await call(user,{...body,requestId:'material_closed_123456'})).code,404);
- assert.equal(await Report.countDocuments(),5);
+ assert.equal(await Report.countDocuments(),6);
 });
