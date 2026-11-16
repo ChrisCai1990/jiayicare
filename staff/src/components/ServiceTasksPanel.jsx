@@ -197,7 +197,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     if (task.feedbackReview) { setDispatchTask(task); return }
     if (annualDispatch.dedicated(task)) { setDispatchTask(task); return }
     if (task.sourceType === 'report_followup' && task.workflowKey === 'report_followup:advisor_review') {
-      nav(`/patients/${task.patientId?._id}/annual-health?reviewDraftId=${task.sourceId}#report-followup-drafts`)
+      nav(`/patients/${task.patientId?._id}/report-followup?reviewDraftId=${task.sourceId}`)
       return
     }
     if (task.sourceType === 'professional_assessment' && task.workflowKey === 'professional_assessment:advisor_review') {

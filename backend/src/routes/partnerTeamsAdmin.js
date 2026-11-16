@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
+const { financeAdminMayAccess } = require('../utils/adminAccess');
 const Admin = require('../models/Admin');
 const MarketPartner = require('../models/MarketPartner');
 const PartnerTeam = require('../models/PartnerTeam');
@@ -11,7 +12,8 @@ const Order = require('../models/Order');
 const { deliveredServiceShares } = require('../utils/partnerTeamEarning');
 
 router.use(adminAuth);
-router.use((req, res, next) => req.admin.role === 'superadmin' && req.admin.tenantId
+router.use((req, res, next) => req.admin.tenantId && (req.admin.role === 'superadmin'
+  || (req.admin.role === 'finance' && financeAdminMayAccess(req.originalUrl, req.method)))
   ? next() : res.status(403).json({ success: false, message: '仅机构超级管理员可管理团队核算' }));
 const bad = (res, message, code = 400) => res.status(code).json({ success: false, message });
 const valid = mongoose.isValidObjectId;

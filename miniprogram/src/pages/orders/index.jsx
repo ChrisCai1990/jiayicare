@@ -58,7 +58,10 @@ export default function OrdersPage() {
 
   const cancel = async (id) => {
     const order = list.find(item => item._id === id);
-    if (order?.checkoutGroupId) {
+    if (order?.packageEntitlementUsage?.entitlementId) {
+      const answer = await Taro.showModal({ title: '取消服务订单', content: '取消后，本次占用的套餐服务次数会恢复。确定取消吗？', confirmText: '确认取消' });
+      if (!answer.confirm) return;
+    } else if (order?.checkoutGroupId) {
       const answer = await Taro.showModal({ title: '取消合并付款', content: '这会取消本次一起结算的全部待支付商品，之后可以重新勾选购买。是否继续？', confirmText: '确认取消' });
       if (!answer.confirm) return;
     }
@@ -149,6 +152,13 @@ export default function OrdersPage() {
       ) : (
         visibleList.map((o) => {
           const meta = TRADE_STATUS_META[o.tradeStatus] || STATUS_META[o.status] || STATUS_META.pending;
+          const packageRightsOrder = !!o.packageEntitlementUsage?.entitlementId;
+          const canCancelPackageRights = packageRightsOrder && o.status === 'pending'
+            && o.tradeStatus === 'paid' && o.paymentStatus === 'paid'
+            && !o.serviceStartedAt && Number(o.usedUnits || 0) === 0
+            && Number(o.paidAmount || 0) === 0 && Number(o.healthFundAmount || 0) === 0
+            && Number(o.enterpriseSharedFundAmount || 0) === 0 && !o.paymentId && !o.checkoutGroupId
+            && (!o.fulfillmentId?.status || ['pending_assignment', 'awaiting_booking'].includes(o.fulfillmentId.status));
           return (
             <View key={o._id} style={{
               backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card,
@@ -180,7 +190,7 @@ export default function OrdersPage() {
                   <Text style={{ fontSize: '12px', color: '#fff' }}>查看咨询与会诊进度</Text>
                 </View>
               )}
-              {o.status === 'pending' && !['paid', 'fulfilling', 'refund_pending', 'refunded'].includes(o.tradeStatus) && (
+              {o.status === 'pending' && (!['paid', 'fulfilling', 'refund_pending', 'refunded'].includes(o.tradeStatus) || canCancelPackageRights) && (
                 <View
                   onClick={() => cancel(o._id)}
                   style={{ marginTop: '10px', display: 'inline-block', padding: '6px 14px', border: `1px solid ${colors.border}`, borderRadius: `${radius.full}px` }}
@@ -193,7 +203,8 @@ export default function OrdersPage() {
                   <Text style={{ fontSize: '12px', color: '#fff' }}>继续支付</Text>
                 </View>
               )}
-              {o.paymentStatus === 'paid' && !['requested', 'processing', 'refunded'].includes(o.refundStatus) && o.status !== 'completed' && (
+              {o.paymentStatus === 'paid' && !packageRightsOrder && !['requested', 'processing', 'refunded'].includes(o.refundStatus)
+                && !['completed', 'cancelled'].includes(o.status) && !['closed', 'refunded'].includes(o.tradeStatus) && (
                 <View
                   onClick={() => requestRefund(o._id)}
                   style={{ marginTop: '10px', marginLeft: '8px', display: 'inline-block', padding: '6px 14px', border: `1px solid ${colors.danger}`, borderRadius: `${radius.full}px` }}

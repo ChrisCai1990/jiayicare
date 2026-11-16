@@ -173,6 +173,10 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     if (order.status !== 'pending') {
       return res.status(400).json({ success: false, message: '该订单状态不可取消' });
     }
+    if (order.packageEntitlementUsage?.entitlementId) {
+      try { return res.json(await require('../utils/packageOrderCancellation').cancelPackageCoveredOrder(order)); }
+      catch (error) { return res.status(409).json({ success: false, message: error.message }); }
+    }
     if (order.paymentStatus === 'paid' || ['paid', 'fulfilling'].includes(order.tradeStatus)) {
       return res.status(409).json({ success: false, message: '已支付订单不能直接取消，请提交退款申请' });
     }
@@ -244,6 +248,11 @@ router.patch('/:id/cancel', auth, async (req, res) => {
 router.post('/:id/refund-request', auth, async (req, res) => {
   const order = await Order.findOne({ _id: req.params.id, ...payerOrderQuery(req.user._id) });
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+  // 已发布的旧客户端把套餐权益零元订单显示为“申请退款”。兼容其入口，实际取消预占权益。
+  if (order.packageEntitlementUsage?.entitlementId) {
+    try { return res.json(await require('../utils/packageOrderCancellation').cancelPackageCoveredOrder(order)); }
+    catch (error) { return res.status(409).json({ success: false, message: error.message }); }
+  }
   if (order.paymentStatus !== 'paid') return res.status(400).json({ success: false, message: '只有已支付订单可以申请退款' });
   if (order.status === 'completed') return res.status(409).json({ success: false, message: '服务已全部完成，请联系客服核对可退款金额' });
   const reason = String(req.body.reason || '').trim();

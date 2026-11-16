@@ -56,9 +56,6 @@ async function materializeReportEvent(report) {
   }
   const key = `${report._id}:${event.sequence}:${event.digest}`;
   const reason = await reportExclusion(report);
-  // A published annual plan already owns long-term planning. Later visits only
-  // need a report-specific follow-up, even when the report has no service link.
-  const hasAnnualPlan = !reason && await hasPublishedAnnualPlan(report.user);
   const prior = await Draft.findOne({ reportId: report._id, sourceSequence: { $lt: event.sequence }, status: 'approved', 'followUpDrafts.0': { $exists: true } }).lean();
   const automation = reason ? { status: 'skipped', message: reason }
     : prior ? { status: 'skipped', message: '修订报告已有历史随访，请顾问对照原计划，仅补充新增事项，不自动撤销旧任务。' }
@@ -68,8 +65,8 @@ async function materializeReportEvent(report) {
     draft = await Draft.findOneAndUpdate({ sourceKey: key }, { $setOnInsert: {
       patientId: report.user, reportId: report._id, sourceKey: key, sourceSequence: event.sequence,
       sourceSnapshot: reportSnapshot(report), title: report.title || '病历/报告', createdBy: report.reviewedByStaff || report.uploadedBy,
-      purpose: reason || hasAnnualPlan ? 'issue_collaboration' : 'annual_report_input',
-      status: reason ? 'excluded' : 'advisor_review', followUpAutomation: reason ? automation : { status: 'queued', attempts: 0, message: hasAnnualPlan ? '等待整理本次报告的单次随访草稿。' : '等待逐项整理报告问题及建议。' },
+      purpose: 'issue_collaboration',
+      status: reason ? 'excluded' : 'advisor_review', followUpAutomation: reason ? automation : { status: 'queued', attempts: 0, message: '等待整理本次报告的单次随访草稿。' },
     } }, { upsert: true, new: true, setDefaultsOnInsert: true });
   } catch (error) { if (error.code !== 11000) throw error; draft = await Draft.findOne({ sourceKey: key }); if (!draft) throw error; }
   const obsolete = await Draft.find({ reportId: report._id, sourceSequence: { $lt: event.sequence }, status: 'advisor_review' }).select('_id').lean();
@@ -164,15 +161,14 @@ function wakeReportDraftWorker() {
 
 async function recoverReportDrafts() {
   await Draft.updateMany({ ...require('./healthManagementRollout').patientFilter(), status: 'advisor_review', 'followUpAutomation.status': 'running', 'followUpAutomation.startedAt': { $lt: new Date(Date.now() - 10 * 60000) } }, { $set: { 'followUpAutomation.status': 'failed', 'followUpAutomation.message': '生成中断，请顾问重试或人工接管。' }, $inc: { __v: 1 } });
-  // Reclassify pending annual-input drafts created before the plan check was
-  // introduced. Keep approved history and the extracted issue audit intact.
+  // Earlier per-report annual drafts remain in audit history; pending ones
+  // become single-visit follow-ups. Annual synthesis uses the complete exam batch.
   for await (const row of Draft.find({ ...require('./healthManagementRollout').patientFilter(), purpose: 'annual_report_input', status: 'advisor_review', consolidatedReviewId: null }).cursor()) {
-    if (!(await hasPublishedAnnualPlan(row.patientId))) continue;
     const report = await Report.findById(row.reportId).lean();
     if (!isReportSourceCurrent(row, report)) continue;
     await Draft.updateOne({ _id: row._id, __v: row.__v, purpose: 'annual_report_input', status: 'advisor_review' }, {
       $set: { purpose: 'issue_collaboration', followUpDrafts: [], followUpDraftGeneratedAt: null,
-        followUpAutomation: { status: 'queued', attempts: 0, message: '已有年度方案，等待整理本次就医的单次随访草稿。' } },
+        followUpAutomation: { status: 'queued', attempts: 0, message: '等待整理本次就医的单次随访草稿。' } },
       $inc: { __v: 1 }, $push: { auditLog: { action: 'route_to_single_visit_followup', at: new Date() } },
     });
   }

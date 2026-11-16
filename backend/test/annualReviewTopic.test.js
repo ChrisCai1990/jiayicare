@@ -15,6 +15,7 @@ async function project(tasks, drafts) {
   const context = {
     isSuper: false, req: { staff: { _id: 'advisor' } },
     FollowUp: { find: () => query(tasks) },
+    MedicalReport: { find: () => query([]) },
     require: name => {
       assert.equal(name, '../models/ReportFollowUpDraft');
       return { find: filter => {
@@ -70,5 +71,16 @@ test('年度输入与真正的报告随访分别呈现', async () => {
   ], [{ _id: 'annualDraft', purpose: 'annual_report_input', title: '血常规' }, { _id: 'followupDraft', purpose: 'issue_collaboration' }]);
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(row => row.type).sort(), ['annual_plan_input_review', 'report_followup_review']);
-  assert.equal(rows.find(row => row.type === 'report_followup_review').link, '/patients/patient/annual-health?reviewDraftId=followupDraft#report-followup-drafts');
+  assert.equal(rows.find(row => row.type === 'report_followup_review').link, '/patients/patient/report-followup?reviewDraftId=followupDraft');
+});
+
+test('单次随访任务进入独立审核页并只显示单次草稿', () => {
+  const app = fs.readFileSync(path.join(__dirname, '../../staff/src/App.jsx'), 'utf8');
+  const taskPanel = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ServiceTasksPanel.jsx'), 'utf8');
+  const page = fs.readFileSync(path.join(__dirname, '../../staff/src/pages/SingleReportFollowUpPage.jsx'), 'utf8');
+  const drafts = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ReportFollowUpDrafts.jsx'), 'utf8');
+  assert.match(app, /path="patients\/:id\/report-followup"/);
+  assert.match(taskPanel, /\/report-followup\?reviewDraftId=\$\{task\.sourceId\}/);
+  assert.match(page, /<ReportFollowUpDrafts[^>]*singleOnly/);
+  assert.match(drafts, /String\(row\._id\) === reviewDraftId && \(!singleOnly \|\| row\.purpose !== PURPOSE\)/);
 });

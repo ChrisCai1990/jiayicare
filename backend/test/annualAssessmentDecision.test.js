@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { annualAssessmentDecision } = require('../src/utils/annualAssessmentDecision');
-const { buildAnnualPlanPreparationChecklist: checklist } = require('../src/utils/annualPlanPreparationChecklist');
+const { buildAnnualPlanPreparationChecklist: buildChecklist } = require('../src/utils/annualPlanPreparationChecklist');
+const checklist = options => buildChecklist({ recentCheckup: { allowed: true }, ...options });
 const patient = { onboardingCompleted: true, assignedFamilyDoctor: 'd', assignedHealthManager: 'm', assignedHealthPlanner: 'p' };
 const criteria = require('../../shared/annualAssessmentCriteria.json').map(item => item.key);
 test('no assessment needs five conditions and server reviewer; never accepts client reviewer/date', () => {

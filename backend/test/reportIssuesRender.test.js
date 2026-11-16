@@ -41,3 +41,16 @@ test('问题分析与建议默认可见，来源折叠且重复CT结论只展示
     fs.writeFileSync(process.env.REPORT_ISSUE_PREVIEW, `<html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>body{font-family:system-ui;background:#f3f6f4;margin:32px auto;max-width:1080px;padding:0 16px}${css}</style><section class="report-issues"><h3>病历与报告问题及建议</h3><p>布局预览 · 合成示例</p><div class="report-issues-coverage"><b>3项问题建议</b> · 正常项已略过</div>${cards}</section></html>`);
   }
 });
+
+test('单次随访报告依据先展示可读摘要，原始数据继续折叠', () => {
+  const React = require('react'), { renderToStaticMarkup } = require('react-dom/server');
+  const source = fs.readFileSync(path.join(__dirname, '../../staff/src/components/ReportFollowUpDrafts.jsx'), 'utf8');
+  const component = source.slice(source.indexOf('function ReportSourceSummary'), source.indexOf('export default function'));
+  const transformed = require('esbuild').transformSync(component + '\nReportSourceSummary;', { loader: 'jsx' }).code;
+  const Summary = vm.runInNewContext(transformed, { React });
+  const html = renderToStaticMarkup(React.createElement(Summary, { snapshot: { title: '本次体检', checkDate: '2026-10-14', items: [{ name: '血脂', value: '2.52', unit: 'mmol/L', conclusion: '待核对' }] } }));
+  assert.match(html, /查看本次报告依据 · 1项资料/);
+  assert.match(html, /血脂/);
+  assert.match(html, /2.52mmol\/L/);
+  assert.match(html, /查看完整结构化来源/);
+});

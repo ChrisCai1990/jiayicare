@@ -128,18 +128,24 @@ export default function MarketPartnerPortalPage({ view = 'cooperation' }) {
   const memberPromotion = canSeeTeam ? Number(overview.team.promotionCents || 0) : 0
   const memberService = canSeeTeam ? Number(overview.team.serviceCents || 0) : 0
 
-  return <main className="market-partner-portal" style={{ minHeight: '100vh', background: '#f4f8f5', color: '#20352a', padding: '24px 16px', fontFamily: 'sans-serif' }}>
-    <div style={{ maxWidth: 680, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 24, margin: '0 0 8px' }}>嘉医汇市场合伙人</h1>
-      <p style={{ color: '#607568', marginTop: 0 }}>{view === 'cooperation' ? '合作资料、协议与可推荐商品' : '查看本人及团队的业务归属和佣金核算'}</p>
-      {error && <p role="alert" style={{ color: '#a52222' }}>{error}</p>}
-      {notice && <p style={{ color: '#176b4d' }}>{notice}</p>}
-      {!token ? <section style={card}>
-        <h2 style={{ fontSize: 18, marginTop: 0 }}>手机号登录</h2>
-        <label>登记手机号<input style={field} type="tel" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} /></label>
-        <button style={{ ...button, marginTop: 14 }} disabled={busy} onClick={sendCode}>发送验证码</button>
-        <label style={{ display: 'block', marginTop: 12 }}>验证码<input style={field} inputMode="numeric" value={code} onChange={e => setCode(e.target.value)} maxLength={6} /></label>
-        <button style={{ ...button, marginTop: 14, width: '100%' }} disabled={busy} onClick={login}>登录工作台</button>
+  return <main className={`market-partner-portal${!token ? ' market-partner-portal--login' : ''}`} style={{ minHeight: '100vh', background: '#f4f8f5', color: '#20352a', padding: '24px 16px', fontFamily: 'sans-serif' }}>
+    <div className="market-partner-portal__shell" style={{ maxWidth: 680, margin: '0 auto' }}>
+      {!token && <div className="market-partner-portal__brand" aria-hidden="true">嘉</div>}
+      <h1 className="market-partner-portal__title" style={{ fontSize: 24, margin: '0 0 8px' }}>嘉医汇市场合伙人</h1>
+      <p className="market-partner-portal__subtitle" style={{ color: '#607568', marginTop: 0 }}>{view === 'cooperation' ? '合作资料、协议与可推荐商品' : '查看本人及团队的业务归属和佣金核算'}</p>
+      {error && <p className="market-partner-portal__alert" role="alert">{error}</p>}
+      {notice && <p className="market-partner-portal__notice" role="status">{notice}</p>}
+      {!token ? <section className="market-partner-login">
+        <div className="market-partner-login__heading"><h2>登录工作台</h2><p>使用已登记的合伙人手机号获取验证码</p></div>
+        <label className="market-partner-login__label" htmlFor="partner-phone">登记手机号</label>
+        <div className="market-partner-login__phone-row">
+          <input id="partner-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="请输入 11 位手机号" value={phone} onChange={e => setPhone(e.target.value)} maxLength={11} />
+          <button type="button" disabled={busy} onClick={sendCode}>发送验证码</button>
+        </div>
+        <label className="market-partner-login__label" htmlFor="partner-code">验证码</label>
+        <input id="partner-code" className="market-partner-login__code" inputMode="numeric" autoComplete="one-time-code" placeholder="请输入短信验证码" value={code} onChange={e => setCode(e.target.value)} maxLength={6} />
+        <button className="market-partner-login__submit" type="button" disabled={busy} onClick={login}>{busy ? '请稍候…' : '登录工作台'}</button>
+        <p className="market-partner-login__footnote">仅已开通的市场合伙人可登录。机构财务请使用管理端账号。</p>
       </section> : <>
         <nav aria-label="合伙人工作台页面" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           {[['cooperation', '合作信息'], ['business', '业务营收']].map(([key, label]) => <a key={key}

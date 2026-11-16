@@ -10372,8 +10372,8 @@ router.get('/monthly-service-reviews/workbench', staffAuth, async (req, res) => 
     const assignedReviews = await MonthlyServiceReview.find({ 'actions.assigneeId': req.staff._id, status: 'confirmed', ...rollout.patientFilter() }).select('patientId annualPlanId month actions').lean();
     const actions = assignedReviews.flatMap(review => review.actions.filter(action => action.status === 'pending' && String(action.assigneeId) === String(req.staff._id)).map(action => ({ reviewId: review._id, annualPlanId: review.annualPlanId, patientId: review.patientId, month: review.month, actionId: action._id, title: action.title, dueAt: action.dueAt })));
     const cycle = await require('./managementReviews').workbench(req.staff);
-    const isPilot = require('../utils/managementReviewPolicy').enabled;
-    res.json({ success: true, data: { pending: [...pending.filter(x=>!isPilot(x.patientId)), ...cycle.pending], actions: [...actions.filter(x=>!isPilot(x.patientId)), ...cycle.actions] } });
+    const showLegacy = rollout.legacyWorkbenchVisible;
+    res.json({ success: true, data: { pending: [...pending.filter(x=>showLegacy(x.patientId)), ...cycle.pending], actions: [...actions.filter(x=>showLegacy(x.patientId)), ...cycle.actions] } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -10618,6 +10618,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (issue) return res.status(400).json({ success:false, message:issue });
     }
     const targetYear = year || new Date().getFullYear();
+    const checkup = await require('../utils/annualReviewEligibility').check(req.params.id);
+    if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
     if (moduleData.management_targets?.records !== undefined) {
       const records = moduleData.management_targets.records;
       if (!Array.isArray(records) || records.length > 32 || records.some(row => !String(row?.goal || '').trim() || !String(row?.focus || '').trim()
@@ -14383,6 +14385,8 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权生成该会员的年度方案' });
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const checkup = await require('../utils/annualReviewEligibility').check(user._id);
+    if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
 
     const targetYear = Number(req.body.year) || new Date().getFullYear();
     if (!req.body.supplement) {
@@ -16279,7 +16283,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           patientName: task.patientId?.name || '未知', patientId: String(task.patientId?._id || ''),
           summary: `${task.theme || '报告随访'} · 请核对 AI 草稿后确认是否派发后续随访`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${task.patientId?._id}/annual-health?reviewDraftId=${task.sourceId}#report-followup-drafts`,
+          link: `/patients/${task.patientId?._id}/report-followup?reviewDraftId=${task.sourceId}`,
         });
       });
       annualReviewByPatient.forEach((items, patientId) => {

@@ -45,3 +45,10 @@ test('global health workflow does not expand the monthly review pilot', () => {
   assert.equal(reviewRollout.enabledForPatient(otherId, env), false);
   assert.deepEqual(reviewRollout.patientFilter('patientId', env), { patientId: { $in: [pilotId] } });
 });
+
+test('restored phase assessment patient has no legacy planner review task', () => {
+  const env = { MANAGEMENT_REVIEW_MODE: 'phase_assessment', MANAGEMENT_REVIEW_PATIENT_IDS: pilotId };
+  assert.equal(reviewRollout.legacyWorkbenchVisible(pilotId, env), false);
+  assert.equal(reviewRollout.legacyWorkbenchVisible(otherId, env), true);
+  assert.equal(reviewRollout.legacyWorkbenchVisible(pilotId, { ...env, MANAGEMENT_REVIEW_MODE: 'allowlist' }), false);
+});

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const adminAuth = require('../middleware/adminAuth');
+const { financeAdminMayAccess } = require('../utils/adminAccess');
 const MarketPartner = require('../models/MarketPartner');
 const MarketPartnerLiaison = require('../models/MarketPartnerLiaison');
 const MarketPartnerTeamMember = require('../models/MarketPartnerTeamMember');
@@ -26,7 +27,8 @@ const { commissionCents } = require('../utils/partnerCommissionPolicy');
 const { teamIncentiveCents } = require('../utils/teamIncentivePolicy');
 
 router.use(adminAuth);
-router.use((req, res, next) => req.admin.role === 'superadmin' && req.admin.tenantId
+router.use((req, res, next) => req.admin.tenantId && (req.admin.role === 'superadmin'
+  || (req.admin.role === 'finance' && financeAdminMayAccess(req.originalUrl, req.method)))
   ? next() : res.status(403).json({ success: false, message: '仅机构超级管理员可管理市场合伙人规则' }));
 
 const fail = (res, err) => res.status(err?.name === 'ValidationError' ? 400 : 500)
@@ -36,7 +38,9 @@ const tenant = req => req.admin.tenantId;
 
 router.get('/', async (req, res) => {
   try {
-    const rows = await MarketPartner.find({ tenantId: tenant(req) }).sort({ createdAt: -1 }).lean();
+    const query = MarketPartner.find({ tenantId: tenant(req) });
+    if (req.admin.role === 'finance') query.select('_id name phone productLine segment status contractReference');
+    const rows = await query.sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: rows });
   } catch (err) { fail(res, err); }
 });

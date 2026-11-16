@@ -45,15 +45,26 @@ function eligibility(reports, now = new Date()) {
   const today = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0,10);
   const [y,m,d] = today.split('-').map(Number);
   const cutoff = new Date(Date.UTC(y-1,m-1,Math.min(d,new Date(Date.UTC(y-1,m,0)).getUTCDate()))).toISOString().slice(0,10);
-  const latest = examReports(reports)
+  const exams = examReports(reports);
+  const latest = exams
     .map(r => ({ reportId: String(r._id || ''), date: day(r.checkDate || r.date) }))
     .filter(r => r.date && r.date <= today).sort((a,b) => b.date.localeCompare(a.date))[0];
-  return { allowed: Boolean(latest && latest.date >= cutoff), latest: latest || null, cutoff,
-    message: '近12个月内没有已审核的有效体检资料，请先完成体检并录入审核后，再发起年度管理研判。' };
+  const recent = Boolean(latest && latest.date >= cutoff);
+  const batch = recent ? exams.filter(r => day(r.checkDate || r.date) === latest.date) : [];
+  const hasCompleteContent = batch.some(r => (r.reportItems || []).length >= 8 ||
+    String(r.examConclusion || r.examDescription || '').trim() || Object.values(r.examMainConclusions || {}).some(Boolean))
+    || batch.reduce((count, r) => count + (r.reportItems || []).length, 0) >= 5;
+  const pending = recent ? exams.filter(r => day(r.checkDate || r.date) === latest.date &&
+    require('./reportFollowUpSource').needsAdvisorInterpretation(r) && !r.advisorInterpretationConfirmedAt) : [];
+  return { allowed: recent && hasCompleteContent && pending.length === 0, latest: latest || null, cutoff,
+    pendingInterpretation: pending.map(r => String(r._id || '')),
+    message: !recent ? '近12个月内没有已审核的完整体检资料，请先完成体检并录入审核后，再生成年度方案。'
+      : !hasCompleteContent ? '本次体检报告缺少可解读的完整检查内容，请补齐解析和审核后再生成年度方案。'
+        : '本次体检资料尚未全部完成健康顾问解读，请全部解读确认后再生成年度方案。' };
 }
 async function check(patientId) {
   const reports = await require('../models/MedicalReport').find({ user: patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
-    .select('_id title type documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection').lean();
+    .select('_id title type documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt').lean();
   return eligibility(reports);
 }
 module.exports = { day, examReports, eligibility, check };

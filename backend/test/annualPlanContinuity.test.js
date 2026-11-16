@@ -41,6 +41,7 @@ const readyBase = {
   patient: { onboardingCompleted: true, assignedFamilyDoctor: 'advisor', assignedHealthManager: 'manager', assignedHealthPlanner: 'planner' },
   preparation: { medicationStatus: 'none', supplementStatus: 'none', advisorReadyConfirmedAt: new Date(), requiredAssessmentDomains: [] },
   auditedReportCount: 1,
+  recentCheckup: { allowed: true },
 };
 test('续年不强制年度总评及团队研判', () => {
   assert.equal(buildAnnualPlanPreparationChecklist({ ...readyBase, continuity: { mode: 'renewal', ready: true } }).ready, true);

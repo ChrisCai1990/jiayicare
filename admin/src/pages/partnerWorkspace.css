@@ -46,6 +46,9 @@
 .partner-ui__product { background: #f8faf8; border: 1px solid #e5eee7; border-radius: 12px; padding: 12px 14px; }
 .partner-ui__product strong { display: block; color: #173d30; margin-bottom: 4px; }
 .partner-ui__product small { display: block; color: #62776b; line-height: 1.45; }
+.finance-partner-row { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid #e5eee7; border-radius: 11px; background: #f8faf8; color: #254438; text-align: left; cursor: pointer; font: inherit; }
+.finance-partner-row:hover, .finance-partner-row.is-selected { border-color: #92c8aa; background: #eaf6ee; }
+.finance-partner-row span { color: #667c6d; font-size: 12px; }
 .partner-ui__form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .partner-ui__form-grid .form-input { width: 100%; min-width: 0; }
 .partner-ui__form-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }

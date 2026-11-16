@@ -1,3 +1,30 @@
+.market-partner-portal--login { display: grid; place-items: center; box-sizing: border-box; background: radial-gradient(circle at 12% 8%, #e1f0e8 0, transparent 32%), radial-gradient(circle at 92% 92%, #eaf4ee 0, transparent 31%), #f6f9f6 !important; }
+.market-partner-portal--login .market-partner-portal__shell { width: min(100%, 480px); max-width: 480px !important; padding: 34px 0; }
+.market-partner-portal__brand { display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 20px; border-radius: 13px; background: linear-gradient(135deg, #147552, #2b9474); box-shadow: 0 8px 18px #176b4d2c; color: #fff; font-size: 25px; font-weight: 800; }
+.market-partner-portal--login .market-partner-portal__title { margin: 0 0 7px !important; color: #1d3c2f; font-size: 28px !important; letter-spacing: -.025em; line-height: 1.25; }
+.market-partner-portal--login .market-partner-portal__subtitle { margin: 0 0 26px !important; color: #688073 !important; font-size: 14px; }
+.market-partner-login { padding: 29px 30px 25px; border: 1px solid #dce9df; border-radius: 20px; background: #fff; box-shadow: 0 18px 55px #24493812; }
+.market-partner-login__heading { margin-bottom: 25px; }
+.market-partner-login__heading h2 { margin: 0 0 6px; color: #214333; font-size: 20px; }
+.market-partner-login__heading p { margin: 0; color: #789082; font-size: 13px; line-height: 1.5; }
+.market-partner-login__label { display: block; margin: 0 0 8px; color: #3f5c4d; font-size: 13px; font-weight: 700; }
+.market-partner-login__phone-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; margin-bottom: 20px; }
+.market-partner-login input { box-sizing: border-box; width: 100%; min-width: 0; height: 45px; padding: 0 13px; border: 1px solid #ccddd1; border-radius: 10px; outline: 0; background: #fbfdfb; color: #1e3c2f; font: inherit; font-size: 14px; }
+.market-partner-login input::placeholder { color: #a4b2a8; }
+.market-partner-login input:focus { border-color: #31936d; box-shadow: 0 0 0 3px #54ad7f26; }
+.market-partner-login__phone-row button { min-width: 110px; padding: 0 14px; border: 1px solid #b5d6c2; border-radius: 10px; background: #eaf5ee; color: #176b4d; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.market-partner-login__phone-row button:hover:not(:disabled) { background: #dff0e5; }
+.market-partner-login__code { margin-bottom: 23px; }
+.market-partner-login__submit { width: 100%; min-height: 46px; border: 0; border-radius: 10px; background: #176b4d; box-shadow: 0 7px 16px #176b4d25; color: #fff; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.market-partner-login__submit:hover:not(:disabled) { background: #105d41; }
+.market-partner-login button:disabled { opacity: .6; cursor: wait; }
+.market-partner-login button:focus-visible { outline: 3px solid #8fc7a9; outline-offset: 2px; }
+.market-partner-login__footnote { margin: 18px 0 0; color: #84968a; font-size: 12px; line-height: 1.6; text-align: center; }
+.market-partner-portal__alert, .market-partner-portal__notice { padding: 10px 13px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+.market-partner-portal__alert { border: 1px solid #f2d2c9; background: #fff3ef; color: #a52222; }
+.market-partner-portal__notice { border: 1px solid #cce8d6; background: #eaf7ee; color: #176b4d; }
+@media (max-width: 540px) { .market-partner-portal--login .market-partner-portal__shell { padding: 20px 0; } .market-partner-login { padding: 24px 20px 22px; border-radius: 17px; } .market-partner-portal--login .market-partner-portal__title { font-size: 24px !important; } }
+
 .market-partner-portal .market-partner-products {
   display: grid;
   gap: 10px;

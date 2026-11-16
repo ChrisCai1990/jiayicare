@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Button, Input, Text, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
-import { servicesAPI } from '../../../services/api';
+import { servicesAPI, mediaUrl } from '../../../services/api';
 import { colors, radius, spacing } from '../../../theme';
 import useNavBar from '../../../hooks/useNavBar';
+import fallbackShareCover from '../../../assets/invite-share-cover.png';
 
 export default function PartnerPromotionPage() {
   const { statusBarHeight, navBarHeight } = useNavBar();
@@ -26,7 +27,8 @@ export default function PartnerPromotionPage() {
     const product = profile?.products?.find(item => item.id === productId);
     if (!product || !profile?.referralCode) return { title: '嘉医汇服务', path: '/pages/home/index' };
     return { title: product.name,
-      path: `/pages/services/mall/index?productId=${encodeURIComponent(product.id)}&partnerCode=${encodeURIComponent(profile.referralCode)}` };
+      path: `/pages/services/mall/index?productId=${encodeURIComponent(product.id)}&partnerCode=${encodeURIComponent(profile.referralCode)}`,
+      imageUrl: product.image ? mediaUrl(product.image) : fallbackShareCover };
   });
 
   const products = (profile?.products || []).filter(item => item.name.includes(keyword.trim()));

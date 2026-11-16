@@ -41,9 +41,9 @@ test('年度问题队列保留无建议异常，完成仅更新资料不派发�
   assert.equal(result.status, 'advisor_review'); assert.equal(result.issueDrafts.length, 1); assert.equal(result.followUpAutomation.status, 'ready');
 });
 
-test('已有正式年度方案的后续报告进入单次随访，不进入年度问题队列', async t => {
+test('没有年度方案的单份报告也只进入单次随访', async t => {
   const report = { _id: 'report', user: 'patient', audit_status: 'audited', reportItems: [], followUpSourceEvent: { status: 'queued', sequence: 1, digest: 'digest' } };
-  t.mock.method(AnnualPlan, 'exists', async query => { assert.equal(query.patientId, 'patient'); return true; });
+  t.mock.method(AnnualPlan, 'exists', async () => false);
   for (const name of ['AbnormalReview', 'FollowUp', 'HealthPlan', 'Referral']) t.mock.method(require(`../src/models/${name}`), 'exists', async () => false);
   t.mock.method(Draft, 'findOne', () => ({ lean: async () => null }));
   t.mock.method(Draft, 'findOneAndUpdate', async (query, update) => {

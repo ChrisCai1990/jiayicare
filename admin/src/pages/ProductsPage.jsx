@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { adminAPI, API_ORIGIN } from '../api'
-import { useToast } from '../App'
+import { useAdmin, useToast } from '../App'
 
 // 历史遗留数据里存了 http://121.40.156.39 绝对地址，在 https 页面下会被浏览器 Mixed Content
 // 策略拦截而不显示——服务器同时监听 http/https 且是同一份静态文件，强制升级协议即可正常加载。
@@ -440,6 +440,34 @@ function ServicePricesForm({ servicePrices, onChange }) {
   )
 }
 
+const COST_CATEGORIES = [
+  ['external_service', '外部专业服务'], ['testing', '检测／医疗机构'],
+  ['materials', '商品／耗材'], ['logistics', '配送／物流'], ['other_direct', '其他直接成本'],
+]
+const costEditorItems = rows => (rows || []).map(row => ({
+  category: row.category, name: row.name, amountYuan: (Number(row.amountCents || 0) / 100).toFixed(2),
+}))
+const costAmountCents = value => {
+  const text = String(value ?? '').trim()
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) throw new Error('成本金额须为非负数，最多两位小数')
+  return Math.round(Number(text) * 100)
+}
+function CostLinesEditor({ title, rows, onChange }) {
+  const update = (index, field, value) => onChange(rows.map((row, i) => i === index ? { ...row, [field]: value } : row))
+  return <div style={{ marginTop: 16 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+      <strong>{title}</strong><button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange([...rows, { category: 'external_service', name: '', amountYuan: '' }])}>＋ 添加成本项目</button>
+    </div>
+    {rows.map((row, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 110px auto', alignItems: 'end', gap: 8, marginTop: 10 }}>
+      <label>类别<select className="form-input" value={row.category} onChange={e => update(index, 'category', e.target.value)}>{COST_CATEGORIES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+      <label>成本项目<input className="form-input" value={row.name} onChange={e => update(index, 'name', e.target.value)} placeholder="如：咨询师服务费" /></label>
+      <label>金额（元）<input className="form-input" type="number" min="0" step="0.01" value={row.amountYuan} onChange={e => update(index, 'amountYuan', e.target.value)} /></label>
+      <button type="button" className="btn btn-ghost" onClick={() => onChange(rows.filter((_, i) => i !== index))}>删除</button>
+    </div>)}
+    {!rows.length && <p style={{ color: '#73867a', fontSize: 12 }}>未设置；空白表示成本未知，不代表成本为零。</p>}
+  </div>
+}
+
 function MemberBundleForm({ value, onChange, products }) {
   const bundle = value || EMPTY_FORM.memberBundle
   const set = (key, val) => onChange({ ...bundle, [key]: val })
@@ -563,6 +591,7 @@ function ImageUploadList({ images, onChange }) {
 // ── 产品表单 Modal ──────────────────────────────────────────────
 function ProductModal({ product, categories, onClose, onSaved, commissionMode = false }) {
   const toast = useToast()
+  const { admin } = useAdmin()
   const isEdit = !!product?._id
   const inventoryTracked = product?.inventoryTracking?.enabled === true || product?.usesSharedInventory === true
   const [form, setForm] = useState(() => {
@@ -637,6 +666,23 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
   const [tab, setTab] = useState(commissionMode ? 'performance' : 'basic')
   const [staffList, setStaffList] = useState([])
   const [productsForBundle, setProductsForBundle] = useState([])
+  const [costVersion, setCostVersion] = useState(0)
+  const [costDraft, setCostDraft] = useState({ defaultItems: [], scopes: [], note: '' })
+  const [costLoading, setCostLoading] = useState(false)
+
+  useEffect(() => {
+    if (!isEdit || commissionMode || admin?.role !== 'superadmin') return
+    setCostLoading(true)
+    adminAPI.productCostPlan(product._id).then(result => {
+      const data = result.data || {}
+      const plan = data.plan || {}
+      setCostVersion(data.version || 0)
+      setCostDraft({ defaultItems: costEditorItems(plan.defaultItems),
+        scopes: (plan.scopes || []).map(scope => ({ ...scope, items: costEditorItems(scope.items) })),
+        note: plan.note || '' })
+    }).catch(err => toast('❌ 成本设置加载失败：' + err.message))
+      .finally(() => setCostLoading(false))
+  }, [isEdit, commissionMode, admin?.role, product?._id])
 
   useEffect(() => {
     adminAPI.staffList({ pageSize: 500 }).then(r => {
@@ -816,6 +862,26 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
     { key: 'ai', label: 'AI推荐设置' },
+    ...(isEdit && admin?.role === 'superadmin' ? [{ key: 'cost', label: '成本设置' }] : []),
+  ]
+
+  const saveCostPlan = async () => {
+    setLoading(true)
+    try {
+      const items = rows => rows.map(row => ({ category: row.category, name: row.name.trim(), amountCents: costAmountCents(row.amountYuan) }))
+      const payload = { expectedVersion: costVersion, defaultItems: items(costDraft.defaultItems),
+        scopes: costDraft.scopes.map(scope => ({ scopeType: scope.scopeType, scopeKey: scope.scopeKey, items: items(scope.items) })),
+        note: costDraft.note }
+      const result = await adminAPI.saveProductCostPlan(product._id, payload)
+      setCostVersion(result.data.version)
+      toast('✅ 产品标准成本已保存')
+    } catch (err) { toast('❌ ' + (err.message || '保存成本设置失败')) }
+    finally { setLoading(false) }
+  }
+
+  const costScopes = [
+    ...(product?.servicePrices || []).filter(row => row.label).map(row => ({ scopeType: 'servicePrice', scopeKey: row.label })),
+    ...(product?.skus || []).filter(row => row.code).map(row => ({ scopeType: 'sku', scopeKey: row.code })),
   ]
 
   return (
@@ -831,10 +897,10 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e0d9ce', padding: '0 20px' }}>
+        <div style={{ display: 'flex', overflowX: 'auto', flexShrink: 0, borderBottom: '1px solid #e0d9ce', padding: '0 20px' }}>
           {tabs.map(t => (
             <button key={t.key} type="button" onClick={() => setTab(t.key)} style={{
-              padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
+              padding: '10px 16px', whiteSpace: 'nowrap', border: 'none', background: 'none', cursor: 'pointer',
               fontSize: 13, fontWeight: tab === t.key ? 600 : 400,
               color: tab === t.key ? '#1E6B50' : '#666',
               borderBottom: tab === t.key ? '2px solid #1E6B50' : '2px solid transparent',
@@ -844,6 +910,37 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
         </div>
 
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
+          {tab === 'cost' && <div>
+            <div style={{ padding: 12, borderRadius: 8, background: '#edf6f0', color: '#245842', lineHeight: 1.6 }}>
+              产品标准成本用于预算和核对，按整项产品或收费规格填写。未设置表示未知。实际成本须按订单凭证入账，不能用此金额直接认定实际利润。
+            </div>
+            <p style={{ color: '#65776c' }}>当前版本：{costVersion || '未设置'}。修改后生成新版本；历史订单不随配置改动。</p>
+            {costLoading ? <p>加载成本设置中…</p> : <>
+              <CostLinesEditor title="整项产品标准成本" rows={costDraft.defaultItems}
+                onChange={defaultItems => setCostDraft(current => ({ ...current, defaultItems }))} />
+              {costScopes.length > 0 && <div style={{ marginTop: 20, borderTop: '1px solid #dce8df', paddingTop: 12 }}>
+                <strong>收费规格单独成本</strong>
+                <p style={{ fontSize: 12, color: '#65776c' }}>仅需对不同于整项产品的规格单独设置；规格成本替代整项默认成本。</p>
+                {costScopes.map(scope => {
+                  const index = costDraft.scopes.findIndex(row => row.scopeType === scope.scopeType && row.scopeKey === scope.scopeKey)
+                  return <div key={`${scope.scopeType}:${scope.scopeKey}`} style={{ borderTop: '1px solid #e5ece7', paddingTop: 10, marginTop: 10 }}>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input type="checkbox" checked={index >= 0} onChange={e => setCostDraft(current => ({ ...current,
+                        scopes: e.target.checked ? [...current.scopes, { ...scope, items: [] }] : current.scopes.filter(row => row.scopeType !== scope.scopeType || row.scopeKey !== scope.scopeKey),
+                      }))} />
+                      {scope.scopeKey}（{scope.scopeType === 'sku' ? 'SKU' : '收费项目'}）单独设置
+                    </label>
+                    {index >= 0 && <CostLinesEditor title={`${scope.scopeKey} 的标准成本`} rows={costDraft.scopes[index].items}
+                      onChange={items => setCostDraft(current => ({ ...current, scopes: current.scopes.map(row => row.scopeType === scope.scopeType && row.scopeKey === scope.scopeKey ? { ...row, items } : row) }))} />}
+                  </div>
+                })}
+              </div>}
+              <div className="form-group" style={{ marginTop: 20 }}><label className="form-label">成本依据／备注</label>
+                <textarea className="form-input" rows={3} maxLength={500} value={costDraft.note}
+                  onChange={e => setCostDraft(current => ({ ...current, note: e.target.value }))} placeholder="例如供应商报价、内部核算依据" />
+              </div>
+            </>}
+          </div>}
           {tab === 'basic' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -1076,8 +1173,8 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
 
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={save} disabled={loading}>
-            {loading ? '保存中...' : '保存'}
+          <button className="btn btn-primary" onClick={tab === 'cost' ? saveCostPlan : save} disabled={loading || (tab === 'cost' && costLoading)}>
+            {loading ? '保存中...' : tab === 'cost' ? '保存成本设置' : '保存'}
           </button>
         </div>
       </div>

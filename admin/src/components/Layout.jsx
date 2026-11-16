@@ -5,6 +5,13 @@ import { adminAPI } from '../api'
 
 const NAV_SECTIONS = [
   {
+    label: '财务工作台',
+    items: [
+      { label: '合作信息', icon: 'partner', path: '/finance/cooperation', allowedRoles: ['finance', 'superadmin'] },
+      { label: '业务营收', icon: 'chart', path: '/finance/business', allowedRoles: ['finance', 'superadmin'] },
+    ],
+  },
+  {
     label: '业务管理',
     items: [
       { label: '数据总览', icon: 'dashboard', path: '/dashboard' },
@@ -119,7 +126,7 @@ function groupKey(sectionLabel, groupLabel) {
   return `${sectionLabel}:${groupLabel}`
 }
 
-const ROLE_MAP = { doctor: '医生', manager: '健康管理师', superadmin: '超级管理员', platformSuper: '平台超管' }
+const ROLE_MAP = { doctor: '医生', manager: '健康管理师', finance: '机构财务', superadmin: '超级管理员', platformSuper: '平台超管' }
 
 const ICON_PATHS = {
   dashboard: 'M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z',
@@ -163,7 +170,8 @@ export default function Layout() {
       .map(section => ({
         ...section,
         items: section.items.filter(item =>
-          (!item.superadminOnly || admin?.role === 'superadmin')
+          (admin?.role !== 'finance' || ['/finance/cooperation', '/finance/business'].includes(item.path))
+          && (!item.superadminOnly || admin?.role === 'superadmin')
           && (!['/market-partners', '/market-partner-operations', '/market-partner-finance', '/business-accounting'].includes(item.path) || marketPartnerAvailable)
           && (!item.allowedRoles || item.allowedRoles.includes(admin?.role))
           && (!item.aiControlOnly || admin?.role === 'platformSuper')

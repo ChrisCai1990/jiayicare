@@ -35,12 +35,12 @@ function tenantTerms(tenant) {
 }
 
 const activeFilter = { staffStatus: { $ne: 'inactive' } };
-const staffRoles = { $nin: ['superadmin', 'platformSuper', 'enterprise_hr'] };
+const staffRoles = { $nin: ['superadmin', 'finance', 'platformSuper', 'enterprise_hr'] };
 
 async function seatUsage(tenantId) {
   const [staff, admins] = await Promise.all([
     runWithoutTenantScope(() => Admin.countDocuments({ tenantId, role: staffRoles, ...activeFilter })),
-    runWithoutTenantScope(() => Admin.countDocuments({ tenantId, role: 'superadmin', ...activeFilter })),
+    runWithoutTenantScope(() => Admin.countDocuments({ tenantId, role: { $in: ['superadmin', 'finance'] }, ...activeFilter })),
   ]);
   return { staff, admins };
 }
