@@ -1341,7 +1341,6 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .map(withSignedHealthRecord);
 
   let insuranceCoverage = null;
-  let insuranceCases = [];
   if (user.enterpriseId) {
     const enrollment = await InsuranceEnrollment.findOne({ userId: user._id, enterpriseId: user.enterpriseId, status: 'active' })
       .sort({ endAt: -1, createdAt: -1 }).lean();
@@ -1349,8 +1348,6 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
       const policy = await EnterpriseInsurancePolicy.findOne({ _id: enrollment.policyId, status: 'active' }).lean();
       if (canUseInsuranceCoverage(policy, enrollment)) insuranceCoverage = { policy, enrollment };
     }
-    insuranceCases = await InsuranceServiceCase.find({ patientId: user._id, enterpriseId: user.enterpriseId })
-      .sort({ createdAt: -1 }).limit(20).populate('assignedTo', 'name role').lean();
   }
 
   const displayedUser = user.toObject();
@@ -1372,7 +1369,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     displayedUser.phaseAssessmentEnabled = false;
     console.error('[phase-assessment] patient eligibility failed', String(user._id), error.message);
   }
-  res.json({ success: true, data: { user: displayedUser, recentFollowUps, recentRecords, insuranceCoverage, insuranceCases } });
+  res.json({ success: true, data: { user: displayedUser, recentFollowUps, recentRecords, insuranceCoverage } });
 });
 
 router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
@@ -1396,30 +1393,6 @@ router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
   });
   await ensureInsuranceServiceTask(serviceCase, 'executor', assignee);
   res.json({ success: true, data: serviceCase, message: '保险服务案件已建立，并进入执行人工作台' });
-});
-
-router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, res) => {
-  if (req.staff.role !== 'healthManager') return res.status(403).json({ success: false, message: '仅健管专员可核对保险服务步骤' });
-  const serviceCase = await InsuranceServiceCase.findById(req.params.caseId);
-  if (!serviceCase) return res.status(404).json({ success: false, message: '保险服务案件不存在' });
-  const patient = await User.findById(serviceCase.patientId).select('assignedHealthManager');
-  if (!patient || ![serviceCase.assignedTo, patient.assignedHealthManager].some(value => value && String(value) === String(req.staff._id)))
-    return res.status(403).json({ success: false, message: '仅负责该会员的健管专员可核对保险服务步骤' });
-  const step = serviceCase.steps.id(req.params.stepId);
-  if (!step) return res.status(404).json({ success: false, message: '服务步骤不存在' });
-  if (req.body.status !== 'completed') return res.status(400).json({ success: false, message: '请选择有效的核对状态' });
-  if (step.status === 'completed') return res.json({ success: true, data: serviceCase });
-  step.status = 'completed';
-  step.note = req.body.note ?? step.note;
-  if (step.status === 'completed') { step.completedAt = new Date(); step.completedByName = req.staff.name || ''; }
-  serviceCase.status = serviceCase.steps.every(item => ['completed', 'skipped'].includes(item.status)) ? 'closed' : 'verifying';
-  serviceCase.updatedBy = req.staff._id;
-  await serviceCase.save();
-  if (serviceCase.status === 'closed') {
-    await require('../utils/insuranceServiceTasks').retireInsuranceSupervisionTasks(FollowUp, { sourceId: serviceCase._id });
-    await FollowUp.updateMany({ sourceType: { $in: ['scheduled', 'insurance_service'] }, sourceId: serviceCase._id, taskRole: { $ne: 'supervisor' }, status: { $in: ['planned', 'in_progress'] } }, { status: 'completed', completedAt: new Date(), completedBy: 'staff' });
-  }
-  res.json({ success: true, data: serviceCase });
 });
 
 const MEDICAL_SUMMARY_FIELDS = ['chiefComplaint', 'presentIllness', 'physicalExam', 'epidemiologicalHistory', 'initialDiagnosis', 'currentMedication'];

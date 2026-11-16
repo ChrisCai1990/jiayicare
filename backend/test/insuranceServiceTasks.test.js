@@ -6,15 +6,10 @@ const { ensureInsuranceServiceTask, reconcilePatientInsuranceTasks, closeInsuran
 
 const route = fs.readFileSync(path.join(__dirname, '../src/routes/staff.js'), 'utf8');
 const serviceTasks = route.slice(route.indexOf("router.get('/service-tasks'"), route.indexOf('// ── GET /api/staff/patients'));
-const createCase = route.slice(route.indexOf("router.post('/patients/:id/insurance-cases'"), route.indexOf("router.patch('/insurance-cases/:caseId"));
-const updateStep = route.slice(route.indexOf("router.patch('/insurance-cases/:caseId/steps/:stepId'"), route.indexOf('const MEDICAL_SUMMARY_FIELDS'));
+const createCase = route.slice(route.indexOf("router.post('/patients/:id/insurance-cases'"), route.indexOf('const MEDICAL_SUMMARY_FIELDS'));
 
-test('insurance step confirmation is limited to the responsible health manager', () => {
-  assert.match(updateStep, /req\.staff\.role !== 'healthManager'/);
-  assert.match(updateStep, /patient\.assignedHealthManager/);
-  assert.match(updateStep, /String\(value\) === String\(req\.staff\._id\)/);
-  assert.doesNotMatch(updateStep, /req\.staff\.role !== 'superadmin'/);
-  assert.match(updateStep, /req\.body\.status !== 'completed'/);
+test('insurance case progress has no separate step mutation endpoint', () => {
+  assert.doesNotMatch(route, /router\.patch\('\/insurance-cases\/:caseId\/steps\/:stepId'/);
 });
 
 test('open insurance cases self-heal into the manager workbench and retire planner supervision', () => {

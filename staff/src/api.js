@@ -214,7 +214,6 @@ export const staffAPI = {
   searchRegistered:   (q)      => req('/staff/patients/search-registered?q=' + encodeURIComponent(q || '')),
   assignPatient:      (data)   => req('/staff/patients/assign', { method: 'POST', body: JSON.stringify(data) }),
   createInsuranceCase:(id, d)  => req(`/staff/patients/${id}/insurance-cases`, { method: 'POST', body: JSON.stringify(d) }),
-  updateInsuranceCaseStep: (caseId, stepId, d) => req(`/staff/insurance-cases/${caseId}/steps/${stepId}`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   // Follow-ups
   getFollowUps:        (p = {}) => req('/staff/followups?' + qs(p)),
