@@ -104,12 +104,13 @@ export default function ServiceGroupPage() {
     try {const result=await api.messages(id,messages[0]?.id);if(selectedId.current!==id)return;setOlder(!!result.hasMore);setMessages(prev=>[...new Map([...(result.data||[]),...prev].map(m=>[String(m.id),m])).values()]);}
     catch(e){setError(e.message || '历史消息读取失败');}
   };
+  const mentionCandidates = group ? [...group.staff, ...(group.assistant?.id ? [{...group.assistant,name:'小嘉',kind:'ai'}] : [])] : [];
   const send = async () => {
     const content = draft.trim();
     if (!group || !content || busy) return;
     setBusy(true); setError('');
     try {
-      await api.send(group.id, content, mentionIds.filter(id=>group.staff.some(p=>String(p.id)===id&&content.includes('@'+p.name))));
+      await api.send(group.id, content, mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id&&content.includes('@'+p.name))));
       setMentionIds([]);setShowMentions(false);
       setDraft('');
       followLatest.current = true;
@@ -131,7 +132,7 @@ export default function ServiceGroupPage() {
     </Text>
     {group?.assistant && <View style={{ display: 'flex', flexShrink: 0, alignItems: 'center', padding: '10px 16px', gap: '10px', background: '#eef9f9' }}>
       <Image src={mediaUrl(group.assistant.avatar)} mode="aspectFill" style={{ width: '44px', height: '44px', borderRadius: '50%' }} />
-      <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>小嘉｜嘉医汇AI健康管家</Text><Text style={{ fontSize: '11px', color: colors.textMuted }}>健管专员的AI助手，人工接待时暂停回复</Text></View>
+      <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>小嘉｜嘉医汇AI健康管家</Text><Text style={{ fontSize: '11px', color: colors.textMuted }}>人工接待时暂停自动回复，可@小嘉单次协助</Text></View>
       <Text onClick={manageAiDataConsent} style={{ fontSize: '12px', color: colors.primary }}>AI授权</Text>
     </View>}
     {!!error && <Text onClick={refresh} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{error} · 点击重试</Text>}
@@ -169,7 +170,7 @@ export default function ServiceGroupPage() {
         </View>
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
         <GroupMaterialUpload key={group.id} groupId={group.id} onSent={()=>{followLatest.current=true;refresh();}} />
-        {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{group.staff.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>text.endsWith('@')?text+p.name+' ':text+'@'+p.name+' ');setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}</View>)}</ScrollView>}
+        {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>text.endsWith('@')?text+p.name+' ':text+'@'+p.name+' ');setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{p.kind==='ai'?' · AI健康管家':''}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#fff' }}>
           <Text onClick={()=>setShowMentions(!showMentions)} style={{padding:'10px',color:colors.primary}}>@</Text>
           <Textarea value={draft} onInput={event => {setDraft(event.detail.value);if(event.detail.value.endsWith('@'))setShowMentions(true);}} maxlength={2000} autoHeight
