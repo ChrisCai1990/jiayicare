@@ -1,3 +1,5 @@
+import PageLoading from '../../../components/PageLoading';
+import BackButton from '../../../components/BackButton';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -181,11 +183,9 @@ export default function MedicalReportsPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{t('体检报告')}</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
       <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', margin: `${spacing.sm}px ${spacing.lg}px` }}>{t('所属档案')}：{archive.subject?.name || archive.user?.name || t('本人')}</Text>
@@ -199,7 +199,7 @@ export default function MedicalReportsPage() {
       )}
 
       {archive.error ? null : loading || archive.loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '60px' }}>{t('加载中...')}</Text>
+        <PageLoading />
       ) : years.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xl}px` }}>
           <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.sm}px` }}><Icon name="📄" size={48} /></View>

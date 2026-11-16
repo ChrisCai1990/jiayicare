@@ -1,3 +1,4 @@
+import BackButton from '../../components/BackButton';
 import React, { useState, useEffect } from 'react';
 import { View, Text, Input, Textarea, ScrollView, Picker } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
@@ -337,7 +338,7 @@ export default function QuestionnairePage() {
     return (
       <View style={{ height: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
         <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-          <Text onClick={closeQuestionnaire} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
+          <BackButton onClick={closeQuestionnaire} />
           <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center' }}>{selectedDynamic.title || '健康问卷'}</Text>
           <View style={{ width: '20px' }} />
         </View>
@@ -386,11 +387,9 @@ export default function QuestionnairePage() {
           padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
           backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
         }}>
-          <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-            <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-          </View>
+          <BackButton />
           <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>问卷调查</Text>
-          <View style={{ width: '28px' }} />
+          <View style={{ width: '72px' }} />
         </View>
         <View style={{ padding: `${spacing.lg}px` }}>
           <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>完成问卷可帮助您的健管师更好地了解您的健康状况</Text>
@@ -512,7 +511,7 @@ export default function QuestionnairePage() {
     return (
       <View style={{ minHeight: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
         <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-          <Text onClick={() => setShowSummary(false)} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
+          <BackButton onClick={() => setShowSummary(false)} />
           <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '20px' }}>确认提交</Text>
         </View>
         <ScrollView scrollY style={{ flex: 1, padding: `${spacing.lg}px` }}>
@@ -547,7 +546,7 @@ export default function QuestionnairePage() {
   return (
     <View style={{ height: '100vh', minHeight: 0, backgroundColor: colors.background, display: 'flex', flexDirection: 'column', paddingBottom: '72px', boxSizing: 'border-box' }}>
       <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <Text onClick={() => (hasPrev ? prev() : closeQuestionnaire())} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
+        <BackButton onClick={() => (hasPrev ? prev() : closeQuestionnaire())} />
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center' }}>{pageTitle}</Text>
         <Text onClick={() => setMode('select')} style={{ fontSize: '13px', color: colors.textMuted }}>退出</Text>
       </View>

@@ -7,3 +7,12 @@ page {
 view, text, image, button, input, textarea, scroll-view {
   box-sizing: border-box;
 }
+
+.jy-back-button::after { border: 0; }
+.jy-back-button-pressed { opacity: .55; }
+.jy-page-loading-spinner {
+  width: 26px; height: 26px; border: 3px solid #dce9e2;
+  border-top-color: #1e6b50; border-radius: 50%;
+  animation: jy-loading-turn .8s linear infinite;
+}
+@keyframes jy-loading-turn { to { transform: rotate(360deg); } }

@@ -1,3 +1,5 @@
+import PageLoading from '../../../components/PageLoading';
+import BackButton from '../../../components/BackButton';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -180,11 +182,9 @@ export default function AiHealthPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康信息整理</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
        <View style={{ margin: `${spacing.md}px ${spacing.lg}px`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
@@ -193,7 +193,7 @@ export default function AiHealthPage() {
        </View>
 
        {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '40px' }}>加载中...</Text>
+        <PageLoading />
       ) : (
         <View style={{ padding: `0 ${spacing.lg}px ${spacing.xxl}px` }}>
           {!!message && (

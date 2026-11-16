@@ -1,3 +1,5 @@
+import BackButton from '../../../components/BackButton';
+import PageLoading from '../../../components/PageLoading';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -147,11 +149,9 @@ export default function BenefitsPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>会员权益</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
       <View style={{ display: 'flex', margin: `${spacing.md}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: colors.border + '40', borderRadius: `${radius.full}px`, padding: '3px' }}>
@@ -237,7 +237,7 @@ export default function BenefitsPage() {
 
           </>}
           {mineSection==='gift' && (giftsLoading ? (
-            <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+            <PageLoading />
           ) : (
             <>
               <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>有效权益</Text>
@@ -264,7 +264,7 @@ export default function BenefitsPage() {
       ) : (
         <View style={{ padding: `0 ${spacing.lg}px` }}>
           {groupsLoading ? (
-            <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+            <PageLoading />
           ) : groups.length === 0 ? (
             <View style={{ textAlign: 'center', padding: '40px 20px' }}>
               <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.md}px` }}>

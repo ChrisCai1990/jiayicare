@@ -1,3 +1,4 @@
+import PageLoading from '../../../components/PageLoading';
 import GroupVoiceInput from '../../../components/GroupVoiceInput';
 import GroupVoiceMessage from '../../../components/GroupVoiceMessage';
 import { refreshUnreadBadge } from '../../../utils/unreadBadge';
@@ -10,6 +11,8 @@ import { mediaUrl, inAppServiceGroupAPI as api } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import GroupHistory from '../../../components/GroupHistory';
 import GroupMaterialUpload from '../../../components/GroupMaterialUpload';
+import BackButton from '../../../components/BackButton';
+import { returnToPrevious } from '../../../utils/returnToPrevious';
 
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -135,7 +138,7 @@ export default function ServiceGroupPage() {
   }, [visible, refresh]);
 
   const openGroup = item => { userScroll.current=false;gesture.current=false;selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft('');setQuote(null);setQuoteMenu(null); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
-  const back = () => { if (selectedId.current) { selectedId.current = ''; setGroup(null); setMessages([]); refresh(); } else Taro.navigateBack(); };
+  const back = () => { if (group) { selectedId.current = ''; setGroup(null); setMessages([]); refresh(); } else { selectedId.current = ''; returnToPrevious(Taro, { destination: '/pages/chat/index' }); } };
   const loadEarlier = async () => {
     if(earlierLock.current||!older)return;
     earlierLock.current=true;setLoadingEarlier(true);followLatest.current=false;
@@ -165,8 +168,8 @@ export default function ServiceGroupPage() {
   };
 
   return <View onClick={()=>setEmojiOpen(false)} style={{ position:'relative',height: process.env.TARO_ENV === 'h5' ? (viewportHeight?viewportHeight+'px':'100vh') : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
-    <View style={{ padding: `${safeHeaderTop + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Text onClick={back} style={{ color: colors.primary, fontSize: '15px' }}>‹ 返回</Text>
+    <View style={{ padding: `${safeHeaderTop + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', position: 'relative', zIndex: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <BackButton onClick={back} destination={!group ? "/pages/chat/index" : undefined} />
       <Text style={{ color: colors.textPrimary, fontSize: '16px', fontWeight: 700, flex: 1, textAlign: 'center' }}>{group?.name || '我的服务群'}</Text>
       <Text onClick={group?openMenu:undefined} style={{color:colors.primary,fontSize:"24px",padding:"0 6px"}}>{group?"…":""}</Text>
     </View>
@@ -180,7 +183,7 @@ export default function ServiceGroupPage() {
       <Text onClick={manageAiDataConsent} style={{ fontSize: '12px', color: colors.primary }}>AI授权</Text>
     </View>}
     {!!error && <Text onClick={refresh} style={{ display: 'block', padding: '10px 16px', color: colors.danger, fontSize: '13px' }}>{error} · 点击重试</Text>}
-    {loading ? <Text style={{ padding: '16px', color: colors.textMuted }}>正在加载…</Text>
+    {loading ? <PageLoading />
       : !group ? <ScrollView scrollY style={{ flex: 1, height: 0, minHeight: 0, padding: '12px', boxSizing: 'border-box' }}>
         <View style={{display:'flex',gap:'16px',padding:'8px'}}><Text onClick={()=>setArchived(false)} style={{fontWeight:archived?400:700}}>服务中</Text><Text onClick={()=>setArchived(true)} style={{fontWeight:archived?700:400}}>已归档</Text></View>
         {groups.filter(item=>archived ? item.status==='closed' : item.status!=='closed').map(item => <View key={item.id} onClick={() => openGroup(item)} style={{ background: '#fff', borderRadius: '12px', padding: '16px', marginBottom: '12px' }}>

@@ -1,3 +1,5 @@
+import PageLoading from '../../components/PageLoading';
+import BackButton from '../../components/BackButton';
 import React, { useState, useCallback } from 'react';
 import { View, Text, Input, Textarea } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -110,9 +112,7 @@ export default function NutritionPage() {
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xxl}px` }}>
       <View style={{ backgroundColor: '#22A06B', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.lg}px`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px', marginRight: '4px' }}>
-          <Icon name="‹" size={20} color="#fff" />
-        </View>
+        <BackButton color="#fff" />
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: '18px', fontWeight: 700, color: '#fff', display: 'block' }}>营养素管理</Text>
           <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)' }}>全生命周期营养补充记录</Text>
@@ -149,7 +149,7 @@ export default function NutritionPage() {
 
       <View style={{ padding: `${spacing.sm}px ${spacing.lg}px 0` }}>
         {loading ? (
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+          <PageLoading />
         ) : displayed.length === 0 ? (
           <View style={{ textAlign: 'center', padding: '60px 0' }}>
             <Text style={{ fontSize: '15px', fontWeight: 600, color: colors.textSecondary, display: 'block' }}>{tab === 'active' ? '暂无进行中的营养素方案' : '暂无已停用的营养素记录'}</Text>

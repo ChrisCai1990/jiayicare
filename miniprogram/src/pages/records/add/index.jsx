@@ -1,3 +1,4 @@
+import BackButton from '../../../components/BackButton';
 import React, { useState, useEffect } from 'react';
 import { View, Text, Input, Button, Picker, Textarea } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
@@ -144,11 +145,9 @@ export default function AddRecordPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>录入健康数据</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>

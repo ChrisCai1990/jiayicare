@@ -1,3 +1,5 @@
+import BackButton from '../../components/BackButton';
+import PageLoading from '../../components/PageLoading';
 import { ensureAiDataConsent, manageAiDataConsent } from '../../utils/aiDataConsent';
 import MedicalReferences from '../../components/MedicalReferences';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -387,7 +389,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
       </View>)}
       {notifMessages.some(m => m.unread && m.action?.type !== 'service_group' && (m.type !== 'questionnaire' || questionnaireMessages.includes(m))) && <View onClick={() => { setNotifTab('全部'); setShowNotif(true); }} style={{ margin: '0 16px 12px', padding: '12px', backgroundColor: '#FFF4F3', borderRadius: '12px' }}><Text style={{ color: '#B42318' }}>● 您有未读通知，点击查看具体消息 ›</Text></View>}
       {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>{t('加载中...')}</Text>
+        <PageLoading />
       ) : (
         <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.sm}px` }}>
           <View style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>
@@ -479,7 +481,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetr
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: colors.background, zIndex: 100, display: 'flex', flexDirection: 'column' }}>
       <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px` , backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <Text onClick={onClose} style={{ fontSize: '14px', color: colors.primary, marginRight: '12px' }}>‹ {t('返回')}</Text>
+        <BackButton onClick={onClose} />
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '40px' }}>{t(tab)}</Text>
       </View>
       <View style={{ display: 'flex', margin: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#EEEAE3', borderRadius: `${radius.sm}px`, padding: '3px' }}>
@@ -1128,7 +1130,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
         </View>
       )}
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ {closeLabel}</Text></View>
+        <BackButton onClick={onClose} />
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{member?.name ? `${member.name} · ${meta.label}` : meta.label}</Text>
           <Text style={{ fontSize: '11px', color: !meta.aiEnabled || humanActive ? '#D97706' : colors.success }}>● {!meta.aiEnabled ? '人工服务' : humanActive ? '人工服务中' : '人工沟通 · AI需授权'}</Text>
@@ -1141,7 +1143,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
       {!!sendError && <Text style={{padding:'10px 16px',fontSize:'13px',color:colors.danger}}>{sendError}</Text>}
       <ScrollView scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget} scrollAnchoring scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+          <PageLoading />
         ) : msgs.length === 0 ? (threadError ? null : (
           <View style={{ textAlign: 'center', padding: '60px 0' }}>
             <View style={{ width: '64px', height: '64px', borderRadius: '32px', backgroundColor: meta.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>

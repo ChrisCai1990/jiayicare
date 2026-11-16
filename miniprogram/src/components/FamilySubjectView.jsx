@@ -1,3 +1,4 @@
+import PageLoading from './PageLoading';
 import React, { useEffect, useState } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -119,7 +120,7 @@ export default function FamilySubjectView({ archive, section, statusBarHeight = 
     return () => { live = false; };
   }, [memberId, section, revision]);
 
-  if (archive.loading) return <View style={{ padding: '24px' }}>正在核对家庭成员…</View>;
+  if (archive.loading) return <PageLoading fullPage top={statusBarHeight} />;
   if (archive.error) return <View style={{ padding: '24px' }}><Text onClick={archive.refresh} style={{ color: colors.danger }}>{archive.error} · 点击重试</Text></View>;
   if (!member) return null;
 
@@ -143,7 +144,7 @@ export default function FamilySubjectView({ archive, section, statusBarHeight = 
       <Text onClick={() => archive.select(0)} style={{ ...action, display: 'block', marginTop: '10px' }}>切回本人 ›</Text>
     </View>
     {error && <Text onClick={() => setRevision(value => value + 1)} style={{ display: 'block', color: colors.danger, marginBottom: '12px' }}>{error}</Text>}
-    {loading ? <Text style={{ color: colors.textMuted }}>加载中…</Text> : <>
+    {loading ? <PageLoading /> : <>
       {section === 'home' && <>
         <View style={card}>
           <Text style={{ display: 'block', fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>服务进展</Text>

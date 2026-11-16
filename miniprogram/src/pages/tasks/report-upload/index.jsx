@@ -1,3 +1,4 @@
+import BackButton from '../../../components/BackButton';
 import React,{useState,useEffect,useRef} from 'react';
 import {View,Text,Input,Picker,Button as NativeButton,Textarea} from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -73,7 +74,7 @@ export default function CareReportUpload(){
     finally{lock.current=false;setBusy(false);setProgress('')}
   }
   return <View style={{minHeight:'100vh',padding:`${statusBarHeight}px 18px 32px`,backgroundColor:'#F2EDE3',color:'#203C32',fontSize:'14px',lineHeight:'22px'}}>
-    <View style={{height:navBarHeight+'px',display:'flex',alignItems:'center',paddingRight:'100px'}}><Text onClick={()=>{if(!busy)Taro.navigateBack()}} style={{color:'#1E6B50',fontSize:'14px'}}>‹ 返回</Text></View>
+    <View style={{height:navBarHeight+'px',display:'flex',alignItems:'center',paddingRight:'100px'}}><BackButton onClick={()=>{if(!busy)Taro.navigateBack()}} /></View>
     <Text style={{fontSize:'22px',lineHeight:'30px',fontWeight:700,display:'block',margin:'16px 0 6px'}}>本次就医反馈</Text>
     <Text style={{fontSize:'13px',color:'#66796F'}}>上传已有资料，或说明本次实际情况</Text>
     {!!error&&<View style={{...card,color:'#B91C1C'}}>{error}</View>}

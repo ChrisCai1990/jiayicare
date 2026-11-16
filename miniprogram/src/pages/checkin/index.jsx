@@ -1,3 +1,4 @@
+import PageLoading from '../../components/PageLoading';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Input, Picker, Image, Textarea } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -12,6 +13,8 @@ import WeightPhoto from '../../components/WeightPhoto';
 import WeightProgressPhotos from '../../components/WeightProgressPhotos';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
+import CheckinFavorites from '../../components/CheckinFavorites';
+import BackButton from '../../components/BackButton';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 
 // 对齐 app/src/screens/checkin/CheckinScreen.js（2026-07-18 打卡页重构）：
@@ -575,19 +578,18 @@ export default function CheckinPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{t('今日健康数据')}</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '64px' }} />
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
       <WeightProgressPhotos />
       {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted }}>{t('加载中...')}</Text>
+        <PageLoading />
       ) : (
         <>
+          <CheckinFavorites userId={user?._id || user?.id} items={FIXED_CHECKIN_KEYS.map(key => CHECKIN_DEFS[key])} renderItem={renderCheckinItem} onBatch={openBatchModal}>
           {/* 必打卡项 */}
           <View style={{ marginBottom: `${spacing.lg}px` }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
@@ -617,6 +619,7 @@ export default function CheckinPage() {
             </View>
           )}
 
+          </CheckinFavorites>
           {/* 症状自评 */}
           <View style={{ marginBottom: `${spacing.lg}px` }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('今天有不适吗？')}</Text>

@@ -1,3 +1,5 @@
+import PageLoading from '../../components/PageLoading';
+import BackButton from '../../components/BackButton';
 import React, { useState, useCallback, useRef } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
@@ -120,11 +122,9 @@ export default function OrdersPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{archive.subject ? `${archive.subject.name}的订单` : '我的订单'}</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
       <View style={{ backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`, whiteSpace: 'nowrap', overflowX: 'auto' }}>
@@ -141,7 +141,7 @@ export default function OrdersPage() {
 
       <View style={{ padding: `${spacing.lg}px` }}>
       {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+        <PageLoading />
       ) : visibleList.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}>
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>{memberOrders.length === 0 ? '暂无订单' : '当前分类暂无订单'}</Text>

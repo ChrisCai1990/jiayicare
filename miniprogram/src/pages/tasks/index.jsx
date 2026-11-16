@@ -1,3 +1,5 @@
+import BackButton from '../../components/BackButton';
+import PageLoading from '../../components/PageLoading';
 import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -65,16 +67,16 @@ export default function TasksPage() {
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}><Icon name="chevron-left" size={20} color={colors.textPrimary} /></View>
+        <BackButton />
         <View style={{ textAlign: 'center' }}><Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>待办任务</Text><Text style={{ fontSize: '11px', color: colors.textMuted }}>健康管理进度跟踪</Text></View>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
       <View style={{ padding: `${spacing.md}px ${spacing.lg}px 0` }}>
         <View style={{display:'flex',gap:'16px',marginBottom:'14px'}}>{[['待处理',false],['已提交反馈',true]].map(([label,value])=><Text key={label} onClick={()=>setShowFeedback(value)} style={{color:showFeedback===value?colors.primary:colors.textMuted,fontWeight:showFeedback===value?700:400}}>{label}</Text>)}</View>
         <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
           {TIME_TABS.map(tab => <View key={tab} onClick={() => setTimeFilter(tab)} style={{ padding: '6px 14px', borderRadius: `${radius.full}px`, backgroundColor: timeFilter === tab ? colors.primary10 : '#fff', border: `1px solid ${timeFilter === tab ? colors.primary : colors.border}` }}><Text style={{ fontSize: '12px', color: timeFilter === tab ? colors.primary : colors.textSecondary }}>{tab}</Text></View>)}
         </View></ScrollView>
-        {loading ? <Text style={{ color: colors.textMuted }}>加载中...</Text> : visible.length === 0 ? <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}><Text style={{ color: colors.textMuted }}>暂无待办任务</Text></View> : visible.map(item => (
+        {loading ? <PageLoading /> : visible.length === 0 ? <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}><Text style={{ color: colors.textMuted }}>暂无待办任务</Text></View> : visible.map(item => (
           <View key={`${item._kind}-${item._id}`} onClick={() => item.canUploadReports && Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+item.careFlowId})} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
               <View style={{ flex: 1 }}>

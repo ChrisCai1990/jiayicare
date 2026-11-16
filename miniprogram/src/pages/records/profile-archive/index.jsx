@@ -1,3 +1,5 @@
+import PageLoading from '../../../components/PageLoading';
+import BackButton from '../../../components/BackButton';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Input } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -175,11 +177,9 @@ export default function ProfileArchivePage() {
       padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
       backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
     }}>
-      <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-        <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-      </View>
+      <BackButton />
       <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>个人资料</Text>
-      <View style={{ width: '28px' }} />
+      <View style={{ width: '72px' }} />
     </View>
   );
 
@@ -188,7 +188,7 @@ export default function ProfileArchivePage() {
       <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
         <Header />
         <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中…</Text>
+          <PageLoading />
         </View>
       </View>
     );

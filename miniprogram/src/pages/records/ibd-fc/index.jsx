@@ -1,3 +1,4 @@
+import BackButton from '../../../components/BackButton';
 import React, { useEffect, useState } from 'react';
 import { Canvas, Input, Picker, ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -131,7 +132,7 @@ export default function IbdFcPage() {
   const inputField = { border: `1px solid ${colors.border}`, borderRadius: '8px', boxSizing: 'border-box', height: '44px', lineHeight: '44px', padding: '0 12px', marginTop: '6px', marginBottom: '12px', fontSize: '14px' };
   return <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
     <View style={{ padding: `${statusBarHeight + 12}px 16px 12px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '12px' }}>
-      <Text onClick={() => Taro.navigateBack()} style={{ fontSize: '20px', color: colors.primary }}>‹</Text>
+      <BackButton />
       <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>IBD · 粪便钙卫蛋白</Text>
     </View>
     <ScrollView scrollY style={{ height: `calc(100vh - ${statusBarHeight + 62}px)` }}>

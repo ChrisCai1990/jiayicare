@@ -1,3 +1,5 @@
+import BackButton from '../../../components/BackButton';
+import PageLoading from '../../../components/PageLoading';
 import React, { useState } from 'react';
 import { Button, Text, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -45,7 +47,7 @@ export default function InvitePage() {
   return <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
     <View style={{ padding: `${statusBarHeight}px ${spacing.lg}px 28px`, backgroundColor: colors.primary, textAlign: 'center' }}>
       <View style={{ position: 'relative', height: `${navBarHeight}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <View onClick={goBack} ariaRole="button" ariaLabel="返回" style={{ position: 'absolute', left: 0, top: 0, minWidth: '64px', height: `${navBarHeight}px`, minHeight: '44px', display: 'flex', alignItems: 'center', color: '#fff', fontSize: '15px' }}><Text>‹ 返回</Text></View>
+        <BackButton onClick={goBack} color="#fff" style={{ position: 'absolute', left: 0, top: 0 }} />
         <Text style={{ display: 'block', color: '#fff', fontSize: '22px', fontWeight: 800 }}>{familyMode ? '邀请家人建档' : '邀请好友'}</Text>
       </View>
       <Text style={{ display: 'block', color: 'rgba(255,255,255,.82)', fontSize: '14px', marginTop: '10px' }}>一起分享健康理念</Text>
@@ -65,7 +67,7 @@ export default function InvitePage() {
         <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>我的邀请记录</Text>
         <Text style={{ fontSize: '13px', color: colors.primary }}>共 {invitees.length} 人</Text>
       </View>
-      {loading && <Text style={{ display: 'block', padding: '22px 0 6px', textAlign: 'center', color: colors.textMuted, fontSize: '13px' }}>正在加载…</Text>}
+      {loading && <PageLoading />}
       {!loading && !!error && <Text style={{ display: 'block', padding: '22px 0 6px', textAlign: 'center', color: colors.danger, fontSize: '13px' }}>{error}</Text>}
       {!loading && !error && invitees.length === 0 && <Text style={{ display: 'block', padding: '22px 0 6px', textAlign: 'center', color: colors.textMuted, fontSize: '13px' }}>暂无成功邀请记录</Text>}
       {!loading && !error && invitees.map((item, index) => (

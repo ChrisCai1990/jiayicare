@@ -1,3 +1,5 @@
+import PageLoading from '../../../components/PageLoading';
+import BackButton from '../../../components/BackButton';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, Textarea, Picker, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -59,11 +61,9 @@ export default function HelpFeedbackPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>帮助与反馈</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
@@ -113,7 +113,7 @@ export default function HelpFeedbackPage() {
           <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>我的反馈</Text>
           <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, overflow: 'hidden' }}>
             {loadingMine ? (
-              <Text style={{ padding: '16px', fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+              <PageLoading />
             ) : myFeedback.map((item, i) => (
               <View key={item._id || i} style={{ padding: '14px 16px', borderBottom: i < myFeedback.length - 1 ? `1px solid ${colors.borderLight}` : 'none' }}>
                 <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

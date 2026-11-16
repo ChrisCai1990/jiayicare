@@ -1,3 +1,5 @@
+import BackButton from '../../../components/BackButton';
+import PageLoading from '../../../components/PageLoading';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Textarea, ScrollView, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -673,11 +675,9 @@ export default function ServiceMallPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>服务商城</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
       <View onClick={() => { setDrawerParentId(activeParent?.id || categoryTree[0]?.id || ''); setCategoryDrawerOpen(true); }} style={{ margin: `${spacing.md}px ${spacing.lg}px ${spacing.sm}px`, padding: '13px 16px', borderRadius: `${radius.md}px`, backgroundColor: '#fff', boxShadow: shadow.sm, display: 'flex', alignItems: 'center' }}>
@@ -717,7 +717,7 @@ export default function ServiceMallPage() {
 
       <View style={{ padding: `0 ${spacing.lg}px`, paddingBottom: `${spacing.xxl}px` }}>
         {loading ? (
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+          <PageLoading />
         ) : (
           <>
             <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.xs}px` }}>{listError || `共 ${filtered.length} 个服务`}</Text>

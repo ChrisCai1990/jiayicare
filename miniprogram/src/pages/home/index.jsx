@@ -1,3 +1,4 @@
+import PageLoading from '../../components/PageLoading';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
@@ -349,7 +350,7 @@ export default function HomePage() {
           <View>
             {sectionError(['dashboard','tasks','followups']) && <Text onClick={loadCore} style={{display:'block',padding:'12px 0',fontSize:'13px',color:colors.danger}}>部分健康安排暂未加载，点击重试{allPendingTaskItems.length ? '；下方保留已加载内容' : ''}</Text>}
             {!token ? <Text onClick={() => Taro.navigateTo({url:'/pages/auth/login/index'})} style={{display:'block',padding:'20px 0',fontSize:'13px',color:colors.primary}}>{t('登录后查看你的健康安排 ›')}</Text> : tasksLoading && allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
-              <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '20px 0', textAlign: 'center' }}>{t('加载中...')}</Text>
+              <PageLoading />
             ) : (allPendingTaskItems.length === 0 && todayReminders.length === 0) ? (sectionError(['dashboard','tasks','followups']) ? null : (
               <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: `${spacing.xl}px 0`, gap: `${spacing.sm}px` }}>
                 <Icon name="✅" size={32} color={colors.primary} />

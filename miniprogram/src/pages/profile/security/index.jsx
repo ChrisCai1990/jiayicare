@@ -1,3 +1,4 @@
+import BackButton from '../../../components/BackButton';
 import React, { useState } from 'react';
 import { View, Text, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -57,11 +58,9 @@ export default function AccountSecurityPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>账号安全</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>

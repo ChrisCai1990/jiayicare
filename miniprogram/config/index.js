@@ -17,9 +17,9 @@ const config = {
     828: 1.81 / 2,
   },
   sourceRoot: 'src',
-  outputRoot: 'dist',
+  outputRoot: process.env.JIAYICARE_BUILD_OUTPUT || 'dist',
   plugins: [],
-  defineConstants: {},
+  defineConstants: { 'process.env.JIAYICARE_PAGE_BUILD': JSON.stringify(require('./pageBuild')(require('path').resolve(__dirname,'..'))) },
   copy: {
     patterns: [],
     options: {},

@@ -1,3 +1,5 @@
+import PageLoading from '../../../components/PageLoading';
+import BackButton from '../../../components/BackButton';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, Input, ScrollView, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -386,9 +388,7 @@ export default function FamilyMembersPage() {
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>家庭成员</Text>
         <Text onClick={() => setShowAdd('choice')} style={{ fontSize: '22px', color: colors.primary, padding: '4px' }}>+</Text>
       </View>
@@ -428,7 +428,7 @@ export default function FamilyMembersPage() {
         )}
 
         {loading ? (
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+          <PageLoading />
         ) : links.length === 0 && children.length === 0 && pendingInvites.length === 0 ? (
           <View style={{ textAlign: 'center', paddingTop: '60px' }}>
             <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.sm}px` }}>👨‍👩‍👧</Text>

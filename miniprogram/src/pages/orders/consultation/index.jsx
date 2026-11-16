@@ -1,3 +1,4 @@
+import BackButton from '../../../components/BackButton';
 import React, { useEffect, useState } from 'react';
 import { View, Text, Textarea } from '@tarojs/components';
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
@@ -35,7 +36,7 @@ export default function ConsultationOrderPage() {
     finally { setBusy(false); }
   };
   return <View style={{ minHeight: '100vh', padding: '24px 18px', backgroundColor: '#F4F8F5', boxSizing: 'border-box' }}>
-    <View onClick={() => Taro.navigateBack()} style={{ color: green, marginBottom: '16px', fontSize: '14px' }}>‹ 返回订单</View>
+    <BackButton />
     <Text style={{ display: 'block', fontSize: '22px', fontWeight: 700, color: '#193A2C' }}>专家咨询与会诊</Text>
     <Text style={{ ...line, display: 'block' }}>本服务提供咨询分析和后续管理路径，不代替线下诊断或治疗。</Text>
     {!row ? <View style={{ background: '#fff', borderRadius: '12px', padding: '16px', marginTop: '20px' }}>

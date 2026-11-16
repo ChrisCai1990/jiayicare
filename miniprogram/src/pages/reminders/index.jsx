@@ -1,3 +1,5 @@
+import PageLoading from '../../components/PageLoading';
+import BackButton from '../../components/BackButton';
 import React, { useState, useCallback } from 'react';
 import { View, Text, Switch, Input, Picker, Button } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -73,9 +75,7 @@ export default function RemindersPage() {
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
       }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>提醒管理</Text>
         <View onClick={() => setShowAdd(true)} style={{ width: '28px', textAlign: 'center' }}><Text style={{ fontSize: '24px', color: colors.primary }}>＋</Text></View>
       </View>
@@ -92,7 +92,7 @@ export default function RemindersPage() {
         })}
       </View>
       {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
+        <PageLoading />
       ) : displayed.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}>
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无提醒</Text>

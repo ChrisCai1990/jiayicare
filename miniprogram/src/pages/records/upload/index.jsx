@@ -1,3 +1,4 @@
+import BackButton from '../../../components/BackButton';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { View, Text, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -110,11 +111,9 @@ export default function ReportUploadPage() {
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <View onClick={() => Taro.navigateBack({ fail: () => Taro.switchTab({ url: '/pages/records/index/index' }) })} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
+        <BackButton onClick={() => Taro.navigateBack({ fail: () => Taro.switchTab({ url: '/pages/records/index/index' }) })} />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>上传体检/检查报告</Text>
-        <View style={{ width: '28px' }} />
+        <View style={{ width: '72px' }} />
       </View>
       <View style={{ padding: `${spacing.lg}px` }}>
       <View style={{ backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
