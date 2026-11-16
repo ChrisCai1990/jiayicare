@@ -193,7 +193,7 @@ export default function BenefitsPage() {
 
           {!!fund.policy?.description && <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
             <Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'6px'}}>{fund.policy.title||'健康基金使用规则'}</Text>
-            <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'19px'}}>{fund.policy.description}</Text>
+            <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'19px'}}>{displayFundRemark(fund.policy.description)}</Text>
           </View>}
 
           <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
