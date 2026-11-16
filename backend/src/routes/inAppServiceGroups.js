@@ -252,6 +252,23 @@ staffRouter.get('/', wrap(async (req, res) => {
     if (!TYPES[req.query.serviceType] && req.query.serviceType !== 'legacy') fail('服务群类型无效', 400);
     groupQuery.serviceType = req.query.serviceType;
   }
+  // Apply visibility and search before pagination; a match on later pages
+  // must be discoverable without downloading every preceding page.
+  const access=[];
+  if (req.staff.role !== 'superadmin') {
+    access.push({patientId:{$in:patients.filter(p=>assignedIds(p).some(id=>same(id,req.staff._id))).map(p=>p._id)},memberIds:req.staff._id});
+    if (req.staff.role==='familyDoctor') access.push({patientId:{$in:patients.filter(p=>same(p.assignedFamilyDoctor,req.staff._id)).map(p=>p._id)},'memberIds.0':{$exists:true}});
+    for (const id of mentoredIds) access.push({patientId:{$in:patients.filter(p=>assignedIds(p).some(person=>same(person,id))).map(p=>p._id)},memberIds:id});
+    groupQuery.$and=[{$or:access}];
+  }
+  const query=String(req.query.q || '').trim().slice(0,80).toLowerCase();
+  if (query) {
+    const matches=Object.keys({...TYPES,legacy:{}}).map(type=>({
+      serviceType:type==='legacy'?{$nin:Object.keys(TYPES)}:type,
+      patientId:{$in:patients.filter(p=>titleOf({serviceType:type},p).toLowerCase().includes(query)||`KH-${p._id}`.toLowerCase().includes(query)).map(p=>p._id)}
+    }));
+    groupQuery.$and=[...(groupQuery.$and||[]),{$or:matches}];
+  }
   const groups = await Group.find(groupQuery)
     .sort({ lastMessageAt: -1, createdAt: -1, _id: -1 })
     .skip((page - 1) * pageSize).limit(pageSize + 1).lean();

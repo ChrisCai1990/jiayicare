@@ -58,4 +58,16 @@ test('isolated Mongo: migration preserves history, four independent groups, memb
  const nutritionRead=res();await handler(customerRouter,'/:groupId/messages','get')({user,params:{groupId:String(groups.nutrition)}},nutritionRead);assert.equal(nutritionRead.body.data.length,1);assert.equal(await Inbox.countDocuments({user:patient,unread:true,'action.groupId':String(groups.advisor)}),1);
  const advisorRead=res();await handler(customerRouter,'/:groupId/messages','get')({user,params:{groupId:String(groups.advisor)}},advisorRead);assert.equal(advisorRead.body.data[0].content,'原始记录');assert.equal(await Inbox.countDocuments({user:patient,unread:true,'action.groupId':String(groups.advisor)}),0);
  const foreign=res();await handler(customerRouter,'/:groupId/messages','get')({user:{...user,tenantId:oid()},params:{groupId:String(groups.advisor)}},foreign);assert.equal(foreign.code,404);
+
+ const extra=Array.from({length:105},(_,i)=>({_id:oid(),tenantId:tenant,name:i===104?'搜索目标':'分页客户'+i,assignedHealthManager:manager,assignedFamilyDoctor:advisor}));
+ await User.collection.insertMany(extra);
+ await Group.collection.insertMany(extra.map((p,i)=>({_id:oid(),patientId:p._id,tenantId:tenant,serviceType:'advisor',memberIds:[manager,advisor],status:'active',createdAt:new Date(i===104?'2020-01-01':'2026-01-01')})));
+ const searchGroups=async(actor,query)=>{const r=res();await handler(staffRouter,'/','get')({staff:actor,query},r,e=>{throw e});return r.body.data};
+ const lead={_id:advisor,tenantId:tenant,role:'familyDoctor'};
+ assert.equal((await searchGroups(lead,{q:'搜索目标嘉医服务群'})).length,1);
+ assert.equal((await searchGroups(lead,{q:'KH-'+extra[104]._id})).length,1);
+ assert.equal((await searchGroups(lead,{q:'搜索目标',serviceType:'nutrition'})).length,0);
+ assert.equal((await searchGroups(lead,{q:'搜索目标',status:'closed'})).length,0);
+ assert.equal((await searchGroups({_id:nutrition,tenantId:tenant,role:'nutritionist'},{q:'搜索目标'})).length,0);
+ assert.equal((await searchGroups(lead,{q:'.*'})).length,0);
 });

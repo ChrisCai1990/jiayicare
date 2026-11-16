@@ -23,6 +23,9 @@ export default function InAppServiceGroupsPage() {
   const [category, setCategory] = useState('');
   const categoryRef = useRef('');
   categoryRef.current = category;
+  const [groupSearch,setGroupSearch]=useState('');
+  const [groupQuery,setGroupQuery]=useState('');
+  const queryRef=useRef('');queryRef.current=groupQuery;
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState(null);
   const [older, setOlder] = useState(false);
@@ -46,14 +49,15 @@ export default function InAppServiceGroupsPage() {
   }, [messages]);
   const refreshing = useRef(false);
 
-  const refresh = async () => {
-    if (refreshing.current) return;
+  const refresh = async (force=false) => {
+    if (refreshing.current && !force) return;
     refreshing.current = true;
+    const requestedQuery=queryRef.current;
     const requestedCategory = categoryRef.current;
     const requestedStatus = statusRef.current;
     try {
-      const pages = await Promise.all(Array.from({ length: loadedPages.current }, (_, i) => api.list(i + 1, requestedCategory, statusRef.current)));
-      if (requestedCategory !== categoryRef.current || requestedStatus !== statusRef.current) return;
+      const pages = await Promise.all(Array.from({ length: loadedPages.current }, (_, i) => api.list(i + 1, requestedCategory, requestedStatus, requestedQuery)));
+      if (requestedCategory !== categoryRef.current || requestedStatus !== statusRef.current || requestedQuery !== queryRef.current) return;
       setGroups(pages.flatMap(res => res.data || []));
       setHasMore(!!pages.at(-1)?.hasMore);
       setCanConfigure(!!pages[0]?.canConfigure);
@@ -66,7 +70,9 @@ export default function InAppServiceGroupsPage() {
     setBusy(true);
     try {
       const nextPage = loadedPages.current + 1;
-      const res = await api.list(nextPage, categoryRef.current, statusRef.current);
+      const category=categoryRef.current,status=statusRef.current,query=queryRef.current;
+      const res = await api.list(nextPage, category, status, query);
+      if(category!==categoryRef.current || status!==statusRef.current || query!==queryRef.current)return;
       loadedPages.current = nextPage;
       setGroups(previous => [...previous, ...(res.data || [])]);
       setHasMore(!!res.hasMore);
@@ -79,7 +85,7 @@ export default function InAppServiceGroupsPage() {
       if (currentId.current === id) { setMessages(prev=>[...new Map([...prev,...(res.data||[])].map(m=>[String(m.id),m])).values()].sort((a,b)=>+new Date(a.createdAt)-+new Date(b.createdAt)||String(a.id).localeCompare(String(b.id)))); if(before || !messages.length)setOlder(!!res.hasMore); if(res.firstMentionMessageId){setMentionAnchor(String(res.firstMentionMessageId));followLatest.current=false;setTimeout(()=>document.getElementById('sg-msg-'+res.firstMentionMessageId)?.scrollIntoView({block:'center'}),100);} }
     } catch (e) { setError(e.message || '群消息读取失败'); }
   };
-  useEffect(() => { loadedPages.current = 1; setGroups([]); refresh(); const timer = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 5000); return () => clearInterval(timer); }, [category, archive]);
+  useEffect(() => { loadedPages.current = 1; setGroups([]); refresh(true); const timer = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 5000); return () => clearInterval(timer); }, [category, archive, groupQuery]);
   useEffect(() => {
     if (!selected) return;
     const timer = setInterval(() => { if (document.visibilityState === 'visible') loadMessages(selected.id); }, 5000);
@@ -157,6 +163,11 @@ export default function InAppServiceGroupsPage() {
       <button disabled={busy || (confirmation.action==='archive'&&(!checked||!note.trim()))} onClick={confirmTask}>确认执行</button><button onClick={()=>setConfirmation(null)}>暂不处理</button>
     </section>}
     <div className="sg-filters"><button aria-pressed={!archive} onClick={()=>{setArchive(false);setSelected(null);currentId.current='';}}>服务中</button><button aria-pressed={archive} onClick={()=>{setArchive(true);setSelected(null);currentId.current='';}}>已归档</button></div>
+    <form className="sg-search-row" role="search" onSubmit={event=>{event.preventDefault();setGroupQuery(groupSearch.trim());setSelected(null);currentId.current='';}}>
+      <input aria-label="搜索服务群" maxLength={80} value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="搜索客户姓名、群名称或客户编号" />
+      <button type="submit">搜索群</button>
+      {(groupSearch || groupQuery) && <button type="button" onClick={()=>{setGroupSearch('');setGroupQuery('');}}>清除</button>}
+    </form>
     <nav className="sg-filters" aria-label="服务类型">
       {[['','全部'],...categories.map(([key,label]) => [key,label]),['legacy','原服务群']].map(([key,label]) => <button key={key} aria-pressed={category === key} onClick={() => { setCategory(key); setSelected(null); currentId.current = ''; setConfiguration(null); }}>{label}</button>)}
     </nav>
@@ -203,7 +214,7 @@ export default function InAppServiceGroupsPage() {
     </div>
     <div className="sg-workspace">
       <section aria-label="服务群列表" className="sg-group-list">
-        {visibleGroups.length === 0 && <p>此范围暂无已配置的服务群。健管专员可查找客户并配置成员。</p>}
+        {visibleGroups.length === 0 && <p>{groupQuery ? '未找到匹配的服务群，请检查关键词或切换服务类型、服务状态。' : '此范围暂无已配置的服务群。健管专员可查找客户并配置成员。'}</p>}
         {visibleGroups.map(group => <button key={group.id} type="button" onClick={() => open(group)}
           className={`sg-group-item${selected?.id === group.id ? ' is-selected' : ''}`}
           aria-pressed={selected?.id === group.id}>
@@ -235,7 +246,7 @@ export default function InAppServiceGroupsPage() {
               className={`sg-message${message.senderType === 'staff' ? ' is-staff' : ''}`}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 {message.senderAvatar && <img alt="" src={message.senderAvatar.startsWith('/') ? API_ORIGIN + message.senderAvatar : message.senderAvatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />}
-                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', ai:'AI健康管家', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
+                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
               </div>
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
               <div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>
