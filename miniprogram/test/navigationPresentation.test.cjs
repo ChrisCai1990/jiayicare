@@ -22,6 +22,8 @@ test('native back button stops the page tap and invokes custom action once', () 
   });
   const node = Back({ onClick: () => calls.push('custom') });
   assert.equal(node.type, 'native-button');
+  assert.equal(node.props.style.width, '72px');
+  assert.equal(node.props.style.flex, '0 0 72px');
   node.props.onClick({ stopPropagation: () => calls.push('stop') });
   assert.deepEqual(calls, ['stop', 'custom']);
   Back({}).props.onClick({ stopPropagation() {} }); assert.equal(calls.at(-1), 'default');
