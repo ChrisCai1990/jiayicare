@@ -8629,8 +8629,8 @@ router.post('/patients/:id/gift', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '无权操作该客户' });
   const patient = await User.findById(req.params.id).select('_id tenantId').lean();
   if (!patient) return res.status(404).json({ success: false, message: '客户不存在' });
-  const giftAmount = Number(fundAmount);
-  if (giftType === 'fund' && (!Number.isFinite(giftAmount) || giftAmount <= 0 || Math.round(giftAmount * 100) !== giftAmount * 100))
+  const giftAmount = giftType === 'fund' ? require('../utils/giftFundAmount').parseGiftFundAmount(fundAmount) : 0;
+  if (giftType === 'fund' && giftAmount === null)
     return res.status(400).json({ success: false, message: '请输入大于0且最多两位小数的赠送金额' });
   let product = null;
   if (giftType === 'service') {
