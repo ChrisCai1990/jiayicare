@@ -14,7 +14,7 @@ test('group materials: permissions, supported categories, durable retry and manu
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Mongo timeout')),30000);server.on('error',reject);server.stdout.on('data',d=>{if(String(d).includes('Waiting for connections')){clearTimeout(timer);resolve()}});server.stderr.resume()});
  await mongoose.connect(`mongodb://127.0.0.1:${port}/typed_groups`,{autoIndex:false,autoCreate:false});
 
- const tenant=oid(),patient=oid(),manager=oid(),groupId=oid();
+ const tenant=oid(),patient=oid(),manager=oid(),groupId=patient;
  const user={_id:patient,tenantId:tenant,name:'合成客户',assignedHealthManager:manager};
  await User.collection.insertOne(user);
  await Admin.collection.insertOne({_id:manager,tenantId:tenant,name:'合成健管',role:'healthManager',staffStatus:'active'});
@@ -61,10 +61,13 @@ test('group materials: permissions, supported categories, durable retry and manu
  const assistant=require('../src/utils/serviceGroupAssistant');const originalReply=assistant.reply;const calls=[];assistant.reply=async(...args)=>calls.push(args);t.after(()=>assistant.reply=originalReply);
  await require('../src/models/AiDataConsent').collection.insertOne({user:patient,purpose:'assistant',provider:'qwen',granted:true,version:consent.VERSION});
  const staff={_id:manager,tenantId:tenant,role:'healthManager',name:'合成健管'};
- const mention=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'@小嘉（AI健康管家） 请说明服务流程',mentionIds:[String(groupId)]}},mention,e=>{throw e});
+ const mention=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'@小嘉（AI健康管家） 请说明服务流程',mentionIds:['ai:'+groupId]}},mention,e=>{throw e});
  assert.equal(mention.code,201,JSON.stringify(mention.body));assert.equal(mention.body.data.mentions[0].kind,'ai');assert.equal(calls.length,1);
  assert.equal(String(calls[0][1].senderId),String(manager));
  assert.ok(+(await Group.findById(groupId)).humanActiveUntil>Date.now());
+ const listing=res();await handler(customerRouter,'/','get')({user},listing,e=>{throw e});assert.equal(listing.body.data[0].mentionCount,0);assert.equal(listing.body.data[0].assistant.id,'ai:'+groupId);
+ const customerMention=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'@客户',mentionIds:[String(patient)]}},customerMention,e=>{throw e});assert.equal(customerMention.body.data.mentions[0].kind,'customer');assert.equal(calls.length,1);
+
  const fake=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'@小嘉',mentionIds:[String(oid())]}},fake,e=>{throw e});assert.equal(fake.code,400);
  const ordinary=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'正常接待',mentionIds:[]}},ordinary,e=>{throw e});assert.equal(ordinary.code,201);assert.equal(calls.length,1);
  await Group.updateOne({_id:groupId},{$set:{status:'closed'}});

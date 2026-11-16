@@ -65,7 +65,7 @@ function summary(group, patient, staffMembers, supervised = false, canConfigure 
     staff: staffMembers.map(person => ({ id: person._id, name: person.name, role: person.role, avatar: person.avatar || '' })),
     lastMessageAt: group.lastMessageAt || null,
     waitingForStaff: needsStaffReply(group),
-    customer: { id: patient._id, name: patient.name, kind: 'customer', role: '客户' }, supervised, canConfigure, assistant: {...assistant.identity,id:group._id,kind:'ai'} };
+    customer: { id: patient._id, name: patient.name, kind: 'customer', role: '客户' }, supervised, canConfigure, assistant: {...assistant.identity,id:`ai:${group._id}`,kind:'ai'} };
 }
 function leaderCanConfigure(patient, staff) {
   return staff.role === 'superadmin' || isAssignedHealthManager(patient, staff);
@@ -103,9 +103,9 @@ async function send(group, senderType, sender, content, rawMentions = []) {
   if (locked.status !== 'active') fail('服务群已归档，不能发送消息', 409);
   const patient = await User.findOne({_id:group.patientId,tenantId:group.tenantId}).lean();
   const people = await groupStaff(locked,patient);
-  const candidates = [...people.map(p=>({id:p._id,kind:'staff',name:p.name,role:events.roles[p.role] || '服务人员'})), {id:patient._id,kind:'customer',name:patient.name,role:'客户'}, {id:group._id,kind:'ai',name:assistant.identity.name,role:'AI健康管家'}];
+  const candidates = [...people.map(p=>({id:p._id,kind:'staff',name:p.name,role:events.roles[p.role] || '服务人员'})), {id:patient._id,kind:'customer',name:patient.name,role:'客户'}, {id:group._id,mentionKey:`ai:${group._id}`,kind:'ai',name:assistant.identity.name,role:'AI健康管家'}];
   if (!Array.isArray(rawMentions) || rawMentions.length > 22) fail('@成员无效',400);
-  const mentions = [...new Set(rawMentions.map(String))].map(id=>candidates.find(p=>String(p.id)===id));
+  const mentions = [...new Set(rawMentions.map(String))].map(id=>candidates.find(p=>String(p.mentionKey || p.id)===id));
   if(mentions.some(m=>!m)) fail('只能@当前群成员',400);
   if(senderType==='staff' && !canStaffAccess(locked,patient,sender)) fail('成员已调整，请刷新',403);
   const body = contentOf(content);
@@ -188,7 +188,7 @@ customerRouter.get('/', wrap(async (req, res) => {
   res.json({ success: true, data: await Promise.all(groups.map(async group =>
     ({ ...summary(group, req.user, await groupStaff(group, req.user)),
       unreadCount: await InboxMessage.countDocuments({ user: req.user._id, unread: true, 'action.type': 'service_group', 'action.groupId': String(group._id) }),
-      mentionCount: await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,'mentions.id':req.user._id,mentionReadBy:{$ne:req.user._id}}),
+      mentionCount: await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,mentions:{$elemMatch:{id:req.user._id,kind:'customer'}},mentionReadBy:{$ne:req.user._id}}),
       preview: (await Message.findOne({ groupId: group._id, tenantId: group.tenantId }).sort({ createdAt: -1, _id: -1 }).select('content').lean())?.content?.slice(0, 100) || '' }))) });
 }));
 customerRouter.post('/', wrap(async (req, res) => {
@@ -203,7 +203,7 @@ customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const unreadKeys = new Set(unread.map(row => row.dedupeKey));
   const firstUnread = data.find(row => unreadKeys.has(`in-app-service-group:${row.id}`));
   if (unread.length) await InboxMessage.updateMany({ user: req.user._id, _id: { $in: unread.map(row => row._id) }, unread: true }, { $set: { unread: false, readAt: new Date() } });
-  await Message.updateMany({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},'mentions.id':req.user._id},{$addToSet:{mentionReadBy:req.user._id}});
+  await Message.updateMany({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},mentions:{$elemMatch:{id:req.user._id,kind:'customer'}}},{$addToSet:{mentionReadBy:req.user._id}});
   res.json({ success: true, data, hasMore: data.length === 100, firstUnreadMessageId: firstUnread?.id || null });
 }));
 customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
@@ -229,7 +229,7 @@ staffRouter.get('/reminders', wrap(async (req, res) => {
   let pending = 0, supervised = 0, mentioned = 0;
   for (const group of groups) {
     const patient = patientMap.get(String(group.patientId));
-    const mention = canStaffAccess(group,patient,req.staff) && await Message.exists({groupId:group._id,tenantId:group.tenantId,'mentions.id':req.staff._id,mentionReadBy:{$ne:req.staff._id}});
+    const mention = canStaffAccess(group,patient,req.staff) && await Message.exists({groupId:group._id,tenantId:group.tenantId,mentions:{$elemMatch:{id:req.staff._id,kind:'staff'}},mentionReadBy:{$ne:req.staff._id}});
     if(mention) mentioned++;
     if (!needsStaffReply(group) && !mention) continue;
     if (canStaffAccess(group, patient, req.staff)) pending++;
@@ -282,7 +282,7 @@ staffRouter.get('/', wrap(async (req, res) => {
       leaderCanObserve(patient, req.staff, group));
     const canConfigure = leaderCanConfigure(patient, req.staff);
     if (direct || supervised)
-      data.push({...summary(group, patient, await groupStaff(group, patient), !direct, canConfigure), mentionCount: direct ? await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,'mentions.id':req.staff._id,mentionReadBy:{$ne:req.staff._id}}) : 0});
+      data.push({...summary(group, patient, await groupStaff(group, patient), !direct, canConfigure), mentionCount: direct ? await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,mentions:{$elemMatch:{id:req.staff._id,kind:'staff'}},mentionReadBy:{$ne:req.staff._id}}) : 0});
   }
   res.json({ success: true, data, page, hasMore,
     canConfigure: req.staff.role === 'superadmin' ||
@@ -375,7 +375,7 @@ staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const data = await recentMessages(group, req.query?.before);
   if (supervised) await View.create({ tenantId: group.tenantId, groupId: group._id,
     patientId: patient._id, viewerId: req.staff._id, messageCount: data.length });
-  const unread = await Message.find({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},'mentions.id':req.staff._id,mentionReadBy:{$ne:req.staff._id}}).sort({createdAt:1}).select('_id').lean();
+  const unread = await Message.find({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},mentions:{$elemMatch:{id:req.staff._id,kind:'staff'}},mentionReadBy:{$ne:req.staff._id}}).sort({createdAt:1}).select('_id').lean();
   await Message.updateMany({_id:{$in:unread.map(m=>m._id)}},{$addToSet:{mentionReadBy:req.staff._id}});
   res.json({ success: true, data, hasMore: data.length === 100, supervised, firstMentionMessageId:unread[0]?._id || null });
 }));
