@@ -174,18 +174,18 @@ router.get('/me', auth, async (req, res) => {
           if (!rule?.enabled) {
             if (corporateAvailable > 0 && !req.user.enterpriseId) return {
               enabled: true,
-              description: '自有基金与活力基金可抵扣至0元；奖励基金按商品规则比例抵扣。退款审核通过后按原来源退回。',
+              description: '自有基金与活力基金可抵扣至0元；健康礼遇金按商品规则比例抵扣。退款审核通过后按原来源退回。',
             };
             return {
               enabled: false,
-              description: '自有基金与活力基金可抵扣至0元；奖励基金按商品规则比例抵扣。',
+              description: '自有基金与活力基金可抵扣至0元；健康礼遇金按商品规则比例抵扣。',
             };
           }
           const limit = rule.deductionType === 'percentage'
-            ? `奖励基金每单最高抵扣订单金额的${Number(rule.deductionValue) || 0}%`
+            ? `健康礼遇金每单最高抵扣订单金额的${Number(rule.deductionValue) || 0}%`
             : rule.deductionType === 'fixedAmount'
-              ? `奖励基金每单最高抵扣¥${Number(rule.deductionValue) || 0}`
-              : '奖励基金按商品规则比例抵扣';
+              ? `健康礼遇金每单最高抵扣¥${Number(rule.deductionValue) || 0}`
+              : '健康礼遇金按商品规则比例抵扣';
           const threshold = Number(rule.minOrderAmount) > 0 ? `，订单满¥${Number(rule.minOrderAmount)}可用` : '';
           const categories = rule.eligibleCategories?.length ? `，适用于：${rule.eligibleCategories.join('、')}` : '，适用于全部服务分类';
           return {

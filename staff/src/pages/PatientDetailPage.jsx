@@ -14719,7 +14719,8 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
   const [saving, setSaving] = useState(false)
   const fund = membership.healthFund || {}
   const points = membership.points || {}
-  const fundSource = { enterprise: '奖励基金', promotion: '自有基金', other: '自有基金', vitality: '活力基金' }
+  const fundSource = { enterprise: '健康礼遇金', promotion: '自有基金', other: '自有基金', vitality: '活力基金' }
+  const displayFundRemark = value => String(value || '').replaceAll('奖励基金', '健康礼遇金')
   const pointsPool = { vitality: '健康记录积分', reward: '购买积分', legacy: '历史积分' }
 
   const loadMembership = useCallback(async () => {
@@ -14811,7 +14812,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
             {[
               { label: '自有基金', value: `¥${Number(fund.personal || 0).toFixed(2)}`, color: '#1E6B50' },
               { label: '活力基金', value: `¥${Number(fund.vitality || 0).toFixed(2)}`, color: '#1E6B50' },
-              { label: '奖励基金', value: `¥${Number(fund.corporate || 0).toFixed(2)}`, color: '#1E6B50' },
+              { label: '健康礼遇金', value: `¥${Number(fund.corporate || 0).toFixed(2)}`, color: '#1E6B50' },
             ].map(s => (
               <div key={s.label} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>{s.label}</div>
@@ -14819,8 +14820,8 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 12 }}>基金合计 ¥{Number(fund.total ?? membership.healthFundBalance ?? 0).toFixed(2)}。自有、活力可抵扣至0元；奖励基金按商品规则比例抵扣。</div>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowGift(true)} style={{ marginBottom: 16 }}>＋ 赠送奖励基金</button>
+          <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 12 }}>基金合计 ¥{Number(fund.total ?? membership.healthFundBalance ?? 0).toFixed(2)}。自有、活力可抵扣至0元；健康礼遇金按商品规则比例抵扣。</div>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowGift(true)} style={{ marginBottom: 16 }}>＋ 赠送健康礼遇金</button>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 12 }}>
             {[
               { label: '健康记录积分', value: points.vitality || 0 },
@@ -14828,10 +14829,10 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
               { label: '历史积分', value: points.legacy || 0 },
             ].map(s => <div key={s.label} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}><div style={{ fontSize: 11, color: '#8AA89C' }}>{s.label}</div><div style={{ fontSize: 18, fontWeight: 700, color: '#D97706' }}>{s.value}</div></div>)}
           </div>
-          <div style={{ fontSize: 12, color: '#4A6558', lineHeight: 1.6, marginBottom: 16 }}>积分合计 {points.balance || 0}。健康记录每项每日首次记录最多得 {points.healthCheckinPoints ?? 5} 分；购买按现金实付每满 ¥1 得 1 分。{points.exchangeEnabled === false ? '积分自动兑换暂未开启。' : `两类分别满 ${points.exchangeRate || 100} 分兑换 ¥1，依次进入活力基金、奖励基金。`}</div>
+          <div style={{ fontSize: 12, color: '#4A6558', lineHeight: 1.6, marginBottom: 16 }}>积分合计 {points.balance || 0}。健康记录每项每日首次记录最多得 {points.healthCheckinPoints ?? 5} 分；购买按现金实付每满 ¥1 得 1 分。{points.exchangeEnabled === false ? '积分自动兑换暂未开启。' : `两类分别满 ${points.exchangeRate || 100} 分兑换 ¥1，依次进入活力基金、健康礼遇金。`}</div>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>基金收支明细</div>
           <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
-            {!fund.transactions?.length ? <div style={{ color: '#8AA89C', fontSize: 12 }}>暂无记录</div> : fund.transactions.map(item => <div key={`${item.type}-${item._id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 0', borderTop: '1px solid #eee', fontSize: 12 }}><div>{fundSource[item.source] || '奖励基金'} · {item.remark || item.orderName || '基金变动'}<div style={{ color: '#8AA89C' }}>{new Date(item.createdAt).toLocaleString('zh-CN')}{item.orderNo ? ` · ${item.orderNo}` : ''}{item.operatorName ? ` · 操作人：${item.operatorName}` : ''}</div></div><strong style={{ color: item.amount >= 0 ? '#1E6B50' : '#DC3545' }}>{item.amount >= 0 ? '+' : '-'}¥{Math.abs(item.amount).toFixed(2)}</strong></div>)}
+            {!fund.transactions?.length ? <div style={{ color: '#8AA89C', fontSize: 12 }}>暂无记录</div> : fund.transactions.map(item => <div key={`${item.type}-${item._id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 0', borderTop: '1px solid #eee', fontSize: 12 }}><div>{fundSource[item.source] || '健康礼遇金'} · {displayFundRemark(item.remark || item.orderName || '基金变动')}<div style={{ color: '#8AA89C' }}>{new Date(item.createdAt).toLocaleString('zh-CN')}{item.orderNo ? ` · ${item.orderNo}` : ''}{item.operatorName ? ` · 操作人：${item.operatorName}` : ''}</div></div><strong style={{ color: item.amount >= 0 ? '#1E6B50' : '#DC3545' }}>{item.amount >= 0 ? '+' : '-'}¥{Math.abs(item.amount).toFixed(2)}</strong></div>)}
           </div>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>积分明细</div>
           <div style={{ maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
@@ -16052,7 +16053,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved, initialGif
                 <label className="form-label">金额（元）*</label>
                 <input className="form-input" type="number" min={1} placeholder="如：500" value={form.fundAmount || ''} onChange={set('fundAmount')} />
               </div>
-              <div style={{ fontSize: 12, color: '#4A6558' }}>赠送金额计入奖励基金，按商品规则比例抵扣；赠送原因请填在备注中。</div>
+              <div style={{ fontSize: 12, color: '#4A6558' }}>赠送金额计入健康礼遇金，按商品规则比例抵扣；赠送原因请填在备注中。</div>
             </>
           ) : (
             <>
