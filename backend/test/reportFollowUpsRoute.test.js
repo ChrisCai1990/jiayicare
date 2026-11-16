@@ -75,6 +75,15 @@ test('失败草稿可由顾问原子接管，保留审计且不发布任务', as
   t.mock.method(Draft, 'findOneAndUpdate', async (q, u) => { assert.equal(q.__v, 0); assert.equal(u.$push.auditLog.action, 'take_over'); assert.equal(u.$set['followUpAutomation.status'], 'ready'); return row({ __v: 1 }); });
   assert.equal((await request(t, { action: 'take_over', revision: 0 })).status, 200);
 });
+test('单次随访页面不能把空计划作为已发布随访提交', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  t.mock.method(Draft, 'findById', async () => row());
+  t.mock.method(workflow, 'assertReportDraftSource', async () => {});
+  t.mock.method(Draft, 'findOneAndUpdate', async () => { throw Error('空计划不应写入已批准状态'); });
+  const result = await request(t, { action: 'approve', revision: 0, followUpDrafts: [] });
+  assert.equal(result.status, 400);
+  assert.match(result.body.message, /先填写一条随访计划/);
+});
 test('无明确后续行动可确认无需随访，保存决定并关闭审核待办', async t => {
   actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
   let current = row({ status: 'no_action', followUpDrafts: [] });
