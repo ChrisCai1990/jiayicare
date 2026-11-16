@@ -48,6 +48,39 @@ function ReportSourceSummary({ snapshot = {} }) {
   </details>
 }
 
+function RelatedFollowUps({ draftId }) {
+  const [state, setState] = useState({ loading: true, data: null, error: '' })
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    let active = true
+    setState({ loading: true, data: null, error: '' })
+    staffAPI.getRelatedReportFollowUps(draftId).then(result => {
+      if (active) setState({ loading: false, data: result.data, error: '' })
+    }).catch(error => {
+      if (active) setState({ loading: false, data: null, error: error.message || '读取失败' })
+    })
+    return () => { active = false }
+  }, [draftId, retry])
+  const rows = state.data?.candidates || []
+  const sameReport = rows.filter(item => item.sameReport)
+  const otherActive = rows.filter(item => !item.sameReport && ['planned', 'in_progress', 'missed'].includes(item.status))
+  const renderTask = item => <li key={item.id}>
+    <strong>{item.theme}</strong> · {String(item.date || '').slice(0, 10) || '日期未记录'} · {item.status === 'completed' ? '已完成' : item.status === 'missed' ? '已逾期' : item.status === 'in_progress' ? '进行中' : '待执行'}
+    {item.summary && <p>{item.summary}</p>}
+  </li>
+  return <section className="report-followup-related" aria-label="现有随访核对">
+    <h5>核对已有随访，避免重复派发</h5>
+    <p>下列内容仅供核对；同一客户的其他随访可能涉及本次报告，系统不会仅凭标题自动判定重复。</p>
+    {state.loading ? <p role="status">正在读取现有随访…</p> : state.error ? <p role="alert">现有随访读取失败：{state.error} <button type="button" onClick={() => setRetry(value => value + 1)}>重试</button></p> : <>
+      <div><strong>明确关联这份报告</strong>{sameReport.length ? <ul>{sameReport.map(renderTask)}</ul> : <p>未找到明确关联的随访；请继续核对下方同客户任务。</p>}</div>
+      <details open><summary>同一客户的其他未完成随访 · 当前显示 {otherActive.length} 项</summary>
+        {otherActive.length ? <ul>{otherActive.map(renderTask)}</ul> : <p>当前列表没有其他未完成随访。</p>}
+        {state.data.truncated && <p>待执行任务较多，这里只显示前 100 条；请到客户档案核对完整列表。</p>}
+      </details>
+    </>}
+  </section>
+}
+
 export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleOnly = false, onCompleted, completionNotice, onNextTodo }) {
   const [rows, setRows] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [screening, setScreening] = useState({ rows: [], patientId: null, error: '', loading: true })
@@ -136,6 +169,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
           {!!pending.length && <details><summary>尚待判断的资料（{pending.length}项）</summary><p>可点击“按问题重新整理”自动判断，或查看下列原文后选择是否需要跟进。</p><ul>{pending.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? ` · 第${item.page}页` : ''}<details><summary>{evidenceSummary(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '查看原文'}</summary><p>{compactEvidence(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '缺少结果，请核对原件'}</p></details>{editable && <div className="report-issues-actions"><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'normal' })}>已核对，无需跟进</button><button disabled={busy} onClick={() => act(row, 'resolve_coverage', { [item.sourceId]: 'problem' })}>列入问题建议</button></div>}</li>)}</ul></details>}
           <details><summary>资料来源（仅供查阅）</summary>{coverage.length ? <ul>{coverage.map(item => <li key={item.sourceId}><b>{item.name}</b>{item.page ? `（第${item.page}页）` : ''}：{{ normal: '正常或无需跟进', problem: '已列入问题', uncertain: '具体问题待核实', pending: '尚未判断' }[item.status]}{item.reason ? `；${item.reason}` : ''}<details><summary>查看该项原文</summary><p>{compactEvidence(row.issueSources?.find(source => source.id === item.sourceId)?.evidence) || '缺少结果，需核对原件'}</p></details></li>)}</ul> : <p>没有可核对的结构化资料，请核对原件并补充问题。</p>}</details></div>}
         {!annual && <>
+          {singleOnly && available && <RelatedFollowUps draftId={row._id} />}
           <section className="report-followup-plan" aria-label="本次随访计划">
           <h5>本次随访计划</h5>
           {!row.followUpDrafts?.length && <div className="report-followup-empty" role="status">

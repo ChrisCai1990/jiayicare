@@ -19,6 +19,30 @@ async function request(t, body) {
   const response = await fetch(`http://127.0.0.1:${server.address().port}/${ids.draft}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() };
 }
+async function relatedRequest(t) {
+  const app = express(); app.use(router);
+  const server = await new Promise(resolve => { const srv = app.listen(0, '127.0.0.1', () => resolve(srv)); });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/${ids.draft}/related-followups`);
+  return { status: response.status, body: await response.json() };
+}
+
+test('现有随访核对只返回有权限客户的执行任务，并标明同报告关联', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  t.mock.method(Draft, 'findById', async () => row({ reportId: '000000000000000000000004' }));
+  t.mock.method(Draft, 'find', () => ({ select: () => ({ lean: async () => [{ _id: ids.draft }] }) }));
+  const active = [
+    { _id: 'a', theme: '定期复查', status: 'planned', date: new Date('2027-03-15'), content: '核对既有安排' },
+    { _id: 'b', theme: '本报告随访', status: 'planned', date: new Date('2026-12-01'), sourceType: 'report_followup', sourceId: ids.draft },
+  ];
+  t.mock.method(FollowUp, 'find', filter => ({ select: () => ({ sort: () => ({ limit: () => ({ lean: async () => filter.$or ? [] : active }) }) }) }));
+  t.mock.method(FollowUp, 'countDocuments', async () => 2);
+  const result = await relatedRequest(t);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.data.candidates.map(item => [item.theme, item.sameReport]), [['本报告随访', true], ['定期复查', false]]);
+  visible = [];
+  assert.equal((await relatedRequest(t)).status, 403);
+});
 
 test('问题确认仅存年度依据，零执行派单，旧发布入口拒绝', async t => {
   actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];

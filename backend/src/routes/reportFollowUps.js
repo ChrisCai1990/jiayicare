@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const staffAuth = require('../middleware/staffAuth');
 const Draft = require('../models/ReportFollowUpDraft');
+const FollowUp = require('../models/FollowUp');
 const { validateAssessmentFollowUpDrafts } = require('../utils/assessmentFollowUpDrafts');
 const workflow = require('../utils/reportFollowUpAutomation');
 const { publishReportFollowUps } = require('../utils/dynamicAssessmentFollowUps');
@@ -41,6 +42,28 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       const report = reportById.get(String(row.reportId));
       return !report || !needsAdvisorInterpretation(report) || !!report.advisorInterpretationConfirmedAt;
     }).map(require('../utils/reportIssues').reviewView) });
+  }));
+  router.get('/:id/related-followups', staffAuth, wrap(async (req, res) => {
+    const row = await load(req);
+    const reportDrafts = await Draft.find({ patientId: row.patientId, reportId: row.reportId }).select('_id').lean();
+    const sameReportIds = new Set(reportDrafts.map(draft => String(draft._id)));
+    const base = { patientId: row.patientId, clientVisible: { $ne: false }, taskRole: { $in: ['', null] }, sourceType: { $nin: ['order', 'medication_reminder', 'supply_reminder'] } };
+    const activeFilter = { ...base, status: { $in: ['planned', 'in_progress', 'missed'] } };
+    const [active, totalActive, exactTasks] = await Promise.all([
+      FollowUp.find(activeFilter).select('theme plannedContent content date status sourceType sourceId formData.reportId').sort({ date: 1 }).limit(100).lean(),
+      FollowUp.countDocuments(activeFilter),
+      FollowUp.find({ ...base, status: { $in: ['planned', 'in_progress', 'missed', 'completed'] }, $or: [{ sourceId: { $in: [row.reportId, ...reportDrafts.map(draft => draft._id)] } }, { 'formData.reportId': row.reportId }] })
+        .select('theme plannedContent content date status sourceType sourceId formData.reportId').sort({ date: -1 }).limit(20).lean(),
+    ]);
+    const isSameReport = task => String(task.sourceId || '') === String(row.reportId)
+      || String(task.formData?.reportId || '') === String(row.reportId)
+      || sameReportIds.has(String(task.sourceId || ''));
+    const unique = new Map([...active, ...exactTasks].map(task => [String(task._id), task]));
+    const candidates = [...unique.values()].map(task => ({
+      id: String(task._id), theme: task.theme || '未命名随访', date: task.date, status: task.status,
+      sameReport: isSameReport(task), summary: String(task.plannedContent || task.content || '').slice(0, 500),
+    })).sort((a, b) => Number(b.sameReport) - Number(a.sameReport) || new Date(a.date) - new Date(b.date));
+    res.json({ success: true, data: { candidates, totalActive, truncated: totalActive > active.length } });
   }));
   router.post('/:id/generate', staffAuth, wrap(async (req, res) => {
     const row = await load(req);
