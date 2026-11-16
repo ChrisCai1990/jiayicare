@@ -1,17 +1,19 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {browserRecorder} from './groupRecorder';
 import {inAppServiceGroupAPI as api} from '../api';
-export default function GroupVoiceInput({groupId,quotedMessageId,onSent,onText}){
+export default function GroupVoiceInput({groupId,quotedMessageId,onSent}){
  const [recording,setRecording]=useState(false),[audio,setAudio]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [preparing,setPreparing]=useState(false),[seconds,setSeconds]=useState(0),[cancelling,setCancelling]=useState(false);
+ useEffect(()=>{if(!recording)return;const at=Date.now();setSeconds(0);const timer=setInterval(()=>setSeconds(Math.min(60,Math.floor((Date.now()-at)/1000))),250);return()=>clearInterval(timer);},[recording]);
  const state=useRef({active:true,held:false,starting:false,cancel:false,y:0});
  useEffect(()=>()=>{state.current.active=false;state.current.held=false;state.current.recorder?.stop(true);},[]);
  const start=async e=>{
-  const s=state.current;if(s.starting||recording||busy||audio)return;
-  s.held=true;s.starting=true;s.cancel=false;s.y=e.clientY;setError('');e.currentTarget.setPointerCapture?.(e.pointerId);
-  try{s.recorder=await browserRecorder(value=>{if(!s.active)return;setRecording(false);if(!s.cancel){if(value.duration<0.6)setError('说话时间太短');else setAudio(value);}});if(!s.active||!s.held)s.recorder.stop(true);else setRecording(true);}
-  catch{if(s.active)setError('无法录音，请允许麦克风权限后重试');}finally{s.starting=false;}
+  const s=state.current;if(s.starting||s.held||s.sending||recording||preparing||busy||audio)return;
+  s.held=true;s.starting=true;s.cancel=false;s.y=e.clientY;setError('');setPreparing(true);setCancelling(false);e.currentTarget.setPointerCapture?.(e.pointerId);
+  try{s.recorder=await browserRecorder(value=>{if(!s.active)return;setRecording(false);if(!s.cancel){if(value.duration<0.6)setError('说话时间太短');else void submit(value);}});if(!s.active||!s.held)s.recorder.stop(true);else setRecording(true);}
+  catch{if(s.active)setError('无法录音，请允许麦克风权限后重试');}finally{s.starting=false;if(s.active)setPreparing(false);}
  };
- const stop=cancel=>{const s=state.current;s.held=false;s.cancel=s.cancel||cancel;s.recorder?.stop(s.cancel);if(s.cancel)setRecording(false);};
- const submit=async convert=>{if(busy||!audio)return;setBusy(true);setError('');try{if(convert){const result=await api.speech(groupId,audio);onText(result.data.text);}else{await api.sendVoice(groupId,audio,quotedMessageId);onSent?.();}setAudio(null);}catch(e){setError(e.message||'语音处理失败，可重试');}finally{setBusy(false);}};
- return <div>{audio?<div>录音 {Math.ceil(audio.duration)} 秒 <button disabled={busy} onClick={()=>submit(false)}>发送语音</button><button disabled={busy} onClick={()=>submit(true)}>转文字</button><button disabled={busy} onClick={()=>setAudio(null)}>取消</button></div>:<button type="button" style={{width:'100%',minHeight:60,touchAction:'none',userSelect:'none'}} onPointerDown={start} onPointerMove={e=>{if(state.current.held)state.current.cancel=state.current.y-e.clientY>60;}} onPointerUp={()=>stop(false)} onPointerCancel={()=>stop(true)}>{recording?'松开结束，上滑取消':'按住说话'}</button>}{error&&<p role="alert">{error}</p>}</div>;
+ const stop=cancel=>{const s=state.current;s.held=false;setPreparing(false);s.cancel=s.cancel||cancel;s.recorder?.stop(s.cancel);if(s.cancel)setRecording(false);};
+ const submit=async value=>{if(!value||state.current.sending)return;state.current.sending=true;setBusy(true);setAudio(null);setError('');try{await api.sendVoice(groupId,value,quotedMessageId);if(state.current.active)onSent?.();}catch(e){if(state.current.active){setAudio(value);setError(e.message||'语音发送失败，可重试');}}finally{state.current.sending=false;if(state.current.active)setBusy(false);}};
+ return <div style={{position:'relative'}}>{recording&&<div role='status' style={{position:'absolute',bottom:'72px',left:'50%',transform:'translateX(-50%)',zIndex:30,pointerEvents:'none',minWidth:160,padding:14,borderRadius:12,background:cancelling?'#b42318':'#243e36',color:'#fff',textAlign:'center',boxShadow:'0 4px 16px #0003'}}><strong style={{display:'block',fontSize:20}}><span style={{color:'#ff7878'}}>●</span> {seconds} 秒</strong><span>{cancelling?'松开取消发送':'正在录音 · 上滑取消'}</span></div>}{audio?<div>发送失败 · {Math.ceil(audio.duration)} 秒 <button disabled={busy} onClick={()=>submit(audio)}>重试发送</button><button disabled={busy} onClick={()=>setAudio(null)}>取消</button></div>:<button type="button" style={{width:'100%',minHeight:60,transform:recording||preparing?'scale(0.98)':'none',boxShadow:recording?'inset 0 2px 5px #0002':'none',background:recording?(cancelling?'#b42318':'#20745d'):preparing?'#e0f0e8':'#fff',color:recording?'#fff':'#24483d',touchAction:'none',userSelect:'none'}} onPointerDown={start} onPointerMove={e=>{if(state.current.held){state.current.cancel=state.current.y-e.clientY>60;setCancelling(state.current.cancel);}}} onPointerUp={()=>stop(false)} onPointerCancel={()=>stop(true)}>{busy?'发送中…':preparing?'正在开启麦克风…':recording?(cancelling?'松开取消':'松开发送，上滑取消'):'按住说话'}</button>}{error&&<p role="alert">{error}</p>}</div>;
 }
