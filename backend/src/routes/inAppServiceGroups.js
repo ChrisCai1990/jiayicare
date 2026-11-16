@@ -12,6 +12,8 @@ const View = require('../models/InAppServiceGroupView');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
 const Team = require('../models/Team');
+const MedicalReport = require('../models/MedicalReport');
+const materials = require('../utils/inAppGroupMaterials');
 const StaffRole = require('../models/StaffRole');
 const assistant = require('../utils/serviceGroupAssistant');
 const { assignmentFields, assignedIds, canUseGroupModule, isAssignedHealthManager, isAssignedLeader, canCustomerAccess, canStaffAccess,
@@ -83,10 +85,18 @@ async function recentMessages(group, before) {
     User.findOne({ _id: group.patientId, tenantId: group.tenantId }).select('avatar').lean(),
   ]);
   const personMap = new Map(people.map(person => [String(person._id), person]));
+  const reports = await MedicalReport.find({ _id: { $in: rows.map(row=>row.materialReportId).filter(Boolean) }, user: group.patientId, tenantId:group.tenantId }).select('title documentCategory fileUrls ossKeys mimeType aiStatus audit_status parseJob').lean();
+  const reportMap = new Map(reports.map(report=>[String(report._id),report]));
+  const materialOf = row => {
+    if (!row.materialReportId) return undefined;
+    const report=reportMap.get(String(row.materialReportId));
+    return { id:row.materialReportId, title:report?.title || '医疗资料', status:materials.statusOf(report),
+      mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signStoredUrl(url,report.ossKeys?.[i] || '')) };
+  };
   return rows.reverse().map(row => ({ id: row._id, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
-    mentions: row.mentions || [], senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
+    material: materialOf(row), mentions: row.mentions || [], senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
 }
 async function send(group, senderType, sender, content, rawMentions = []) {
  return events.withGroupLock(group._id, group.tenantId, async locked => {
@@ -120,6 +130,57 @@ async function send(group, senderType, sender, content, rawMentions = []) {
 }
 
 customerRouter.use(customerAuth);
+customerRouter.post('/:groupId/materials', wrap(async (req,res) => {
+  const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId);
+  if (!canCustomerAccess(group,req.user)) fail('无权上传此服务群资料');
+  const { files,digest } = materials.validate(req.body);
+  const key=`group-material:${group._id}:${req.user._id}:${req.body.requestId}`;
+  const oss=require('../utils/oss');
+  let uploaded=[], retained=false, result;
+  try {
+    let existing=await MedicalReport.findOne({sourceInAppGroupKey:key}).lean();
+    if (existing && existing.groupMaterialDigest !== digest) fail('上传标识已使用，请重新选择资料',409);
+    if (!existing) {
+      for (const file of files) uploaded.push(await oss.uploadBuffer(file.buffer,file.mimeType));
+    }
+    result=await events.withGroupLock(group._id,group.tenantId,async locked=>{
+      const patient=await User.findOne({_id:group.patientId,tenantId:group.tenantId,isDeleted:{$ne:true}}).lean();
+      if (!patient || !canCustomerAccess(locked,patient) || !(await groupStaff(locked,patient)).length) fail('服务群已结束或成员已变更，请刷新',409);
+      existing=await MedicalReport.findOne({sourceInAppGroupKey:key});
+      if (existing && existing.groupMaterialDigest !== digest) fail('上传标识已使用',409);
+      if (!existing) {
+        existing=await MedicalReport.create({user:patient._id,tenantId:group.tenantId,
+          title:materials.categories[req.body.category]+'（服务群提交）',type:req.body.category==='physical_exam'?'annual':'other',documentCategory:req.body.category,
+          sourceType:'customer_upload',submittedByUser:patient._id,sourceInAppGroupKey:key,sourceInAppGroupId:group._id,groupMaterialDigest:digest,
+          fileUrl:uploaded[0].url,fileUrls:uploaded.map(f=>f.url),ossKey:uploaded[0].key,ossKeys:uploaded.map(f=>f.key),
+          mimeType:uploaded[0].mimeType,pages:uploaded.length,audit_status:'unaudited',aiStatus:'none',
+          note:'服务群资料，需健管专员核对资料归属、类别、日期和识别内容。未经审核不写入正式健康记录。'});
+        retained=true;
+      }
+      const message=await Message.findOneAndUpdate({eventKey:key},{$setOnInsert:{tenantId:group.tenantId,groupId:group._id,
+        patientId:patient._id,senderType:'customer',senderId:patient._id,senderName:patient.name || '客户',
+        content:`已提交${materials.categories[req.body.category]}`,materialReportId:existing._id,eventKey:key}}, {upsert:true,new:true});
+      await Group.updateOne({_id:group._id},{$max:{lastMessageAt:message.createdAt,lastCustomerMessageAt:message.createdAt}});
+      return {id:message._id,reportId:existing._id};
+    });
+  } finally {
+    if (!retained && uploaded.length) {
+      // A database write can succeed even when its acknowledgement is lost.
+      // Never remove an original that a persisted report now references.
+      const saved=await MedicalReport.findOne({sourceInAppGroupKey:key}).select('ossKeys').lean();
+      await Promise.all(uploaded.filter(f=>!saved?.ossKeys?.includes(f.key)).map(f=>oss.deleteFile(f.key)));
+    }
+  }
+  // Customer-originated jobs use the customer's health consent, never an
+  // assigned employee's identity. Existing review/approval gates stay intact.
+  let allowed=false;
+  try { await require('../utils/aiDataConsent').assertPermission(req.user._id,'health','qwen'); allowed=!!process.env.QWEN_API_KEY; } catch(error) { if(error.code!=='AI_DATA_CONSENT_REQUIRED')throw error; }
+  if (allowed) {
+    const claimed=await MedicalReport.findOneAndUpdate({_id:result.reportId,aiStatus:'none'},{$set:{aiStatus:'processing',parseJob:{status:'processing',queuedAt:new Date(),actorId:String(req.user._id),message:'服务群资料正在识别'}}});
+    if(claimed) require('./staff').scheduleReportParse(result.reportId);
+  }
+  res.status(201).json({success:true,data:result,message:allowed?'已提交，识别后由健管专员核对':'已提交原件，由健管专员处理'});
+}));
 customerRouter.get('/', wrap(async (req, res) => {
   const groups = await Group.find({ tenantId: req.user.tenantId, patientId: req.user._id,
     status: { $in: ['active','closed'] }, 'memberIds.0': { $exists: true } }).lean();

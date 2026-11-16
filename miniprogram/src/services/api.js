@@ -260,6 +260,7 @@ export const messagesAPI = {
 };
 
 export const inAppServiceGroupAPI = {
+  uploadMaterial: (id, data) => request(`/in-app-service-groups/${encodeURIComponent(id)}/materials`, { method:'POST', timeout:180000, body:JSON.stringify(data) }),
   list: () => request('/in-app-service-groups'),
   messages: (id, before = '') => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(before)}`),
   send: (id, content, mentionIds = []) => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`, {

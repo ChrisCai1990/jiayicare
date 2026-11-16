@@ -17985,6 +17985,19 @@ async function runReportParseControlled(reportId) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
+  if (report.sourceInAppGroupKey && !report.groupMaterialVerified) {
+    try {
+      const accepted = await require('../utils/inAppGroupMaterials').checkCategory(report, rawParseImage);
+      if (!accepted) {
+        await MedicalReport.updateOne({_id:report._id}, {$set:{aiStatus:'pending',parseJob:{status:'skipped',message:'资料类别无法确认或不属于本次类别，未提取内容，请健管专员核对原件。'}}});
+        return;
+      }
+      await MedicalReport.updateOne({_id:report._id}, {$set:{groupMaterialVerified:true}});
+    } catch(error) {
+      await MedicalReport.updateOne({_id:report._id}, {$set:{aiStatus:'failed',parseJob:{status:'failed',message:'资料类别核验未完成，请健管专员核对或重试。'}}});
+      return;
+    }
+  }
   if (isManualOnlyReport(report)) {
     await markReportManualOnly(report);
     return;

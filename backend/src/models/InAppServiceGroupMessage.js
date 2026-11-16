@@ -9,6 +9,7 @@ const schema = new mongoose.Schema({
   senderId: { type: mongoose.Schema.Types.ObjectId, required: true },
   senderName: { type: String, required: true, maxlength: 120 },
   content: { type: String, required: true, maxlength: 2000 },
+  materialReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: undefined },
   mentions: [{ _id: false, id: mongoose.Schema.Types.ObjectId, kind: { type: String, enum: ['staff', 'customer'] }, name: String, role: String }],
   mentionReadBy: [{ type: mongoose.Schema.Types.ObjectId }],
   eventKey: { type: String, default: undefined },

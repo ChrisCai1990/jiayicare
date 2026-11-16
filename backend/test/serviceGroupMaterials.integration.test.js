@@ -1,0 +1,63 @@
+const test=require('node:test'),assert=require('node:assert/strict'),mongoose=require('mongoose');
+const {spawn}=require('node:child_process'),{mkdtempSync}=require('node:fs'),{tmpdir}=require('node:os'),path=require('node:path'),net=require('node:net');
+const {migrate}=require('../scripts/migrateServiceGroupTypes');
+const {staffRouter,customerRouter}=require('../src/routes/inAppServiceGroups');
+const Group=require('../src/models/InAppServiceGroup'),User=require('../src/models/User'),Admin=require('../src/models/Admin'),Msg=require('../src/models/InAppServiceGroupMessage'),Inbox=require('../src/models/Message');
+const oid=()=>new mongoose.Types.ObjectId();
+const handler=(router,p,method)=>router.stack.find(l=>l.route?.path===p&&l.route.methods[method]).route.stack.at(-1).handle;
+const res=()=>({code:200,status(v){this.code=v;return this},json(v){this.body=v;return this}});
+test('group materials: permissions, supported categories, durable retry and manual review', {skip:!process.env.TEST_MONGOD,timeout:90000},async t=>{
+ const dir=mkdtempSync(path.join(tmpdir(),'typed-group-test-'));
+ const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})});
+ const server=spawn(process.env.TEST_MONGOD,['--dbpath',dir,'--bind_ip','127.0.0.1','--port',String(port)],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+ t.after(async()=>{await mongoose.disconnect();server.kill()});
+ await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Mongo timeout')),30000);server.on('error',reject);server.stdout.on('data',d=>{if(String(d).includes('Waiting for connections')){clearTimeout(timer);resolve()}});server.stderr.resume()});
+ await mongoose.connect(`mongodb://127.0.0.1:${port}/typed_groups`,{autoIndex:false,autoCreate:false});
+
+ const tenant=oid(),patient=oid(),manager=oid(),groupId=oid();
+ const user={_id:patient,tenantId:tenant,name:'合成客户',assignedHealthManager:manager};
+ await User.collection.insertOne(user);
+ await Admin.collection.insertOne({_id:manager,tenantId:tenant,name:'合成健管',role:'healthManager',staffStatus:'active'});
+ await Group.create({_id:groupId,tenantId:tenant,patientId:patient,status:'active',memberIds:[manager],serviceType:'legacy',createdByStaffId:manager});
+ const Report=require('../src/models/MedicalReport'),oss=require('../src/utils/oss'),consent=require('../src/utils/aiDataConsent');
+ await Report.createIndexes();await Msg.createIndexes();
+ const saved={upload:oss.uploadBuffer,del:oss.deleteFile,sign:oss.signStoredUrl};
+ let uploads=0;oss.uploadBuffer=async()=>({url:'https://example.invalid/reports/test.png',key:'reports/test.png',mimeType:'image/png',size:20});
+ const upload=oss.uploadBuffer;oss.uploadBuffer=async(...args)=>{uploads++;return upload(...args)};
+ oss.deleteFile=async()=>{};oss.signStoredUrl=url=>url;
+ t.after(()=>{oss.uploadBuffer=saved.upload;oss.deleteFile=saved.del;oss.signStoredUrl=saved.sign});
+ const png='data:image/png;base64,'+Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]).toString('base64');
+ const call=async(actor,body)=>{const r=res();await handler(customerRouter,'/:groupId/materials','post')({user:actor,params:{groupId:String(groupId)},body},r,e=>{throw e});return r};
+ const body={category:'lab_report',requestId:'material_test_123456',files:[png]};
+ assert.equal((await call({...user,_id:oid()},body)).code,403);
+ assert.equal((await call({...user,tenantId:oid()},body)).code,404);
+ for(const category of ['blood_pressure','food','other_customer_material','__proto__']) assert.equal((await call(user,{...body,category})).code,400);
+ assert.equal(uploads,0);
+ const first=await call(user,body);assert.equal(first.code,201,JSON.stringify(first.body));
+ const again=await call(user,body);assert.equal(String(first.body.data.id),String(again.body.data.id));
+ assert.equal(uploads,1);assert.equal(await Report.countDocuments(),1);assert.equal(await Msg.countDocuments(),1);
+ const report=await Report.findById(first.body.data.reportId).lean();
+ assert.equal(report.audit_status,'unaudited');assert.equal(report.aiStatus,'none');assert.equal(report.reportItems.length,0);
+ assert.equal(report.checkDate,'');assert.equal(String(report.user),String(patient));
+ assert.equal((await call(user,{...body,category:'prescription_order'})).code,409);
+ for(const category of ['exam_report','outpatient_record','prescription_order','physical_exam']){
+  const r=await call(user,{...body,category,requestId:'material_'+category+'_123456'});assert.equal(r.code,201,JSON.stringify(r.body));
+  assert.equal((await Report.findById(r.body.data.reportId)).documentCategory,category);
+ }
+ const read=res();await handler(customerRouter,'/:groupId/messages','get')({user,params:{groupId:String(groupId)},query:{}},read,e=>{throw e});
+ assert.equal(read.body.data.length,5);assert.ok(read.body.data.every(m=>m.material.files.length===1));
+
+ const staffRoutes=require('../src/routes/staff');
+ const schedule=staffRoutes.scheduleReportParse;const apiKey=process.env.QWEN_API_KEY;
+ const queued=[];staffRoutes.scheduleReportParse=id=>queued.push(String(id));process.env.QWEN_API_KEY='synthetic-no-network';
+ t.after(()=>{staffRoutes.scheduleReportParse=schedule;if(apiKey===undefined)delete process.env.QWEN_API_KEY;else process.env.QWEN_API_KEY=apiKey});
+ await require('../src/models/AiDataConsent').collection.insertOne({user:patient,purpose:'health',provider:'qwen',granted:true,version:consent.VERSION});
+ const approved=await call(user,body);assert.equal(approved.code,201);
+ assert.deepEqual(queued,[String(first.body.data.reportId)]);
+ await call(user,body);assert.equal(queued.length,1);
+ const queuedReport=await Report.findById(first.body.data.reportId).lean();
+ assert.equal(queuedReport.aiStatus,'processing');assert.equal(queuedReport.audit_status,'unaudited');assert.equal(queuedReport.reportItems.length,0);
+ await Group.updateOne({_id:groupId},{$set:{status:'closed'}});
+ assert.equal((await call(user,{...body,requestId:'material_closed_123456'})).code,404);
+ assert.equal(await Report.countDocuments(),5);
+});

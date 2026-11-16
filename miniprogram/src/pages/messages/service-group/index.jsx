@@ -6,6 +6,7 @@ import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { mediaUrl, inAppServiceGroupAPI as api } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
+import GroupMaterialUpload from '../../../components/GroupMaterialUpload';
 
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -157,10 +158,17 @@ export default function ServiceGroupPage() {
             <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName}{message.senderType !== 'customer' && ` · ${({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',specialist:'专科医师',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
             {!!message.mentions?.length&&<View style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'6px'}}>{message.mentions.map(p=><Text key={p.id} onClick={()=>Taro.showModal({title:p.name,content:p.role || '服务成员',showCancel:false})} style={{color:'#187e87',fontSize:'12px',padding:'3px',background:'#eaf8f8'}}>@{p.name}</Text>)}</View>}
             <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.content}</Text>
+            {message.material && <View style={{marginTop:'8px'}}>
+              <Text style={{display:'block',fontSize:'12px',color:colors.textMuted}}>{message.material.status}</Text>
+              {(message.material.files||[]).map((url,i)=>message.material.mimeType==='application/pdf'
+                ? <Text key={i} style={{display:'block',padding:'8px',color:colors.primary}} onClick={async()=>{try{if(process.env.TARO_ENV==='h5')window.location.assign(url);else{const file=await Taro.downloadFile({url});await Taro.openDocument({filePath:file.tempFilePath,fileType:'pdf'});}}catch{Taro.showToast({title:'原件打开失败，请重试',icon:'none'});}}}>查看PDF原件</Text>
+                : <Image key={i} src={url} mode="widthFix" onClick={()=>Taro.previewImage({current:url,urls:message.material.files})} style={{width:'100px',margin:'6px',borderRadius:'6px'}} />)}
+            </View>}
           </View>)}
         </ScrollView>
         </View>
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
+        <GroupMaterialUpload key={group.id} groupId={group.id} onSent={()=>{followLatest.current=true;refresh();}} />
         {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{group.staff.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>text.endsWith('@')?text+p.name+' ':text+'@'+p.name+' ');setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#fff' }}>
           <Text onClick={()=>setShowMentions(!showMentions)} style={{padding:'10px',color:colors.primary}}>@</Text>

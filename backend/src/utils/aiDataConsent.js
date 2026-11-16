@@ -28,6 +28,7 @@ function withStaffService(staff, fn) {
 }
 async function withReportStaffService(report, fn, dependencies = {}) {
   const unscoped = () => staffServiceScope.run(undefined, fn);
+  if (report?.sourceInAppGroupKey) return unscoped();
   const actorId = report?.parseJob?.actorId;
   if (!actorId) return unscoped();
   const staff = await (dependencies.readStaff || (id => require('../models/Admin').findById(id).select('_id role tenantId staffStatus').lean()))(actorId);
