@@ -140,7 +140,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
           <h5>本次随访计划</h5>
           {!row.followUpDrafts?.length && <div className="report-followup-empty" role="status">
             <b>{status === 'failed' ? '草稿生成未完成，尚无可审核的随访计划' : ['queued', 'running'].includes(status) ? '正在生成随访计划' : '尚无随访计划'}</b>
-            <p>{status === 'failed' ? '请重新生成；也可人工填写本次随访的日期、目的和具体内容。' : status === 'ready' ? '若需要随访，请添加一条计划；若无需后续随访，可选择不需要后续随访。' : row.followUpAutomation?.message || '请先核对本次报告。'}</p>
+            <p>{status === 'failed' ? '需要随访可重新生成或人工填写；核对原报告后确认无需新增随访，可直接结束本次审核。' : status === 'ready' ? '若需要随访，请添加一条计划；若无需后续随访，可选择不需要后续随访。' : row.followUpAutomation?.message || '请先核对本次报告。'}</p>
           </div>}
           {(row.followUpDrafts || []).map((item, index) => <fieldset key={index} className="report-issue-card" disabled={busy || !available || status !== 'ready'}>
             <legend>本次随访{index > 0 ? ` ${index + 1}` : ''}</legend>
@@ -163,7 +163,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
             <button type="button" disabled={busy || row.followUpDrafts.length !== 1} onClick={() => actFollowUp(row, 'approve')}>终审并派发本次随访</button>
           </div>}
           {available && <div className="report-issues-actions">
-            {status === 'failed' && <><button disabled={busy} onClick={() => actFollowUp(row, 'generate')}>重新生成单次随访</button><button disabled={busy} onClick={() => actFollowUp(row, 'take_over')}>人工填写单次随访</button></>}
+            {status === 'failed' && <><button disabled={busy} onClick={() => actFollowUp(row, 'generate')}>重新生成单次随访</button><button disabled={busy} onClick={() => actFollowUp(row, 'take_over')}>人工填写单次随访</button><button disabled={busy} onClick={() => actFollowUp(row, 'reject')}>确认无需新增随访</button></>}
             {status === 'ready' && !row.followUpDrafts?.length && <><button disabled={busy} onClick={() => updateFollowUps(row._id, [{ title: '', content: '', date: '', category: 'information', requiresService: false }])}>添加单次随访</button><button disabled={busy} onClick={() => actFollowUp(row, 'reject')}>确认无需新增随访</button></>}
           </div>}
           {historical && row.followUpPublication?.status !== 'published' && canEdit && <button disabled={busy} onClick={() => actFollowUp(row, 'approve')}>重试发布单次随访</button>}

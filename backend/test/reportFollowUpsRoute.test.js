@@ -105,6 +105,15 @@ test('无明确后续行动可确认无需随访，保存决定并关闭审核�
   assert.equal(completed, true);
   assert.equal((await request(t, { action: 'reject', revision: 0 })).status, 409);
 });
+test('草稿生成失败时可直接确认无需随访，不触发发布', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  t.mock.method(Draft, 'findById', async () => row({ followUpAutomation: { status: 'failed' } }));
+  t.mock.method(Draft, 'findOneAndUpdate', async (_query, update) => row({ status: update.$set.status, __v: 1 }));
+  t.mock.method(workflow, 'completeReportReview', async () => {});
+  const result = await request(t, { action: 'reject', revision: 0 });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.status, 'rejected');
+});
 test('发布失败保留已批准快照，重试忽略客户端替换内容', async t => {
   actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
   let current = row(); let assigned = false; const titles = [];
