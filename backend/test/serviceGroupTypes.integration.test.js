@@ -27,6 +27,27 @@ test('isolated Mongo: migration preserves history, four independent groups, memb
   assert.equal(response.code,200,JSON.stringify(response.body));groups[type]=response.body.data.id;
  }
  assert.equal(new Set(Object.values(groups).map(String)).size,4);assert.equal(await Group.countDocuments({patientId:patient}),4);
+ // The assigned advisor sees every group. Other professionals cannot read a
+ // colleague's group merely because they are assigned to the same customer.
+ for(const [id,role,visible] of [[advisor,'familyDoctor',4],[nutrition,'nutritionist',1],[medical,'medicalAssistant',1],[specialty,'specialist',1],[manager,'healthManager',4]]){
+   const actor={_id:id,tenantId:tenant,role};
+   const list=res();await handler(staffRouter,'/','get')({staff:actor,query:{}},list,e=>{throw e});
+   assert.equal(list.body.data.length,visible,role);
+   for(const [type,gid] of Object.entries(groups)){
+     const read=res();await handler(staffRouter,'/:groupId/messages','get')({staff:actor,params:{groupId:String(gid)},query:{}},read,e=>{throw e});
+     const allowed=role==='familyDoctor'||role==='healthManager'||String({nutrition,medical,specialty}[type])===String(id);
+     assert.equal(read.code,allowed?200:403,`${role}/${type}`);
+   }
+ }
+ const Team=require('../src/models/Team'),mentor=oid(),team=oid();
+ await Team.collection.insertOne({_id:team,tenantId:tenant,mentorId:mentor,status:'active'});
+ await Admin.collection.updateOne({_id:nutrition},{$set:{teamId:team}});
+ const observer={_id:mentor,tenantId:tenant,role:'nutritionist',staffStatus:'active'};
+ const observed=res();await handler(staffRouter,'/','get')({staff:observer,query:{}},observed,e=>{throw e});
+ assert.equal(observed.body.data.length,1);assert.equal(observed.body.data[0].supervised,true);
+ assert.equal(String(observed.body.data[0].id),String(groups.nutrition));
+ const read=res();await handler(staffRouter,'/:groupId/messages','get')({staff:observer,params:{groupId:String(groups.nutrition)},query:{}},read,e=>{throw e});assert.equal(read.code,200);
+ const write=res();await handler(staffRouter,'/:groupId/messages','post')({staff:observer,params:{groupId:String(groups.nutrition)},body:{content:'不得发送'}},write,e=>{throw e});assert.equal(write.code,403);
  const duplicate=res();await handler(staffRouter,'/','post')({staff,body:{patientId:String(patient),serviceType:'advisor',memberIds:[String(advisor),String(manager)],membershipVersion:0}},duplicate);assert.equal(duplicate.code,409);
  const denied=res();await handler(staffRouter,'/:groupId/messages','post')({staff:{_id:nutrition,tenantId:tenant,role:'nutritionist'},params:{groupId:String(groups.advisor)},body:{content:'不可发送'}},denied);assert.equal(denied.code,403);
  await Inbox.collection.insertOne({_id:oid(),user:patient,unread:true,type:'system',dedupeKey:`in-app-service-group:${oldMessage}`,action:{type:'service_group',groupId:String(groups.advisor)}});

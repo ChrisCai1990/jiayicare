@@ -10,11 +10,9 @@ const canUseGroupModule = permissions => !!permissions?.patients?.view;
 const isAssignedHealthManager = (patient, staff) => !!patient && !!staff &&
   same(patient.assignedHealthManager, staff._id);
 const isAssignedLeader = (patient, staff) => !!patient && !!staff &&
-  (same(patient.assignedSpecialist, staff._id) ||
-    same(patient.assignedFamilyDoctor, staff._id) ||
-    same(patient.assignedNutritionist, staff._id) ||
-    same(patient.assignedMedicalAssistant, staff._id) ||
-    same(patient.assignedHealthManager, staff._id));
+  !patient.isDeleted && staff.staffStatus !== 'inactive' &&
+  same(patient.tenantId, staff.tenantId) && staff.role === 'familyDoctor' &&
+  same(patient.assignedFamilyDoctor, staff._id);
 
 function canCustomerAccess(group, customer) {
   return !!group && group.status === 'active' && (group.memberIds || []).length > 0 &&

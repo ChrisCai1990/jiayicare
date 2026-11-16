@@ -1,7 +1,7 @@
 .service-assistant.in-app-service-groups {
   max-width: 1480px;
   width: 100%;
-  height: calc(100dvh - 68px);
+  height: auto;
   min-height: 400px;
   padding: 0;
   display: flex;
@@ -65,8 +65,9 @@
   display: grid;
   grid-template-columns: minmax(240px, 310px) minmax(0, 1fr);
   gap: 16px;
-  flex: 1;
-  min-height: 0;
+  flex: none;
+  height: max(560px, calc(100dvh - 300px));
+  min-height: 560px;
   min-width: 0;
 }
 .sg-group-list,
@@ -154,6 +155,7 @@
 
 @media (max-width: 800px) {
   .sg-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(60px, 100px) minmax(0, 1fr); }
+  .sg-workspace { height: max(680px, calc(100dvh - 200px)); min-height: 680px; }
   .sg-group-list { max-height: 100px; }
   .sg-chat-panel { min-height: 0; }
 }
@@ -173,7 +175,7 @@
   .sg-composer { padding: 8px 12px; }
 }
 @media (max-width: 768px) {
-  .service-assistant.in-app-service-groups { height: calc(100dvh - 96px); }
+  .service-assistant.in-app-service-groups { height: auto; }
 }
 
 .sg-lifecycle {flex-shrink:0;max-height:24vh;overflow:auto;background:#eef9f9;border-radius:12px;padding:12px;margin-bottom:8px;}

@@ -160,7 +160,7 @@ export default function InAppServiceGroupsPage() {
     <nav className="sg-filters" aria-label="服务类型">
       {[['','全部'],...categories.map(([key,label]) => [key,label]),['legacy','原服务群']].map(([key,label]) => <button key={key} aria-pressed={category === key} onClick={() => { setCategory(key); setSelected(null); currentId.current = ''; setConfiguration(null); }}>{label}</button>)}
     </nav>
-    <p>客户的健管专员负责建群和选择入群人员；健康顾问、营养师及就医专员担任团队负责人时，可监管本团队成员的服务对话。未入群人员不能回复。</p>
+    <p>所属健康顾问统筹查看客户全部服务群；其他岗位仅查看自己参与的服务群，团队负责人可只读监管本团队成员参与的群。健管专员负责建群，未入群人员不能回复。</p>
     {canConfigure && <details className="sg-manual"><summary>手动配置服务群</summary>
     <div className="sg-search-row">
       <input aria-label="查找客户" value={search} onChange={e => setSearch(e.target.value)}
@@ -220,7 +220,7 @@ export default function InAppServiceGroupsPage() {
         {selected ? <>
           <div className="sg-chat-header">
             <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
-              <small>客户：{selected.patientName} · {customerCode(selected.patientId)}</small><br />
+              <small>客户：{selected.patientName} · {customerCode(selected.patientId)}</small>
               <small>团队成员：{selected.staff.map(memberLabel).join('、')}</small></div>
             {selected.canConfigure && selected.status !== 'closed' && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
           </div>
