@@ -22,7 +22,7 @@ async function grantActivationReward(userId) {
   await grant(claimed._id, cfg.firstLoginAmount ?? 100, '客户激活奖励基金');
   await Message.create({
     user: claimed._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
-    content: `您已完成激活，¥${Number(cfg.firstLoginAmount ?? 100)} 奖励基金已到账。`,
+    content: `您已完成激活，¥${Number(cfg.firstLoginAmount ?? 100)} 健康礼遇金已到账。`,
   });
   return true;
 }
@@ -39,7 +39,7 @@ async function grantFirstQuestionnaireReward(userId) {
   await grant(claimed._id, cfg.firstQuestionnaireAmount ?? 50, '首次完成健康问卷奖励基金');
   await Message.create({
     user: claimed._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
-    content: `您已完成健康问卷，¥${Number(cfg.firstQuestionnaireAmount ?? 50)} 奖励基金已到账。`,
+    content: `您已完成健康问卷，¥${Number(cfg.firstQuestionnaireAmount ?? 50)} 健康礼遇金已到账。`,
   });
   return true;
 }
@@ -76,11 +76,11 @@ async function grantReferralQuestionnaireReward(userId) {
   const notices = [];
   if (Number(cfg.inviterAmount) > 0) notices.push(Message.create({
     user: inviter._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
-    content: `好友已完成健康问卷，¥${Number(cfg.inviterAmount)} 健康基金已到账。感谢你的分享。`,
+    content: `好友已完成健康问卷，¥${Number(cfg.inviterAmount)} 健康礼遇金已到账。感谢你的分享。`,
   }));
   if (Number(cfg.inviteeAmount) > 0) notices.push(Message.create({
     user: claimed._id, type: 'system', sender: '嘉医汇', title: '健康基金已到账', unread: true,
-    content: `您已完成健康问卷，¥${Number(cfg.inviteeAmount)} 邀请健康基金已到账。`,
+    content: `您已完成健康问卷，¥${Number(cfg.inviteeAmount)} 健康礼遇金已到账。`,
   }));
   await Promise.all(notices);
   return true;
