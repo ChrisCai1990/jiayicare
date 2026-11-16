@@ -5,14 +5,14 @@ import './ServiceGroupHistory.css';
 const stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'});
 const roles={customer:'客户',healthManager:'健管专员',familyDoctor:'健康顾问',nutritionist:'营养师',medicalAssistant:'就医专员',specialist:'专科医师',ai:'AI健康管家'};
 export default function ServiceGroupHistory({group,onClose}) {
-  const [filters,setFilters]=useState({q:'',start:'',end:'',kind:'all'});
+  const [filters,setFilters]=useState({q:'',date:'',kind:'all'});
   const [rows,setRows]=useState([]),[context,setContext]=useState(null),[next,setNext]=useState(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const request=useRef(0),applied=useRef({}),firstInput=useRef(null),anchor=useRef(null);
-  const run=async(more=false)=>{
+  const run=async(more=false,override={})=>{
     const serial=++request.current;
     setBusy(true);setError('');setContext(null);
-    const query=more?applied.current:filters;
+    const query=more?applied.current:{...filters,...override};
     if(!more){applied.current=query;setRows([]);setNext(null);}
     try {
       const result=await api.history(group.id,{...query,...(more?{before:next}:{})});
@@ -44,8 +44,8 @@ export default function ServiceGroupHistory({group,onClose}) {
       <form onSubmit={e=>{e.preventDefault();run();}}>
         <input ref={firstInput} aria-label="聊天关键词" value={filters.q} maxLength={80} placeholder="输入聊天关键词" onChange={e=>setFilters({...filters,q:e.target.value})}/>
         <div className="gh-controls">
-          <label>开始日期<input type="date" value={filters.start} onChange={e=>setFilters({...filters,start:e.target.value})}/></label>
-          <label>结束日期<input type="date" value={filters.end} min={filters.start} onChange={e=>setFilters({...filters,end:e.target.value})}/></label>
+          <label>日期<input type="date" value={filters.date} onChange={e=>{setFilters({...filters,date:e.target.value});run(false,{date:e.target.value});}}/></label>
+          {filters.date&&<button type="button" onClick={()=>{setFilters({...filters,date:''});run(false,{date:''});}}>清除日期</button>}
           <label>类型<select aria-label="类型" value={filters.kind} onChange={e=>setFilters({...filters,kind:e.target.value})}><option value="all">全部</option><option value="text">文字</option><option value="image">图片</option><option value="file">文件（PDF）</option></select></label>
           <button disabled={busy} type="submit">查找</button>
         </div>

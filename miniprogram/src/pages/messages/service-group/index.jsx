@@ -6,13 +6,18 @@ import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { mediaUrl, inAppServiceGroupAPI as api } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
+import GroupHistory from '../../../components/GroupHistory';
 import GroupMaterialUpload from '../../../components/GroupMaterialUpload';
 
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
   month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
 }) : '';
 
+const MessageScroll=process.env.TARO_ENV==='h5'?View:ScrollView;
 export default function ServiceGroupPage() {
+  const [historyOpen,setHistoryOpen]=useState(false);
+  const [viewportHeight,setViewportHeight]=useState(null);
+  useEffect(()=>{if(process.env.TARO_ENV!=='h5')return;const resize=()=>{setViewportHeight(window.visualViewport?.height||window.innerHeight);if(followLatest.current)setScrollRequest({target:"group-msg-"+lastMessage.current,bottom:true});};resize();window.visualViewport?.addEventListener('resize',resize);window.addEventListener('resize',resize);return()=>{window.visualViewport?.removeEventListener('resize',resize);window.removeEventListener('resize',resize);};},[]);
   const { statusBarHeight } = useNavBar();
   const [group, setGroup] = useState(null);
   const [groups, setGroups] = useState([]);
@@ -76,7 +81,7 @@ export default function ServiceGroupPage() {
       if (!opened.current && rows.length) {
         opened.current = true;
         setUnreadAnchor(result.firstUnreadMessageId || '');
-        setScrollRequest({ target: 'group-msg-' + (result.firstUnreadMessageId || rows[rows.length - 1].id), bottom: !result.firstUnreadMessageId });
+        setScrollRequest({ target: 'group-msg-' + rows[rows.length - 1].id, bottom: true });
       }
       const latest = rows[rows.length - 1]?.id || '';
       if (latest !== lastMessage.current) {
@@ -120,11 +125,11 @@ export default function ServiceGroupPage() {
     finally { setBusy(false); }
   };
 
-  return <View style={{ height: process.env.TARO_ENV === 'h5' ? '100dvh' : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
+  return <View style={{ position:'relative',height: process.env.TARO_ENV === 'h5' ? (viewportHeight?viewportHeight+'px':'100vh') : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
     <View style={{ padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Text onClick={back} style={{ color: colors.primary, fontSize: '15px' }}>‹ 返回</Text>
       <Text style={{ color: colors.textPrimary, fontSize: '16px', fontWeight: 700, flex: 1, textAlign: 'center' }}>{group?.name || '我的服务群'}</Text>
-      <Text onClick={refresh} style={{ color: colors.primary, fontSize: '14px' }}>刷新</Text>
+      <View style={{display:"flex",gap:"10px"}}>{group&&<Text onClick={()=>setHistoryOpen(true)} style={{color:colors.primary,fontSize:"14px"}}>查找</Text>}<Text onClick={refresh} style={{color:colors.primary,fontSize:"14px"}}>刷新</Text></View>
     </View>
     <Text style={{ display: 'block', flexShrink: 0, padding: '10px 16px', color: colors.textMuted, fontSize: '12px' }}>
       {group ? `服务团队：${group.staff.map(person => person.name).join('、')}。团队负责人可查看沟通记录。`
@@ -147,10 +152,9 @@ export default function ServiceGroupPage() {
         {groups.length === 0 && <Text>健管专员尚未为您配置服务群，请联系服务团队。</Text>}
       </ScrollView>
       : <>
-        <View style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        <ScrollView id="service-group-scroll" scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget}
+        <MessageScroll id="service-group-scroll" scrollY scrollTop={scrollTop} scrollIntoView={scrollTarget}
           onScroll={event => { const detail = event.detail; if (process.env.TARO_ENV === 'h5') { const pane = document.getElementById('service-group-scroll'); if (pane) followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 64; } else { followLatest.current = paneHeight.current > 0 && detail.scrollHeight - detail.scrollTop - paneHeight.current < 64; } }}
-          style={{ height: '100%', minHeight: 0, padding: '12px 16px 24px', boxSizing: 'border-box' }}>
+          style={{ flex:1,height:0,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',overscrollBehavior:'contain',padding:'12px 16px 24px',boxSizing:'border-box' }}>
           {older&&<Text onClick={loadEarlier} style={{display:'block',textAlign:'center',padding:'10px',color:colors.primary}}>查看更早消息</Text>}
           {messages.map(message => <View id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
             padding: '10px 12px', borderRadius: `${radius.sm}px`, backgroundColor: message.senderType === 'customer' ? '#D8EFE4' : '#fff' }}>
@@ -166,8 +170,8 @@ export default function ServiceGroupPage() {
                 : <Image key={i} src={url} mode="widthFix" onClick={()=>Taro.previewImage({current:url,urls:message.material.files})} style={{width:'100px',margin:'6px',borderRadius:'6px'}} />)}
             </View>}
           </View>)}
-        </ScrollView>
-        </View>
+        </MessageScroll>
+        <Text onClick={()=>{followLatest.current=true;setScrollRequest({target:"group-msg-"+lastMessage.current,bottom:true});}} style={{flexShrink:0,textAlign:"center",padding:"5px",fontSize:"12px",color:colors.primary}}>回到最新消息 ↓</Text>
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
         <GroupMaterialUpload key={group.id} groupId={group.id} onSent={()=>{followLatest.current=true;refresh();}} />
         {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>text.endsWith('@')?text+p.name+' ':text+'@'+p.name+' ');setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{p.kind==='ai'?' · AI健康管家':''}</View>)}</ScrollView>}
@@ -181,5 +185,6 @@ export default function ServiceGroupPage() {
         </View>
         </>}
       </>}
+    {historyOpen&&group&&<GroupHistory key={group.id} topInset={statusBarHeight} group={group} onClose={()=>setHistoryOpen(false)}/>}
   </View>;
 }

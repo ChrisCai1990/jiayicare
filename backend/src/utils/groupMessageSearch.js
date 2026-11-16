@@ -10,7 +10,7 @@ function searchFilter(query={}) {
   const q=String(query.q || '').trim();
   if(q.length>80)fail('关键词请控制在80字以内');
   if(q)filter.content={$regex:q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),$options:'i'};
-  const start=query.start?day(String(query.start)):null,end=query.end?day(String(query.end)):null;
+  const start=query.date?day(String(query.date)):(query.start?day(String(query.start)):null),end=query.date?day(String(query.date)):(query.end?day(String(query.end)):null);
   if(start&&end&&+start>+end)fail('开始日期不能晚于结束日期');
   if(start||end)filter.createdAt={...(start?{$gte:start}:{}),...(end?{$lt:new Date(+end+86400000)}:{})};
   if(!['all','image','file','text'].includes(query.kind || 'all'))fail('消息类型无效');

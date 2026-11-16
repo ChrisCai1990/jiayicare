@@ -260,6 +260,8 @@ export const messagesAPI = {
 };
 
 export const inAppServiceGroupAPI = {
+  history: (id,query) => request(`/in-app-service-groups/${encodeURIComponent(id)}/history?${Object.entries(query).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&')}`),
+  historyContext: (id,messageId) => request(`/in-app-service-groups/${encodeURIComponent(id)}/history/${encodeURIComponent(messageId)}/context`),
   uploadMaterial: (id, data) => request(`/in-app-service-groups/${encodeURIComponent(id)}/materials`, { method:'POST', timeout:180000, body:JSON.stringify(data) }),
   list: () => request('/in-app-service-groups'),
   messages: (id, before = '') => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(before)}`),

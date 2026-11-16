@@ -378,8 +378,14 @@ async function readableStaffGroup(req) {
 async function logHistoryView(req,group,count,observed) {
   if(observed)await View.create({tenantId:group.tenantId,groupId:group._id,patientId:group.patientId,viewerId:req.staff._id,messageCount:count});
 }
-staffRouter.get('/:groupId/history',wrap(async(req,res)=>{
-  const {group,observed}=await readableStaffGroup(req);
+async function readableHistoryGroup(req) {
+  if(req.staff)return readableStaffGroup(req);
+  const {group,patient}=await groupAndPatient(req.params.groupId,req.user.tenantId,true);
+  if(!canCustomerAccess({...group,status:'active'},req.user))fail('无权查看服务群');
+  return {group,patient,observed:false};
+}
+const historyHandler=wrap(async(req,res)=>{
+  const {group,observed}=await readableHistoryGroup(req);
   const filter=require('../utils/groupMessageSearch').searchFilter(req.query);
   if(['image','file'].includes(req.query.kind)) {
     const reports=await MedicalReport.find({sourceInAppGroupId:group._id,user:group.patientId,tenantId:group.tenantId,
@@ -389,9 +395,9 @@ staffRouter.get('/:groupId/history',wrap(async(req,res)=>{
   const data=await recentMessages(group,req.query.before,filter);
   await logHistoryView(req,group,data.length,observed);
   res.json({success:true,data:[...data].reverse(),hasMore:data.length===100,nextBefore:data[0]?.id || null});
-}));
-staffRouter.get('/:groupId/history/:messageId/context',wrap(async(req,res)=>{
-  const {group,observed}=await readableStaffGroup(req);
+});
+const historyContextHandler=wrap(async(req,res)=>{
+  const {group,observed}=await readableHistoryGroup(req);
   const scope={groupId:group._id,tenantId:group.tenantId};
   const anchor=await Message.findOne({...scope,_id:validId(req.params.messageId)}).lean();
   if(!anchor)fail('消息不存在',404);
@@ -402,7 +408,11 @@ staffRouter.get('/:groupId/history/:messageId/context',wrap(async(req,res)=>{
   const data=await serializeMessages(group,[...before.reverse(),anchor,...after]);
   await logHistoryView(req,group,data.length,observed);
   res.json({success:true,data,anchorId:anchor._id});
-}));
+});
+for(const router of [staffRouter,customerRouter]) {
+ router.get('/:groupId/history',historyHandler);
+ router.get('/:groupId/history/:messageId/context',historyContextHandler);
+}
 staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId, true);
   const direct = canStaffAccess({...group,status:'active'}, patient, req.staff);

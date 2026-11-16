@@ -26,7 +26,8 @@ test('history filters, pagination, permissions, context and offline recovery', {
  let r=await call();assert.equal(r.body.data.length,100);const first=r.body.data.map(x=>String(x.id));
  r=await call({before:String(r.body.nextBefore)});assert.equal(r.body.data.length,25);assert.ok(r.body.data.every(x=>!first.includes(String(x.id))));
  assert.equal((await call({q:'[test]'})).body.data.length,1);
- assert.equal((await call({start:'2026-11-16',end:'2026-11-16'})).body.data.length,100);
+ assert.equal((await call({date:'2026-11-16'})).body.data.length,100);
+ assert.equal((await call({date:'2026-11-15'})).body.data.length,0);
  assert.equal((await call({end:'2026-11-15'})).body.data.length,0);
  assert.equal((await call({start:'2026-02-30'})).code,400);
  assert.equal((await call({}, {...staff,_id:oid()})).code,403);
@@ -41,6 +42,12 @@ test('history filters, pagination, permissions, context and offline recovery', {
  assert.equal((await call({kind:'image'})).body.data.length,1);assert.equal((await call({kind:'file'})).body.data.length,1);
  assert.ok((await call({kind:'text'})).body.data.every(x=>!x.material));
  await Group.updateOne({_id:groupId},{$set:{status:'closed'}});assert.equal((await call()).code,200);
+ const customerCall=async(user,query={},messageId)=>{const r=res();await handler(customerRouter,messageId?'/:groupId/history/:messageId/context':'/:groupId/history','get')({user,params:{groupId:String(groupId),messageId},query},r,e=>{throw e});return r};
+ const customer={_id:patient,tenantId:tenant};
+ assert.equal((await customerCall(customer,{date:'2026-11-16',kind:'image'})).body.data.length,1);
+ assert.equal((await customerCall(customer,{},String(rows[60]._id))).body.data.length,41);
+ assert.equal((await customerCall({...customer,_id:oid()})).code,403);
+ assert.equal((await customerCall({...customer,tenantId:oid()})).code,404);
  // Recovery after presence expires; no model/network or real customer is used.
  const retry=require('../src/utils/serviceGroupReplyRetry'),assistant=require('../src/utils/serviceGroupAssistant');
  const old=assistant.reply;let calls=0;assistant.reply=async(g,tr)=>{calls++;await Msg.collection.insertOne({_id:oid(),groupId:g,tenantId:tenant,patientId:patient,senderType:'ai',replyTo:tr.id,createdAt:new Date()})};t.after(()=>assistant.reply=old);
