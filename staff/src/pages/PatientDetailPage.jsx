@@ -2889,6 +2889,19 @@ export default function PatientDetailPage() {
     finally { setInsuranceCaseSaving(false) }
   }
 
+  const [insuranceStepSaving, setInsuranceStepSaving] = useState('')
+  const confirmInsuranceStep = async (serviceCase, step) => {
+    if (staff?.role !== 'healthManager' || insuranceStepSaving || step.status === 'completed') return
+    if (!window.confirm(`确认已完成“${step.title}”的核对或办理？确认后将记录为已完成。`)) return
+    setInsuranceStepSaving(String(step._id))
+    try {
+      await staffAPI.updateInsuranceCaseStep(serviceCase._id, step._id, { status: 'completed' })
+      await load(false)
+      toast('保险服务步骤已确认')
+    } catch (err) { toast(err.message || '核对失败，请重试') }
+    finally { setInsuranceStepSaving('') }
+  }
+
   // 健康数据记录有疑问时医护端修正：血压拆sys/dia两个数值输入，其余类型统一走单值输入
   const beijingRecordTime = value => {
     const date = new Date(value)
@@ -5929,7 +5942,15 @@ export default function PatientDetailPage() {
                     <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 80 }}>重疾险：</span>
                     <span style={{ fontSize: 13, color: '#1A2B24' }}>{user.critical_illness || '-'}</span>
                   </div>
-                  {(data.insuranceCases || []).length > 0 && <div style={{ marginTop: 12, borderTop: '1px solid #E6E1D8', paddingTop: 10 }}><div style={{ fontWeight: 700, fontSize: 13, marginBottom: 7 }}>保险服务案件</div>{data.insuranceCases.map(item => <details key={item._id} style={{ marginBottom: 6 }}><summary style={{ cursor: 'pointer', fontSize: 12 }}>{item.title} · {item.status === 'closed' ? '已结案' : '处理中'}</summary><div style={{ padding: '7px 0 0 12px' }}>{(item.steps || []).map(step => <label key={step._id} style={{ display: 'block', fontSize: 12, marginBottom: 5 }}><input type="checkbox" checked={step.status === 'completed'} disabled={step.status === 'completed'} onChange={async () => { await staffAPI.updateInsuranceCaseStep(item._id, step._id, { status: 'completed' }); load(false) }} /> {step.title}</label>)}</div></details>)}</div>}
+                  {(data.insuranceCases || []).length > 0 && <div style={{ marginTop: 12, borderTop: '1px solid #E6E1D8', paddingTop: 10 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 7 }}>保险服务案件</div>
+                    {data.insuranceCases.map(item => <details key={item._id} style={{ marginBottom: 6 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 12 }}>{item.title} · {item.status === 'closed' ? '已结案' : '处理中'}</summary>
+                      <div style={{ padding: '7px 0 0 12px' }}>{(item.steps || []).map(step => <label key={step._id} style={{ display: 'block', fontSize: 12, marginBottom: 5 }}>
+                        <input type="checkbox" checked={step.status === 'completed'} disabled={staff?.role !== 'healthManager' || step.status === 'completed' || Boolean(insuranceStepSaving)} onChange={() => confirmInsuranceStep(item, step)} /> {step.title}
+                      </label>)}</div>
+                    </details>)}
+                  </div>}
                 </div>
               )}
             </div>

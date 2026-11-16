@@ -1399,17 +1399,17 @@ router.post('/patients/:id/insurance-cases', staffAuth, async (req, res) => {
 });
 
 router.patch('/insurance-cases/:caseId/steps/:stepId', staffAuth, async (req, res) => {
+  if (req.staff.role !== 'healthManager') return res.status(403).json({ success: false, message: '仅健管专员可核对保险服务步骤' });
   const serviceCase = await InsuranceServiceCase.findById(req.params.caseId);
   if (!serviceCase) return res.status(404).json({ success: false, message: '保险服务案件不存在' });
-  if (req.staff.role !== 'superadmin') {
-    const patient = await User.findById(serviceCase.patientId).select('assignedHealthManager assignedFamilyDoctor assignedHealthPlanner assignedMedicalAssistant');
-    const visibleIds = (await getVisibleStaffIds(req.staff)).map(String);
-    const allowed = [serviceCase.assignedTo, patient?.assignedHealthManager, patient?.assignedFamilyDoctor, patient?.assignedHealthPlanner, patient?.assignedMedicalAssistant].some(value => value && visibleIds.includes(String(value)));
-    if (!allowed) return res.status(403).json({ success: false, message: '无权限处理该会员的保险案件' });
-  }
+  const patient = await User.findById(serviceCase.patientId).select('assignedHealthManager');
+  if (!patient || ![serviceCase.assignedTo, patient.assignedHealthManager].some(value => value && String(value) === String(req.staff._id)))
+    return res.status(403).json({ success: false, message: '仅负责该会员的健管专员可核对保险服务步骤' });
   const step = serviceCase.steps.id(req.params.stepId);
   if (!step) return res.status(404).json({ success: false, message: '服务步骤不存在' });
-  step.status = req.body.status || step.status;
+  if (req.body.status !== 'completed') return res.status(400).json({ success: false, message: '请选择有效的核对状态' });
+  if (step.status === 'completed') return res.json({ success: true, data: serviceCase });
+  step.status = 'completed';
   step.note = req.body.note ?? step.note;
   if (step.status === 'completed') { step.completedAt = new Date(); step.completedByName = req.staff.name || ''; }
   serviceCase.status = serviceCase.steps.every(item => ['completed', 'skipped'].includes(item.status)) ? 'closed' : 'verifying';
