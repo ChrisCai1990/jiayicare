@@ -57,6 +57,16 @@ test('group materials: permissions, supported categories, durable retry and manu
  await call(user,body);assert.equal(queued.length,1);
  const queuedReport=await Report.findById(first.body.data.reportId).lean();
  assert.equal(queuedReport.aiStatus,'processing');assert.equal(queuedReport.audit_status,'unaudited');assert.equal(queuedReport.reportItems.length,0);
+
+ const assistant=require('../src/utils/serviceGroupAssistant');const originalReply=assistant.reply;const calls=[];assistant.reply=async(...args)=>calls.push(args);t.after(()=>assistant.reply=originalReply);
+ await require('../src/models/AiDataConsent').collection.insertOne({user:patient,purpose:'assistant',provider:'qwen',granted:true,version:consent.VERSION});
+ const staff={_id:manager,tenantId:tenant,role:'healthManager',name:'合成健管'};
+ const mention=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'@小嘉（AI健康管家） 请说明服务流程',mentionIds:[String(groupId)]}},mention,e=>{throw e});
+ assert.equal(mention.code,201,JSON.stringify(mention.body));assert.equal(mention.body.data.mentions[0].kind,'ai');assert.equal(calls.length,1);
+ assert.equal(String(calls[0][1].senderId),String(manager));
+ assert.ok(+(await Group.findById(groupId)).humanActiveUntil>Date.now());
+ const fake=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'@小嘉',mentionIds:[String(oid())]}},fake,e=>{throw e});assert.equal(fake.code,400);
+ const ordinary=res();await handler(staffRouter,'/:groupId/messages','post')({staff,params:{groupId:String(groupId)},body:{content:'正常接待',mentionIds:[]}},ordinary,e=>{throw e});assert.equal(ordinary.code,201);assert.equal(calls.length,1);
  await Group.updateOne({_id:groupId},{$set:{status:'closed'}});
  assert.equal((await call(user,{...body,requestId:'material_closed_123456'})).code,404);
  assert.equal(await Report.countDocuments(),5);

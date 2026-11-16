@@ -5,7 +5,7 @@ import './InAppServiceGroupsPage.css';
 
 const categories = [['advisor','健康顾问','嘉医服务群'],['nutrition','营养师','营养干预服务群'],['medical','就医专员','就医服务群'],['specialty','专科医师','专病管理群']];
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '暂无消息';
-const roleLabel = person => person.kind === 'customer' ? '客户' : ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户' })[person.role] || person.role || '服务人员';
+const roleLabel = person => person.kind === 'customer' ? '客户' : ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', ai:'AI健康管家', customer: '客户' })[person.role] || person.role || '服务人员';
 const memberLabel = person => `${person.name} · ${roleLabel(person)}`;
 const customerCode = id => id ? `KH-${id}` : '待核对';
 
@@ -134,7 +134,7 @@ export default function InAppServiceGroupsPage() {
     try {await api.confirm({...confirmation,checked,note});setConfirmation(null);setSelected(null);currentId.current='';await Promise.all([refresh(),loadTasks()]);window.dispatchEvent(new Event('notif-refresh'));}
     catch(e){setError(e.message || '确认失败，请刷新后重试');}finally{setBusy(false);}
   };
-  const mentionCandidates = selected ? [...selected.staff, {...selected.customer,role:'客户'}].filter(p=>p.id) : [];
+  const mentionCandidates = selected ? [...selected.staff, {...selected.customer,role:'客户'}, {...selected.assistant,role:'ai'}].filter(p=>p.id) : [];
   const mention = person => {setMentionIds(ids=>[...new Set([...ids,String(person.id)])]);const label=person.name+'（'+roleLabel(person)+'）';setDraft(text=>text.endsWith('@')?text+label+' ':text+'@'+label+' ');setShowMentions(false);};
   const visibleGroups = groups.filter(group => scope === 'all' ||
     scope === 'supervised' && group.supervised ||
@@ -226,7 +226,7 @@ export default function InAppServiceGroupsPage() {
           </div>
           {selected.assistant && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: '#eef9f9' }}>
             <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} style={{ width: 40, height: 40, borderRadius: '50%' }} />
-            <small>小嘉｜嘉医汇AI健康管家 · {selected.supervised ? '仅监管查看不影响AI接待' : '您正在接待此群，小嘉暂停回复；离开后恢复自动接待'}</small>
+            <small>小嘉｜嘉医汇AI健康管家 · {selected.supervised ? '仅监管查看不影响AI接待' : '您正在接待此群，小嘉暂停自动回复，可@小嘉单次协助；离开后恢复自动接待'}</small>
           </div>}
           <div className="sg-messages" ref={messagePane} onScroll={event => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 48; }}>
             {older&&<button onClick={()=>{followLatest.current=false;loadMessages(selected.id,messages[0]?.id);}}>查看更早消息</button>}
@@ -235,7 +235,7 @@ export default function InAppServiceGroupsPage() {
               className={`sg-message${message.senderType === 'staff' ? ' is-staff' : ''}`}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 {message.senderAvatar && <img alt="" src={message.senderAvatar.startsWith('/') ? API_ORIGIN + message.senderAvatar : message.senderAvatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />}
-                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
+                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', ai:'AI健康管家', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
               </div>
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
               <div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>

@@ -65,7 +65,7 @@ function summary(group, patient, staffMembers, supervised = false, canConfigure 
     staff: staffMembers.map(person => ({ id: person._id, name: person.name, role: person.role, avatar: person.avatar || '' })),
     lastMessageAt: group.lastMessageAt || null,
     waitingForStaff: needsStaffReply(group),
-    customer: { id: patient._id, name: patient.name, kind: 'customer', role: '客户' }, supervised, canConfigure, assistant: assistant.identity };
+    customer: { id: patient._id, name: patient.name, kind: 'customer', role: '客户' }, supervised, canConfigure, assistant: {...assistant.identity,id:group._id,kind:'ai'} };
 }
 function leaderCanConfigure(patient, staff) {
   return staff.role === 'superadmin' || isAssignedHealthManager(patient, staff);
@@ -103,13 +103,14 @@ async function send(group, senderType, sender, content, rawMentions = []) {
   if (locked.status !== 'active') fail('服务群已归档，不能发送消息', 409);
   const patient = await User.findOne({_id:group.patientId,tenantId:group.tenantId}).lean();
   const people = await groupStaff(locked,patient);
-  const candidates = [...people.map(p=>({id:p._id,kind:'staff',name:p.name,role:events.roles[p.role] || '服务人员'})), {id:patient._id,kind:'customer',name:patient.name,role:'客户'}];
-  if (!Array.isArray(rawMentions) || rawMentions.length > 21) fail('@成员无效',400);
+  const candidates = [...people.map(p=>({id:p._id,kind:'staff',name:p.name,role:events.roles[p.role] || '服务人员'})), {id:patient._id,kind:'customer',name:patient.name,role:'客户'}, {id:group._id,kind:'ai',name:assistant.identity.name,role:'AI健康管家'}];
+  if (!Array.isArray(rawMentions) || rawMentions.length > 22) fail('@成员无效',400);
   const mentions = [...new Set(rawMentions.map(String))].map(id=>candidates.find(p=>String(p.id)===id));
   if(mentions.some(m=>!m)) fail('只能@当前群成员',400);
   if(senderType==='staff' && !canStaffAccess(locked,patient,sender)) fail('成员已调整，请刷新',403);
   const body = contentOf(content);
   if (!body || body.length > 2000) fail('请输入不超过2000字的消息', 400);
+  if (mentions.some(m=>m.kind==='ai')) await require('../utils/aiDataConsent').assertPermission(patient._id,'assistant','qwen');
   const message = await Message.create({ tenantId: group.tenantId, groupId: group._id,
     patientId: group.patientId, senderType, senderId: sender._id,
     senderName: sender.name || '服务成员', content: body, mentions });
@@ -124,7 +125,7 @@ async function send(group, senderType, sender, content, rawMentions = []) {
       await events.notifyCustomer(group,message);
     } catch (error) { console.error('[in-app-service-group] inbox notification failed', error.message); }
   }
-  return { id: message._id, senderType, senderName: message.senderName,
+  return { id: message._id, senderType, senderId:sender._id, senderName: message.senderName,
     content: message.content, mentions, createdAt: at };
  });
 }
@@ -372,7 +373,9 @@ staffRouter.post('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
   if (!canStaffAccess(group, patient, req.staff)) fail('仅当前服务人员可以回复');
   await Group.updateOne({ _id: group._id }, { $max: { humanActiveUntil: new Date(Date.now() + 90000) } });
-  res.status(201).json({ success: true, data: await send(group, 'staff', req.staff, req.body?.content, req.body?.mentionIds) });
+  const message = await send(group, 'staff', req.staff, req.body?.content, req.body?.mentionIds);
+  res.status(201).json({ success: true, data: message });
+  if (assistant.isMentioned(group,message)) void assistant.reply(group._id,message);
 }));
 
 module.exports = { customerRouter, staffRouter };

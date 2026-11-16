@@ -66,3 +66,31 @@ test('纯招呼不调用模型且仅首次介绍；保留授权检查', async ()
   assert.equal(later.calls(), 0);
   assert.equal(later.saved[0].content, '您好，我在。有什么需要帮忙的，请告诉我。');
 });
+
+
+test('@小嘉 bypasses human presence once, but ordinary staff messages and closed groups stay silent', async()=>{
+  const mentioned={...trigger,senderType:'customer',senderId:'patient-a',mentions:[{id:base._id,kind:'ai'}]};
+  const active={...base,humanActiveUntil:new Date(Date.now()+90000),lastStaffMessageAt:now};
+  assert.equal(canReply(active,mentioned),true);
+  assert.equal(canReply(active,{...mentioned,mentions:[]}),false);
+  assert.equal(canReply(active,{...mentioned,senderType:'staff',mentions:[]}),false);
+  assert.equal(canReply({...active,status:'closed'},mentioned),false);
+  assert.equal(canReply(active,{...mentioned,mentions:[{id:'other-group',kind:'ai'}]}),false);
+  const h=harness();let updates=[];
+  h.deps.Group.findById=()=>({lean:async()=>active});
+  h.deps.Group.updateOne=async(...args)=>updates.push(args);
+  await reply(base._id,mentioned,h.deps);
+  assert.equal(h.saved.length,1);assert.equal(h.saved[0].replyTo,trigger.id);
+  assert.ok(updates.every(([,change])=>!JSON.stringify(change).includes('humanActiveUntil')));
+});
+test('only currently assigned participating staff can invoke AI; explicit requests keep consent checks', async()=>{
+  for(const member of [true,false]){
+    const h=harness();
+    h.deps.User.findOne=()=>({lean:async()=>({_id:base.patientId,tenantId:base.tenantId,assignedHealthManager:member?'staff-a':'other-staff'})});
+    await reply(base._id,{...trigger,senderType:'staff',senderId:'staff-a',mentions:[{id:base._id,kind:'ai'}]},h.deps);
+    assert.equal(h.saved.length,member?1:0);
+  }
+  const h=harness();h.deps.consent.assertPermission=async()=>{throw Object.assign(new Error(),{code:'AI_DATA_CONSENT_REQUIRED'})};
+  await reply(base._id,{...trigger,senderType:'customer',mentions:[{id:base._id,kind:'ai'}]},h.deps);
+  assert.equal(h.saved.length,0);assert.equal(h.calls(),0);
+});
