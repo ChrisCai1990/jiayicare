@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro';
 import {browserRecorder} from '../utils/groupRecorder';
 import {inAppServiceGroupAPI as api} from '../services/api';
 import {ensureAiDataConsent} from '../utils/aiDataConsent';
-export default function GroupVoiceInput({groupId,onSent,onText}){
+export default function GroupVoiceInput({groupId,onSent,onText,quotedMessageId=null}){
  const [recording,setRecording]=useState(false),[pending,setPending]=useState(null),[busy,setBusy]=useState(false),[cancelling,setCancelling]=useState(false);
  const ref=useRef({active:true,held:false,cancel:false,starting:false,recorder:null,y:0});
  const finish=audio=>{setRecording(false);if(ref.current.active&&!ref.current.cancel){if(audio.duration<0.6)Taro.showToast({title:'说话时间太短',icon:'none'});else setPending(audio);}};
@@ -27,7 +27,7 @@ export default function GroupVoiceInput({groupId,onSent,onText}){
   finally{r.starting=false;}
  };
  const stop=cancel=>{const r=ref.current;r.held=false;r.cancel=r.cancel||cancel;r.recorder?.stop(r.cancel);if(r.cancel)setRecording(false);};
- const submit=async convert=>{if(!pending||busy)return;setBusy(true);try{if(convert){if(!await ensureAiDataConsent('speech'))return;const result=await api.speech(groupId,pending);onText(result.data.text);}else{await api.sendVoice(groupId,pending);onSent?.();}setPending(null);}catch(e){Taro.showToast({title:e.message||'语音处理失败，可重试',icon:'none'});}finally{setBusy(false);}};
+ const submit=async convert=>{if(!pending||busy)return;setBusy(true);try{if(convert){if(!await ensureAiDataConsent('speech'))return;const result=await api.speech(groupId,pending);onText(result.data.text);}else{await api.sendVoice(groupId,pending,quotedMessageId);onSent?.();}setPending(null);}catch(e){Taro.showToast({title:e.message||'语音处理失败，可重试',icon:'none'});}finally{setBusy(false);}};
  const action={padding:'10px',color:'#187e87'};
  return <View style={{flex:1,minWidth:0}}>{pending?<View style={{background:'#fff',borderRadius:'8px'}}><Text style={{display:'block',padding:'6px'}}>录音 {Math.ceil(pending.duration)} 秒</Text><View style={{display:'flex',flexWrap:'wrap'}}><Text style={action} onClick={()=>submit(false)}>{busy?'处理中…':'发送语音'}</Text><Text style={action} onClick={()=>submit(true)}>转文字</Text><Text style={action} onClick={()=>!busy&&setPending(null)}>取消</Text></View></View>:<View
  onTouchStart={start} onTouchMove={e=>{ref.current.cancel=ref.current.y-(e.touches?.[0]?.clientY||ref.current.y)>60;setCancelling(ref.current.cancel);}}
