@@ -44,7 +44,7 @@ export default function ServiceGroupHistory({group,onClose}) {
       <form onSubmit={e=>{e.preventDefault();run();}}>
         <input ref={firstInput} aria-label="聊天关键词" value={filters.q} maxLength={80} placeholder="输入聊天关键词" onChange={e=>setFilters({...filters,q:e.target.value})}/>
         <div className="gh-controls">
-          <label>日期<input type="date" value={filters.date} onChange={e=>{setFilters({...filters,date:e.target.value});run(false,{date:e.target.value});}}/></label>
+          <label>选择某一天<input type="date" value={filters.date} onChange={e=>{setFilters({...filters,date:e.target.value});run(false,{date:e.target.value});}}/></label>
           {filters.date&&<button type="button" onClick={()=>{setFilters({...filters,date:''});run(false,{date:''});}}>清除日期</button>}
           <label>类型<select aria-label="类型" value={filters.kind} onChange={e=>setFilters({...filters,kind:e.target.value})}><option value="all">全部</option><option value="text">文字</option><option value="image">图片</option><option value="file">文件（PDF）</option></select></label>
           <button disabled={busy} type="submit">查找</button>
