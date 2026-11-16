@@ -48,7 +48,7 @@ function ReportSourceSummary({ snapshot = {} }) {
   </details>
 }
 
-export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleOnly = false }) {
+export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleOnly = false, onCompleted }) {
   const [rows, setRows] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const [screening, setScreening] = useState({ rows: [], patientId: null, error: '', loading: true })
   const [dirtyRows, setDirtyRows] = useState({}), [reviewed, setReviewed] = useState({})
@@ -98,6 +98,9 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
       if (activePatient.current !== requestedPatient) return
       setRows(prev => prev.map(item => item._id === row._id ? result.data : item))
       setDirtyRows(prev => ({ ...prev, [row._id]: false }))
+      if (singleOnly && ['approve', 'reject'].includes(action) && ['approved', 'rejected'].includes(result.data?.status)) {
+        onCompleted?.(row._id)
+      }
     } catch (e) { if (activePatient.current === requestedPatient) setError(e.message) } finally { if (activePatient.current === requestedPatient) setBusy(false) }
   }
   const reference = screening.patientId === patientId ? approvedScreeningReference(screening.rows, year) : null
