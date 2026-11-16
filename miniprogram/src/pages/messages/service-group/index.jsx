@@ -164,7 +164,7 @@ export default function ServiceGroupPage() {
     finally { setBusy(false); }
   };
 
-  return <View style={{ position:'relative',height: process.env.TARO_ENV === 'h5' ? (viewportHeight?viewportHeight+'px':'100vh') : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
+  return <View onClick={()=>setEmojiOpen(false)} style={{ position:'relative',height: process.env.TARO_ENV === 'h5' ? (viewportHeight?viewportHeight+'px':'100vh') : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
     <View style={{ padding: `${safeHeaderTop + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Text onClick={back} style={{ color: colors.primary, fontSize: '15px' }}>‹ 返回</Text>
       <Text style={{ color: colors.textPrimary, fontSize: '16px', fontWeight: 700, flex: 1, textAlign: 'center' }}>{group?.name || '我的服务群'}</Text>
@@ -219,13 +219,13 @@ export default function ServiceGroupPage() {
         {quoteMenu&&<View style={{padding:'10px',background:'#fff',display:'flex',gap:'20px'}}><Text onClick={()=>{setQuote(quoteMenu);setQuoteMenu(null);}}>引用</Text><Text onClick={()=>setQuoteMenu(null)}>取消</Text></View>}
         {quote&&<View style={{padding:'8px',background:'#eef1ef',display:'flex',gap:'10px'}}><Text style={{flex:1,fontSize:'12px'}}>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)}</Text><Text onClick={()=>setQuote(null)}>取消引用</Text></View>}
         <GroupMaterialUpload key={group.id} groupId={group.id} onSent={()=>{followLatest.current=true;refresh();}} />
-        {emojiOpen&&<View style={{display:'flex',flexWrap:'wrap',flexShrink:0,padding:'8px',background:'#fff'}}>{emojis.map(emoji=><Text key={emoji} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))} style={{fontSize:'24px',padding:'8px'}}>{emoji}</Text>)}</View>}
+        {emojiOpen&&<View onClick={event=>event.stopPropagation()} style={{display:'flex',flexWrap:'wrap',flexShrink:0,padding:'8px',background:'#fff'}}>{emojis.map(emoji=><Text key={emoji} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))} style={{fontSize:'24px',padding:'8px'}}>{emoji}</Text>)}</View>}
         {showMentions&&<ScrollView scrollY style={{flexShrink:0,height:Math.min(160,mentionCandidates.length*44+16)+'px',maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+p.name+' '+text.slice(at+1):text+'@'+p.name+' ';});setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{' · '+(p.kind==='ai'?'AI健康管家':mentionRoles[p.role]||'服务人员')}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#fff' }}>
-          <Text onClick={()=>{setVoiceMode(v=>!v);setShowMentions(false);setEmojiOpen(false);}} style={{padding:'8px',color:colors.primary,flexShrink:0}}>{voiceMode?'键盘':'语音'}</Text>
+          <Text aria-label={voiceMode?'切换到键盘':'切换到语音'} onClick={()=>{setVoiceMode(v=>!v);setShowMentions(false);setEmojiOpen(false);}} style={{padding:'8px',fontSize:'24px',lineHeight:'28px',color:colors.primary,flexShrink:0}}>{voiceMode?'⌨':'🎙'}</Text>
           {voiceMode?<GroupVoiceInput key={group.id} groupId={group.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<Textarea value={draft} showConfirmBar={false} confirmType='send' onConfirm={send} onFocus={()=>setEmojiOpen(false)} onClick={()=>setEmojiOpen(false)} onInput={editDraft} maxlength={2000} autoHeight
             placeholder="给服务团队发消息" style={{ flex: 1, minHeight: '38px', maxHeight: '100px', padding: '8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.xs}px` }} />}
-          <Text onClick={()=>{if(!emojiOpen){if(process.env.TARO_ENV==='h5')document.activeElement?.blur?.();else Taro.hideKeyboard().catch(()=>{});}setEmojiOpen(v=>!v);setVoiceMode(false);setShowMentions(false);}} style={{padding:'8px',fontSize:'22px',flexShrink:0}}>☺</Text>
+          <Text onClick={event=>{event.stopPropagation();if(!emojiOpen){if(process.env.TARO_ENV==='h5')document.activeElement?.blur?.();else Taro.hideKeyboard().catch(()=>{});}setEmojiOpen(v=>!v);setVoiceMode(false);setShowMentions(false);}} style={{padding:'8px',fontSize:'22px',flexShrink:0}}>☺</Text>
           {!voiceMode&&<View onClick={send} style={{ padding: '10px 14px', backgroundColor: busy || !draft.trim() ? colors.textMuted : colors.primary, borderRadius: `${radius.xs}px` }}>
             <Text style={{ color: '#fff' }}>发送</Text>
           </View>}
