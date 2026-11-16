@@ -53,7 +53,7 @@ async function groupAndPatient(groupId, tenantId, readOnly = false) {
   const group = await Group.findOne({ _id: validId(groupId), tenantId, status: readOnly ? { $in: ['active','closed'] } : 'active' }).lean();
   if (!group) fail('服务群不存在', 404);
   const patient = await User.findOne({ _id: group.patientId, tenantId,
-    isDeleted: { $ne: true } }).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
+    isDeleted: { $ne: true } }).select('name preferredTitle gender tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   if (!patient) fail('服务对象不可用', 404);
   return { group, patient };
 }
@@ -183,7 +183,7 @@ staffRouter.get('/', wrap(async (req, res) => {
   const visibleIds = req.staff.role === 'superadmin' ? null : [req.staff._id, ...mentoredIds];
   const patientQuery = { tenantId: req.staff.tenantId, isDeleted: { $ne: true } };
   if (visibleIds) patientQuery.$or = assignmentFields.map(field => ({ [field]: { $in: visibleIds } }));
-  const patients = await User.find(patientQuery).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
+  const patients = await User.find(patientQuery).select('name preferredTitle gender tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   const groupQuery = { tenantId: req.staff.tenantId,
     patientId: { $in: patients.map(patient => patient._id) }, status: req.query.status === 'closed' ? 'closed' : 'active' };
   if (req.query.serviceType) {
@@ -215,7 +215,7 @@ staffRouter.get('/configuration/:patientId', wrap(async (req, res) => {
   await permitStaff(req);
   const patient = await User.findOne({ _id: validId(req.params.patientId),
     tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
-    .select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
+    .select('name preferredTitle gender tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   if (!patient || !leaderCanConfigure(patient, req.staff))
     fail('仅客户当前健管专员可配置群成员');
   const serviceType = req.query.serviceType;
@@ -234,7 +234,7 @@ staffRouter.post('/', wrap(async (req, res) => {
   await permitStaff(req);
   const patientId = validId(req.body?.patientId);
   const patient = await User.findOne({ _id: patientId, tenantId: req.staff.tenantId,
-    isDeleted: { $ne: true } }).select('name tenantId isDeleted ' + assignmentFields.join(' ')).lean();
+    isDeleted: { $ne: true } }).select('name preferredTitle gender tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   if (!patient || !leaderCanConfigure(patient, req.staff))
     fail('仅客户当前健管专员可配置群成员');
   const serviceType = req.body?.serviceType;

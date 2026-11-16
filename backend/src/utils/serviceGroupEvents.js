@@ -3,6 +3,7 @@ const Group = require('../models/InAppServiceGroup');
 const Message = require('../models/InAppServiceGroupMessage');
 const Inbox = require('../models/Message');
 const { TYPES } = require('./serviceGroupTypes');
+const { resolveTitle } = require('./customerTitle');
 const roles = { healthManager: '健管专员', familyDoctor: '健康顾问', nutritionist: '营养师', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户' };
 const descriptions = {
  healthManager: '是您的日常服务联系人，负责需求对接、服务安排、进度跟进，协助协调团队处理您的问题。',
@@ -43,8 +44,8 @@ function welcomeGreeting(group, patient, now = new Date()) {
  const date = new Date(now);
  const hour = Number.isFinite(date.getTime()) ? (date.getUTCHours() + 8) % 24 : -1;
  const greeting = hour >= 6 && hour < 12 ? '上午好' : hour >= 12 && hour < 18 ? '下午好' : hour >= 18 ? '晚上好' : '您好';
- const name = typeof patient?.name === 'string' ? patient.name.trim() : '';
- return `${name ? name + '，' : ''}${greeting}，欢迎加入您的专属${TYPES[group?.serviceType]?.suffix || '服务群'}。`;
+ const title = resolveTitle(patient);
+ return `${title !== '您' ? title + '，' : ''}${title === '您' ? '您好' : greeting}，欢迎加入您的专属${TYPES[group?.serviceType]?.suffix || '服务群'}。`;
 }
 function introduction(group, patient, members, changed = false, now = new Date()) {
  const lines = [], mentions = [];

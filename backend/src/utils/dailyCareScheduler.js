@@ -28,13 +28,7 @@ async function calcAdherence(userId) {
 }
 
 // 得到该客户的称呼：优先用医护标注的 preferredTitle，否则按性别得体兜底（男→先生 / 女→女士 / 未知→姓名）
-function resolveTitle(user) {
-  if (user.preferredTitle && user.preferredTitle.trim()) return user.preferredTitle.trim();
-  const surname = (user.name || '').trim().charAt(0);
-  if (user.gender === '男') return surname ? `${surname}先生` : (user.name || '您');
-  if (user.gender === '女') return surname ? `${surname}女士` : (user.name || '您');
-  return user.name || '您';
-}
+const { resolveTitle } = require('./customerTitle');
 
 // 预设暖心模板（AI 不可用时兜底），按依从性区分语气
 function fallbackMessage(user, adh) {

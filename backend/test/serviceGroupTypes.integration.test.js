@@ -14,7 +14,7 @@ test('isolated Mongo: migration preserves history, four independent groups, memb
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Mongo timeout')),30000);server.on('error',reject);server.stdout.on('data',d=>{if(String(d).includes('Waiting for connections')){clearTimeout(timer);resolve()}});server.stderr.resume()});
  await mongoose.connect(`mongodb://127.0.0.1:${port}/typed_groups`,{autoIndex:false,autoCreate:false});
  const tenant=oid(),patient=oid(),manager=oid(),advisor=oid(),nutrition=oid(),medical=oid(),specialty=oid();
- const user={_id:patient,tenantId:tenant,name:'合成客户',assignedHealthManager:manager,assignedFamilyDoctor:advisor,assignedNutritionist:nutrition,assignedMedicalAssistant:medical,assignedSpecialist:specialty};
+ const user={_id:patient,tenantId:tenant,name:'合成客户',preferredTitle:'合成老师',gender:'女',assignedHealthManager:manager,assignedFamilyDoctor:advisor,assignedNutritionist:nutrition,assignedMedicalAssistant:medical,assignedSpecialist:specialty};
  await User.collection.insertOne(user);await Admin.collection.insertMany([manager,advisor,nutrition,medical,specialty].map(_id=>({_id,tenantId:tenant,staffStatus:'active',name:'合成员工'})));
  await Group.collection.insertOne({_id:patient,tenantId:tenant,patientId:patient,status:'active',memberIds:[advisor,manager],membershipVersion:0});
  await Group.collection.createIndex({tenantId:1,patientId:1},{unique:true});
@@ -27,6 +27,10 @@ test('isolated Mongo: migration preserves history, four independent groups, memb
   assert.equal(response.code,200,JSON.stringify(response.body));groups[type]=response.body.data.id;
  }
  assert.equal(new Set(Object.values(groups).map(String)).size,4);assert.equal(await Group.countDocuments({patientId:patient}),4);
+ for(const type of ['nutrition','medical','specialty']) {
+   const welcome=await Msg.findOne({groupId:groups[type],eventKey:`welcome:${groups[type]}`}).lean();
+   assert.ok(welcome.content.startsWith('合成老师，'), 'manual creation must load preferredTitle');
+ }
  // The assigned advisor sees every group. Other professionals cannot read a
  // colleague's group merely because they are assigned to the same customer.
  for(const [id,role,visible] of [[advisor,'familyDoctor',4],[nutrition,'nutritionist',1],[medical,'medicalAssistant',1],[specialty,'specialist',1],[manager,'healthManager',4]]){

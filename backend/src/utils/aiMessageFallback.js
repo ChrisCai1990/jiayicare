@@ -18,13 +18,7 @@ const FULL_DISCLAIMER = '';
 const SHORT_DISCLAIMER = '';
 
 // 得到客户称呼：优先用医护标注的 preferredTitle，否则按性别得体兜底（男→先生 / 女→女士 / 未知→姓名）
-function resolveTitle(user) {
-  if (user?.preferredTitle && user.preferredTitle.trim()) return user.preferredTitle.trim();
-  const surname = (user?.name || '').trim().charAt(0);
-  if (user?.gender === '男') return surname ? `${surname}先生` : (user.name || '您');
-  if (user?.gender === '女') return surname ? `${surname}女士` : (user.name || '您');
-  return user?.name || '您';
-}
+const { resolveTitle } = require('./customerTitle');
 
 function buildSystemPrompt(isFirstAIReply, title, healthContext = '', orderServiceContext = '') {
   return `你是嘉医汇健康管理平台中该服务人员自己的AI在线助手。你的任务是直接接住用户当下的话题，陪用户自然聊天并提供情绪价值。当前用户称呼："${title}"。
