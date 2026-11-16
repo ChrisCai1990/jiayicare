@@ -13,6 +13,7 @@ export default function GroupHistory({group,onClose,topInset=0}) {
  const request=useRef(0),applied=useRef({});
  const search=async(more=false,override={})=>{
   const serial=++request.current,query=more?applied.current:{q,date,kind,...override};
+  setCalendarOpen(false);
   if(!more){applied.current=query;setRows([]);setNext('');}setBusy(true);setError('');setContext(null);
   try{const result=await api.history(group.id,{...query,...(more?{before:next}:{})});if(serial!==request.current)return;
    setRows(old=>more?[...old,...result.data]:result.data);setNext(result.hasMore?result.nextBefore:'');
@@ -28,15 +29,16 @@ export default function GroupHistory({group,onClose,topInset=0}) {
   <View style={{padding:'12px',background:'#fff',flexShrink:0}}>
    <View style={{display:'flex',alignItems:'center',gap:'8px'}}><Input value={q} maxlength={80} placeholder="输入聊天关键词" onInput={e=>setQ(e.detail.value)} onConfirm={()=>search()} style={{flex:1,padding:'10px',border:'1px solid #d3e2dc',borderRadius:'8px'}}/><Text onClick={()=>!busy&&search()} style={button}>查找</Text></View>
    <View style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'8px',marginTop:'10px'}}>
-    {[['all','全部'],['image','图片'],['file','PDF']].map(([value,label])=><Text key={value} onClick={()=>{setKind(value);search(false,{kind:value});}} style={{...button,background:kind===value?'#def1e9':'#fff',borderRadius:'6px'}}>{label}</Text>)}
-    <Text onClick={()=>setCalendarOpen(!calendarOpen)} style={button}>{date||'日期'}</Text>
+    {[['all','全部'],['image','图片'],['file','PDF']].map(([value,label])=><Text key={value} onClick={()=>{setKind(value);setDate('');search(false,{kind:value,date:''});}} style={{...button,background:!calendarOpen&&!date&&kind===value?'#def1e9':'#fff',borderRadius:'6px'}}>{label}</Text>)}
+    <Text onClick={()=>setCalendarOpen(!calendarOpen)} style={{...button,background:calendarOpen||date?'#def1e9':'#fff',borderRadius:'6px'}}>{date||'日期'}</Text>
     {!!date&&<Text onClick={()=>{setDate('');search(false,{date:''});}} style={button}>清除日期</Text>}
    </View>
   </View>
   {!!error&&<Text style={{padding:'10px',color:'#b42318'}}>{error}</Text>}
-  {context&&<Text onClick={()=>setContext(null)} style={button}>‹ 返回搜索结果 · 原消息前后各最多20条</Text>}
+  {!calendarOpen&&context&&<Text onClick={()=>setContext(null)} style={button}>‹ 返回搜索结果 · 原消息前后各最多20条</Text>}
   <List id="group-history-results" scrollY scrollIntoView={context?'history-'+context.anchorId:''} style={{flex:1,height:0,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'12px',boxSizing:'border-box'}}>
-   {calendarOpen&&<ChatDateCalendar value={date} onCancel={()=>setCalendarOpen(false)} onConfirm={value=>{setDate(value);setCalendarOpen(false);search(false,{date:value});}}/>}
+   {calendarOpen&&<ChatDateCalendar value={date} onCancel={()=>setCalendarOpen(false)} onConfirm={value=>{setDate(value);setKind('all');search(false,{date:value,kind:'all'});}}/>}
+   {!calendarOpen&&<View>
    {busy&&<Text>正在读取…</Text>}
    {!busy&&!(context?.data||rows).length&&<Text>未找到聊天记录，请调整日期或关键词。</Text>}
    {(context?.data||rows).map(m=><View id={'history-'+m.id} key={m.id} style={{padding:'12px',marginBottom:'10px',background:'#fff',borderRadius:'10px',border:String(m.id)===String(context?.anchorId)?'2px solid #249c93':'1px solid #e0e9e5'}}>
@@ -46,6 +48,7 @@ export default function GroupHistory({group,onClose,topInset=0}) {
     {!context&&<Text onClick={()=>!busy&&open(m.id)} style={{...button,display:'block'}}>查看前后对话</Text>}
    </View>)}
    {!context&&next&&<Text onClick={()=>!busy&&search(true)} style={{...button,display:'block',textAlign:'center'}}>加载更多结果</Text>}
+   </View>}
   </List>
  </View>;
 }
