@@ -116,13 +116,13 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       return res.json({ success: true, data: row }); // Lost acknowledgement: preserve the exact reviewed evidence.
     }
     if (row.status !== 'approved' || action !== 'approve') {
-      if (!(row.status === 'advisor_review' || (action === 'take_over' && row.status === 'no_action')) || req.body.revision !== row.__v) fail('草稿状态已更新，请刷新');
+      if (!['advisor_review', 'no_action'].includes(row.status) || req.body.revision !== row.__v) fail('草稿状态已更新，请刷新');
       if (action !== 'reject' && !serviceReview) await workflow.assertReportDraftSource(row);
       if (action === 'take_over' && row.followUpAutomation?.status !== 'failed' && row.status !== 'no_action') fail('仅生成失败或无新增行动的记录可人工接管');
       if (action === 'approve' && ['queued', 'running', 'failed'].includes(row.followUpAutomation?.status)) fail('请先完成草稿或人工接管');
       let drafts = row.followUpDrafts;
       if (action === 'approve') {
-        try { drafts = validateAssessmentFollowUpDrafts(req.body.followUpDrafts); }
+        try { drafts = validateAssessmentFollowUpDrafts(req.body.followUpDrafts, { structuredVisit: true }); }
         catch (error) { fail(error.message, 400); }
         if (drafts.length > 1) fail('后续就医仅保留一次随访，请合并本次就医的跟进内容', 400);
       }

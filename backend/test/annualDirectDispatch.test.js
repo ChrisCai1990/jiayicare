@@ -63,3 +63,23 @@ test('现场未完成不得提交；专员结果经规划师验收，原临床�
   assert.equal(s.rows.get(id).status,'completed'); assert.equal(s.rows.get('request').status,'completed');
   assert.equal(s.rows.get('parent').status,'planned');
 });
+
+test('单次报告随访按唯一关联键预约后派单，不能串用其他客户或报告', async () => {
+  const s = setup(), request = s.rows.get('request'), parent = s.rows.get('parent');
+  request.sourceType = 'report_followup'; request.sourceId = 'report'; request.workflowKey = 'report_followup:service_request';
+  request.formData.linkedFollowUpActionKey = 'report:dynamic:0:2026-12-02';
+  parent.sourceType = 'report_followup'; parent.sourceId = 'report'; parent.workflowKey = 'report_followup:dynamic_followup';
+  parent.assessmentActionKey = request.formData.linkedFollowUpActionKey;
+  const result = await s.api.dispatch('request', planner, { assigneeId: 'assistant', note: '' });
+  assert.equal(result.child.sourceType, 'report_followup');
+  assert.equal(result.parent._id, 'parent');
+  const other = setup(); other.rows.get('request').sourceType = request.sourceType;
+  other.rows.get('request').sourceId = request.sourceId;
+  other.rows.get('request').workflowKey = request.workflowKey;
+  other.rows.get('request').formData.linkedFollowUpActionKey = request.formData.linkedFollowUpActionKey;
+  other.rows.get('parent').sourceType = parent.sourceType;
+  other.rows.get('parent').sourceId = 'different-report';
+  other.rows.get('parent').workflowKey = parent.workflowKey;
+  other.rows.get('parent').assessmentActionKey = parent.assessmentActionKey;
+  await assert.rejects(other.api.dispatch('request', planner, { assigneeId: 'assistant', note: '' }), /先由健管专员确认预约安排/);
+});

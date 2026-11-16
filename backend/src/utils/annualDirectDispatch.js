@@ -26,12 +26,15 @@ function runtime(models = {}) {
   async function context(id, actor) {
     const c = await load(id, actor);
     if (!c.parent) {
-      const key = require('../../../shared/annualServiceItem.cjs').followUpKey(c.task);
-      const rows = key ? await FollowUp.find({ patientId: c.task.patientId, sourceAnnualPlanId: c.task.sourceAnnualPlanId, sourceType: 'scheduled', sourceScheduleKey: key, deliveryMode: { $in: ['single', 'managed'] }, status: { $nin: ['cancelled'] } }).lean() : [];
+      const reportKey = c.task.sourceType === 'report_followup' && c.task.formData?.linkedFollowUpActionKey;
+      const key = reportKey ? null : require('../../../shared/annualServiceItem.cjs').followUpKey(c.task);
+      const rows = reportKey
+        ? await FollowUp.find({ patientId: c.task.patientId, sourceId: c.task.sourceId, sourceType: 'report_followup', assessmentActionKey: reportKey, workflowKey: 'report_followup:dynamic_followup', deliveryMode: 'single', status: { $nin: ['cancelled'] } }).lean()
+        : key ? await FollowUp.find({ patientId: c.task.patientId, sourceAnnualPlanId: c.task.sourceAnnualPlanId, sourceType: 'scheduled', sourceScheduleKey: key, deliveryMode: { $in: ['single', 'managed'] }, status: { $nin: ['cancelled'] } }).lean() : [];
       if (rows.length === 1) c.parent = rows[0];
       else c.warning = '未找到唯一对应的顾问事项，请核对原计划，不能任意选择其他随访';
     }
-    if (c.parent && String(c.parent.patientId) !== String(c.task.patientId)) fail('顾问事项归属不一致');
+    if (c.parent && (String(c.parent.patientId) !== String(c.task.patientId) || (c.task.sourceType === 'report_followup' && (String(c.parent.sourceId) !== String(c.task.sourceId) || c.parent.assessmentActionKey !== c.task.formData?.linkedFollowUpActionKey)))) fail('顾问事项归属不一致');
     const assistants = !c.execution ? await Admin.find({ role: 'medicalAssistant', staffStatus: 'active', tenantId: actor.tenantId || null }).select('name role').lean() : [];
     const child = c.execution || (c.task.annualDispatch ? await FollowUp.findById(c.task.annualDispatch.executionId).lean() : null);
     return { ...c, child, assistants };
@@ -63,7 +66,7 @@ function runtime(models = {}) {
     const dates = (intent.bookingSnapshot.entries || [intent.bookingSnapshot]).filter(e => e.status === 'booked' && e.date).map(e => `${e.date}T${e.time || '00:00'}:00+08:00`).sort();
     await FollowUp.updateOne({ _id: intent.executionId }, { $setOnInsert: {
       patientId: task.patientId, staffId: actor._id, assignedTo: intent.assigneeId, taskRole: 'executor',
-      sourceType: 'annual_service', sourceId: task._id, sourceAnnualPlanId: task.sourceAnnualPlanId,
+      sourceType: task.sourceType, sourceId: task._id, sourceAnnualPlanId: task.sourceAnnualPlanId,
       sourceScheduleKey: `dispatch-execute:${task._id}`, workflowKey: 'assistance_execute',
       coordinationGroupId: `annual-assistance:${task._id}`, status: 'planned', aiStatus: 'approved',
       date: dates[0] ? new Date(dates[0]) : task.date, remindAt: new Date(),

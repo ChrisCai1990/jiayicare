@@ -113,19 +113,25 @@ function runtime(injected = {}) {
     if (!found.unstarted) { await sync(found); return found; }
     let request = found.task;
     if(require('../../../shared/annualServiceItem.cjs').isAssistance(request)) {
-      const candidates=await Task.find({patientId:request.patientId,sourceAnnualPlanId:request.sourceAnnualPlanId,sourceType:'annual_service',workflowKey:'service_request'}).lean();
-      const matches=candidates.filter(r=>require('../../../shared/annualServiceItem.cjs').followUpKey(r)===request.sourceScheduleKey);
+      const reportParent = request.sourceType === 'report_followup';
+      const candidates=await Task.find(reportParent
+        ? {patientId:request.patientId,sourceId:request.sourceId,sourceType:'report_followup',workflowKey:'report_followup:service_request'}
+        : {patientId:request.patientId,sourceAnnualPlanId:request.sourceAnnualPlanId,sourceType:'annual_service',workflowKey:'service_request'}).lean();
+      const matches=candidates.filter(r=>reportParent ? r.formData?.linkedFollowUpActionKey===request.assessmentActionKey : require('../../../shared/annualServiceItem.cjs').followUpKey(r)===request.sourceScheduleKey);
       if(matches.length!==1)fail('未找到唯一服务需求，请规划师核对');
       request=matches[0];
     }
     if (require('../../../shared/annualDispatch.cjs').isExecution(request)) request = await Task.findById(request.sourceId).lean();
-    if (!require('../../../shared/annualDispatch.cjs').isRequest(request) || request.formData?.serviceRequest?.mode !== 'single') fail('本次仅支持年度单项就医协助接入');
+    if (!require('../../../shared/annualDispatch.cjs').isRequest(request) || request.formData?.serviceRequest?.mode !== 'single') fail('本次仅支持单项就医协助接入');
     if (request.serviceTracking?.linkId || ['completed', 'cancelled'].includes(request.status)) fail('已承接或已结束的服务不重复接入');
     if (request.status === 'in_progress' && !request.annualDispatch) fail('事项已由原服务流程启动，不能重复接入');
     const patient = await User.findOne({ _id: request.patientId, tenantId: tenant(actor) }).lean();
     if (!patient) fail('客户归属不一致', 403);
-    const key = require('../../../shared/annualServiceItem.cjs').followUpKey(request);
-    const parents = await Task.find({ patientId: request.patientId, sourceAnnualPlanId: request.sourceAnnualPlanId, sourceType: 'scheduled', sourceScheduleKey: key, status: { $nin: ['cancelled', 'completed'] } }).lean();
+    const reportRequest = request.sourceType === 'report_followup';
+    const key = reportRequest ? request.formData?.linkedFollowUpActionKey : require('../../../shared/annualServiceItem.cjs').followUpKey(request);
+    const parents = await Task.find(reportRequest
+      ? { patientId: request.patientId, sourceId: request.sourceId, sourceType: 'report_followup', workflowKey: 'report_followup:dynamic_followup', assessmentActionKey: key, status: { $nin: ['cancelled', 'completed'] } }
+      : { patientId: request.patientId, sourceAnnualPlanId: request.sourceAnnualPlanId, sourceType: 'scheduled', sourceScheduleKey: key, status: { $nin: ['cancelled', 'completed'] } }).lean();
     if (parents.length !== 1 || parents[0].deliveryMode !== 'single' || parents[0].serviceTracking?.linkId) fail('未找到唯一未结束的单项顾问事项');
     const parent = parents[0], people = {};
     const requested = { familyDoctor: patient.assignedFamilyDoctor, healthManager: parent.assignedTo, healthPlanner: request.assignedTo, medicalAssistant: request.annualDispatch?.assigneeId || patient.assignedMedicalAssistant };

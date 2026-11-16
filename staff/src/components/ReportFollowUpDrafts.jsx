@@ -4,7 +4,7 @@ import './ReportFollowUpDrafts.css'
 import { approvedScreeningReference, compactEvidence, evidenceSummary, groupedIssues, problemGroups } from '../utils/reportIssuePresentation'
 
 const PURPOSE = 'annual_report_input'
-const statusLabel = { advisor_review: '待顾问确认', approved: '已确认', rejected: '未采纳', excluded: '已有服务承接', superseded: '来源已更新', no_action: '待重新核对' }
+const statusLabel = { advisor_review: '待顾问确认', approved: '已确认', rejected: '未采纳', excluded: '已有服务承接', superseded: '来源已更新', no_action: '无明确后续行动·待确认' }
 
 export function ReportIssueCard({ issue, index, disabled, onChange }) {
   const proposal = issue.originalRecommendation || issue.suggestedRecommendation
@@ -125,7 +125,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
       const coverage = row.issueCoverage || [], drafts = row.issueDrafts || []
       const pending = coverage.filter(item => item.status === 'pending')
       return <article key={row._id} className="report-issues-report">
-        <header><h4>{row.title}</h4><span className="report-issue-tag">{historical ? '历史随访记录' : statusLabel[row.status]}</span></header>
+        <header><h4>{row.title}</h4><span className="report-issue-tag">{historical ? '历史随访记录' : !annual && row.status === 'rejected' ? '已确认无需随访' : statusLabel[row.status]}</span></header>
         <p>{annual ? row.followUpAutomation?.message : historical ? '保留原已审核随访及执行记录。' : row.followUpAutomation?.message || '请核对本次就医资料，填写一条综合随访。'}</p>
         {annual && <div className="report-issues-overview"><b>{drafts.filter(issue => issue.decision !== 'exclude').length}项待纳入管理的问题</b><span>{drafts.filter(issue => issue.decision !== 'exclude' && !issue.advisorRecommendation).length}项建议待确认</span>{pending.length > 0 && <span>{pending.length}项资料待核对</span>}</div>}
         {annual && groupedIssues(drafts).map(group => <section key={group.key} className="report-problem-group"><h4>{group.label}<span>{group.issues.length}个问题</span></h4>{group.issues.map((issue, index) => <ReportIssueCard key={issue.id} issue={issue} index={index} disabled={busy || !editable} onChange={patch => update(row._id, drafts.map(item => item.id === issue.id ? { ...item, ...patch } : item))} />)}</section>)}
@@ -145,7 +145,14 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
             <label>计划日期<input type="date" value={item.date || ''} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, date: e.target.value } : draft))} /></label>
             <label>类型<select value={item.category || 'information'} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, category: e.target.value } : draft))}><option value="medical_visit">就医</option><option value="examination">检查</option><option value="review">结果回访</option><option value="lifestyle">生活方式</option><option value="information">资料核对</option></select></label>
             <label>随访内容<textarea value={item.content || ''} rows={4} maxLength={3000} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, content: e.target.value } : draft))} /></label>
-            <label><input type="checkbox" checked={item.requiresService === true} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, requiresService: e.target.checked } : draft))} />需要规划师安排服务</label>
+            {['medical_visit', 'examination'].includes(item.category) ? <div className="report-followup-visit">
+              <h5>就医安排与服务落地</h5>
+              <p>请核对真实资源后填写；医院、院区、科室和专家未明确前不能发布为已安排。</p>
+              {[["hospital", "医院"], ["campus", "院区"], ["department", "科室"], ["expert", "专家"], ["reason", "就医原因"], ["notes", "交接与注意事项"]].map(([key, label]) => <label key={key}>{label}<input value={item.visitPlan?.[key] || ''} maxLength={key === 'reason' || key === 'notes' ? 2000 : 200} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, visitPlan: { ...draft.visitPlan, [key]: e.target.value } } : draft))} /></label>)}
+              <label><input type="checkbox" checked={item.visitPlan?.bookingRequired === true} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, visitPlan: { ...draft.visitPlan, bookingRequired: e.target.checked } } : draft))} />需健管专员确认预约</label>
+              <label>服务落地方式<select value={item.visitPlan?.serviceMode || (item.requiresService ? 'single' : 'reminder')} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, visitPlan: { ...draft.visitPlan, serviceMode: e.target.value } } : draft))}><option value="reminder">仅提醒与随访</option><option value="single">单项就医协助</option><option value="managed">全托管（一站式服务）</option></select></label>
+              {(item.visitPlan?.serviceMode || (item.requiresService ? 'single' : 'reminder')) === 'single' && <label>单项服务内容<select value={item.visitPlan?.serviceType || ''} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, visitPlan: { ...draft.visitPlan, serviceType: e.target.value } } : draft))}><option value="">请选择</option><option value="proxy_booking">代约 / 代办</option><option value="proxy_visit">代诊</option><option value="escort_visit">陪诊</option><option value="escort_exam">陪检</option><option value="consult_coordination">会诊协调</option></select></label>}
+            </div> : <label><input type="checkbox" checked={item.requiresService === true} onChange={e => updateFollowUps(row._id, row.followUpDrafts.map((draft, i) => i === index ? { ...draft, requiresService: e.target.checked } : draft))} />需要规划师安排服务</label>}
             {available && status === 'ready' && <button type="button" onClick={() => updateFollowUps(row._id, row.followUpDrafts.filter((_, i) => i !== index))}>移除此条</button>}
           </fieldset>)}
           {available && <div className="report-issues-actions">
@@ -153,6 +160,7 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
             {status === 'ready' && <>{!row.followUpDrafts?.length && <button disabled={busy} onClick={() => updateFollowUps(row._id, [{ title: '', content: '', date: '', category: 'information', requiresService: false }])}>添加单次随访</button>}<button disabled={busy || (row.followUpDrafts || []).length > 1} onClick={() => actFollowUp(row, 'approve')}>终审并发布</button><button disabled={busy} onClick={() => actFollowUp(row, 'reject')}>不需要后续随访</button></>}
           </div>}
           {historical && row.followUpPublication?.status !== 'published' && canEdit && <button disabled={busy} onClick={() => actFollowUp(row, 'approve')}>重试发布单次随访</button>}
+          {row.status === 'rejected' && <p className="report-issues-success">已确认本次无需后续随访，审核待办已关闭。</p>}
           </section>
           <ReportSourceSummary snapshot={row.sourceSnapshot} />
         </>}
