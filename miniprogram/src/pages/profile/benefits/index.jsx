@@ -11,9 +11,10 @@ import { formatChineseDate, formatChineseDateTime } from '../../../utils/date';
 
 // 对齐 app/src/screens/profile/BenefitsScreen.js
 const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
-const FUND_TYPE_LABEL = { enterprise: '奖励基金', promotion: '奖励基金', other: '奖励基金' };
-const FUND_SOURCE_LABEL = { enterprise: '奖励基金', promotion: '自有基金', other: '自有基金', vitality: '活力基金' };
+const FUND_TYPE_LABEL = { enterprise: '健康礼遇金', promotion: '健康礼遇金', other: '健康礼遇金' };
+const FUND_SOURCE_LABEL = { enterprise: '健康礼遇金', promotion: '自有基金', other: '自有基金', vitality: '活力基金' };
 const GIFT_TYPE_LABEL = { fund: '健康基金', service: '服务权益' };
+const displayFundRemark = value => String(value || '').replaceAll('奖励基金', '健康礼遇金');
 const GIFT_TYPE_COLOR = { fund: '#D97706', service: colors.primary };
 const GIFT_TYPE_BG = { fund: '#FEF3E2', service: colors.primary10 };
 const GIFT_TYPE_ICON = { fund: '💰', service: '🎁' };
@@ -180,23 +181,23 @@ export default function BenefitsPage() {
                 <Text style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>¥{Number(fundVitality).toFixed(2)}</Text>
               </View>
               <View>
-                <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '2px' }}>奖励基金</Text>
+                <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '2px' }}>健康礼遇金</Text>
                 <Text style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>¥{Number(fundCorp).toFixed(2)}</Text>
               </View>
             </View>
           </View>
 
-          <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}><Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary}}>基金使用规则</Text><Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'19px',display:'block',marginTop:'6px'}}>自有基金、活力基金在余额内可抵扣至¥0；奖励基金按商品规则比例抵扣。实际可用金额以结算页为准。</Text></View>
+          <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}><Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary}}>基金使用规则</Text><Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'19px',display:'block',marginTop:'6px'}}>自有基金、活力基金在余额内可抵扣至¥0；健康礼遇金按商品规则比例抵扣。实际可用金额以结算页为准。</Text></View>
 
           {!!fund.policy?.description && <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
             <Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'6px'}}>{fund.policy.title||'健康基金使用规则'}</Text>
-            <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'19px'}}>{fund.policy.description}</Text>
+            <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'19px'}}>{displayFundRemark(fund.policy.description)}</Text>
           </View>}
 
           <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
             <Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'6px'}}>基金收支明细</Text>
             {!fund.transactions?.length ? <Text style={{fontSize:'12px',color:colors.textMuted}}>暂无基金收支记录</Text> : fund.transactions.slice((fundPage-1)*5,fundPage*5).map(item=><View key={`${item.type}-${item._id}`} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderTop:`1px solid ${colors.borderLight}`}}>
-              <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',color:colors.textPrimary,display:'block'}}>{FUND_SOURCE_LABEL[item.source] || '奖励基金'} · {item.remark||item.orderName||'基金变动'}</Text><Text style={{fontSize:'11px',color:colors.textMuted}}>{formatChineseDateTime(item.createdAt)}{item.orderNo?` · ${item.orderNo}`:''}</Text></View>
+              <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',color:colors.textPrimary,display:'block'}}>{FUND_SOURCE_LABEL[item.source] || '健康礼遇金'} · {displayFundRemark(item.remark||item.orderName||'基金变动')}</Text><Text style={{fontSize:'11px',color:colors.textMuted}}>{formatChineseDateTime(item.createdAt)}{item.orderNo?` · ${item.orderNo}`:''}</Text></View>
               <Text style={{fontSize:'14px',fontWeight:700,color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text>
             </View>)}
             {!!fund.transactions?.length && <View style={{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:'14px'}}><Text onClick={()=>setFundPage(p=>Math.max(1,p-1))} style={{padding:'8px',color:fundPage===1?colors.textMuted:colors.primary}}>上一页</Text><Text style={{fontSize:'12px',color:colors.textMuted}}>{fundPage} / {fundPageCount} 页</Text><Text onClick={()=>setFundPage(p=>Math.min(fundPageCount,p+1))} style={{padding:'8px',color:fundPage===fundPageCount?colors.textMuted:colors.primary}}>下一页</Text></View>}
@@ -215,8 +216,8 @@ export default function BenefitsPage() {
             {pointsExpanded && (
               <View style={{ marginTop: `${spacing.md}px`, borderTop: `1px solid ${colors.border}`, paddingTop: `${spacing.sm}px` }}>
                 <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'20px',display:'block'}}>健康记录积分 {pointsDetail.vitality} 分，距兑换活力基金还差 {pointsDetail.exchangeRate - pointsDetail.vitality} 分。每项每日首次记录最多得 {pointsDetail.healthCheckinPoints} 分。</Text>
-                <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'20px',display:'block'}}>购买积分 {pointsDetail.reward} 分，距兑换奖励基金还差 {pointsDetail.exchangeRate - pointsDetail.reward} 分。现金实付每满 ¥1 得 1 分。</Text>
-                {!!pointsDetail.legacy && <Text style={{fontSize:'12px',color:colors.textSecondary}}>历史积分 {pointsDetail.legacy} 分，兑换后归奖励基金。</Text>}
+                <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'20px',display:'block'}}>购买积分 {pointsDetail.reward} 分，距兑换健康礼遇金还差 {pointsDetail.exchangeRate - pointsDetail.reward} 分。现金实付每满 ¥1 得 1 分。</Text>
+                {!!pointsDetail.legacy && <Text style={{fontSize:'12px',color:colors.textSecondary}}>历史积分 {pointsDetail.legacy} 分，兑换后归健康礼遇金。</Text>}
                 {pointsLogs.length === 0 ? (
                   <Text style={{ fontSize: '12px', color: colors.textMuted, textAlign: 'center', display: 'block', padding: `${spacing.md}px 0` }}>暂无积分记录，打卡或消费即可获得积分</Text>
                 ) : (
