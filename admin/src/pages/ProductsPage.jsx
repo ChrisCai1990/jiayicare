@@ -589,7 +589,7 @@ function ImageUploadList({ images, onChange }) {
 }
 
 // ── 产品表单 Modal ──────────────────────────────────────────────
-function ProductModal({ product, categories, onClose, onSaved, commissionMode = false }) {
+function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMode = false }) {
   const toast = useToast()
   const { admin } = useAdmin()
   const isEdit = !!product?._id
@@ -956,7 +956,10 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
               <div className="form-group">
                 <label className="form-label">分类 *</label>
                 <select className="form-input" value={form.category} onChange={e => set('category', e.target.value)}>
-                  {categories.map(c => <option key={c}>{c}</option>)}
+                  <option value="">请选择二级类目</option>
+                  {categoryGroups.map(group => <optgroup key={group._id} label={group.name}>
+                    {group.children.map(child => <option key={child._id} value={child.name}>{child.name}</option>)}
+                  </optgroup>)}
                 </select>
               </div>
               <div className="form-group">
@@ -1182,19 +1185,38 @@ function ProductModal({ product, categories, onClose, onSaved, commissionMode = 
   )
 }
 
+function groupProductCategories(categories) {
+  const byId = new Map(categories.map(category => [String(category._id), category]))
+  return categories
+    .filter(category => !category.parent || !byId.has(String(category.parent)))
+    .map(root => ({
+      ...root,
+      children: categories.filter(category => String(category.parent || '') === String(root._id)),
+    }))
+}
+
+function CategoryOptions({ groups }) {
+  return groups.map(group => <optgroup key={group._id} label={group.name}>
+    {group.children.map(child => <option key={child._id} value={child.name}>{child.name}</option>)}
+  </optgroup>)
+}
+
 // ── 分类管理 Modal ──────────────────────────────────────────────
 function CategoryModal({ categories, onClose, onChanged }) {
   const toast = useToast()
   const [list, setList] = useState(categories)
   const [input, setInput] = useState('')
+  const [parentId, setParentId] = useState('')
   const [saving, setSaving] = useState(false)
+  const groups = groupProductCategories(list)
+  useEffect(() => setList(categories), [categories])
 
   const add = async () => {
     const name = input.trim()
-    if (!name) return
+    if (!name || !parentId) return
     setSaving(true)
     try {
-      const res = await adminAPI.createProductCategory({ name })
+      const res = await adminAPI.createProductCategory({ name, parentId: parentId === 'root' ? null : parentId })
       toast('✅ 分类添加成功')
       setList([...list, res.data])
       setInput('')
@@ -1207,7 +1229,7 @@ function CategoryModal({ categories, onClose, onChanged }) {
   }
 
   const del = async (cat) => {
-    if (!window.confirm(`确定删除分类「${cat.name}」？已使用该分类的产品不受影响。`)) return
+    if (!window.confirm(`确定删除分类「${cat.name}」？请先确认没有商品使用该分类。`)) return
     try {
       await adminAPI.deleteProductCategory(cat._id)
       toast('✅ 已删除')
@@ -1220,37 +1242,50 @@ function CategoryModal({ categories, onClose, onChanged }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 440, width: '96%' }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 600, width: '96%' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">⚙️ 管理分类</div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr auto', gap: 8, marginBottom: 16 }}>
+            <select className="form-input" aria-label="分类层级与所属一级类目" value={parentId} onChange={e => setParentId(e.target.value)}>
+              <option value="">选择层级/所属大类</option>
+              <option value="root">新增一级类目</option>
+              {groups.map(group => <option key={group._id} value={group._id}>二级 · {group.name}</option>)}
+            </select>
             <input
               className="form-input"
-              style={{ flex: 1 }}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !saving && add()}
               placeholder="新分类名称"
             />
-            <button className="btn btn-primary" onClick={add} disabled={saving || !input.trim()}>
+            <button className="btn btn-primary" onClick={add} disabled={saving || !input.trim() || !parentId}>
               {saving ? '添加中...' : '添加'}
             </button>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {list.map(cat => (
-              <div key={cat._id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 14px', borderRadius: 8, border: '1px solid #e0d9ce', background: '#fff',
-              }}>
-                <span style={{ fontWeight: 500 }}>{cat.name}</span>
-                <button
-                  className="btn btn-sm"
-                  style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                  onClick={() => del(cat)}
-                >删除</button>
+          <div style={{ color: '#66756e', fontSize: 12, marginBottom: 10 }}>一级类目是商城大类，商品应归入其下的二级类目。</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {groups.map(group => (
+              <div key={group._id} style={{ border: '1px solid #d5e5dc', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0f7f3', padding: '12px 14px' }}>
+                  <span><strong>{group.name}</strong><span style={{ marginLeft: 9, color: '#1E6B50', fontSize: 12 }}>一级类目 · {group.children.length} 个二级类目</span></span>
+                  <button className="btn btn-sm" disabled={group.children.length > 0}
+                    title={group.children.length ? '请先处理下属二级类目' : '删除一级类目'}
+                    onClick={() => del(group)}>删除</button>
+                </div>
+                <div style={{ padding: '4px 14px 8px 26px' }}>
+                  {group.children.map(child => <div key={child._id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    minHeight: 42, borderBottom: '1px solid #edf0ed',
+                  }}>
+                    <span style={{ borderLeft: '2px solid #9dc8b4', paddingLeft: 12 }}>{child.name}
+                      <small style={{ color: '#8a9891', marginLeft: 8 }}>二级</small></span>
+                    <button className="btn btn-sm" onClick={() => del(child)}>删除</button>
+                  </div>)}
+                  {group.children.length === 0 && <div style={{ color: '#8a9891', padding: '10px 0' }}>暂无二级类目</div>}
+                </div>
               </div>
             ))}
           </div>
@@ -1276,7 +1311,9 @@ export default function ProductsPage({ commissionMode = false }) {
   const [filters, setFilters] = useState({ name: '', category: '', status: '' })
   const [commissionPage, setCommissionPage] = useState(1)
 
-  const categoryNames = categories.map(c => c.name)
+  const categoryGroups = groupProductCategories(categories)
+  const categoryNames = categoryGroups.flatMap(group => group.children.map(child => child.name))
+  const categoryPath = new Map(categoryGroups.flatMap(group => group.children.map(child => [child.name, `${group.name} / ${child.name}`])))
 
   const loadCategories = useCallback(async () => {
     try {
@@ -1378,7 +1415,7 @@ export default function ProductsPage({ commissionMode = false }) {
             onChange={event => { setCommissionPage(1); setFilters(current => ({ ...current, name: event.target.value })) }} />
           <select className="form-input" style={{ maxWidth: 180 }} value={filters.category}
             onChange={event => { setCommissionPage(1); setFilters(current => ({ ...current, category: event.target.value })) }}>
-            <option value="">全部分类</option>{categoryNames.map(name => <option key={name}>{name}</option>)}
+            <option value="">全部分类</option><CategoryOptions groups={categoryGroups} />
           </select>
         </div>
       </div>
@@ -1397,7 +1434,7 @@ export default function ProductsPage({ commissionMode = false }) {
         <button className="btn btn-sm" disabled={commissionPage <= 1} onClick={() => setCommissionPage(page => page - 1)}>上一页</button>
         <button className="btn btn-sm" disabled={commissionPage >= pageCount} onClick={() => setCommissionPage(page => page + 1)}>下一页</button>
       </div>
-      {showModal && <ProductModal product={editing} commissionMode categories={categoryNames}
+      {showModal && <ProductModal product={editing} commissionMode categoryGroups={categoryGroups}
         onClose={() => setShowModal(false)} onSaved={load} />}
     </div>
   }
@@ -1424,7 +1461,7 @@ export default function ProductsPage({ commissionMode = false }) {
         <select className="form-input" style={{ width: 140 }} value={filters.category}
           onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}>
           <option value="">全部分类</option>
-          {categoryNames.map(c => <option key={c}>{c}</option>)}
+          <CategoryOptions groups={categoryGroups} />
         </select>
         <select className="form-input" style={{ width: 120 }} value={filters.status}
           onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
@@ -1493,7 +1530,7 @@ export default function ProductsPage({ commissionMode = false }) {
                       </div>
                     )}
                   </td>
-                  <td>{p.category}</td>
+                  <td>{categoryPath.get(p.category) || p.category}</td>
                   <td style={{ color: '#888', textDecoration: p.originalPrice == null ? 'none' : 'line-through' }}>{p.originalPrice == null ? '待定价' : `¥${p.originalPrice}`}</td>
                   <td>{pricePreview(p)}</td>
                   <td style={{ color: p.stock === 0 && !p.stockLimited ? '#aaa' : '#333' }}>
@@ -1524,7 +1561,7 @@ export default function ProductsPage({ commissionMode = false }) {
       {showModal && (
         <ProductModal
           product={editing}
-          categories={categoryNames}
+          categoryGroups={categoryGroups}
           onClose={() => setShowModal(false)}
           onSaved={load}
         />
