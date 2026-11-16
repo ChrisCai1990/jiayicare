@@ -39,3 +39,6 @@ useDidShow及从群列表重入重置首次定位。验证包含延迟增加350p
 
 ## 续：小程序关键词输入文字裁切
 用户iPhone小程序截图中输入文字被压成细线。共享Input此前默认高度加上下10px padding，app.less对input设置border-box导致可用内容高度不足。小程序分支明确44px高度/最小高度，仅左右10px padding，16px字体；H5保留原内边距，三份客户端及主线同步源文件。构建/上传以release-receipts/history-input-*为准，iPhone原生键盘真机显示仍需验收。
+
+## 续：输入框真机反馈未解决，调整结构
+用户反馈上一版仍遮挡。改为48px独立外框，内嵌28px原生Input，输入节点无边框/内边距、content-box，外层负责布局。同步H5验证聚焦输入与短视口，不能替代iPhone微信原生验收。微信工具截图两次超时，提供本构建预览二维码供确定版本验证。发布记录见history-input-wrapper-*。
