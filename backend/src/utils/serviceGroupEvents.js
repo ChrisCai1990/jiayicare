@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const Group = require('../models/InAppServiceGroup');
 const Message = require('../models/InAppServiceGroupMessage');
 const Inbox = require('../models/Message');
-const { TYPES, titleOf } = require('./serviceGroupTypes');
+const { TYPES } = require('./serviceGroupTypes');
 const roles = { healthManager: '健管专员', familyDoctor: '健康顾问', nutritionist: '营养师', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户' };
 const descriptions = {
  healthManager: '是您的日常服务联系人，负责需求对接、服务安排、进度跟进，协助协调团队处理您的问题。',
@@ -39,7 +39,14 @@ async function notice(group, eventKey, content, mentions = []) {
  await notifyCustomer(group, message);
  return message;
 }
-function introduction(group, patient, members, changed = false) {
+function welcomeGreeting(group, patient, now = new Date()) {
+ const date = new Date(now);
+ const hour = Number.isFinite(date.getTime()) ? (date.getUTCHours() + 8) % 24 : -1;
+ const greeting = hour >= 6 && hour < 12 ? '上午好' : hour >= 12 && hour < 18 ? '下午好' : hour >= 18 ? '晚上好' : '您好';
+ const name = typeof patient?.name === 'string' ? patient.name.trim() : '';
+ return `${name ? name + '，' : ''}${greeting}，欢迎加入您的专属${TYPES[group?.serviceType]?.suffix || '服务群'}。`;
+}
+function introduction(group, patient, members, changed = false, now = new Date()) {
  const lines = [], mentions = [];
  const entries = [['healthManager', 'assignedHealthManager', '健管专员'], [group.serviceType, TYPES[group.serviceType]?.field, TYPES[group.serviceType]?.label]];
  for (const [key, field, label] of entries) {
@@ -48,7 +55,7 @@ function introduction(group, patient, members, changed = false) {
    lines.push(`@${person.name} ${label}${descriptions[key]}`);
    if (!mentions.some(m => String(m.id) === String(person._id))) mentions.push({ id: person._id, kind: 'staff', name: person.name, role: label });
  }
- const content = `${changed ? '服务团队成员已更新。' : `您好，欢迎加入${titleOf(group, patient)}。我是小嘉，健管专员的 AI 助手，您的 AI 健康管家。`}\n\n${lines.join('\n\n')}\n\n我会协助日常答疑、收集需求并提醒相应服务人员；需要人工处理的问题，由服务团队接续。您可以直接留言，也可以 @对应成员。已提醒相关成员。`;
+ const content = `${changed ? '服务团队成员已更新。' : `${welcomeGreeting(group, patient, now)}我是小嘉，健管专员的 AI 助手，您的 AI 健康管家。`}\n\n${lines.join('\n\n')}\n\n我会协助日常答疑、收集需求并提醒相应服务人员；需要人工处理的问题，由服务团队接续。您可以直接留言，也可以 @对应成员。已提醒相关成员。`;
  return { content, mentions };
 }
 async function flushNotices(group) {
@@ -65,4 +72,4 @@ async function retryNotices() {
  finally{flushing=false;}
 }
 function startNoticeRetry(){void retryNotices();setInterval(()=>void retryNotices(),30000).unref();}
-module.exports = { roles, descriptions, withGroupLock, notifyCustomer, notice, introduction, fail, flushNotices, startNoticeRetry };
+module.exports = { roles, descriptions, withGroupLock, notifyCustomer, notice, introduction, welcomeGreeting, fail, flushNotices, startNoticeRetry };
