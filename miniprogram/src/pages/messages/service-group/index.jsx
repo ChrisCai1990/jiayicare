@@ -1,3 +1,5 @@
+import GroupVoiceInput from '../../../components/GroupVoiceInput';
+import GroupVoiceMessage from '../../../components/GroupVoiceMessage';
 import { refreshUnreadBadge } from '../../../utils/unreadBadge';
 import { manageAiDataConsent } from '../../../utils/aiDataConsent';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -35,6 +37,10 @@ export default function ServiceGroupPage() {
   const [archived, setArchived] = useState(false);
   const [mentionIds, setMentionIds] = useState([]);
   const [showMentions, setShowMentions] = useState(false);
+  const [emojiOpen,setEmojiOpen]=useState(false);
+  const emojis=['😊','🙂','😄','🤗','🙏','🤝','👍','👌','💪','❤️','🌹','🌷','🌞','🎉','👏','✅','💐','🍀','☕','🌙'];
+  const [voiceMode,setVoiceMode]=useState(false);
+  const mentionPosition=useRef(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -139,6 +145,8 @@ export default function ServiceGroupPage() {
     finally{earlierLock.current=false;setLoadingEarlier(false);}
   };
   earlierLoader.current=loadEarlier;
+  const mentionRoles={familyDoctor:'健康顾问',healthManager:'健管专员',nutritionist:'营养师',medicalAssistant:'就医专员',specialist:'专科医师'};
+  const editDraft=event=>{const value=event.detail.value;let at=((process.env.TARO_ENV==='h5'?document.activeElement?.selectionStart:event.detail.cursor)??value.length)-1;if(value.length===draft.length+1){let changed=0;while(changed<draft.length&&value[changed]===draft[changed])changed++;if(value[changed]==='@')at=changed;}setDraft(value);if(value[at]==='@'){mentionPosition.current=at;setShowMentions(true);setEmojiOpen(false);}else{setShowMentions(false);mentionPosition.current=null;}};
   const mentionCandidates = group ? [...group.staff, ...(group.assistant?.id ? [{...group.assistant,name:'小嘉',kind:'ai'}] : [])] : [];
   const send = async () => {
     const content = draft.trim();
@@ -193,7 +201,8 @@ export default function ServiceGroupPage() {
             {message.senderAvatar && <Image src={mediaUrl(message.senderAvatar)} mode="aspectFill" style={{ width: '36px', height: '36px', borderRadius: '50%', marginBottom: '5px' }} />}
             <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName}{message.senderType !== 'customer' && ` · ${({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',specialist:'专科医师',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
             {!!message.mentions?.length&&<View style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'6px'}}>{message.mentions.map(p=><Text key={p.id} onClick={()=>Taro.showModal({title:p.name,content:p.role || '服务成员',showCancel:false})} style={{color:'#187e87',fontSize:'12px',padding:'3px',background:'#eaf8f8'}}>@{p.name}</Text>)}</View>}
-            <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.content}</Text>
+            <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.audioUrl?'':message.content}</Text>
+            {message.audioUrl&&<GroupVoiceMessage message={message} groupId={group.id}/>}
             {message.material && <View style={{marginTop:'8px'}}>
               <Text style={{display:'block',fontSize:'12px',color:colors.textMuted}}>{message.material.status}</Text>
               {(message.material.files||[]).map((url,i)=>message.material.mimeType==='application/pdf'
@@ -206,14 +215,16 @@ export default function ServiceGroupPage() {
         <View style={{position:"relative",flexShrink:0}}>{hasNewMessage&&<Text onClick={()=>{setHasNewMessage(false);followLatest.current=true;setScrollRequest({target:"group-msg-"+lastMessage.current,bottom:true});}} style={{position:"absolute",right:"12px",bottom:"8px",padding:"8px 12px",background:"#fff",borderRadius:"8px",color:colors.primary,fontSize:"12px",boxShadow:"0 2px 8px #0002"}}>↓ 有新消息</Text>}</View>
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
         <GroupMaterialUpload key={group.id} groupId={group.id} onSent={()=>{followLatest.current=true;refresh();}} />
-        {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>text.endsWith('@')?text+p.name+' ':text+'@'+p.name+' ');setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{p.kind==='ai'?' · AI健康管家':''}</View>)}</ScrollView>}
+        {emojiOpen&&<View style={{display:'flex',flexWrap:'wrap',flexShrink:0,padding:'8px',background:'#fff'}}>{emojis.map(emoji=><Text key={emoji} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))} style={{fontSize:'24px',padding:'8px'}}>{emoji}</Text>)}</View>}
+        {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+p.name+' '+text.slice(at+1):text+'@'+p.name+' ';});setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{' · '+(p.kind==='ai'?'AI健康管家':mentionRoles[p.role]||'服务人员')}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#fff' }}>
-          <Text onClick={()=>setShowMentions(!showMentions)} style={{padding:'10px',color:colors.primary}}>@</Text>
-          <Textarea value={draft} onInput={event => {setDraft(event.detail.value);if(event.detail.value.endsWith('@'))setShowMentions(true);}} maxlength={2000} autoHeight
-            placeholder="给服务团队发消息" style={{ flex: 1, minHeight: '38px', maxHeight: '100px', padding: '8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.xs}px` }} />
-          <View onClick={send} style={{ padding: '10px 14px', backgroundColor: busy || !draft.trim() ? colors.textMuted : colors.primary, borderRadius: `${radius.xs}px` }}>
+          <Text onClick={()=>{setVoiceMode(v=>!v);setShowMentions(false);setEmojiOpen(false);}} style={{padding:'8px',color:colors.primary,flexShrink:0}}>{voiceMode?'键盘':'语音'}</Text>
+          {voiceMode?<GroupVoiceInput key={group.id} groupId={group.id} onSent={refresh} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<Textarea value={draft} onInput={editDraft} maxlength={2000} autoHeight
+            placeholder="给服务团队发消息" style={{ flex: 1, minHeight: '38px', maxHeight: '100px', padding: '8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.xs}px` }} />}
+          <Text onClick={()=>{setEmojiOpen(v=>!v);setVoiceMode(false);setShowMentions(false);}} style={{padding:'8px',fontSize:'22px',flexShrink:0}}>☺</Text>
+          {!voiceMode&&<View onClick={send} style={{ padding: '10px 14px', backgroundColor: busy || !draft.trim() ? colors.textMuted : colors.primary, borderRadius: `${radius.xs}px` }}>
             <Text style={{ color: '#fff' }}>发送</Text>
-          </View>
+          </View>}
         </View>
         </>}
       </>}
