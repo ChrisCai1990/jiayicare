@@ -1,3 +1,4 @@
+import ChatDateCalendar from './ChatDateCalendar';
 import React,{useEffect,useRef,useState} from 'react';
 import {View,Text,Input,Picker,ScrollView,Image} from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -5,6 +6,7 @@ import {inAppServiceGroupAPI as api} from '../services/api';
 const List=process.env.TARO_ENV==='h5'?View:ScrollView;
 const button={padding:'10px',color:'#187e87',fontSize:'14px'};
 export default function GroupHistory({group,onClose,topInset=0}) {
+ const [calendarOpen,setCalendarOpen]=useState(false);
  const [q,setQ]=useState(''),[date,setDate]=useState(''),[kind,setKind]=useState('all');
  const [rows,setRows]=useState([]),[context,setContext]=useState(null),[next,setNext]=useState('');
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -18,6 +20,7 @@ export default function GroupHistory({group,onClose,topInset=0}) {
   finally{if(serial===request.current)setBusy(false);}
  };
  const open=async(id)=>{const serial=++request.current;setBusy(true);setError('');try{const result=await api.historyContext(group.id,id);if(serial===request.current)setContext(result);}catch(e){if(serial===request.current)setError(e.message||'读取失败');}finally{if(serial===request.current)setBusy(false);}};
+ useEffect(()=>{if(calendarOpen&&process.env.TARO_ENV==='h5'){const pane=document.getElementById('group-history-results');if(pane)pane.scrollTop=0;}},[calendarOpen]);
  useEffect(()=>{search();return()=>{request.current++;};},[group.id]);
  useEffect(()=>{if(process.env.TARO_ENV==='h5'&&context){setTimeout(()=>{const pane=document.getElementById('group-history-results'),target=document.getElementById('history-'+context.anchorId);if(pane&&target)pane.scrollTop+=target.getBoundingClientRect().top-pane.getBoundingClientRect().top-20;},100);}},[context]);
  return <View style={{position:'absolute',inset:0,zIndex:100,paddingTop:topInset+'px',boxSizing:'border-box',background:'#f7faf9',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -26,13 +29,14 @@ export default function GroupHistory({group,onClose,topInset=0}) {
    <View style={{display:'flex',alignItems:'center',gap:'8px'}}><Input value={q} maxlength={80} placeholder="输入聊天关键词" onInput={e=>setQ(e.detail.value)} onConfirm={()=>search()} style={{flex:1,padding:'10px',border:'1px solid #d3e2dc',borderRadius:'8px'}}/><Text onClick={()=>!busy&&search()} style={button}>查找</Text></View>
    <View style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:'8px',marginTop:'10px'}}>
     {[['all','全部'],['image','图片'],['file','PDF']].map(([value,label])=><Text key={value} onClick={()=>{setKind(value);search(false,{kind:value});}} style={{...button,background:kind===value?'#def1e9':'#fff',borderRadius:'6px'}}>{label}</Text>)}
-    <Picker mode="date" value={date} onChange={e=>{setDate(e.detail.value);search(false,{date:e.detail.value});}}><Text style={button}>{date||'日期'}</Text></Picker>
+    <Text onClick={()=>setCalendarOpen(!calendarOpen)} style={button}>{date||'日期'}</Text>
     {!!date&&<Text onClick={()=>{setDate('');search(false,{date:''});}} style={button}>清除日期</Text>}
    </View>
   </View>
   {!!error&&<Text style={{padding:'10px',color:'#b42318'}}>{error}</Text>}
   {context&&<Text onClick={()=>setContext(null)} style={button}>‹ 返回搜索结果 · 原消息前后各最多20条</Text>}
   <List id="group-history-results" scrollY scrollIntoView={context?'history-'+context.anchorId:''} style={{flex:1,height:0,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'12px',boxSizing:'border-box'}}>
+   {calendarOpen&&<ChatDateCalendar value={date} onCancel={()=>setCalendarOpen(false)} onConfirm={value=>{setDate(value);setCalendarOpen(false);search(false,{date:value});}}/>}
    {busy&&<Text>正在读取…</Text>}
    {!busy&&!(context?.data||rows).length&&<Text>未找到聊天记录，请调整日期或关键词。</Text>}
    {(context?.data||rows).map(m=><View id={'history-'+m.id} key={m.id} style={{padding:'12px',marginBottom:'10px',background:'#fff',borderRadius:'10px',border:String(m.id)===String(context?.anchorId)?'2px solid #249c93':'1px solid #e0e9e5'}}>

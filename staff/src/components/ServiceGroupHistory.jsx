@@ -1,3 +1,4 @@
+import ChatDateCalendar from './ChatDateCalendar';
 import React, { useEffect, useRef, useState } from 'react';
 import { inAppServiceGroupAPI as api } from '../api';
 import './ServiceGroupHistory.css';
@@ -5,6 +6,7 @@ import './ServiceGroupHistory.css';
 const stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'});
 const roles={customer:'客户',healthManager:'健管专员',familyDoctor:'健康顾问',nutritionist:'营养师',medicalAssistant:'就医专员',specialist:'专科医师',ai:'AI健康管家'};
 export default function ServiceGroupHistory({group,onClose}) {
+  const [calendarOpen,setCalendarOpen]=useState(false);
   const [filters,setFilters]=useState({q:'',date:'',kind:'all'});
   const [rows,setRows]=useState([]),[context,setContext]=useState(null),[next,setNext]=useState(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -44,11 +46,12 @@ export default function ServiceGroupHistory({group,onClose}) {
       <form onSubmit={e=>{e.preventDefault();run();}}>
         <input ref={firstInput} aria-label="聊天关键词" value={filters.q} maxLength={80} placeholder="输入聊天关键词" onChange={e=>setFilters({...filters,q:e.target.value})}/>
         <div className="gh-controls">
-          <label>选择某一天<input type="date" value={filters.date} onChange={e=>{setFilters({...filters,date:e.target.value});run(false,{date:e.target.value});}}/></label>
+          <button type="button" onClick={()=>setCalendarOpen(!calendarOpen)}>{filters.date||'日期'}</button>
           {filters.date&&<button type="button" onClick={()=>{setFilters({...filters,date:''});run(false,{date:''});}}>清除日期</button>}
           <label>类型<select aria-label="类型" value={filters.kind} onChange={e=>setFilters({...filters,kind:e.target.value})}><option value="all">全部</option><option value="text">文字</option><option value="image">图片</option><option value="file">文件（PDF）</option></select></label>
           <button disabled={busy} type="submit">查找</button>
         </div>
+        {calendarOpen&&<ChatDateCalendar value={filters.date} onCancel={()=>setCalendarOpen(false)} onConfirm={date=>{setFilters({...filters,date});setCalendarOpen(false);run(false,{date});}}/>}
       </form>
       {error&&<p role="alert" className="gh-error">{error}</p>}
       {context&&<div className="gh-context-title"><button onClick={()=>setContext(null)}>返回搜索结果</button><small>原消息及前后各最多20条对话</small></div>}

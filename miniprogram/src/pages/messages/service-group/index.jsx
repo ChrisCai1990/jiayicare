@@ -24,7 +24,8 @@ export default function ServiceGroupPage() {
   const openMenu=async()=>{try{const result=await Taro.showActionSheet({itemList:['查找聊天记录']});if(result.tapIndex===0)setHistoryOpen(true);}catch{}};
   const [viewportHeight,setViewportHeight]=useState(null);
   useEffect(()=>{if(process.env.TARO_ENV!=='h5')return;const resize=()=>{setViewportHeight(window.visualViewport?.height||window.innerHeight);};resize();window.visualViewport?.addEventListener('resize',resize);window.addEventListener('resize',resize);return()=>{window.visualViewport?.removeEventListener('resize',resize);window.removeEventListener('resize',resize);};},[]);
-  const { statusBarHeight } = useNavBar();
+  const { statusBarHeight,totalHeight,menuRect } = useNavBar();
+  const safeHeaderTop=process.env.TARO_ENV==='h5'?statusBarHeight:Math.max(totalHeight,menuRect?.bottom||0);
   const [group, setGroup] = useState(null);
   const [groups, setGroups] = useState([]);
   const selectedId = useRef(Taro.getCurrentInstance()?.router?.params?.groupId || '');
@@ -146,7 +147,7 @@ export default function ServiceGroupPage() {
   };
 
   return <View style={{ position:'relative',height: process.env.TARO_ENV === 'h5' ? (viewportHeight?viewportHeight+'px':'100vh') : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
-    <View style={{ padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <View style={{ padding: `${safeHeaderTop + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <Text onClick={back} style={{ color: colors.primary, fontSize: '15px' }}>‹ 返回</Text>
       <Text style={{ color: colors.textPrimary, fontSize: '16px', fontWeight: 700, flex: 1, textAlign: 'center' }}>{group?.name || '我的服务群'}</Text>
       <Text onClick={group?openMenu:undefined} style={{color:colors.primary,fontSize:"24px",padding:"0 6px"}}>{group?"…":""}</Text>
@@ -205,6 +206,6 @@ export default function ServiceGroupPage() {
         </View>
         </>}
       </>}
-    {historyOpen&&group&&<GroupHistory key={group.id} topInset={statusBarHeight} group={group} onClose={()=>setHistoryOpen(false)}/>}
+    {historyOpen&&group&&<GroupHistory key={group.id} topInset={safeHeaderTop} group={group} onClose={()=>setHistoryOpen(false)}/>}
   </View>;
 }
