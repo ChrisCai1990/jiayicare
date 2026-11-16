@@ -2956,6 +2956,17 @@ export default function PatientDetailPage() {
       setFollowUps([...new Map(items.map(item => [item._id, item])).values()])
     } catch {}
   }
+  // A supervisor card can open this detail before the patient's follow-up list has loaded.
+  // Attach the same service history shown by the grouped service row once it arrives.
+  useEffect(() => {
+    if (followUpDetail?.workflowKey !== 'medical_proxy:supervise' || !/专家约诊/.test(followUpDetail.theme || '')
+      || followUpDetail._serviceItems?.length || !followUps.length) return
+    const orderId = String(followUpDetail.sourceOrderId?._id || followUpDetail.sourceOrderId || '')
+    if (!orderId) return
+    const serviceItems = followUps.filter(item => String(item.sourceOrderId?._id || item.sourceOrderId || '') === orderId)
+      .sort((a, b) => new Date(a.completedAt || a.createdAt || a.date) - new Date(b.completedAt || b.createdAt || b.date))
+    if (serviceItems.length) setFollowUpDetail(current => current?._id === followUpDetail._id ? { ...current, _serviceItems: serviceItems } : current)
+  }, [followUps, followUpDetail])
   const openPostCheckupReview = async (followUpId) => {
     const res = await staffAPI.getPatientFollowUps(id, { followUpId })
     const target = res.data?.followUps?.[0]

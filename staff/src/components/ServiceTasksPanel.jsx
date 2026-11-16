@@ -193,7 +193,10 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
       return
     }
     if (task.taskRole === 'supervisor' && task.workflowKey === 'medical_proxy:supervise'
-      && /专家约诊/.test(task.theme || '')) return
+      && /专家约诊/.test(task.theme || '')) {
+      nav(`/patients/${task.patientId?._id || task.patientId}?tab=followups`, { state: { openFollowUp: task } })
+      return
+    }
     if (task.feedbackReview) { setDispatchTask(task); return }
     if (annualDispatch.dedicated(task)) { setDispatchTask(task); return }
     if (task.sourceType === 'report_followup' && task.workflowKey === 'report_followup:advisor_review') {
@@ -294,8 +297,8 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
           return (
           <div key={task._id}
             onClick={() => openTask(task)}
-            title={isReadOnlyExpertSupervision ? '仅查看约诊进度，无需办理' : isOutpatientReportAuditWait ? '等待健管专员审核本次门诊病历和检验检查单' : isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
-            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 8px', cursor: isWaitingPrevious || isReadOnlyExpertSupervision ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < pagedServices.length - 1 ? '1px solid #f0ede8' : 'none', borderRadius: 8, background: isDueNow ? '#FFF9EB' : 'transparent' }}>
+            title={isReadOnlyExpertSupervision ? '查看专家约诊的订单、执行记录与结案状态' : isOutpatientReportAuditWait ? '等待健管专员审核本次门诊病历和检验检查单' : isOutpatientEscortProgress ? '当前已进入陪诊及资料闭环阶段' : isWaitingPrevious ? '上一环节完成后即可办理' : ''}
+            style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 8px', cursor: isWaitingPrevious && !isReadOnlyExpertSupervision ? 'default' : 'pointer', opacity: isWaitingPrevious ? 0.78 : 1, borderBottom: index < pagedServices.length - 1 ? '1px solid #f0ede8' : 'none', borderRadius: 8, background: isDueNow ? '#FFF9EB' : 'transparent' }}>
             <span style={{ fontSize: 18 }}>{isWaitingPrevious ? '⏳' : task.taskRole === 'supervisor' ? '🔎' : '✅'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>
@@ -317,6 +320,7 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
                 <div>已生成执行任务：完成 {task.supervisionProgress?.completed ?? 0} / {task.supervisionProgress?.total ?? 0}（非服务完成率）</div>
                 {(task.supervisionProgress?.current || []).map(row => <div key={row.id}>当前环节：<b>{row.label}</b> · 处理人：{row.assignee}{row.blocked ? ' · 等待解锁' : ''}</div>)}
                 <div>{task.supervisionProgress?.message || '进度待核对，未推断服务已完成'}</div>
+                {isReadOnlyExpertSupervision && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 7 }} onClick={event => { event.stopPropagation(); openTask(task) }}>查看服务记录与结案状态</button>}
               </div>}
               <MedicalAssistClosureAction task={task} onConfirmed={refreshTasks} />
               {task.feedbackReview&&<div style={{marginTop:8,padding:10,borderRadius:8,background:'#EAF5F0',color:'#274838',fontSize:12}}><div style={{fontWeight:600,marginBottom:6}}>客户提交：{formatChineseDateTime(task.feedbackReview.submittedAt)||'时间未记录'}</div><div>{task.feedbackReview.label}</div>{task.feedbackReview.note&&<div style={{whiteSpace:'pre-wrap',marginTop:4}}>补充：{task.feedbackReview.note}</div>}<button type="button" className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={e=>{e.stopPropagation();openTask(task)}}>查看反馈并核实</button></div>}
