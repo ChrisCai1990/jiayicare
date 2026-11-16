@@ -6,7 +6,7 @@ import Taro from '@tarojs/taro';
 import {inAppServiceGroupAPI as api} from '../services/api';
 const List=process.env.TARO_ENV==='h5'?View:ScrollView;
 const button={padding:'10px',color:'#187e87',fontSize:'14px'};
-export default function GroupHistory({group,onClose,topInset=0}) {
+export default function GroupHistory({group,onClose,topInset=0,initialMessageId=null}) {
  const [calendarOpen,setCalendarOpen]=useState(false);
  const [q,setQ]=useState(''),[date,setDate]=useState(''),[kind,setKind]=useState('all');
  const [rows,setRows]=useState([]),[context,setContext]=useState(null),[next,setNext]=useState('');
@@ -23,7 +23,7 @@ export default function GroupHistory({group,onClose,topInset=0}) {
  };
  const open=async(id)=>{const serial=++request.current;setBusy(true);setError('');try{const result=await api.historyContext(group.id,id);if(serial===request.current)setContext(result);}catch(e){if(serial===request.current)setError(e.message||'读取失败');}finally{if(serial===request.current)setBusy(false);}};
  useEffect(()=>{if(calendarOpen&&process.env.TARO_ENV==='h5'){const pane=document.getElementById('group-history-results');if(pane)pane.scrollTop=0;}},[calendarOpen]);
- useEffect(()=>{search();return()=>{request.current++;};},[group.id]);
+ useEffect(()=>{if(initialMessageId)open(initialMessageId);else search();return()=>{request.current++;};},[group.id]);
  useEffect(()=>{if(process.env.TARO_ENV==='h5'&&context){setTimeout(()=>{const pane=document.getElementById('group-history-results'),target=document.getElementById('history-'+context.anchorId);if(pane&&target)pane.scrollTop+=target.getBoundingClientRect().top-pane.getBoundingClientRect().top-20;},100);}},[context]);
  return <View style={{position:'absolute',inset:0,zIndex:100,paddingTop:topInset+'px',boxSizing:'border-box',background:'#f7faf9',display:'flex',flexDirection:'column',overflow:'hidden'}}>
   <View style={{padding:'14px 12px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,background:'#fff'}}><Text style={{fontWeight:700}}>查找聊天记录</Text><Text onClick={onClose} style={button}>关闭</Text></View>

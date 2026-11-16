@@ -1,3 +1,4 @@
+import GroupVoiceInput from '../components/GroupVoiceInput';
 import GroupVoiceMessage from '../components/GroupVoiceMessage';
 import ServiceGroupHistory from '../components/ServiceGroupHistory';
 import React, { useEffect, useRef, useState } from 'react';
@@ -13,6 +14,7 @@ const customerCode = id => id ? `KH-${id}` : '待核对';
 
 export default function InAppServiceGroupsPage() {
   const [historyOpen,setHistoryOpen]=useState(false);
+  const [quote,setQuote]=useState(null),[quoteMenu,setQuoteMenu]=useState(null),[historyAnchor,setHistoryAnchor]=useState(null);
   const [archive, setArchive] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [confirmation, setConfirmation] = useState(null);
@@ -26,6 +28,7 @@ export default function InAppServiceGroupsPage() {
   const [category, setCategory] = useState('');
   const categoryRef = useRef('');
   categoryRef.current = category;
+  const linkedGroup=useRef(new URLSearchParams(window.location.search).get('groupId')||'');
   const [groupSearch,setGroupSearch]=useState('');
   const [groupQuery,setGroupQuery]=useState('');
   const queryRef=useRef('');queryRef.current=groupQuery;
@@ -38,6 +41,7 @@ export default function InAppServiceGroupsPage() {
   const [emojiOpen,setEmojiOpen]=useState(false);
   const emojis=['😊','🙂','😄','🤗','🙏','🤝','👍','👌','💪','❤️','🌹','🌷','🌞','🎉','👏','✅','💐','🍀','☕','🌙'];
   const mentionPosition=useRef(null);
+  const [voiceMode,setVoiceMode]=useState(false);
   const [draft, setDraft] = useState('');
   const [scope, setScope] = useState(() => new URLSearchParams(window.location.search).get('scope') === 'pending' ? 'pending' : 'all');
   const [error, setError] = useState('');
@@ -105,7 +109,8 @@ export default function InAppServiceGroupsPage() {
     document.addEventListener('visibilitychange', pulse);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', pulse); };
   }, [selected?.id, selected?.supervised, selected?.status]);
-  const open = group => { followLatest.current = true; currentId.current = group.id; setSelected(group); setMessages([]); setOlder(false); setDraft(''); setMentionIds([]); setMentionAnchor(''); setShowMentions(false); setError(''); loadMessages(group.id); };
+  useEffect(()=>{const id=linkedGroup.current;if(!id)return;linkedGroup.current='';let active=true;api.list(1,'','active','',id).then(result=>{if(active&&result.data?.[0])open(result.data[0]);else if(active)setError('服务群已归档或您已不在服务范围内');}).catch(e=>active&&setError(e.message));return()=>{active=false;};},[]);
+  const open = group => { followLatest.current = true; currentId.current = group.id; setSelected(group); setMessages([]); setOlder(false); setDraft('');setQuote(null);setQuoteMenu(null); setMentionIds([]); setMentionAnchor(''); setShowMentions(false); setError(''); loadMessages(group.id); };
   const findPatient = async () => {
     if (!search.trim()) return setPatients([]);
     try { const res = await staffAPI.getPatients({ search: search.trim(), limit: 10 });
@@ -135,7 +140,7 @@ export default function InAppServiceGroupsPage() {
   const send = async () => {
     if (!selected || !draft.trim() || busy) return;
     setBusy(true); setError('');
-    try { await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+p.name+'（'+roleLabel(p)+'）')))); setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft(''); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
+    try { await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+p.name+'（'+roleLabel(p)+'）'))),quote?.id); setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft('');setQuote(null);setQuoteMenu(null); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
     catch (e) { setError(e.message || '发送失败'); }
     finally { setBusy(false); }
   };
@@ -235,7 +240,7 @@ export default function InAppServiceGroupsPage() {
       </section>
       <section aria-label="群消息" className="sg-chat-panel">
         {selected ? <>
-          {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} onClose={()=>setHistoryOpen(false)}/>}
+          {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} initialMessageId={historyAnchor} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
           <div className="sg-chat-header">
             <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
               <small>客户：{selected.patientName} · {customerCode(selected.patientId)}</small>
@@ -250,13 +255,15 @@ export default function InAppServiceGroupsPage() {
           <div className="sg-messages" ref={messagePane} onScroll={event => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 48; }}>
             {older&&<button onClick={()=>{followLatest.current=false;loadMessages(selected.id,messages[0]?.id);}}>查看更早消息</button>}
             {messages.length === 0 && <p className="sg-empty-messages">暂无消息，可以开始沟通。</p>}
-            {messages.map(message => <article id={'sg-msg-'+message.id} key={message.id}
+            {messages.map(message => <article onContextMenu={e=>{if(selected.status!=='closed'&&!selected.supervised){e.preventDefault();setQuoteMenu(message);}}} id={'sg-msg-'+message.id} key={message.id}
               className={`sg-message${message.senderType === 'staff' ? ' is-staff' : ''}`}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 {message.senderAvatar && <img alt="" src={message.senderAvatar.startsWith('/') ? API_ORIGIN + message.senderAvatar : message.senderAvatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />}
                 <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
               </div>
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
+              {quoteMenu?.id===message.id&&<div><button onClick={()=>{setQuote(message);setQuoteMenu(null);}}>引用</button><button onClick={()=>setQuoteMenu(null)}>取消</button></div>}
+              {message.quote&&<button style={{display:'block',textAlign:'left',background:'#eef1ef',marginBottom:6}} onClick={()=>{if(message.quote.id){setHistoryAnchor(message.quote.id);setHistoryOpen(true);}}}>{message.quote.senderName}：{message.quote.content}</button>}
               {message.audioUrl?<GroupVoiceMessage groupId={selected.id} message={message}/>:<div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>}
               {message.material && <div style={{marginTop:8}}>
                 <small>{message.material.status}</small>
@@ -269,9 +276,9 @@ export default function InAppServiceGroupsPage() {
           {selected.status==='closed' ? <p className="sg-readonly">本次服务已结束，历史记录仅供查看。</p> : selected.supervised ? <p className="sg-readonly">仅监管查看，未入群不能回复。</p>
             : <div className="sg-composer">
               <div className="sg-mention-picker"><button type="button" aria-label="选择表情" onClick={()=>{setEmojiOpen(v=>!v);setShowMentions(false);}}>☺</button>{emojiOpen&&<div style={{display:'flex',flexWrap:'wrap'}}>{emojis.map(emoji=><button key={emoji} style={{width:48,minWidth:48,fontSize:22}} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))}>{emoji}</button>)}</div>}{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
-              <textarea aria-label="服务群消息" value={draft} onChange={e => {setDraft(e.target.value);const at=e.target.selectionStart-1;mentionPosition.current=e.target.value[at]==='@'?at:null;setShowMentions(mentionPosition.current!==null);if(mentionPosition.current!==null)setEmojiOpen(false);}}
-                maxLength={2000} rows={4} placeholder="给客户发送消息…" />
-              <button type="button" className="sa-primary" disabled={busy || !draft.trim()} onClick={send}>发送</button>
+              <div style={{display:'flex',flexDirection:'column',flex:1,minWidth:0}}>{quote&&<div>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)} <button onClick={()=>setQuote(null)}>取消引用</button></div>}<button type='button' onClick={()=>setVoiceMode(v=>!v)}>{voiceMode?'键盘':'语音'}</button>{voiceMode?<GroupVoiceInput key={selected.id} groupId={selected.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;loadMessages(selected.id);refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<textarea aria-label="服务群消息" value={draft} onChange={e => {setDraft(e.target.value);const at=e.target.selectionStart-1;mentionPosition.current=e.target.value[at]==='@'?at:null;setShowMentions(mentionPosition.current!==null);if(mentionPosition.current!==null)setEmojiOpen(false);}}
+                maxLength={2000} rows={4} placeholder="给客户发送消息…" />}</div>
+              {!voiceMode&&<button type="button" className="sa-primary" disabled={busy || !draft.trim()} onClick={send}>发送</button>}
             </div>}
         </> : <p className="sg-select-prompt">从左侧选择一个服务群，查看对话记录。</p>}
       </section>

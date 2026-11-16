@@ -261,7 +261,7 @@ export const messagesAPI = {
 
 export const inAppServiceGroupAPI = {
   transcribe: (id,messageId) => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/transcribe`, {method:'POST',timeout:60000,body:JSON.stringify({})}),
-  sendVoice: (id,audio) => request(`/in-app-service-groups/${encodeURIComponent(id)}/voice`,{method:'POST',timeout:60000,body:JSON.stringify({audio})}),
+  sendVoice: (id,audio,quotedMessageId=null) => request(`/in-app-service-groups/${encodeURIComponent(id)}/voice`,{method:'POST',timeout:60000,body:JSON.stringify({audio,quotedMessageId})}),
   speech: (id,audio) => request(`/in-app-service-groups/${encodeURIComponent(id)}/speech`,{method:'POST',timeout:60000,body:JSON.stringify({audio})}),
 
   history: (id,query) => request(`/in-app-service-groups/${encodeURIComponent(id)}/history?${Object.entries(query).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&')}`),
@@ -269,8 +269,8 @@ export const inAppServiceGroupAPI = {
   uploadMaterial: (id, data) => request(`/in-app-service-groups/${encodeURIComponent(id)}/materials`, { method:'POST', timeout:180000, body:JSON.stringify(data) }),
   list: () => request('/in-app-service-groups'),
   messages: (id, before = '') => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(before)}`),
-  send: (id, content, mentionIds = []) => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
-    method: 'POST', body: JSON.stringify({ content, mentionIds }),
+  send: (id, content, mentionIds = [], quotedMessageId = null) => request(`/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
+    method: 'POST', body: JSON.stringify({ content, mentionIds, quotedMessageId }),
   }),
 };
 

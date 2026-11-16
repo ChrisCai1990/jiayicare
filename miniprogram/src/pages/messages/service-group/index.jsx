@@ -18,6 +18,7 @@ const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
 const MessageScroll=process.env.TARO_ENV==='h5'?View:ScrollView;
 export default function ServiceGroupPage() {
   const [historyOpen,setHistoryOpen]=useState(false);
+  const [quote,setQuote]=useState(null),[quoteMenu,setQuoteMenu]=useState(null),[historyAnchor,setHistoryAnchor]=useState(null);
   const [hasNewMessage,setHasNewMessage]=useState(false);
   const [loadingEarlier,setLoadingEarlier]=useState(false);
   const gesture=useRef(false);
@@ -133,7 +134,7 @@ export default function ServiceGroupPage() {
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
-  const openGroup = item => { userScroll.current=false;gesture.current=false;selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft(''); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
+  const openGroup = item => { userScroll.current=false;gesture.current=false;selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft('');setQuote(null);setQuoteMenu(null); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
   const back = () => { if (selectedId.current) { selectedId.current = ''; setGroup(null); setMessages([]); refresh(); } else Taro.navigateBack(); };
   const loadEarlier = async () => {
     if(earlierLock.current||!older)return;
@@ -153,9 +154,9 @@ export default function ServiceGroupPage() {
     if (!group || !content || busy) return;
     setBusy(true); setError('');
     try {
-      await api.send(group.id, content, mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id&&content.includes('@'+p.name))));
+      await api.send(group.id, content, mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id&&content.includes('@'+p.name))),quote?.id);
       setMentionIds([]);setShowMentions(false);
-      setDraft('');
+      setDraft('');setQuote(null);setQuoteMenu(null);
       followLatest.current = true;
       await refresh();
       setScrollRequest({ target: 'group-msg-' + lastMessage.current, bottom: true });
@@ -195,13 +196,14 @@ export default function ServiceGroupPage() {
           style={{ flex:1,height:0,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',overscrollBehavior:'contain',padding:'12px 16px 24px',boxSizing:'border-box' }}>
           <View id="group-message-content">
           {older&&<Text onClick={loadEarlier} style={{display:'block',textAlign:'center',padding:'10px',color:colors.primary}}>{loadingEarlier?"正在加载…":"查看更早消息"}</Text>}
-          {messages.map(message => <View id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
+          {messages.map(message => <View onLongPress={()=>group.status!=='closed'&&setQuoteMenu(message)} id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
             padding: '10px 12px', borderRadius: `${radius.sm}px`, backgroundColor: message.senderType === 'customer' ? '#D8EFE4' : '#fff' }}>
             {String(unreadAnchor) === String(message.id) && <Text style={{ display: 'block', color: '#B42318', fontSize: '12px', marginBottom: '6px' }}>以下为未读消息</Text>}
             {message.senderAvatar && <Image src={mediaUrl(message.senderAvatar)} mode="aspectFill" style={{ width: '36px', height: '36px', borderRadius: '50%', marginBottom: '5px' }} />}
             <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName}{message.senderType !== 'customer' && ` · ${({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',specialist:'专科医师',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
             {!!message.mentions?.length&&<View style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'6px'}}>{message.mentions.map(p=><Text key={p.id} onClick={()=>Taro.showModal({title:p.name,content:p.role || '服务成员',showCancel:false})} style={{color:'#187e87',fontSize:'12px',padding:'3px',background:'#eaf8f8'}}>@{p.name}</Text>)}</View>}
             <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.audioUrl?'':message.content}</Text>
+            {message.quote&&<Text onClick={()=>{if(message.quote.id){setHistoryAnchor(message.quote.id);setHistoryOpen(true);}}} style={{display:'block',padding:'8px',background:'#eef1ef',fontSize:'12px',color:colors.textMuted}}>{message.quote.senderName?message.quote.senderName+'：':''}{message.quote.content}</Text>}
             {message.audioUrl&&<GroupVoiceMessage message={message} groupId={group.id}/>}
             {message.material && <View style={{marginTop:'8px'}}>
               <Text style={{display:'block',fontSize:'12px',color:colors.textMuted}}>{message.material.status}</Text>
@@ -214,12 +216,14 @@ export default function ServiceGroupPage() {
         </MessageScroll>
         <View style={{position:"relative",flexShrink:0}}>{hasNewMessage&&<Text onClick={()=>{setHasNewMessage(false);followLatest.current=true;setScrollRequest({target:"group-msg-"+lastMessage.current,bottom:true});}} style={{position:"absolute",right:"12px",bottom:"8px",padding:"8px 12px",background:"#fff",borderRadius:"8px",color:colors.primary,fontSize:"12px",boxShadow:"0 2px 8px #0002"}}>↓ 有新消息</Text>}</View>
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
+        {quoteMenu&&<View style={{padding:'10px',background:'#fff',display:'flex',gap:'20px'}}><Text onClick={()=>{setQuote(quoteMenu);setQuoteMenu(null);}}>引用</Text><Text onClick={()=>setQuoteMenu(null)}>取消</Text></View>}
+        {quote&&<View style={{padding:'8px',background:'#eef1ef',display:'flex',gap:'10px'}}><Text style={{flex:1,fontSize:'12px'}}>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)}</Text><Text onClick={()=>setQuote(null)}>取消引用</Text></View>}
         <GroupMaterialUpload key={group.id} groupId={group.id} onSent={()=>{followLatest.current=true;refresh();}} />
         {emojiOpen&&<View style={{display:'flex',flexWrap:'wrap',flexShrink:0,padding:'8px',background:'#fff'}}>{emojis.map(emoji=><Text key={emoji} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))} style={{fontSize:'24px',padding:'8px'}}>{emoji}</Text>)}</View>}
-        {showMentions&&<ScrollView scrollY style={{flexShrink:0,maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+p.name+' '+text.slice(at+1):text+'@'+p.name+' ';});setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{' · '+(p.kind==='ai'?'AI健康管家':mentionRoles[p.role]||'服务人员')}</View>)}</ScrollView>}
+        {showMentions&&<ScrollView scrollY style={{flexShrink:0,height:Math.min(160,mentionCandidates.length*44+16)+'px',maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+p.name+' '+text.slice(at+1):text+'@'+p.name+' ';});setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{' · '+(p.kind==='ai'?'AI健康管家':mentionRoles[p.role]||'服务人员')}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#fff' }}>
           <Text onClick={()=>{setVoiceMode(v=>!v);setShowMentions(false);setEmojiOpen(false);}} style={{padding:'8px',color:colors.primary,flexShrink:0}}>{voiceMode?'键盘':'语音'}</Text>
-          {voiceMode?<GroupVoiceInput key={group.id} groupId={group.id} onSent={refresh} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<Textarea value={draft} onInput={editDraft} maxlength={2000} autoHeight
+          {voiceMode?<GroupVoiceInput key={group.id} groupId={group.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<Textarea value={draft} onInput={editDraft} maxlength={2000} autoHeight
             placeholder="给服务团队发消息" style={{ flex: 1, minHeight: '38px', maxHeight: '100px', padding: '8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.xs}px` }} />}
           <Text onClick={()=>{setEmojiOpen(v=>!v);setVoiceMode(false);setShowMentions(false);}} style={{padding:'8px',fontSize:'22px',flexShrink:0}}>☺</Text>
           {!voiceMode&&<View onClick={send} style={{ padding: '10px 14px', backgroundColor: busy || !draft.trim() ? colors.textMuted : colors.primary, borderRadius: `${radius.xs}px` }}>
@@ -228,6 +232,6 @@ export default function ServiceGroupPage() {
         </View>
         </>}
       </>}
-    {historyOpen&&group&&<GroupHistory key={group.id} topInset={safeHeaderTop} group={group} onClose={()=>setHistoryOpen(false)}/>}
+    {historyOpen&&group&&<GroupHistory key={group.id} topInset={safeHeaderTop} initialMessageId={historyAnchor} group={group} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
   </View>;
 }

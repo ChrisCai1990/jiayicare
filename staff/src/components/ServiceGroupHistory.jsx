@@ -6,7 +6,7 @@ import './ServiceGroupHistory.css';
 
 const stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'});
 const roles={customer:'客户',healthManager:'健管专员',familyDoctor:'健康顾问',nutritionist:'营养师',medicalAssistant:'就医专员',specialist:'专科医师',ai:'AI健康管家'};
-export default function ServiceGroupHistory({group,onClose}) {
+export default function ServiceGroupHistory({group,onClose,initialMessageId=null}) {
   const [calendarOpen,setCalendarOpen]=useState(false);
   const [filters,setFilters]=useState({q:'',date:'',kind:'all'});
   const [rows,setRows]=useState([]),[context,setContext]=useState(null),[next,setNext]=useState(null);
@@ -31,7 +31,7 @@ export default function ServiceGroupHistory({group,onClose}) {
     catch(e){if(serial===request.current)setError(e.message||'对话读取失败');}
     finally{if(serial===request.current)setBusy(false);}
   };
-  useEffect(()=>{const previous=document.activeElement;firstInput.current?.focus();run();return()=>{request.current++;previous?.focus?.();};},[group.id]);
+  useEffect(()=>{const previous=document.activeElement;firstInput.current?.focus();if(initialMessageId)openContext(initialMessageId);else run();return()=>{request.current++;previous?.focus?.();};},[group.id]);
   useEffect(()=>{anchor.current?.scrollIntoView({block:'center'});},[context]);
   const keyDown=e=>{
     if(e.key==='Escape')onClose();

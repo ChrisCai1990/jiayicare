@@ -96,13 +96,15 @@ async function serializeMessages(group,rows) {
     return { id:row.materialReportId, title:report?.title || '医疗资料', status:materials.statusOf(report),
       mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signStoredUrl(url,report.ossKeys?.[i] || '')) };
   };
-  return rows.map(row => ({ id: row._id, senderType: row.senderType,
+  const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId}).select('senderName content audioUrl materialReportId').lean();
+  const quoteMap=new Map(quoted.map(q=>[String(q._id),{id:q._id,senderName:q.senderName,content:q.audioUrl?'[语音消息]':q.materialReportId?'[医疗资料]':q.content.slice(0,180)}]));
+  return rows.map(row => ({ id: row._id, quote:row.quotedMessageId?(quoteMap.get(String(row.quotedMessageId))||{unavailable:true,content:'原消息已不可用'}):null, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
     audioUrl:row.audioUrl?require('../utils/oss').signStoredUrl(row.audioUrl):'',audioDuration:row.audioDuration||0,audioTranscript:row.audioTranscript||'',
     material: materialOf(row), mentions: row.mentions || [], senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
 }
-async function send(group, senderType, sender, content, rawMentions = [], audioFields = {}) {
+async function send(group, senderType, sender, content, rawMentions = [], audioFields = {}, quotedMessageId = null) {
  return events.withGroupLock(group._id, group.tenantId, async locked => {
   if (locked.status !== 'active') fail('服务群已归档，不能发送消息', 409);
   const patient = await User.findOne({_id:group.patientId,tenantId:group.tenantId}).lean();
@@ -116,7 +118,8 @@ async function send(group, senderType, sender, content, rawMentions = [], audioF
   const body = contentOf(content);
   if (!body || body.length > 2000) fail('请输入不超过2000字的消息', 400);
   if (mentions.some(m=>m.kind==='ai')) await require('../utils/aiDataConsent').assertPermission(patient._id,'assistant','qwen');
-  const message = await Message.create({ ...audioFields, tenantId: group.tenantId, groupId: group._id,
+  if(quotedMessageId&&!await Message.exists({_id:validId(quotedMessageId),groupId:group._id,tenantId:group.tenantId}))fail('引用的消息不在此群内',400);
+  const message = await Message.create({ ...audioFields, quotedMessageId:quotedMessageId||undefined,wecomAlertEligible:senderType==='customer', tenantId: group.tenantId, groupId: group._id,
     patientId: group.patientId, senderType, senderId: sender._id,
     senderName: sender.name || '服务成员', content: body, mentions });
   const at = message.createdAt;
@@ -168,7 +171,7 @@ customerRouter.post('/:groupId/materials', wrap(async (req,res) => {
       }
       const message=await Message.findOneAndUpdate({eventKey:key},{$setOnInsert:{tenantId:group.tenantId,groupId:group._id,
         patientId:patient._id,senderType:'customer',senderId:patient._id,senderName:patient.name || '客户',
-        content:`已提交${label}`,materialReportId:existing._id,eventKey:key}}, {upsert:true,new:true});
+        content:`已提交${label}`,materialReportId:existing._id,wecomAlertEligible:true,eventKey:key}}, {upsert:true,new:true});
       await Group.updateOne({_id:group._id},{$max:{lastMessageAt:message.createdAt,lastCustomerMessageAt:message.createdAt}});
       return {id:message._id,reportId:existing._id};
     });
@@ -240,7 +243,7 @@ customerRouter.post('/:groupId/voice', wrap(async(req,res)=>{
  const audio=require('../utils/groupAudio').validate(req.body.audio),oss=require('../utils/oss');
  const saved=await oss.uploadBuffer(audio.buffer,audio.mimeType,'messages/audio');
  try{
-  const message=await send(group,'customer',req.user,'[语音消息]',[],{audioUrl:saved.url,audioDuration:audio.duration,audioMimeType:audio.mimeType});
+  const message=await send(group,'customer',req.user,'[语音消息]',[],{audioUrl:saved.url,audioDuration:audio.duration,audioMimeType:audio.mimeType},req.body?.quotedMessageId);
   res.status(201).json({success:true,data:message});
  }catch(error){
   if(!await Message.exists({groupId:group._id,audioUrl:saved.url}))await oss.deleteFile(saved.key);
@@ -251,13 +254,31 @@ customerRouter.post('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.user.tenantId);
   if (!canCustomerAccess(group, req.user)) fail('无权发送服务群消息');
   if (!(await groupStaff(group, patient)).length) fail('当前没有可接收消息的入群人员', 409);
-  const message = await send(group, 'customer', req.user, req.body?.content, req.body?.mentionIds);
+  const message = await send(group, 'customer', req.user, req.body?.content, req.body?.mentionIds, {}, req.body?.quotedMessageId);
   res.status(201).json({ success: true, data: message });
   void assistant.reply(group._id, message);
 }));
 
 staffRouter.use(staffAuth, wrap(async (req, res, next) => { await permitStaff(req); next(); }));
 staffRouter.post('/:groupId/messages/:messageId/transcribe',wrap(transcribeGroupMessage));
+staffRouter.post('/:groupId/voice',wrap(async(req,res)=>{
+ const {group,patient}=await groupAndPatient(req.params.groupId,req.staff.tenantId);
+ if(!canStaffAccess(group,patient,req.staff))fail('仅当前入群服务人员可以回复');
+ const audio=require('../utils/groupAudio').validate(req.body.audio),oss=require('../utils/oss');
+ const saved=await oss.uploadBuffer(audio.buffer,audio.mimeType,'messages/audio');
+ try{
+  const message=await send(group,'staff',req.staff,'[语音消息]',[],{audioUrl:saved.url,audioDuration:audio.duration,audioMimeType:audio.mimeType},req.body?.quotedMessageId);
+  res.status(201).json({success:true,data:message});
+ }catch(error){if(!await Message.exists({groupId:group._id,audioUrl:saved.url}))await oss.deleteFile(saved.key);throw error;}
+}));
+staffRouter.post('/:groupId/speech',wrap(async(req,res)=>{
+ const {group,patient}=await groupAndPatient(req.params.groupId,req.staff.tenantId);
+ if(!canStaffAccess(group,patient,req.staff))fail('仅当前入群服务人员可以使用');
+ const audio=require('../utils/groupAudio').validate(req.body.audio);
+ const text=await require('../utils/groupAudio').transcribe(patient._id,audio.buffer.toString('base64'),audio.mimeType);
+ res.json({success:true,data:{text}});
+}));
+
 staffRouter.get('/reminders', wrap(async (req, res) => {
   const mentoredIds = await mentorStaffIds(req.staff);
   const visibleIds = [req.staff._id, ...mentoredIds];
@@ -290,6 +311,7 @@ staffRouter.get('/', wrap(async (req, res) => {
   const patients = await User.find(patientQuery).select('name preferredTitle gender tenantId isDeleted ' + assignmentFields.join(' ')).lean();
   const groupQuery = { tenantId: req.staff.tenantId,
     patientId: { $in: patients.map(patient => patient._id) }, status: req.query.status === 'closed' ? 'closed' : 'active' };
+  if(req.query.groupId)groupQuery._id=validId(req.query.groupId);
   if (req.query.serviceType) {
     if (!TYPES[req.query.serviceType] && req.query.serviceType !== 'legacy') fail('服务群类型无效', 400);
     groupQuery.serviceType = req.query.serviceType;
@@ -477,7 +499,7 @@ staffRouter.post('/:groupId/messages', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);
   if (!canStaffAccess(group, patient, req.staff)) fail('仅当前服务人员可以回复');
   await Group.updateOne({ _id: group._id }, { $max: { humanActiveUntil: new Date(Date.now() + 90000) } });
-  const message = await send(group, 'staff', req.staff, req.body?.content, req.body?.mentionIds);
+  const message = await send(group, 'staff', req.staff, req.body?.content, req.body?.mentionIds, {}, req.body?.quotedMessageId);
   res.status(201).json({ success: true, data: message });
   if (assistant.isMentioned(group,message)) void assistant.reply(group._id,message);
 }));

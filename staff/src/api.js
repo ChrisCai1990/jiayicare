@@ -98,6 +98,8 @@ export const serviceGroupAPI = {
 }
 
 export const inAppServiceGroupAPI = {
+  sendVoice:(id,audio,quotedMessageId=null)=>req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/voice`,{method:'POST',timeout:60000,body:JSON.stringify({audio,quotedMessageId})}),
+  speech:(id,audio)=>req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/speech`,{method:'POST',timeout:60000,body:JSON.stringify({audio})}),
   transcribe: (id,messageId) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/transcribe`, {method:'POST',timeout:60000,body:JSON.stringify({})}),
 
   history: (id,query)=>req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/history?${new URLSearchParams(query)}`),
@@ -106,12 +108,12 @@ export const inAppServiceGroupAPI = {
   confirm: data => req('/staff/in-app-service-groups/lifecycle/confirm', {method:'POST',body:JSON.stringify(data)}),
   reminders: () => req('/staff/in-app-service-groups/reminders'),
   presence: id => req(`/staff/in-app-service-groups/${id}/presence`, { method: 'POST' }),
-  list: (page = 1, serviceType = '', status = 'active', q = '') => req(`/staff/in-app-service-groups?page=${page}&serviceType=${encodeURIComponent(serviceType)}&status=${status}&q=${encodeURIComponent(q)}`),
+  list: (page = 1, serviceType = '', status = 'active', q = '', groupId = '') => req(`/staff/in-app-service-groups?page=${page}&serviceType=${encodeURIComponent(serviceType)}&status=${status}&q=${encodeURIComponent(q)}&groupId=${encodeURIComponent(groupId)}`),
   configuration: (patientId, serviceType) => req(`/staff/in-app-service-groups/configuration/${encodeURIComponent(patientId)}?serviceType=${encodeURIComponent(serviceType)}`),
   configure: data => req('/staff/in-app-service-groups', { method: 'POST', body: JSON.stringify(data) }),
   messages: (id, before = '') => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(before)}`),
-  send: (id, content, mentionIds = []) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
-    method: 'POST', body: JSON.stringify({ content, mentionIds }),
+  send: (id, content, mentionIds = [], quotedMessageId = null) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
+    method: 'POST', body: JSON.stringify({ content, mentionIds, quotedMessageId }),
   }),
 }
 

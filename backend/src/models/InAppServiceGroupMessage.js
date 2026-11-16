@@ -5,6 +5,9 @@ const schema = new mongoose.Schema({
   groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'InAppServiceGroup', required: true, index: true },
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   senderType: { type: String, enum: ['customer', 'staff', 'ai'], required: true },
+  quotedMessageId: { type: mongoose.Schema.Types.ObjectId, default: undefined },
+  wecomAlertEligible: { type:Boolean, default:false },
+  wecomAlertQueuedAt: Date,
   replyTo: { type: mongoose.Schema.Types.ObjectId, default: undefined },
   senderId: { type: mongoose.Schema.Types.ObjectId, required: true },
   senderName: { type: String, required: true, maxlength: 120 },
@@ -19,6 +22,7 @@ const schema = new mongoose.Schema({
   eventKey: { type: String, default: undefined },
 }, { timestamps: true });
 schema.index({ groupId: 1, createdAt: -1 });
+schema.index({ wecomAlertEligible: 1, wecomAlertQueuedAt: 1, createdAt: 1 });
 schema.index({ replyTo: 1 }, { unique: true, sparse: true });
 schema.index({ eventKey: 1 }, { unique: true, sparse: true });
 schema.index({ tenantId: 1, 'mentions.id': 1, createdAt: -1 });
