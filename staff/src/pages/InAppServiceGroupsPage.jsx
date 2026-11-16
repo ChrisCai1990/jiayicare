@@ -12,7 +12,6 @@ const customerCode = id => id ? `KH-${id}` : '待核对';
 
 export default function InAppServiceGroupsPage() {
   const [historyOpen,setHistoryOpen]=useState(false);
-  const [moreOpen,setMoreOpen]=useState(false);
   const [archive, setArchive] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [confirmation, setConfirmation] = useState(null);
@@ -237,7 +236,7 @@ export default function InAppServiceGroupsPage() {
             <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
               <small>客户：{selected.patientName} · {customerCode(selected.patientId)}</small>
               <small>团队成员：{selected.staff.map(memberLabel).join('、')}</small></div>
-            <div style={{position:"relative"}}><button type="button" aria-label="群聊更多" onClick={()=>setMoreOpen(!moreOpen)}>…</button>{moreOpen&&<button type="button" style={{position:"absolute",right:0,top:"100%",zIndex:20,whiteSpace:"nowrap",background:"#fff"}} onClick={()=>{setMoreOpen(false);setHistoryOpen(true);}}>查找聊天记录</button>}</div>
+            <button type="button" aria-label="群聊更多" onClick={()=>setHistoryOpen(true)}>…</button>
             {selected.canConfigure && selected.status !== 'closed' && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
           </div>
           {selected.assistant && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: '#eef9f9' }}>

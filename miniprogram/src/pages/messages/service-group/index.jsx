@@ -19,9 +19,10 @@ export default function ServiceGroupPage() {
   const [hasNewMessage,setHasNewMessage]=useState(false);
   const [loadingEarlier,setLoadingEarlier]=useState(false);
   const gesture=useRef(false);
+  const userScroll=useRef(false);
   const earlierLock=useRef(false);
   const earlierLoader=useRef(null);
-  const openMenu=async()=>{try{const result=await Taro.showActionSheet({itemList:['查找聊天记录']});if(result.tapIndex===0)setHistoryOpen(true);}catch{}};
+  const openMenu=()=>setHistoryOpen(true);
   const [viewportHeight,setViewportHeight]=useState(null);
   useEffect(()=>{if(process.env.TARO_ENV!=='h5')return;const resize=()=>{setViewportHeight(window.visualViewport?.height||window.innerHeight);};resize();window.visualViewport?.addEventListener('resize',resize);window.addEventListener('resize',resize);return()=>{window.visualViewport?.removeEventListener('resize',resize);window.removeEventListener('resize',resize);};},[]);
   const { statusBarHeight,totalHeight,menuRect } = useNavBar();
@@ -49,33 +50,41 @@ export default function ServiceGroupPage() {
   const [scrollRequest, setScrollRequest] = useState(null);
   useEffect(() => {
     if (loading || !scrollRequest) return;
-    let active = true;
+    let active = true,observer=null,frame=0;
     const locate = () => {
-      if (!active || (scrollRequest.bottom && gesture.current)) return;
+      if (!active || (scrollRequest.bottom && (gesture.current || !followLatest.current))) return;
       if (process.env.TARO_ENV === 'h5') {
         const pane = document.getElementById('service-group-scroll');
         const target = document.getElementById(scrollRequest.target);
-        if (pane && target) {
+        if (pane && (scrollRequest.bottom || target)) {
           pane.scrollTop = scrollRequest.bottom ? pane.scrollHeight
             : pane.scrollTop + target.getBoundingClientRect().top - pane.getBoundingClientRect().top - (scrollRequest.offset||0);
+          if(scrollRequest.bottom&&!observer&&typeof ResizeObserver!=='undefined') {
+            observer=new ResizeObserver(()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(locate);});
+            observer.observe(pane);
+            const content=document.getElementById('group-message-content');if(content)observer.observe(content);
+          }
         }
+      } else {
+        Taro.createSelectorQuery().select('#service-group-scroll').boundingClientRect(rect => { if (rect) paneHeight.current = rect.height; }).exec();
+        if (scrollRequest.bottom) { setScrollTarget(''); setScrollTop(value => value + 100000); }else setScrollTarget(scrollRequest.target);
       }
-      if (process.env.TARO_ENV !== 'h5') Taro.createSelectorQuery().select('#service-group-scroll').boundingClientRect(rect => { if (rect) paneHeight.current = rect.height; }).exec();
-      if(process.env.TARO_ENV!=='h5'){if (scrollRequest.bottom) { setScrollTarget(''); setScrollTop(value => value + 100000); }else setScrollTarget(scrollRequest.target);}
     };
     Taro.nextTick(locate);
-    const timer = setTimeout(locate, 120);
-    return () => { active = false; clearTimeout(timer); };
+    const timers=(scrollRequest.bottom?[120,350,800,1600]:[120]).map(delay=>setTimeout(locate,delay));
+    return () => { active = false;timers.forEach(clearTimeout);observer?.disconnect();if(process.env.TARO_ENV==='h5')cancelAnimationFrame(frame); };
+
   }, [loading, scrollRequest]);
 
   useEffect(()=>{
     if(process.env.TARO_ENV!=='h5'||loading||!group)return;
     const pane=document.getElementById('service-group-scroll');if(!pane)return;
-    const start=()=>{gesture.current=true;followLatest.current=false;setScrollRequest(null);};
+    const intent=()=>{userScroll.current=true;followLatest.current=false;setScrollRequest(null);};
+    const start=()=>{gesture.current=true;intent();};
     const end=()=>{gesture.current=false;};
-    const scroll=()=>{if(pane.scrollTop<24)earlierLoader.current?.();if(gesture.current)return;followLatest.current=pane.scrollHeight-pane.scrollTop-pane.clientHeight<16;if(followLatest.current)setHasNewMessage(false);};
-    pane.addEventListener('touchstart',start,{passive:true});pane.addEventListener('touchend',end,{passive:true});pane.addEventListener('touchcancel',end,{passive:true});pane.addEventListener('scroll',scroll,{passive:true});
-    return()=>{pane.removeEventListener('touchstart',start);pane.removeEventListener('touchend',end);pane.removeEventListener('touchcancel',end);pane.removeEventListener('scroll',scroll);};
+    const scroll=()=>{if(!userScroll.current)return;if(pane.scrollTop<24)earlierLoader.current?.();if(gesture.current)return;followLatest.current=pane.scrollHeight-pane.scrollTop-pane.clientHeight<16;if(followLatest.current)setHasNewMessage(false);};
+    pane.addEventListener('wheel',intent,{passive:true});pane.addEventListener('touchstart',start,{passive:true});pane.addEventListener('touchend',end,{passive:true});pane.addEventListener('touchcancel',end,{passive:true});pane.addEventListener('scroll',scroll,{passive:true});
+    return()=>{pane.removeEventListener('wheel',intent);pane.removeEventListener('touchstart',start);pane.removeEventListener('touchend',end);pane.removeEventListener('touchcancel',end);pane.removeEventListener('scroll',scroll);};
   },[loading,group?.id]);
   const refreshing = useRef(false);
   const refresh = useCallback(async () => {
@@ -109,7 +118,7 @@ export default function ServiceGroupPage() {
     finally { refreshing.current = false; setLoading(false); }
   }, []);
 
-  useDidShow(() => setVisible(true));
+  useDidShow(() => {userScroll.current=false;gesture.current=false;followLatest.current=true;opened.current=false;setVisible(true);if(lastMessage.current)setScrollRequest({target:'group-msg-'+lastMessage.current,bottom:true});refresh();});
   useDidHide(() => setVisible(false));
   useEffect(() => {
     if (!visible) return;
@@ -118,7 +127,7 @@ export default function ServiceGroupPage() {
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
-  const openGroup = item => { selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft(''); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
+  const openGroup = item => { userScroll.current=false;gesture.current=false;selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft(''); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
   const back = () => { if (selectedId.current) { selectedId.current = ''; setGroup(null); setMessages([]); refresh(); } else Taro.navigateBack(); };
   const loadEarlier = async () => {
     if(earlierLock.current||!older)return;
@@ -174,8 +183,9 @@ export default function ServiceGroupPage() {
       </ScrollView>
       : <>
         <MessageScroll id="service-group-scroll" onScrollToUpper={loadEarlier} {...(process.env.TARO_ENV==='h5'?{}:{scrollY:true,scrollTop,scrollIntoView:scrollTarget})}
-          onScroll={event => { const detail = event.detail; if (process.env.TARO_ENV === 'h5') { const pane = document.getElementById('service-group-scroll'); if (pane && !gesture.current) followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 16; } else { followLatest.current = paneHeight.current > 0 && detail.scrollHeight - detail.scrollTop - paneHeight.current < 64; } }}
+          onScroll={event => { const detail = event.detail; if (process.env.TARO_ENV === 'h5') { const pane = document.getElementById('service-group-scroll'); if (pane && userScroll.current && !gesture.current) followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 16; } else { followLatest.current = paneHeight.current > 0 && detail.scrollHeight - detail.scrollTop - paneHeight.current < 64; } }}
           style={{ flex:1,height:0,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',overscrollBehavior:'contain',padding:'12px 16px 24px',boxSizing:'border-box' }}>
+          <View id="group-message-content">
           {older&&<Text onClick={loadEarlier} style={{display:'block',textAlign:'center',padding:'10px',color:colors.primary}}>{loadingEarlier?"正在加载…":"查看更早消息"}</Text>}
           {messages.map(message => <View id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
             padding: '10px 12px', borderRadius: `${radius.sm}px`, backgroundColor: message.senderType === 'customer' ? '#D8EFE4' : '#fff' }}>
@@ -191,6 +201,7 @@ export default function ServiceGroupPage() {
                 : <Image key={i} src={url} mode="widthFix" onClick={()=>Taro.previewImage({current:url,urls:message.material.files})} style={{width:'100px',margin:'6px',borderRadius:'6px'}} />)}
             </View>}
           </View>)}
+          </View>
         </MessageScroll>
         <View style={{position:"relative",flexShrink:0}}>{hasNewMessage&&<Text onClick={()=>{setHasNewMessage(false);followLatest.current=true;setScrollRequest({target:"group-msg-"+lastMessage.current,bottom:true});}} style={{position:"absolute",right:"12px",bottom:"8px",padding:"8px 12px",background:"#fff",borderRadius:"8px",color:colors.primary,fontSize:"12px",boxShadow:"0 2px 8px #0002"}}>↓ 有新消息</Text>}</View>
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
