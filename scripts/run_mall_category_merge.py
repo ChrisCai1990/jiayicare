@@ -16,7 +16,9 @@ entry = next(line for line in known_hosts.read_text(encoding='utf-8').splitlines
 os.environ['JIAYICARE_SSH_HOST_FINGERPRINT'] = 'SHA256:' + base64.b64encode(
     hashlib.sha256(base64.b64decode(entry.split()[2])).digest()).decode().rstrip('=')
 
-source = Path(__file__).resolve().parents[1] / 'backend/scripts/mergeMallCategories20261116.js'
+rename_health = '--rename-health-root' in sys.argv
+source = Path(__file__).resolve().parents[1] / 'backend/scripts' / (
+    'renameHealthMallRoot20261116.js' if rename_health else 'mergeMallCategories20261116.js')
 remote = '/tmp/mergeMallCategories20261116-' + uuid.uuid4().hex + '.js'
 apply = '--apply' in sys.argv
 with connect() as ssh:
