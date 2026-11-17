@@ -219,3 +219,6 @@
 .in-app-service-groups>h1{font-size:28px;margin:0 0 8px;}
 
 .sg-time-separator { text-align: center; color: #677c72; font-size: 12px; line-height: 1.5; margin: 4px 0 14px; }
+
+.sg-message-menu { display: flex; gap: 6px; margin-bottom: 6px; }
+.service-assistant .sg-message-menu button { padding: 5px 10px; background: #34473f; color: #fff; border: 0; font-size: 13px; }
