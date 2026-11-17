@@ -13,7 +13,9 @@ function lifestyleSummary(rows){
  const counts=new Map();
  for(const row of rows){
   const value=text(row.value).replace(/【[^】]+】/g,'').trim();
-  if(value) counts.set(value,(counts.get(value)||0)+1);
+  const prefix=['smoking','smoke','tobacco'].includes(row.type)?'吸烟：':row.type==='alcohol'?'饮酒：':'';
+  const detail=value+ (row.unit?` ${text(row.unit)}`:'');
+  if(value) counts.set(prefix+detail,(counts.get(prefix+detail)||0)+1);
  }
  const common=[...counts].filter(([,count])=>count>1).sort((a,b)=>b[1]-a[1]).slice(0,3)
   .map(([value,count])=>`${value.slice(0,30)}${value.length>30?'…':''}（${count}条）`).join('、');
