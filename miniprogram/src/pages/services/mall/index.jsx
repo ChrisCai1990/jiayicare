@@ -54,7 +54,7 @@ function ServiceCard({ item, onDetail, onPay, isAuthenticated }) {
           <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }} numberOfLines={2}>{item.name}</Text>
           <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginBottom: '4px' }} numberOfLines={2}>{item.subtitle}</Text>
           <Stars rating={item.rating} />
-          <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>{item.reviewCount || 0}人已购</Text>
+          {item.paidOrderCount > 0 && <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>已购{item.paidOrderCount}笔</Text>}
         </View>
       </View>
       {item.features && item.features.length > 0 && (
