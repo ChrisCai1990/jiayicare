@@ -47,6 +47,7 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
     return {records,orders:orders.map(o=>({...o,expiresAt:expiryOf(o)})),templates,questions,responses,pushes,plans};
   }));
   router.post(base+'/link-annual-issue',staffAuth,checkPermission('plans','edit'),wrap(async(req,p)=>{
+    if(!require('../utils/annualFlowPilot').enabled(p._id)) fail('该客户未进入年度管理试点',404);
     if(!['superadmin','familyDoctor'].includes(req.staff.role) || req.staff.role==='familyDoctor' && String(p.assignedFamilyDoctor)!==String(req.staff._id)) fail('仅该客户健康顾问可关联年度问题',403);
     if(!mongoose.isValidObjectId(req.body.planId)||!mongoose.isValidObjectId(req.body.orderId)) fail('请选择年度方案和运动服务订单');
     const plan=await AnnualPlan.findOne({_id:req.body.planId,patientId:p._id,pushedAt:{$ne:null}}).lean();

@@ -34,6 +34,14 @@ test('新任同岗人员恢复归档，原审核身份与备注不变', async ()
   assert.equal(f.record().writeback.reviewedByName, '原顾问'); assert.equal(f.record().result, '原审核备注');
   assert.equal(result.data.auditLog[0].staffId, 'replacement');
 });
+test('已核对的年度目标进入正式阶段评估服务档案', async () => {
+  const f = fixture();
+  const snapshot = { ...f.row(), goalReviews: [{ sourceTitle: '睡眠', goal: '改善作息', outcome: 'partial', outcomeNote: '本期有记录，仍需继续跟进' }] };
+  await f.run(snapshot);
+  assert.match(f.record().content, /年度管理目标核对/);
+  assert.match(f.record().content, /部分达成/);
+  assert.match(f.record().content, /仍需继续跟进/);
+});
 test('归档写入后状态回写失败，重试复用原档案且只完成一次', async () => {
   const f = fixture(); const save = f.models.PhaseAssessment.findOneAndUpdate; let fail = true;
   f.models.PhaseAssessment.findOneAndUpdate = async (filter, update) => {

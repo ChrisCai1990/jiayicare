@@ -41,7 +41,7 @@ function buildTask(plan, patient, actor, attempt = 1, now = new Date()) {
     date: Number.isFinite(date.getTime()) ? date : now, type: 'phone', status: 'planned',
     theme: '年度标准营养评估', content, plannedContent: content,
     sourceAnnualPlanId: plan._id, sourceType: 'professional_assessment',
-    managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))],
+    ...(require('./annualFlowPilot').enabled(plan.patientId) ? { managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))] } : {}),
     sourceScheduleKey: `nutrition-assessment:standalone:${attempt}`, workflowKey: 'annual_nutrition_assessment',
     deliveryMode: 'single', deliveryType: 'nutrition_assessment', taskRole: 'executor',
     aiStatus: 'approved', reviewRole: null, reviewAssignedTo: null,

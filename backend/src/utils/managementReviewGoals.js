@@ -12,14 +12,16 @@ function goalReviews(plans, followups, period, services = [], healthRecords = []
   const rows = plan.moduleData?.management_targets?.records || [];
   const periodEnd = new Date(`${period.end}T23:59:59+08:00`);
   const planStart = new Date(plan.confirmedAt);
-  const activeObservations = observationRecords.filter(record => new Date(record.recordedAt) >= planStart);
-  const activeStart = planStart.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-  const observationPeriod = { start: activeStart > period.start ? activeStart : period.start, end: period.end };
   const rehabIssuesByOrder = new Map(linkedRehabOrders.filter(order => id(order.rehabAnnualLink?.annualPlanId) === id(plan))
     .map(order => [id(order), order.rehabAnnualLink.issueIds || []]));
-  return rows.filter(row => row.issueId && row.goal).slice(0, 32).map(row => {
-    const tasks = (followups || []).filter(task => new Date(task.date) >= planStart && (task.managementIssueIds || []).includes(row.issueId));
-    const linkedServices = (services || []).filter(service => new Date(service.date) >= planStart
+  return rows.filter(row => row.issueId && row.goal && (!row.effectiveAt || new Date(row.effectiveAt) <= periodEnd)).slice(0, 32).map(row => {
+    const rowStart = row.effectiveAt && new Date(row.effectiveAt) > planStart ? new Date(row.effectiveAt) : planStart;
+    const activeObservations = observationRecords.filter(record => new Date(record.recordedAt) >= rowStart);
+    const activeStart = rowStart.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+    const observationPeriod = { start: activeStart > period.start ? activeStart : period.start, end: period.end };
+    const activePeriod = { start: observationPeriod.start, end: period.end };
+    const tasks = (followups || []).filter(task => new Date(task.date) >= rowStart && (task.managementIssueIds || []).includes(row.issueId));
+    const linkedServices = (services || []).filter(service => new Date(service.date) >= rowStart
       && ((service.structuredContent?.rehab?.managementIssueIds || []).includes(row.issueId)
         || (rehabIssuesByOrder.get(id(service.structuredContent?.rehab?.orderId)) || []).includes(row.issueId)));
     const prior = priorGoalReviews.find(review => (review.goalReviews || []).some(previous => previous.issueId === row.issueId
@@ -35,7 +37,7 @@ function goalReviews(plans, followups, period, services = [], healthRecords = []
       symptomTerm: String(row.symptomTerm || '').slice(0, 80), lifestyleType: String(row.lifestyleType || '').slice(0, 30),
       goalMetric: row.goalMetric || null,
       metricEvidence: row.goalDimension === 'data' && row.goalMetric
-        ? { ...require('./managementGoalMetrics').metricEvidence(row.goalMetric, healthRecords, reports, period), incomplete: metricSourcesIncomplete } : null,
+        ? { ...require('./managementGoalMetrics').metricEvidence(row.goalMetric, healthRecords, reports, activePeriod), incomplete: metricSourcesIncomplete } : null,
       observationEvidence: row.goalDimension === 'symptom'
         ? require('./managementObservationEvidence').summarize(activeObservations, 'symptom', row.symptomTerm, observationSourcesIncomplete, observationPeriod)
         : row.goalDimension === 'lifestyle' && row.lifestyleType

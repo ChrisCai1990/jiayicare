@@ -965,6 +965,7 @@ async function generateHealthPlanFollowUp(plan) {
 }
 
 async function ensureNutritionBodyCompInvitation(plan) {
+  if (!require('../utils/annualFlowPilot').enabled(plan.patientId)) return;
   if (plan.type !== 'nutrition' || plan.content?.nutritionTaskVersion !== 1 || !plan.confirmedAt) return;
   const patient = await User.findById(plan.patientId).select('tenantId assignedNutritionist').lean();
   if (!patient) throw new Error('会员不存在，无法生成体成分邀约');
@@ -1096,7 +1097,8 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
     }
     await ensureNutritionBodyCompInvitation(plan);
     // 一站式体检在客户确认后直接交棒给健康规划师，不再另建模糊的“确认后随访”占位。
-    if (plan.type !== 'annual_checkup' && !(plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1)) await generateHealthPlanFollowUp(plan).catch(() => {});
+    if (plan.type !== 'annual_checkup' && !(plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1
+      && require('../utils/annualFlowPilot').enabled(plan.patientId))) await generateHealthPlanFollowUp(plan).catch(() => {});
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });

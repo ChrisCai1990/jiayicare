@@ -108,7 +108,7 @@ async function buildAnnualPlanFollowUps(plan) {
       content: content || '',
       status: 'planned',
       sourceAnnualPlanId: plan._id,
-      managementIssueIds: [...new Set((delivery.sourceIds || []).map(String))],
+      ...(require('./annualFlowPilot').enabled(plan.patientId) ? { managementIssueIds: [...new Set((delivery.sourceIds || []).map(String))] } : {}),
       sourceScheduleKey,
       sourceType: 'scheduled',
       deliveryMode: delivery.serviceMode || 'reminder',
@@ -139,7 +139,7 @@ async function buildAnnualPlanFollowUps(plan) {
     push(date, '年度标准营养评估', nutritionDispatch.contentForPlan(plan), patient?.assignedNutritionist,
       `nutrition-assessment:${dateKey}`, standardNutrition);
     if (created.length > before) Object.assign(created.at(-1), { workflowKey: 'annual_nutrition_assessment', reviewAssignedTo: null, reviewRole: null,
-      managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))],
+      ...(require('./annualFlowPilot').enabled(plan.patientId) ? { managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))] } : {}),
       formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals } });
   }
 
@@ -351,7 +351,7 @@ async function syncAnnualPlanFollowUps(plan) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
       if (require('../../../shared/annualNutrition.cjs').isTask(keep)) continue;
-      const continuedInPlace = keep.status === 'in_progress' && keep.progressRecords?.length
+      const continuedInPlace = require('./annualFlowPilot').enabled(plan.patientId) && keep.status === 'in_progress' && keep.progressRecords?.length
         && keep.nextFollowUpDate && +new Date(keep.date) === +new Date(keep.nextFollowUpDate);
       if (!row.sourceScheduleKey?.startsWith('health-consensus:') && !continuedInPlace) assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
@@ -371,7 +371,7 @@ async function syncAnnualPlanFollowUps(plan) {
       if (['planned', 'in_progress', 'missed'].includes(keep.status) && row.content) {
         keep.theme = row.theme;
         keep.content = row.content;
-        keep.managementIssueIds = row.managementIssueIds || [];
+        if (require('./annualFlowPilot').enabled(plan.patientId)) keep.managementIssueIds = row.managementIssueIds || [];
         keep.deliveryMode = row.deliveryMode;
         keep.deliveryType = row.deliveryType;
         keep.clientVisible = row.clientVisible !== false;

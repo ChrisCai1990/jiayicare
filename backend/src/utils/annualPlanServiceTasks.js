@@ -32,7 +32,7 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
     const evidence = itemSnapshot.basisSummary || itemSnapshot.reason || record.matchReason || '';
     rows.push({
       key: `service-request:${moduleKey}:${index}:${identityDate.toISOString().slice(0, 10)}`,
-      managementIssueIds: [...new Set((itemSnapshot.sourceIds || []).map(String))],
+      ...(require('./annualFlowPilot').enabled(plan.patientId) ? { managementIssueIds: [...new Set((itemSnapshot.sourceIds || []).map(String))] } : {}),
       date: executionDate, assignedTo: (moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? patient.assignedHealthManager : patient.assignedHealthPlanner) || null,
       stage: supervisionOnly ? 'service_supervision' : 'service_request', taskRole: 'supervisor', theme: `${supervisionOnly ? '服务进度督办' : '服务需求待安排'} · ${label}`,
       content: [
@@ -75,7 +75,7 @@ async function syncAnnualPlanServiceTasks(plan) {
     if (existing) assertAmendedRowUnchanged(plan, row.key, existing.date, row.date);
     if (['completed', 'cancelled'].includes(existing?.status) || existing?.serviceTracking?.linkId || existing?.annualDispatch || existing?.careFlowId) continue;
     const payload = { patientId: plan.patientId, staffId: plan.createdBy, assignedTo: row.assignedTo, date: row.date, remindAt: row.date,
-      managementIssueIds: row.managementIssueIds,
+      ...(require('./annualFlowPilot').enabled(plan.patientId) ? { managementIssueIds: row.managementIssueIds } : {}),
       theme: row.theme, content: row.content, plannedContent: row.content, formData: row.formData,
       coordinationGroupId: `annual-plan:${plan._id}`, workflowKey: row.stage, taskRole: row.taskRole,
       status: existing?.status || 'planned', aiStatus: 'approved', reviewRole: null, isBlocked: false, activationEvent: '',

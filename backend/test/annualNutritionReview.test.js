@@ -17,9 +17,11 @@ test('营养评估仅派营养师一项，不生成健管或规划师需求',asy
 test('legacy review is disabled',async()=>{await assert.rejects(()=>transition({task:{sourceType:'professional_assessment',workflowKey:'lifestyle_interview'},review:true}),/无需健康顾问审核/)});
 
 test('年度标准营养评估派营养师一项，保留顾问勾选的对比指标',async t=>{
+ process.env.MANAGEMENT_REVIEW_MODE='phase_assessment';
+ process.env.MANAGEMENT_REVIEW_PATIENT_IDS='6a4ef1980f2291549b4ffd8d';
  const date=new Date(Date.now()+10*86400000).toISOString().slice(0,10);
  const team={assignedNutritionist:'bbbbbbbbbbbbbbbbbbbbbbbb'};
- const plan={_id:'plan',patientId:'patient',moduleData:{nutrition_assessment:{enabled:true,executionDate:date,nutritionComparisonMetrics:['糖化血红蛋白','甘油三酯']},management_targets:{records:[{issueId:'management_issue:1',goal:'稳定血糖',nutritionRelevant:true}]},personalized_followups:{records:[{directNutritionAssessment:true,executionDate:date,standardPlanId:'legacy'}]}}};
+ const plan={_id:'plan',patientId:'6a4ef1980f2291549b4ffd8d',moduleData:{nutrition_assessment:{enabled:true,executionDate:date,nutritionComparisonMetrics:['糖化血红蛋白','甘油三酯']},management_targets:{records:[{issueId:'management_issue:1',goal:'稳定血糖',nutritionRelevant:true}]},personalized_followups:{records:[{directNutritionAssessment:true,executionDate:date,standardPlanId:'legacy'}]}}};
  const User=require('../src/models/User'),Admin=require('../src/models/Admin');
  t.mock.method(User,'findById',()=>({select:()=>({lean:async()=>team})}));t.mock.method(Admin,'find',()=>({select:()=>({lean:async()=>[]})}));
  const rows=await require('../src/utils/annualPlanFollowUps').buildAnnualPlanFollowUps(plan);

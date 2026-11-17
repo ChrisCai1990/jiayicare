@@ -19,6 +19,7 @@ const phaseAssessmentSchema = new mongoose.Schema({
     default: 'nutrition_review', index: true,
   },
   content: { type: String, required: true },
+  goalReviews: { type: [mongoose.Schema.Types.Mixed], default: [] }, // 试点客户的周期目标证据及顾问核对结论
   // 新的常规评估与服务复盘共用一条记录；仅本次服务团队成员需要逐岗核对。
   teamRoles: { type: [String], default: [] },
   teamReviews: { type: mongoose.Schema.Types.Mixed, default: {} },

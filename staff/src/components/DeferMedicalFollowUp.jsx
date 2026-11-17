@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { staffAPI } from '../api'
+import React, { useEffect, useState } from 'react'
+import { staffAPI, managementReviewAPI } from '../api'
 
 const MEDICAL = /^(annual_checkup|checkup_completion|abnormal_followup|medical_treatment|functional_medicine):/
 export const canDeferMedicalFollowUp = task => !!task && !task.taskRole && !task.isBlocked
@@ -12,7 +12,15 @@ export default function DeferMedicalFollowUp({ task, onSaved }) {
   const [nextDate, setNextDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  if (!canDeferMedicalFollowUp(task)) return null
+  const [pilot, setPilot] = useState(false)
+  const patientId = String(task?.patientId?._id || task?.patientId || '')
+  useEffect(() => {
+    let active = true
+    setPilot(false)
+    if (patientId) managementReviewAPI.get(patientId).then(result => { if (active) setPilot(result.restored === true) }).catch(() => {})
+    return () => { active = false }
+  }, [patientId])
+  if (!pilot || !canDeferMedicalFollowUp(task)) return null
   const save = async () => {
     if (reason.trim().length < 5 || !nextDate) { setError('请填写本轮未做的实际情况与下次跟进日期'); return }
     setSaving(true); setError('')

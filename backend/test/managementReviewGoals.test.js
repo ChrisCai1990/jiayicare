@@ -101,3 +101,17 @@ test('observation coverage starts when the annual goal takes effect mid-period',
   assert.equal(row.observationEvidence.count, 1);
   assert.equal(row.observationEvidence.periodDays, 16);
 });
+
+test('goals added to a published plan do not rewrite earlier periods', () => {
+  const plans = [{ _id: 'published-plan', confirmedAt: '2026-09-23T02:00:00Z', moduleData: { management_targets: { records: [
+    { issueId: 'sleep-later', goal: '核对睡眠', goalDimension: 'lifestyle', lifestyleType: 'sleep', effectiveAt: '2026-11-17T02:00:00Z' },
+  ] } } }];
+  const observations = [
+    { type: 'sleep', value: '7.0', recordedAt: '2026-11-10T02:00:00Z' },
+    { type: 'sleep', value: '8.0', recordedAt: '2026-11-20T02:00:00Z' },
+  ];
+  assert.deepEqual(goalReviews(plans, [], { start: '2026-10-01', end: '2026-10-31' }, [], [], [], false, observations), []);
+  const [row] = goalReviews(plans, [], { start: '2026-11-01', end: '2026-11-30' }, [], [], [], false, observations);
+  assert.equal(row.observationEvidence.count, 1);
+  assert.equal(row.observationEvidence.periodDays, 14);
+});

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { staffAPI } from '../api'
+import { staffAPI, managementReviewAPI } from '../api'
 import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs'
 import { annualManagementSourceKey, findAnnualManagementDecision } from '../utils/annualManagementDecision.mjs'
 import DateField from '../../../shared/DateField.jsx'
@@ -10,6 +10,11 @@ const DIRECTIONS = [
   ['vaccine', '疫苗接种'], ['monitoring', '日常监测'],
 ]
 const pending = new Map()
+const pilotPending = new Map()
+function loadPilot(patientId) {
+  if (!pilotPending.has(patientId)) pilotPending.set(patientId, managementReviewAPI.get(patientId).then(result => result.restored === true).catch(() => false))
+  return pilotPending.get(patientId)
+}
 function load(patientId, year) {
   const key = `${patientId}:${year}`
   if (!pending.has(key)) pending.set(key, staffAPI.getAnnualManagementDecisions(patientId, year).finally(() => pending.delete(key)))
@@ -24,6 +29,8 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
   const [reviewDepartment, setReviewDepartment] = useState('')
   const [saved, setSaved] = useState(null), [legacy, setLegacy] = useState(null), [adoptLegacy, setAdoptLegacy] = useState(false), [error, setError] = useState('')
+  const [pilot, setPilot] = useState(false)
+  useEffect(() => { let active = true; setPilot(false); if (patientId) loadPilot(patientId).then(value => { if (active) setPilot(value) }); return () => { active = false } }, [patientId])
   const suggestions = specialtyIssueSuggestions(sourceText)
   const key = annualManagementSourceKey(source)
   const symptomSource = source?.kind === 'symptom' && !!source?.recordId
@@ -40,13 +47,14 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     }).catch(() => {})
     return () => { active = false }
   }, [patientId, year, key])
-  if (!['familyDoctor', 'superadmin'].includes(staff?.role) || (!reportSource && !symptomSource)) return null
+  if (!['familyDoctor', 'superadmin'].includes(staff?.role) || (!reportSource && !symptomSource)
+    || !pilot && (symptomSource || source.kind === 'report_item')) return null
   const submit = async () => {
-    if (title.trim().length < 2 || !direction || !goal.trim() || !action.trim()) { setError('请填写具体问题、管理方向、目标和下一步行动'); return }
+    if (title.trim().length < 2 || !direction || pilot && (!goal.trim() || !action.trim())) { setError(pilot ? '请填写具体问题、管理方向、目标和下一步行动' : '请填写具体问题和管理方向'); return }
     setBusy(true); setError('')
     try {
       const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, note: note.trim(),
-        goal: goal.trim(), action: action.trim(), actionTiming: { mode: timingMode, firstDueDate, frequency: frequency.trim() },
+        ...(pilot ? { goal: goal.trim(), action: action.trim(), actionTiming: { mode: timingMode, firstDueDate, frequency: frequency.trim() } } : {}),
         reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
         ...(adoptLegacy && legacy?._id ? { legacyDecisionId: legacy._id } : {}) })
       setSaved(result.data); if (adoptLegacy) setLegacy(null); setOpen(false)
@@ -85,14 +93,14 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
         <select className="form-input" value={direction} disabled={drafting} onChange={e => { setDirection(e.target.value); if (!['ongoing_management', 'abnormal_followup'].includes(e.target.value)) setReviewKind('none') }}><option value="">请选择</option>{DIRECTIONS.filter(([value]) => !symptomSource || ['medical_treatment', 'ongoing_management'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
+        {pilot && <><label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
         <textarea className="form-input" rows={2} maxLength={240} value={goal} onChange={e => setGoal(e.target.value)} placeholder="写出本年度要达到或明确的可核对结果；缺少基线时先以建立基线为目标" />
         <label className="form-label" style={{ marginTop: 12 }}>下一步行动</label>
         <textarea className="form-input" rows={2} maxLength={400} value={action} onChange={e => setAction(e.target.value)} placeholder="写明需要安排的就医、检查、资料核对或专业评估" />
         <button type="button" className="btn btn-secondary btn-sm" disabled={drafting || busy || !direction || !title.trim()} onClick={draft} style={{ marginTop: 8 }}>
           {drafting ? 'AI 起草中…' : 'AI 起草空白目标和行动'}
         </button>
-        <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>只填入空白字段；顾问核对原始资料后修改确认。</div>
+        <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>只填入空白字段；顾问核对原始资料后修改确认。</div></>}
         <label className="form-label" style={{ marginTop: 12 }}>顾问补充说明（可选）</label>
         <textarea className="form-input" rows={2} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="如已确认的复查时限、就医意向或待核实事项" />
         {!symptomSource && ['ongoing_management', 'abnormal_followup'].includes(direction) && <><label className="form-label" style={{ marginTop: 12 }}>是否需要定期复查</label>
@@ -110,7 +118,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <input className="form-input" maxLength={100} value={reviewDepartment} onChange={e => setReviewDepartment(e.target.value)} placeholder="例如：消化内科；不同专科请分别归属" />
           <div style={{ fontSize: 12, color: '#65776F' }}>同一月份、同一专科的项目归为一次就诊复查；先由专科医生评估并开单，再完成检查及结果回顾。</div>
         </div>}</>}
-        {reviewKind !== 'recheck' && <div style={{ marginTop: 10, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
+        {pilot && reviewKind !== 'recheck' && <div style={{ marginTop: 10, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
           <label className="form-label">执行安排</label>
           <select className="form-input" value={timingMode} onChange={e => { setTimingMode(e.target.value); setFirstDueDate(''); setFrequency('') }}>
             <option value="pending">时间待确认</option><option value="single">单次行动</option><option value="rolling">持续跟进，完成本轮后安排下一轮</option>

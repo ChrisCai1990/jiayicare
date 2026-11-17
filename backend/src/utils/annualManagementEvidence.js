@@ -119,10 +119,13 @@ const DIRECTION_LABELS = {
   medical_treatment: '安排就医', checkup_completion: '完善检查', abnormal_followup: '定期复查',
   vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察',
 };
-function managementTargets(evidence = []) {
+function managementTargets(evidence = [], pilot = true) {
   return evidence.slice(0, 32).map(item => {
     const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming, source } = item.content;
     const directionLabel = DIRECTION_LABELS[direction] || '持续管理';
+    if (!pilot) return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
+      focus: [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
+      nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
     return { issueId: item.id, goal: goal || `${problem} · ${directionLabel}`,
       focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
       goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)

@@ -35,7 +35,7 @@ const id = '__PATIENT_ID__';
     const periods = user ? policy.periods(user, new Date(), effective) : [];
     const [confirmedPlans, existingReviews] = await Promise.all([
       db.collection('annualplans').find({ patientId: new ObjectId(id), confirmedAt: { $ne: null } })
-        .project({ year: 1, 'moduleData.management_targets.records': 1 }).toArray(),
+        .project({ year: 1, pushedAt: 1, updatedAt: 1, reviewStatus: 1, moduleData: 1 }).toArray(),
       db.collection('managementreviews').find({ patientId: new ObjectId(id) })
         .project({ periodKey: 1, status: 1, goalReviews: 1, roles: 1, contributions: 1, generation: 1 }).toArray(),
     ]);
@@ -47,8 +47,13 @@ const id = '__PATIENT_ID__';
       assignedAdvisor: Boolean(user?.assignedFamilyDoctor),
       assignedNutritionist: Boolean(user?.assignedNutritionist),
       assignedRehabSpecialist: Boolean(user?.assignedRehabSpecialist),
-      confirmedPlans: confirmedPlans.map(row => ({ year: row.year,
-        goalCount: row.moduleData?.management_targets?.records?.length || 0 })),
+      confirmedPlans: confirmedPlans.map(row => ({ year: row.year, pushed: Boolean(row.pushedAt), reviewStatus: row.reviewStatus,
+        goalCount: row.moduleData?.management_targets?.records?.length || 0,
+        modules: Object.entries(row.moduleData || {}).filter(([, value]) => value?.enabled !== false)
+          .map(([key, value]) => ({ key, count: value?.records?.length || 0,
+            linkedSourceCount: value?.records?.filter(item => item.sourceIds?.length).length || 0,
+            sources: (value?.records || []).map(item => (item.sourceIds || []).map(String)) })) })),
+      healthManagementMode: effective.HEALTH_MANAGEMENT_ROLLOUT_MODE || 'unset',
       healthManagementEnabled: effective.HEALTH_MANAGEMENT_ROLLOUT_MODE === 'all'
         || effective.HEALTH_MANAGEMENT_ROLLOUT_MODE === 'allowlist'
           && String(effective.HEALTH_MANAGEMENT_PATIENT_IDS || '').split(',').map(x => x.trim()).includes(id),

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { staffAPI, API_ORIGIN, managementReviewAPI } from '../api'
 import AnnualGoalEvidencePreview from './AnnualGoalEvidencePreview'
+import PhaseGoalReview from './PhaseGoalReview'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
@@ -145,6 +146,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [assessments, setAssessments] = useState([])
   const [closedLoop, setClosedLoop] = useState(false)
   const [assessmentEdits, setAssessmentEdits] = useState({})
+  const [assessmentGoalEdits, setAssessmentGoalEdits] = useState({})
   const [expandedAssessments, setExpandedAssessments] = useState({})
   const [activeAssessmentSections, setActiveAssessmentSections] = useState({})
   const [activeId, setActiveId] = useState('')
@@ -205,6 +207,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         setAssessments(items => [target, ...items.filter(item => item._id !== targetId)])
       }
       setAssessmentEdits(Object.fromEntries((assessmentRes.data || []).map(item => [item._id, item.content || ''])))
+      setAssessmentGoalEdits(Object.fromEntries((assessmentRes.data || []).map(item => [item._id, item.goalReviews || []])))
     } catch (err) { toast(err.message, 'error') } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [patientId])
@@ -435,9 +438,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     if (action !== 'include_role' && !inlineReview && !reviewNote?.trim()) return
     setBusy(true)
     try {
-      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, { action, revision: assessment.__v, reviewNote, role, content: assessmentEdits[assessment._id] ?? assessment.content })
+      const res = await staffAPI.reviewPhaseAssessment(patientId, assessment._id, { action, revision: assessment.__v, reviewNote, role, content: assessmentEdits[assessment._id] ?? assessment.content, ...(role === 'familyDoctor' ? { goalReviews: assessmentGoalEdits[assessment._id] ?? assessment.goalReviews } : {}) })
       setAssessments(list => list.map(item => item._id === assessment._id ? res.data : item))
       setAssessmentEdits(values => ({ ...values, [assessment._id]: res.data.content || '' }))
+      setAssessmentGoalEdits(values => ({ ...values, [assessment._id]: res.data.goalReviews || [] }))
       toast(action === 'include_role' ? '已邀请团队成员参与本次复盘' : res.data.status === 'finalized' ? '评估与复盘已写入服务档案' : '本岗位核对已保存')
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
@@ -496,6 +500,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
               </div>)}
               {status === 'team_review' && item.reviewWorkflow !== 'single_owner' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>{(item.reviewWorkflow === 'advisor_nutrition' ? [['rehabSpecialist', '转交运动复健师']] : [['psychologist', '邀请心理咨询师'], ['rehabSpecialist', '邀请运动复健师'], ['tcmDoctor', '邀请中医师']]).filter(([role]) => !item.teamRoles.includes(role)).map(([role, label]) => <button key={role} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => submitTeamReview(item, 'include_role', role)}>{label}</button>)}</div>}
             </div>}
+            <PhaseGoalReview rows={assessmentGoalEdits[item._id] ?? item.goalReviews ?? []} editable={canTeamEdit && pendingTeamRole === 'familyDoctor'} onChange={rows => setAssessmentGoalEdits(values => ({ ...values, [item._id]: rows }))} />
             <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 9 }}>
               {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => setActiveAssessmentSections(values => ({ ...values, [item._id]: expanded ? index : values[item._id] === index ? null : index }))} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontSize: 25, lineHeight: 1 }}>{section.icon}</div>
