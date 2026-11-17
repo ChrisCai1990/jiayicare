@@ -10149,7 +10149,7 @@ router.put('/patients/:id/ai-checkup-reviews', staffAuth, async (req, res) => {
     if (note.length > 1000 || (disposition === 'needs_exam' && (title.length < 2 || title.length > 80)) ||
         (disposition !== 'needs_exam' && !note)) return res.status(400).json({ success: false, message: '请填写检查名称或处理原因' });
     const confirmed = await AnnualPlan.exists({ patientId: req.params.id, year, confirmedAt: { $ne: null } });
-    if (confirmed) return res.status(409).json({ success: false, message: '本年度方案已确认，新检查结果请走单项随访' });
+    if (confirmed && !require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(409).json({ success: false, message: '本年度方案已确认，新检查结果请走单项随访' });
     let linkedDecisionId = null;
     if (disposition === 'already_managed') {
       if (!mongoose.isValidObjectId(req.body.linkedDecisionId)) return res.status(400).json({ success: false, message: '请选择已有的完善检查事项' });
@@ -10158,6 +10158,12 @@ router.put('/patients/:id/ai-checkup-reviews', staffAuth, async (req, res) => {
       linkedDecisionId = linked._id;
     }
     const Review = require('../models/AIHealthCheckupReview');
+    const previous = await Review.findOne({ patientId: req.params.id, year, sourceKey: item.sourceKey }).select('_id').lean();
+    if (confirmed && previous) {
+      const plans = await AnnualPlan.find({ patientId: req.params.id, year, confirmedAt: { $ne: null } }).select('moduleData').lean();
+      if (plans.some(plan => Object.values(plan.moduleData || {}).some(module => (module?.records || []).some(row => (row.sourceIds || []).includes(`management_issue:${previous._id}`)))))
+        return res.status(409).json({ success: false, message: '该项已进入已确认方案，请通过方案修订入口调整' });
+    }
     const row = await Review.findOneAndUpdate({ patientId: req.params.id, year, sourceKey: item.sourceKey },
       { $set: { sourceVersion: source.version, itemKey: item.itemKey, itemText: item.text, disposition,
         title: disposition === 'needs_exam' ? title : '', note, linkedDecisionId, reviewedBy: req.staff._id, reviewedAt: new Date() } },
@@ -10245,12 +10251,18 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
         .select('value note recordedAt symptomWorkflow').lean();
       if (!symptom) return res.status(409).json({ success: false, message: '主诉尚未经健康顾问处理或已变化，请先核对' });
       const formal = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year), $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] });
-      if (formal) return res.status(409).json({ success: false, message: '本年度方案已发布；新主诉请走原有就医或随访流程' });
+      if (formal && !annualPilot) return res.status(409).json({ success: false, message: '本年度方案已发布；新主诉请走原有就医或随访流程' });
       let managementAction;
       try { managementAction = require('../utils/annualManagementAction').normalizeAction(req.body, { kind: 'none' }); }
       catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
       const sourceKey = `symptom:${symptom._id}`;
       const Decision = require('../models/AnnualManagementDecision');
+      const existing = await Decision.findOne({ patientId: req.params.id, year: Number(year), sourceKey }).select('_id').lean();
+      if (formal && existing) {
+        const plans = await AnnualPlan.find({ patientId: req.params.id, year: Number(year), pushedAt: { $ne: null } }).select('moduleData').lean();
+        if (plans.some(plan => Object.values(plan.moduleData || {}).some(module => (module?.records || []).some(row => (row.sourceIds || []).includes(`management_issue:${existing._id}`)))))
+          return res.status(409).json({ success: false, message: '该主诉已进入已发布方案，请走局部修订' });
+      }
       const row = await Decision.findOneAndUpdate({ patientId: req.params.id, year: Number(year), sourceKey }, { $set: {
         reportId: null, symptomRecordId: symptom._id, itemId: '', title, direction, note, reviewPlan: { kind: 'none', intervalMonths: null, items: [] }, ...managementAction,
         status: 'active', withdrawnAt: null, withdrawnBy: null, withdrawalReason: '',
@@ -10276,9 +10288,15 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     }
     const formal = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year),
       $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] });
-    if (formal) return res.status(409).json({ success: false, message: '本年度方案已推送或确认，客户退回后才能调整管理来源；新检查结果请走单项随访' });
+    if (formal && !annualPilot) return res.status(409).json({ success: false, message: '本年度方案已推送或确认，客户退回后才能调整管理来源；新检查结果请走单项随访' });
     const sourceKey = `${source.kind}:${report._id}${itemId ? `:${itemId}` : ''}`;
     const Decision = require('../models/AnnualManagementDecision');
+    const existing = await Decision.findOne({ patientId: req.params.id, year: Number(year), sourceKey }).select('_id').lean();
+    if (formal && existing) {
+      const plans = await AnnualPlan.find({ patientId: req.params.id, year: Number(year), pushedAt: { $ne: null } }).select('moduleData').lean();
+      if (plans.some(plan => Object.values(plan.moduleData || {}).some(module => (module?.records || []).some(row => (row.sourceIds || []).includes(`management_issue:${existing._id}`)))))
+        return res.status(409).json({ success: false, message: '该检查项已进入已发布方案，请走局部修订' });
+    }
     if (source.kind === 'screening_report' && await Decision.exists({ patientId: req.params.id, year: Number(year), sourceKey, status: 'withdrawn' })) {
       return res.status(409).json({ success: false, message: '旧版整份报告归属已撤销，请在具体检查项重新纳入管理' });
     }
@@ -10813,6 +10831,88 @@ router.get('/patients/:id/annual-plan/:planId/goal-candidates', staffAuth, async
       candidates: require('../utils/pilotAnnualGoals').candidates(plan),
       goals: plan.moduleData?.management_targets?.records || [] } });
   } catch (error) { res.status(500).json({ success: false, message: '读取目标候选失败' }); }
+});
+
+// A confirmed plan stays intact. New screening decisions become one audited
+// amendment; task changes remain in the existing execution-review workbench.
+router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAuth, async (req, res) => {
+  try {
+    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可补入年度方案' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor aiHealthSummary').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可补入方案' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
+    if (!plan?.pushedAt || !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: '请先选择已审核、已发布且客户已确认的方案' });
+    if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || '')) return res.status(409).json({ success: false, message: '方案已变化，请刷新' });
+    const kind = String(req.body.sourceKind || ''), sourceObjectId = String(req.body.sourceId || '');
+    if (!mongoose.isValidObjectId(sourceObjectId) || !['decision', 'ai_checkup'].includes(kind)) return res.status(400).json({ success: false, message: '请选择已核对来源' });
+    let sourceId, title, direction, reviewGroup = null;
+    if (kind === 'decision') {
+      const decision = await require('../models/AnnualManagementDecision').findOne({ _id: sourceObjectId, patientId: req.params.id, year: plan.year, status: 'active' }).lean();
+      if (!decision) return res.status(409).json({ success: false, message: '管理决定已变化，请刷新' });
+      const evidence = await require('../utils/annualManagementEvidence').load(req.params.id, plan.year);
+      if (!evidence.evidence.some(row => row.id === `management_issue:${decision._id}`)) return res.status(409).json({ success: false, message: '原检查或主诉资料已变化，请先重新核对' });
+      sourceId = `management_issue:${decision._id}`; title = decision.title; direction = decision.direction;
+      reviewGroup = require('../utils/annualReviewPlan').reviewGroups(evidence.evidence).find(group => group.sourceIds.includes(sourceId)) || null;
+      if (reviewGroup) direction = 'abnormal_followup';
+      if (reviewGroup && (!reviewGroup.department || !reviewGroup.dueDate || !reviewGroup.items.length))
+        return res.status(409).json({ success: false, message: '请先在管理决定中补齐复查专科、项目和时间' });
+    } else {
+      const review = await require('../models/AIHealthCheckupReview').findOne({ _id: sourceObjectId, patientId: req.params.id, year: plan.year, disposition: 'needs_exam' }).lean();
+      const approved = require('../utils/aiHealthCheckupItems').approvedItems(patient.aiHealthSummary, plan.year);
+      if (!review || !approved.approved || review.sourceVersion !== approved.version || !approved.items.some(item => item.sourceKey === review.sourceKey && item.text === review.itemText))
+        return res.status(409).json({ success: false, message: '待完善检查的来源已变化，请先重新核对' });
+      sourceId = `management_issue:${review._id}`; title = review.title; direction = 'checkup_completion';
+    }
+    const moduleKey = direction === 'medical_treatment' ? 'medical_treatment' : direction === 'checkup_completion' ? 'checkup_completion'
+      : direction === 'abnormal_followup' ? 'abnormal_followup' : direction === 'vaccine' ? 'vaccine' : '';
+    if (!moduleKey) return res.status(409).json({ success: false, message: '该方向需要专业服务或日常跟进安排，请在方案修订入口单独核对' });
+    const actionSourceIds = reviewGroup?.sourceIds || [sourceId];
+    if (Object.values(plan.moduleData || {}).some(module => (module?.records || []).some(row => (row.sourceIds || []).some(id => actionSourceIds.includes(id)))))
+      return res.status(409).json({ success: false, message: '此问题已在年度方案中，请核对原事项' });
+    const sameTitle = value => String(value || '').normalize('NFKC').replace(/[\s：:()（）·]/g, '').toLowerCase();
+    if ((plan.moduleData?.[moduleKey]?.records || []).some(row => sameTitle(row.items || row.department || row.name) === sameTitle(title)))
+      return res.status(409).json({ success: false, message: '原方案已有同名事项，请先核对，避免重复安排' });
+    const reason = String(req.body.reason || '').trim(), advice = String(req.body.advice || '').trim();
+    const changeReason = String(req.body.changeReason || '').trim();
+    if (!reason || reason.length > 1000 || !advice || advice.length > 2000 || changeReason.length < 2 || changeReason.length > 500)
+      return res.status(400).json({ success: false, message: '请填写资料依据、处理建议及修订原因' });
+    const date = String(req.body.date || '').trim();
+    if (reviewGroup && date && date !== reviewGroup.dueDate)
+      return res.status(409).json({ success: false, message: '复查日期应按已确认的复查间隔计算；请先调整管理决定' });
+    if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || !String(req.body.timingReason || '').trim()))
+      return res.status(400).json({ success: false, message: '请填写有效执行日期和时间依据，或留待确认' });
+    const field = { medical_treatment: 'department', checkup_completion: 'items', abnormal_followup: 'items', vaccine: 'name' }[moduleKey];
+    const actionTitle = String(req.body.title || title).trim();
+    if (!actionTitle || actionTitle.length > 200) return res.status(400).json({ success: false, message: '请填写有效事项名称' });
+    const row = { [field]: reviewGroup ? `复查${reviewGroup.items.length}项检查` : actionTitle, sourceIds: actionSourceIds,
+      basisSummary: reason, personalizedAdvice: advice, reason: `${reason}\n处理建议：${advice}`,
+      ...(reviewGroup ? { reviewItems: reviewGroup.items, department: reviewGroup.department,
+        time: reviewGroup.dueDate, timingReason: `按已确认的${reviewGroup.intervalMonths}个月复查间隔`, timingStatus: 'confirmed' } : {}),
+      ...(reviewGroup ? {} : date ? { [moduleKey === 'medical_treatment' ? 'visit_time' : 'time']: date, timingReason: String(req.body.timingReason).trim(), timingStatus: 'confirmed' }
+        : { timingStatus: 'pending_confirmation' }) };
+    const module = plan.moduleData?.[moduleKey] || {};
+    const moduleData = { ...plan.moduleData, [moduleKey]: { ...module, enabled: true, records: [...(module.records || []), row] } };
+    const revision = { id: require('crypto').randomUUID(), status: 'applied', kind: 'current_screening_action', createdAt: new Date(), createdBy: req.staff._id,
+      source: { kind, sourceId, title }, reason: changeReason, baseUpdatedAt: plan.updatedAt,
+      changes: [{ key: moduleKey, index: -1, before: null, after: row }], taskStatus: 'not_created', executionReview: { status: 'pending', version: 1 } };
+    const session = await mongoose.startSession();
+    let saved;
+    try {
+      await session.withTransaction(async () => {
+        saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt },
+          { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true, session });
+        if (!saved) throw Object.assign(new Error('方案已变化，请刷新'), { statusCode: 409 });
+        await PushRecord.create([{ staffId: req.staff._id, patientId: req.params.id, type: 'plan', sourceAnnualPlanId: plan._id,
+          title: `${plan.year}年度管理方案已更新`, content: '健康顾问已补入筛查管理事项，请查看更新后的方案。' }], { session });
+      });
+    } finally { await session.endSession(); }
+    res.json({ success: true, data: saved, message: '已补入方案；执行安排已进入健康顾问复核，尚未自动创建任务' });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : '补入方案失败，请刷新后重试' }); }
 });
 
 router.post('/patients/:id/annual-plan/:planId/goal-draft', staffAuth, async (req, res) => {

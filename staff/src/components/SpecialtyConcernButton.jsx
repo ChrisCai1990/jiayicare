@@ -20,7 +20,7 @@ function load(patientId, year) {
   if (!pending.has(key)) pending.set(key, staffAPI.getAnnualManagementDecisions(patientId, year).finally(() => pending.delete(key)))
   return pending.get(key)
 }
-export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast }) {
+export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast, onSaved }) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [drafting, setDrafting] = useState(false)
   const [title, setTitle] = useState(''), [direction, setDirection] = useState(''), [note, setNote] = useState('')
   const [goal, setGoal] = useState(''), [action, setAction] = useState('')
@@ -58,7 +58,8 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
         ...(adoptLegacy && legacy?._id ? { legacyDecisionId: legacy._id } : {}) })
       setSaved(result.data); if (adoptLegacy) setLegacy(null); setOpen(false)
-      toast('已纳入管理，生成年度方案时将按此方向带入', 5000)
+      toast(pilot ? '已确认管理方向；已发布方案请继续核对是否需要局部补入' : '已纳入管理，生成年度方案时将按此方向带入', 5000)
+      onSaved?.()
     } catch (e) { setError(e.message || '保存失败，请重试') }
     finally { setBusy(false) }
   }
@@ -85,7 +86,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setReviewItems((saved?.reviewPlan?.items || []).join('、'))
       setReviewAnchorDate(saved?.reviewPlan?.anchorDate || new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))
       setReviewDepartment(saved?.reviewPlan?.department || '')
-    }}>{saved ? '✓ 已纳入管理' : '＋ 纳入管理'}</button>
+    }}>{saved ? pilot ? '✓ 已确认方向' : '✓ 已纳入管理' : '＋ 纳入管理'}</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 520 }}>
       <div className="modal-header"><div className="modal-title">纳入年度管理</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
       <div className="modal-body">
