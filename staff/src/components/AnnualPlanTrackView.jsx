@@ -42,7 +42,7 @@ export default function AnnualPlanTrackView({ actions, targets, renderAction, nu
       </details>)}
       {consensus && <div style={{ marginTop: 9, fontSize: 13, color: '#52675D' }}>
         按客户关注点逐次沟通，完成后再定下一主题。
-        <details style={{ marginTop: 7 }}><summary style={{ cursor: 'pointer' }}>查看建议主题路径（可调整顺序）</summary>
+        <details style={{ marginTop: 7 }}><summary style={{ cursor: 'pointer' }}>查看建议主题（在下方安排时勾选）</summary>
           <ol style={{ paddingLeft: 22, marginBottom: 0 }}>{consensusTopics.map(topic => <li key={topic} style={{ margin: '5px 0' }}>{topic}</li>)}</ol>
         </details>
         {canAddConsensus && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={onConsensus}>＋ 安排当前沟通主题</button>}

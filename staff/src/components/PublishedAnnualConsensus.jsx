@@ -3,10 +3,17 @@ import { staffAPI } from '../api'
 
 export default function PublishedAnnualConsensus({ patientId, plan, topics, onSaved, toast }) {
   const [draft, setDraft] = useState({ currentUnderstanding: '', concern: '', method: '电话', frequency: '每次沟通后确定下一次时间', firstDate: '', topics: topics.join('\n') })
+  const [currentTopic, setCurrentTopic] = useState(topics[0] || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [task, setTask] = useState(null)
   const existing = (plan.moduleData?.health_consensus?.records || []).length > 0
+  const selectedTopics = draft.topics.split(/\r?\n/).map(value => value.trim()).filter(Boolean).slice(0, 10)
+  const toggleTopic = (topic, checked) => {
+    const next = checked ? [...selectedTopics, topic].slice(0, 10) : selectedTopics.filter(value => value !== topic)
+    setDraft(previous => ({ ...previous, topics: next.join('\n') }))
+    if (!checked && currentTopic === topic) setCurrentTopic(next[0] || '')
+  }
   useEffect(() => {
     if (!existing) return
     let active = true
@@ -22,7 +29,8 @@ export default function PublishedAnnualConsensus({ patientId, plan, topics, onSa
     </div>
   }
   const save = async () => {
-    const topicPath = draft.topics.split(/\r?\n/).map(value => value.trim()).filter(Boolean).slice(0, 10)
+    const topicPath = currentTopic && selectedTopics.includes(currentTopic)
+      ? [currentTopic, ...selectedTopics.filter(value => value !== currentTopic)] : selectedTopics
     if (!topicPath.length || !draft.firstDate || !draft.method.trim() || !draft.frequency.trim()) { setError('请填写主题、沟通方式、频率和首次日期'); return }
     setBusy(true); setError('')
     try {
@@ -40,7 +48,11 @@ export default function PublishedAnnualConsensus({ patientId, plan, topics, onSa
       <div style={{ fontSize: 12, color: '#62776A' }}>全部主题保存在同一沟通计划中，首次只生成一条任务；每次沟通后选择继续当前主题、进入下一主题或结束。</div>
       <label>客户当前理解<textarea className="form-input" rows={2} maxLength={1000} value={draft.currentUnderstanding} onChange={event => setDraft({ ...draft, currentUnderstanding: event.target.value })} /></label>
       <label>客户顾虑<textarea className="form-input" rows={2} maxLength={1000} value={draft.concern} onChange={event => setDraft({ ...draft, concern: event.target.value })} /></label>
-      <label>主题顺序（每行一个，最多 10 个；第一项为当前主题）<textarea className="form-input" rows={10} maxLength={1300} value={draft.topics} onChange={event => setDraft({ ...draft, topics: event.target.value })} /></label>
+      <fieldset style={{ border: '1px solid #DCE7DF', borderRadius: 8, padding: 10 }}><legend>选择沟通主题（最多 10 个）</legend>
+        <div style={{ display: 'grid', gap: 6 }}>{topics.map(topic => <label key={topic}><input type="checkbox" checked={selectedTopics.includes(topic)} disabled={!selectedTopics.includes(topic) && selectedTopics.length >= 10} onChange={event => toggleTopic(topic, event.target.checked)} /> {topic}</label>)}</div>
+      </fieldset>
+      <label>本次先沟通的主题<select className="form-input" value={selectedTopics.includes(currentTopic) ? currentTopic : selectedTopics[0] || ''} onChange={event => setCurrentTopic(event.target.value)}><option value="">请选择本次主题</option>{selectedTopics.map(topic => <option key={topic} value={topic}>{topic}</option>)}</select></label>
+      <label>已选主题与后续顺序（每行一个，可调整或加入自定义主题）<textarea className="form-input" rows={Math.max(3, Math.min(10, selectedTopics.length))} maxLength={1300} value={draft.topics} onChange={event => setDraft({ ...draft, topics: event.target.value })} /></label>
       <label>沟通方式<select className="form-input" value={draft.method} onChange={event => setDraft({ ...draft, method: event.target.value })}><option value="电话">电话</option><option value="到店">到店</option><option value="上门">上门</option></select></label>
       <label>沟通频率<input className="form-input" maxLength={100} value={draft.frequency} onChange={event => setDraft({ ...draft, frequency: event.target.value })} /></label>
       <label>首次沟通日期<input className="form-input" type="date" min={new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date())} value={draft.firstDate} onChange={event => setDraft({ ...draft, firstDate: event.target.value })} /></label>
