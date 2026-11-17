@@ -10,7 +10,6 @@ const categories = [['advisor','健康顾问','嘉医服务群'],['nutrition','�
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '暂无消息';
 const roleLabel = person => person.kind === 'customer' ? '客户' : ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', ai:'AI健康管家', customer: '客户' })[person.role] || person.role || '服务人员';
 const memberLabel = person => `${person.name} · ${roleLabel(person)}`;
-const customerCode = id => id ? `KH-${id}` : '待核对';
 
 export default function InAppServiceGroupsPage() {
   const [historyOpen,setHistoryOpen]=useState(false);
@@ -180,7 +179,7 @@ export default function InAppServiceGroupsPage() {
     </section>}
     <div className="sg-filters"><button aria-pressed={!archive} onClick={()=>{setArchive(false);setSelected(null);currentId.current='';}}>服务中</button><button aria-pressed={archive} onClick={()=>{setArchive(true);setSelected(null);currentId.current='';}}>已归档</button></div>
     <form className="sg-search-row" role="search" onSubmit={event=>{event.preventDefault();setGroupQuery(groupSearch.trim());setSelected(null);currentId.current='';}}>
-      <input aria-label="搜索服务群" maxLength={80} value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="搜索客户姓名、群名称或客户编号" />
+      <input aria-label="搜索服务群" maxLength={80} value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="搜索客户姓名或群名称" />
       <button type="submit">搜索群</button>
       {(groupSearch || groupQuery) && <button type="button" onClick={()=>{setGroupSearch('');setGroupQuery('');}}>清除</button>}
     </form>
@@ -196,7 +195,7 @@ export default function InAppServiceGroupsPage() {
       <button type="button" onClick={refresh}>刷新</button>
     </div>
     <div className="sg-search-results">{patients.map(patient => <button key={patient._id} type="button" disabled={busy}
-      onClick={() => editMembers(patient._id)}>{patient.name} · 客户 · {customerCode(patient._id)} · 配置服务群成员</button>)}
+      onClick={() => editMembers(patient._id)}>{patient.name} · 客户 · 配置服务群成员</button>)}
     </div>
     </details>}
     {configuration && <section aria-label="配置服务群成员" className="sg-configuration">
@@ -237,7 +236,7 @@ export default function InAppServiceGroupsPage() {
           <strong>{group.name || `${group.patientName}的服务群`}</strong>{group.waitingForStaff && <span style={{ background: '#DC3545', color: 'white', borderRadius: 12, padding: '3px 9px', fontSize: 12, display: 'inline-block' }}>● 待人工回复</span>}
           {group.mentionCount > 0 && <span className="sg-mention-badge">有人@我 · {group.mentionCount}</span>}{group.status==='closed'&&<small>已归档 · {stamp(group.closedAt)}</small>}
           {group.supervised && <small>团队监管 · 只读</small>}
-          <small>客户：{group.patientName} · {customerCode(group.patientId)}</small>
+          <small>客户：{group.patientName}</small>
           <small>{group.staff.map(memberLabel).join('、')}</small>
           <small>{stamp(group.lastMessageAt)}{group.waitingForStaff ? ' · 待团队回复' : ''}</small>
         </button>)}
@@ -248,7 +247,7 @@ export default function InAppServiceGroupsPage() {
           {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} initialMessageId={historyAnchor} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
           <div className="sg-chat-header">
             <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
-              <small>客户：{selected.patientName} · {customerCode(selected.patientId)}</small>
+              <small>客户：{selected.patientName}</small>
               <small>团队成员：{selected.staff.map(memberLabel).join('、')}</small></div>
             <button type="button" aria-label="群聊更多" onClick={()=>setHistoryOpen(true)}>…</button>
             {selected.canConfigure && selected.status !== 'closed' && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
