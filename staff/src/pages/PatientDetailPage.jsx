@@ -11401,6 +11401,10 @@ export default function PatientDetailPage() {
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingInterpretations.length > 0 && <div className="card" style={{ padding: 16, marginBottom: 16, border: '1px solid #CFE5D8' }}>
               <strong>健康顾问报告解读 · 待确认 {pendingInterpretations.length} 份</strong>
               <p style={{ margin: '8px 0', fontSize: 13, color: '#4A6558' }}>可跨年份一起解读。核对原件后勾选本次已完成解读的报告，确认后进入对应的问题建议审核。</p>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={reportFlowSaving || selectedInterpretationIds.length === pendingInterpretations.length} onClick={() => setReportInterpretationSelection(current => ({ ...current, ...Object.fromEntries(pendingInterpretations.map(report => [report._id, true])) }))}>全选当前待确认资料</button>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={reportFlowSaving || selectedInterpretationIds.length === 0} onClick={() => setReportInterpretationSelection(current => ({ ...current, ...Object.fromEntries(pendingInterpretations.map(report => [report._id, false])) }))}>清空选择</button>
+              </div>
               <div style={{ display: 'grid', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
                 {pendingInterpretations.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                   <input type="checkbox" checked={reportInterpretationSelection[report._id] === true} onChange={event => setReportInterpretationSelection(current => ({ ...current, [report._id]: event.target.checked }))} />
