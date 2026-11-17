@@ -383,12 +383,30 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [metricSelectionDirty, setMetricSelectionDirty] = useState(false)
   const [metricSelectionSaving, setMetricSelectionSaving] = useState(false)
   const [nutritionTask, setNutritionTask] = useState(null)
+  const [issueProgress, setIssueProgress] = useState([])
+  const [issueProgressError, setIssueProgressError] = useState('')
   const [nutritionTaskLoading, setNutritionTaskLoading] = useState(false)
   const [nutritionDispatching, setNutritionDispatching] = useState(false)
   const [remotePlanChanged, setRemotePlanChanged] = useState(false)
   useEffect(() => setRemotePlanChanged(false), [id, year, planType])
   const currentPlanVersion = plansByType[planType]?.updatedAt
   const currentPlanId = plansByType[planType]?._id
+  const progressEligible = Boolean(patientMode && currentPlanId && plansByType[planType]?.pushedAt)
+  const refreshIssueProgress = async () => {
+    if (!progressEligible) return
+    try {
+      const res = await staffAPI.getAnnualIssueProgress(id, currentPlanId)
+      setIssueProgress(res.data || []); setIssueProgressError('')
+    } catch (error) { setIssueProgressError(error.message || '执行进展读取失败') }
+  }
+  useEffect(() => {
+    if (!progressEligible) { setIssueProgress([]); setIssueProgressError(''); return }
+    let active = true
+    staffAPI.getAnnualIssueProgress(id, currentPlanId)
+      .then(res => { if (active) { setIssueProgress(res.data || []); setIssueProgressError('') } })
+      .catch(error => { if (active) setIssueProgressError(error.message || '执行进展读取失败') })
+    return () => { active = false }
+  }, [progressEligible, id, currentPlanId])
   useEffect(() => {
     if (!patientMode || !currentPlanId) { setNutritionTask(null); return }
     let active = true
@@ -975,6 +993,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const integratedActions = planActions.map(action => ({ ...action, issueId: patientMode ? displayIssueId(action.record, managementTargets) : '' }))
   const managementTargetGroups = groupTargetsBySharedActions(managementTargets, integratedActions)
   const groupActions = group => integratedActions.filter(action => actionTargetIds(action, managementTargets).some(id => group.ids.includes(id)))
+  const groupTaskProgress = group => [...new Map(issueProgress.filter(row => group.ids.includes(row.issueId))
+    .flatMap(row => row.tasks || []).map(task => [task.id, task])).values()]
   const groupHeading = group => {
     const actions = groupActions(group)
     const sameDayAndCategory = actions.length > 1 && actions[0].date && actions.every(action => action.date === actions[0].date && action.key === actions[0].key)
@@ -1325,7 +1345,18 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
               </div>)}
               {groupActions(group).map(renderPlanAction)}
+              {progressEligible && <details style={{ marginTop: 10, borderTop: '1px solid #E4ECE7', paddingTop: 9 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13, color: '#1E6B50' }}>查看岗位执行进展 · {groupTaskProgress(group).length} 条关联任务</summary>
+                {groupTaskProgress(group).length === 0 && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无关联任务。请核对方案是否已派发，或由顾问确认本项下一步安排。</div>}
+                {groupTaskProgress(group).map(task => <div key={task.id} style={{ marginTop: 8, padding: 9, background: '#F6F9F7', borderRadius: 7, fontSize: 12 }}>
+                  <div><strong>{task.theme || '执行事项'}</strong> · {({ planned: '待执行', in_progress: '执行中', missed: '待跟进', completed: '已完成', cancelled: '已取消' })[task.status] || task.status}{task.serviceStatus ? ` · 服务${task.serviceStatus}` : ''}</div>
+                  <div style={{ color: '#62776A', marginTop: 3 }}>{task.assignee || task.role || '负责人待核对'}{task.plannedAt ? ` · 计划 ${new Date(task.plannedAt).toLocaleDateString('zh-CN')}` : ''}{task.completedAt ? ` · 完成 ${new Date(task.completedAt).toLocaleDateString('zh-CN')}` : ''}</div>
+                  {task.latestProgress && <div style={{ marginTop: 4 }}>最近进展：{task.latestProgress}</div>}
+                  {task.result && <div style={{ marginTop: 4 }}>执行记录：{task.result}</div>}
+                </div>)}
+              </details>}
             </div>)}
+            {progressEligible && <div style={{ marginBottom: 12, fontSize: 12 }}><button type="button" className="btn btn-secondary btn-sm" onClick={refreshIssueProgress}>刷新执行进展</button>{issueProgressError && <span role="alert" style={{ marginLeft: 8, color: '#B42318' }}>{issueProgressError}</span>}</div>}
           </section>}
           <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">

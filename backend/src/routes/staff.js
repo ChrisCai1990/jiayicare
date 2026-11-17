@@ -10553,6 +10553,24 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   }
 });
 
+router.get('/patients/:id/annual-plan/:planId/issue-progress', staffAuth, async (req, res) => {
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
+    if (!mongoose.isValidObjectId(req.params.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id })
+      .select('_id moduleData.management_targets pushedAt').lean();
+    if (!plan) return res.status(404).json({ success: false, message: '年度方案不存在' });
+    if (!plan.pushedAt) return res.json({ success: true, data: [] });
+    const tasks = await FollowUp.find({ patientId: req.params.id, sourceAnnualPlanId: plan._id,
+      sourceType: { $in: ['scheduled', 'annual_service', 'professional_assessment'] } })
+      .select('_id managementIssueIds formData.serviceRequest.itemSnapshot.sourceIds formData.annualNutritionGoals theme status assignedTo date completedAt progressRecords.content executedContent serviceTracking.status')
+      .populate('assignedTo', 'name role').lean();
+    const targets = plan.moduleData?.management_targets?.records || [];
+    res.json({ success: true, data: require('../utils/annualIssueProgress').project(targets, tasks) });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 // 顾问可先保存年度草稿，再单独将营养评估交给所属营养师；不触发年度方案推送。
 router.get('/patients/:id/annual-nutrition-task', staffAuth, async (req, res) => {
   try {

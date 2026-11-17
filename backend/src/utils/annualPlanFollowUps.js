@@ -108,6 +108,7 @@ async function buildAnnualPlanFollowUps(plan) {
       content: content || '',
       status: 'planned',
       sourceAnnualPlanId: plan._id,
+      managementIssueIds: [...new Set((delivery.sourceIds || []).map(String))],
       sourceScheduleKey,
       sourceType: 'scheduled',
       deliveryMode: delivery.serviceMode || 'reminder',
@@ -137,6 +138,7 @@ async function buildAnnualPlanFollowUps(plan) {
     push(date, '年度标准营养评估', nutritionDispatch.contentForPlan(plan), patient?.assignedNutritionist,
       `nutrition-assessment:${dateKey}`, standardNutrition);
     if (created.length > before) Object.assign(created.at(-1), { workflowKey: 'annual_nutrition_assessment', reviewAssignedTo: null, reviewRole: null,
+      managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))],
       formData: { annualNutritionMetrics: metrics, annualNutritionGoals: nutritionDispatch.nutritionGoalsForPlan(plan) } });
   }
 
@@ -351,6 +353,7 @@ async function syncAnnualPlanFollowUps(plan) {
       if (['planned', 'in_progress', 'missed'].includes(keep.status) && row.content) {
         keep.theme = row.theme;
         keep.content = row.content;
+        keep.managementIssueIds = row.managementIssueIds || [];
         keep.deliveryMode = row.deliveryMode;
         keep.deliveryType = row.deliveryType;
         keep.clientVisible = row.clientVisible !== false;
