@@ -51,12 +51,12 @@ export default function AnnualPlanTrackView({ actions, renderAction, nutritionTa
   }
   return <section id="annual-plan-content" aria-label="年度方案按服务线路查看" style={{ marginBottom: 16 }}>
     <h2 style={{ margin: '0 0 12px', fontSize: 21, color: '#1A2B24' }}>年度管理方案</h2>
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
-      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 14, padding: '18px 20px' }}><h3 style={{ margin: 0, fontSize: 19 }}>医疗服务</h3>{medical.map(renderGroup)}</div>
-      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 14, padding: '18px 20px' }}><h3 style={{ margin: 0, fontSize: 19 }}>健康管理</h3>{management.map(renderGroup)}
+    <div className="annual-track-stack">
+      <div className="annual-track-panel annual-track-panel--medical"><h3 className="annual-track-heading"><span className="annual-track-number">01</span>医疗服务</h3>{medical.map(renderGroup)}</div>
+      <div className="annual-track-panel annual-track-panel--management"><h3 className="annual-track-heading"><span className="annual-track-number">02</span>健康管理</h3>{management.map(renderGroup)}
         <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · 按已有每周计划执行</strong>{manualMonitoringEditor}</div>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 14, padding: '18px 20px' }}><h3 style={{ margin: 0, fontSize: 19 }}>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A' }}>待安排</div>}</div>
+      <div className="annual-track-panel annual-track-panel--checkup"><h3 className="annual-track-heading"><span className="annual-track-number">03</span>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A' }}>待安排</div>}</div>
     </div>
   </section>
 }

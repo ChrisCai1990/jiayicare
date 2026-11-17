@@ -1183,7 +1183,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {!annualPilot && activePlanType && <span style={{ marginLeft: 8, color: activePlanType.color, fontWeight: 600 }}>{activePlanType.icon} {activePlanType.name}</span>}
           </div>
         </div>
-        {annualPilot && patientMode && <span className="annual-service-type-badge" aria-label="客户服务类型">客户服务类型：{activePlanType?.name || (templatesLoading ? '匹配中' : '待匹配')}</span>}
         {patientMode && (
           <select
             value={year}
@@ -1193,6 +1192,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
           </select>
         )}
+        {annualPilot && patientMode && <span className="annual-service-type-badge" aria-label="客户服务类型">客户服务类型：{activePlanType?.name || (templatesLoading ? '匹配中' : '待匹配')}</span>}
         <div className="annual-plan-action-buttons" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {patientMode && monthlyReviewEnabled && !(annualPilot && pushedAt) && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/monthly-reviews`)}>月度服务复盘</button>}
           {pushedAt && !dirty && (
@@ -1269,7 +1269,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         {!staleLegacyDecisions.length && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看专项筛查来源</button>}
       </div>}
       {patientMode && pushedAt && !annualPilot && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
-      {annualPilot && pushedAt && canEdit && plansByType[planType] && <AnnualPlanRevision patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
+      {annualPilot && pushedAt && canEdit && plansByType[planType] && <AnnualPlanRevision pilot patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
       {pilotOverview}
       {patientMode && plansByType[planType]?.returnedAt && pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户修改意见：{plansByType[planType].returnReason || '请核对客户反馈'}。</div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
