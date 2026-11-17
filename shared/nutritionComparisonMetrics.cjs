@@ -6,6 +6,7 @@ const OBJECTIVE_METRICS = [
   ['谷丙转氨酶', 'U/L'], ['谷草转氨酶', 'U/L'], ['γ-谷氨酰转肽酶', 'U/L'],
   ['同型半胱氨酸', 'μmol/L'], ['脂蛋白磷脂酶A2', 'U/L'],
   ['肝脏超声', ''], ['颈动脉超声', ''], ['肝脏纤维弹性超声', ''],
+  ['胃蛋白酶原I', ''], ['胃蛋白酶原II', ''], ['胃泌素17', ''], ['胃功能3项', ''],
 ];
 const SUBJECTIVE_METRICS = ['睡眠质量', '消化功能', '日间精力', '情绪状态', '皮肤气色'];
 const COMMON_METRICS = [...OBJECTIVE_METRICS.map(([name]) => name), ...SUBJECTIVE_METRICS];
@@ -30,7 +31,9 @@ function normalizeMetrics(value) {
 
 // Extract only metrics explicitly mentioned by confirmed nutrition-related goals.
 function metricsFromTargets(targets = []) {
-  const text = targets.filter(r => r.nutritionRelevant === true).map(r => `${r.goal || ''} ${r.focus || ''}`).join('；');
+  const text = targets.filter(r => r.nutritionRelevant === true && r.sourceStatus !== 'normal'
+    && (['abnormal', 'attention'].includes(r.sourceStatus) || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考/.test(`${r.goal || ''} ${r.focus || ''} ${r.baseline || ''}`)))
+    .map(r => `${r.goal || ''} ${r.focus || ''}`).join('；');
   const selected = COMMON_METRICS.filter(name => text.includes(name));
   const aliases = [[/HbA1c|糖化/i,'糖化血红蛋白'],[/LDL[-－]?C/i,'低密度脂蛋白'],[/HDL[-－]?C/i,'高密度脂蛋白'],[/Lp[-－]?PLA2/i,'脂蛋白磷脂酶A2']];
   aliases.forEach(([pattern,name]) => { if (pattern.test(text)) selected.push(name); });
@@ -54,7 +57,7 @@ module.exports = { OBJECTIVE_METRICS, SUBJECTIVE_METRICS, COMMON_METRICS, MAX_ME
 
 // Keep medical decisions as context. Only explicit metric targets become reference text.
 function nutritionSummary(plan) {
-  const goals = (plan?.moduleData?.management_targets?.records || []).filter(r => r.nutritionRelevant === true);
+  const goals = (plan?.moduleData?.management_targets?.records || []).filter(r => r.nutritionRelevant === true && r.sourceStatus !== 'normal');
   const text = goals.map(r => `${r.goal || ''} ${r.focus || ''}`).join('；');
   const problems = [[/动脉|斑块|血脂|PLA2/i,'动脉粥样硬化相关营养评估'],[/胃镜|胃炎|胃黏膜/,'胃部疾病相关营养评估'],[/息肉|腺瘤|结肠|直肠/,'肠道疾病相关营养评估']].filter(([pattern])=>pattern.test(text)).map(([,label])=>label);
   const references = goals.flatMap(r => String(r.goal || '').split(/[；;。]/)).filter(clause => /降至|控制在|维持在|达到/.test(clause) && /血脂|胆固醇|甘油三酯|血糖|糖化|HbA1c|LDL|HDL|PLA2|体重|体脂|尿酸/i.test(clause));

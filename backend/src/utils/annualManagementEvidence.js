@@ -130,6 +130,7 @@ function managementTargets(evidence = [], pilot = true) {
       focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
       goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)
         ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
+      sourceStatus: source?.status || '',
       ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
       nutritionRelevant: direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });

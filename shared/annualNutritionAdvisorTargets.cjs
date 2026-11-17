@@ -1,9 +1,10 @@
 const INDICATORS = [
   '血压', '空腹血糖', '糖化血红蛋白', '总胆固醇', '高密度脂蛋白', '低密度脂蛋白', '甘油三酯',
   '尿酸', '脂蛋白磷脂酶A2', '同型半胱氨酸', '脂肪肝（超声）',
+  '胃蛋白酶原I', '胃蛋白酶原II', '胃泌素17', '胃功能3项',
 ];
 const SYMPTOMS = ['便秘', '腹泻', '脑雾', '睡眠'];
-const INTERNAL_METRICS = new Set(['脂蛋白磷脂酶A2', '同型半胱氨酸']);
+const INTERNAL_METRICS = new Set(['脂蛋白磷脂酶A2', '同型半胱氨酸', '胃蛋白酶原I', '胃蛋白酶原II', '胃泌素17', '胃功能3项']);
 const MAX_ADVISOR_TARGETS = 24;
 const VITAL_NAMES = { weight: '体重', bloodSugar: '空腹血糖', systolic: '血压', diastolic: '血压', heartRate: '心率' };
 const OPERATORS = { lte: '≤', gte: '≥', lt: '<', gt: '>', eq: '=' };
@@ -13,17 +14,25 @@ const MATCHERS = [
   ['低密度脂蛋白', /低密度脂蛋白|血脂|LDL[-－]?C/i], ['甘油三酯', /甘油三酯|血脂|TG\b/i],
   ['尿酸', /尿酸/], ['脂蛋白磷脂酶A2', /脂蛋白磷脂酶A2|Lp[-－]?PLA2/i],
   ['同型半胱氨酸', /同型半胱氨酸|Hcy\b/i], ['脂肪肝（超声）', /脂肪肝/],
+  ['胃蛋白酶原I', /胃蛋白酶原(?:I|Ⅰ)(?!I|Ⅰ)|PGI(?!I)/i],
+  ['胃蛋白酶原II', /胃蛋白酶原(?:II|Ⅱ)|PGII/i],
+  ['胃泌素17', /胃泌素\s*17|G[-－]?17/i], ['胃功能3项', /胃功能3项|胃功能检测/],
   ['便秘', /便秘/], ['腹泻', /腹泻/], ['脑雾', /脑雾/], ['睡眠', /睡眠|失眠/],
 ];
-const isInternalNutritionMetric = name => INTERNAL_METRICS.has(String(name || '').trim()) || /脂蛋白磷脂酶A2|同型半胱氨酸|Lp[-－]?PLA2|Hcy\b/i.test(String(name || ''));
+const isInternalNutritionMetric = name => INTERNAL_METRICS.has(String(name || '').trim()) || /脂蛋白磷脂酶A2|同型半胱氨酸|Lp[-－]?PLA2|Hcy\b|胃蛋白酶原|胃泌素\s*17|G[-－]?17|胃功能3项|胃功能检测/i.test(String(name || ''));
 const kindFor = name => SYMPTOMS.includes(String(name || '').trim()) ? 'symptom' : 'metric';
 const clauseFor = (text, matcher) => String(text || '').split(/[；;。\n]/).map(value => value.trim()).find(value => matcher.test(value)) || '';
 
 function fromManagementTargets(records = []) {
   return records.filter(row => row.nutritionRelevant === true).flatMap(row => {
+    const status = String(row.sourceStatus || '').toLowerCase();
+    if (status === 'normal') return [];
+    const explicitlyAbnormal = ['abnormal', 'attention'].includes(status)
+      || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考/.test(`${row.goal || ''} ${row.focus || ''} ${row.baseline || ''}`);
     const goalMetric = row.goalMetric || {};
     const text = [row.goal, row.focus, row.baseline, goalMetric.name, VITAL_NAMES[goalMetric.key]].filter(Boolean).join('；');
-    const matches = MATCHERS.filter(([, pattern]) => pattern.test(text));
+    const matches = MATCHERS.filter(([name, pattern]) => pattern.test(text) && (explicitlyAbnormal || kindFor(name) === 'symptom'));
+    if (!matches.length && !explicitlyAbnormal) return [];
     const candidates = matches.length ? matches : [[String(goalMetric.name || VITAL_NAMES[goalMetric.key] || row.goal || '').split(/[·：:；;]/)[0].trim(), /.*/]];
     return candidates.map(([name, pattern]) => {
       const metric = String(name).slice(0, 100);
