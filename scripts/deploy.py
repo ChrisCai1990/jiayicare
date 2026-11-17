@@ -50,8 +50,11 @@ def require_clean_master():
         raise RuntimeError("工作区有未提交改动；请先人工审阅并提交。")
 
     branch = run_git("branch", "--show-current").stdout.strip()
-    if branch != "master":
-        raise RuntimeError(f"部署仅允许 master 分支，当前分支为 {branch!r}。")
+    release_branch = os.environ.get("JIAYICARE_DEPLOY_RELEASE_BRANCH", "").strip()
+    if branch != "master" and (not release_branch or branch != release_branch):
+        raise RuntimeError(f"部署仅允许 master 或显式指定的干净发布分支，当前分支为 {branch!r}。")
+    if branch != "master" and run_git("merge-base", "--is-ancestor", "production/master", "HEAD", check=False).returncode:
+        raise RuntimeError("发布分支未包含已核验的生产基线，停止部署")
 
 
 def push_clean_master():
