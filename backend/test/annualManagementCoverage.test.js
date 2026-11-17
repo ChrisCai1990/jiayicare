@@ -77,6 +77,30 @@ test('报告其他内容更新后，已纳入的检查项内容未变仍可生�
   assert.deepEqual((await load('patient', 2026, dependencies)).stale, ['肺结节']);
 });
 
+test('顾问已处理主诉可作为独立来源，来源修改后阻止旧目标继续带入', async () => {
+  const at = new Date('2026-10-20T02:00:00Z');
+  const decidedAt = new Date('2026-10-21T02:00:00Z');
+  const record = { _id: 'symptom-1', value: '持续腹痛', note: '两天', recordedAt: at,
+    symptomWorkflow: { status: 'manager_followup', decidedAt, decisionNote: '继续随访' } };
+  const decision = { _id: 'decision-1', patientId: 'patient', year: 2026, symptomRecordId: record._id,
+    sourceKey: `symptom:${record._id}`, title: '腹痛原因待核实', direction: 'ongoing_management', goal: '明确症状变化', action: '安排随访',
+    sourceSnapshot: { value: record.value, note: record.note, recordedAt: at, decidedAt } };
+  const dependencies = {
+    Decision: { find: () => ({ sort: () => ({ lean: async () => [decision] }) }) },
+    Report: { findOne: () => { throw new Error('symptom must not query reports') } },
+    HealthRecord: { findOne: () => ({ select: () => ({ lean: async () => record }) }) },
+    User: { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) },
+    CheckupReview: { find: () => ({ lean: async () => [] }) },
+  };
+  const current = await load('patient', 2026, dependencies);
+  assert.equal(current.evidence[0].content.sourceKind, 'symptom');
+  assert.equal(current.evidence[0].content.goal, '明确症状变化');
+  record.value = '症状已改写';
+  const stale = await load('patient', 2026, dependencies);
+  assert.equal(stale.evidence.length, 0);
+  assert.deepEqual(stale.staleDecisionIds, ['decision-1']);
+});
+
 test('已纳入管理的旧备注复查期限在生成依据中恢复为一次复查', async () => {
   const item = { itemId: 'pg', name: '胃蛋白酶原', examDate: '2026-10-20' };
   const decision = { _id: 'decision', title: '胃蛋白酶原异常', direction: 'ongoing_management',

@@ -19,3 +19,10 @@ test('旧报告级决定不会因报告总论重复而误标其他项目', () =>
   assert.equal(findAnnualManagementDecision(saved, liver), null)
   assert.equal(findAnnualManagementDecision(saved, kidney), null)
 })
+
+test('已处理主诉按记录编号独立纳入，不借用同名报告决定', () => {
+  const symptom = { kind:'symptom', recordId:'507f1f77bcf86cd799439021' }
+  const saved = [{ sourceKey:annualManagementSourceKey(symptom), title:'持续腹痛' }]
+  assert.equal(findAnnualManagementDecision(saved, symptom), saved[0])
+  assert.equal(findAnnualManagementDecision(saved, { kind:'symptom', recordId:'507f1f77bcf86cd799439022' }), null)
+})

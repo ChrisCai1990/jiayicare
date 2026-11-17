@@ -11218,6 +11218,7 @@ export default function PatientDetailPage() {
                               <button className="btn btn-primary btn-sm" onClick={() => referSymptomToDoctor(record)}>转健康顾问</button>
                             </>}
                             {['familyDoctor', 'superadmin'].includes(staff?.role) && workflow.status === 'pending_doctor' && !!workflow.verifiedAt && <button className="btn btn-primary btn-sm" onClick={() => handleDoctorSymptom(record)}>处理</button>}
+                            {['familyDoctor', 'superadmin'].includes(staff?.role) && year === new Date().getFullYear() && ['referred', 'manager_followup'].includes(workflow.status) && !!workflow.decidedAt && <SpecialtyConcernButton patientId={id} year={year} source={{ kind:'symptom', recordId:record._id }} sourceLabel="健康顾问已处理的不适主诉" sourceText={`${record.value || ''} ${workflow.decisionNote || ''}`} suggestedIssue={String(record.value || '').slice(0, 80)} staff={staff} toast={toast} />}
                             {['healthManager', 'superadmin'].includes(staff?.role) && <button className="btn btn-sm" style={{ color: '#B42318', background: '#FFF', border: '1px solid #FDA29B' }} onClick={() => deleteSymptomRecord(record)}>删除</button>}
                           </div>
                         </div>

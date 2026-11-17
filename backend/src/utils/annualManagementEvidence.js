@@ -43,10 +43,29 @@ async function load(patientId, year, dependencies = {}) {
   const Decision = dependencies.Decision || require('../models/AnnualManagementDecision');
   const Report = dependencies.Report || require('../models/MedicalReport');
   const CheckupReview = dependencies.CheckupReview || require('../models/AIHealthCheckupReview');
+  const HealthRecord = dependencies.HealthRecord || require('../models/HealthRecord');
   const User = dependencies.User || require('../models/User');
   const decisions = effectiveDecisions(await Decision.find({ patientId, year, status: { $ne: 'withdrawn' } }).sort({ reviewedAt: 1 }).lean());
   const evidence = [], stale = [], staleDecisionIds = [];
   for (const decision of decisions) {
+    if (decision.sourceKey === `symptom:${decision.symptomRecordId}` && decision.symptomRecordId) {
+      const record = await HealthRecord.findOne({ _id: decision.symptomRecordId, user: patientId, type: 'symptom' })
+        .select('value note recordedAt symptomWorkflow').lean();
+      const snapshot = decision.sourceSnapshot || {};
+      if (!record || record.value !== snapshot.value || record.note !== snapshot.note
+        || String(record.recordedAt) !== String(snapshot.recordedAt)
+        || String(record.symptomWorkflow?.decidedAt) !== String(snapshot.decidedAt)
+        || record.symptomWorkflow?.decisionNote !== snapshot.decisionNote) {
+        stale.push(`${decision.title}（主诉来源已变化）`); staleDecisionIds.push(String(decision._id)); continue;
+      }
+      evidence.push({ id: `management_issue:${decision._id}`, content: {
+        problem: decision.title, direction: decision.direction, advisorNote: decision.note,
+        goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
+        reportTitle: '已处理不适主诉', sourceKind: 'symptom', source: { name: '主诉', value: record.value },
+        sourceRecordId: record._id, checkDate: record.recordedAt, reviewedAt: decision.reviewedAt,
+      } });
+      continue;
+    }
     const report = await Report.findOne({ _id: decision.reportId, user: patientId, audit_status: 'audited' })
       .select('_id title checkDate updatedAt reportItems').lean();
     const changed = sourceChanged(report, decision);
@@ -102,7 +121,7 @@ function managementTargets(evidence = []) {
       goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)
         ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
       ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
-      nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+      nutritionRelevant: direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });
 }
 

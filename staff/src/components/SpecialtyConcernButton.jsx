@@ -26,8 +26,10 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [saved, setSaved] = useState(null), [legacy, setLegacy] = useState(null), [adoptLegacy, setAdoptLegacy] = useState(false), [error, setError] = useState('')
   const suggestions = specialtyIssueSuggestions(sourceText)
   const key = annualManagementSourceKey(source)
+  const symptomSource = source?.kind === 'symptom' && !!source?.recordId
+  const reportSource = !!source?.reportId && ['screening', 'screening_report'].includes(source.kind)
   useEffect(() => {
-    if (!patientId || !year || !source?.reportId || !['screening', 'screening_report'].includes(source.kind)) return
+    if (!patientId || !year || (!reportSource && !symptomSource)) return
     let active = true
     load(patientId, year).then(result => {
       if (!active) return
@@ -38,7 +40,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     }).catch(() => {})
     return () => { active = false }
   }, [patientId, year, key])
-  if (!['familyDoctor', 'superadmin'].includes(staff?.role) || !source?.reportId || !['screening', 'screening_report'].includes(source.kind)) return null
+  if (!['familyDoctor', 'superadmin'].includes(staff?.role) || (!reportSource && !symptomSource)) return null
   const submit = async () => {
     if (title.trim().length < 2 || !direction || !goal.trim() || !action.trim()) { setError('请填写具体问题、管理方向、目标和下一步行动'); return }
     setBusy(true); setError('')
@@ -82,7 +84,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         <div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核专项筛查'}。请选择对应现有方案的管理方向。</div>
         <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
-        <select className="form-input" value={direction} disabled={drafting} onChange={e => { setDirection(e.target.value); if (!['ongoing_management', 'abnormal_followup'].includes(e.target.value)) setReviewKind('none') }}><option value="">请选择</option>{DIRECTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <select className="form-input" value={direction} disabled={drafting} onChange={e => { setDirection(e.target.value); if (!['ongoing_management', 'abnormal_followup'].includes(e.target.value)) setReviewKind('none') }}><option value="">请选择</option>{DIRECTIONS.filter(([value]) => !symptomSource || ['medical_treatment', 'ongoing_management'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
         <textarea className="form-input" rows={2} maxLength={240} value={goal} onChange={e => setGoal(e.target.value)} placeholder="写出本年度要达到或明确的可核对结果；缺少基线时先以建立基线为目标" />
         <label className="form-label" style={{ marginTop: 12 }}>下一步行动</label>
@@ -93,7 +95,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>只填入空白字段；顾问核对原始资料后修改确认。</div>
         <label className="form-label" style={{ marginTop: 12 }}>顾问补充说明（可选）</label>
         <textarea className="form-input" rows={2} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="如已确认的复查时限、就医意向或待核实事项" />
-        {['ongoing_management', 'abnormal_followup'].includes(direction) && <><label className="form-label" style={{ marginTop: 12 }}>是否需要定期复查</label>
+        {!symptomSource && ['ongoing_management', 'abnormal_followup'].includes(direction) && <><label className="form-label" style={{ marginTop: 12 }}>是否需要定期复查</label>
         <select className="form-input" value={reviewKind} onChange={e => setReviewKind(e.target.value)}>
           <option value="none">不单独安排复查</option><option value="recheck">安排一次复查</option>
         </select>
