@@ -12,6 +12,7 @@ export default function PublishedAnnualGoals({ patientId, plan, onSaved, toast }
   const [candidates, setCandidates] = useState([])
   const [goals, setGoals] = useState([])
   const [baseUpdatedAt, setBaseUpdatedAt] = useState('')
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
 
@@ -22,6 +23,7 @@ export default function PublishedAnnualGoals({ patientId, plan, onSaved, toast }
       setCandidates(result.data?.candidates || [])
       setGoals(result.data?.goals || [])
       setBaseUpdatedAt(result.data?.baseUpdatedAt || '')
+      setRequestId(crypto.randomUUID())
       setOpen(true)
     } catch (cause) { setError(cause.message || '无法读取原方案事项') }
     finally { setBusy(false) }
@@ -39,7 +41,7 @@ export default function PublishedAnnualGoals({ patientId, plan, onSaved, toast }
     if (!window.confirm('确认更新已发布方案的年度目标并通知客户？原有任务和已归档评估不会改写。')) return
     setBusy(true); setError('')
     try {
-      const result = await staffAPI.reviseAnnualGoals(patientId, plan._id, { baseUpdatedAt, reason: reason.trim(), goals })
+      const result = await staffAPI.reviseAnnualGoals(patientId, plan._id, { baseUpdatedAt, requestId, reason: reason.trim(), goals })
       onSaved(result.data)
       setOpen(false); setReason('')
       toast(result.message || '目标已更新')

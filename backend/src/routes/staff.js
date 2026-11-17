@@ -10965,6 +10965,20 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
   } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? '此项目已有人工提醒，请刷新' : '安排人工提醒失败' }); }
 });
 
+// Production MongoDB is standalone: keep the plan change atomic in one document,
+// then send an idempotent notice. A retry can finish the notice without adding the
+// same plan action twice.
+async function notifyAnnualPlanRevision(plan, revision, staffId, patientId, title, content) {
+  const id = new mongoose.Types.ObjectId(require('crypto').createHash('sha256')
+    .update(`annual-plan-revision-notice:${plan._id}:${revision.id}`).digest('hex').slice(0, 24));
+  try {
+    await PushRecord.updateOne({ _id: id }, { $setOnInsert: { _id: id, staffId, patientId,
+      type: 'plan', sourceAnnualPlanId: plan._id, title, content } }, { upsert: true });
+  } catch (error) {
+    if (error.code !== 11000 || !await PushRecord.exists({ _id: id })) throw error;
+  }
+}
+
 // A confirmed plan stays intact. New screening decisions become one audited
 // amendment; task changes remain in the existing execution-review workbench.
 router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAuth, async (req, res) => {
@@ -10979,9 +10993,20 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
       return res.status(403).json({ success: false, message: '仅所属健康顾问可补入方案' });
     const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
     if (!plan?.pushedAt || !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: '请先选择已审核、已发布且客户已确认的方案' });
-    if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || '')) return res.status(409).json({ success: false, message: '方案已变化，请刷新' });
     const kind = String(req.body.sourceKind || ''), sourceObjectId = String(req.body.sourceId || '');
     if (!mongoose.isValidObjectId(sourceObjectId) || !['decision', 'ai_checkup'].includes(kind)) return res.status(400).json({ success: false, message: '请选择已核对来源' });
+    const sourceIdForRetry = `management_issue:${sourceObjectId}`;
+    const applied = (plan.supplementRevisions || []).find(row => row.kind === 'current_screening_action'
+      && row.source?.kind === kind && row.source?.sourceId === sourceIdForRetry);
+    if (applied) {
+      if (!Object.values(plan.moduleData || {}).some(module => (module?.records || []).some(row => (row.sourceIds || []).includes(sourceIdForRetry))))
+        return res.status(409).json({ success: false, message: '原补入事项已变化，请刷新方案核对' });
+      try { await notifyAnnualPlanRevision(plan, applied, req.staff._id, req.params.id,
+        `${plan.year}年度管理方案已更新`, '健康顾问已补入筛查管理事项，请查看更新后的方案。'); }
+      catch { return res.status(503).json({ success: false, message: '事项已补入，但客户通知未完成；请再次点击确认补入以重试通知' }); }
+      return res.json({ success: true, data: plan, message: '该事项已补入方案，客户通知已确认' });
+    }
+    if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || '')) return res.status(409).json({ success: false, message: '方案已变化，请刷新' });
     let sourceId, title, direction, reviewGroup = null;
     if (kind === 'decision') {
       const decision = await require('../models/AnnualManagementDecision').findOne({ _id: sourceObjectId, patientId: req.params.id, year: plan.year, status: 'active' }).lean();
@@ -11032,17 +11057,12 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
     const revision = { id: require('crypto').randomUUID(), status: 'applied', kind: 'current_screening_action', createdAt: new Date(), createdBy: req.staff._id,
       source: { kind, sourceId, title }, reason: changeReason, baseUpdatedAt: plan.updatedAt,
       changes: [{ key: moduleKey, index: -1, before: null, after: row }], taskStatus: 'not_created', executionReview: { status: 'pending', version: 1 } };
-    const session = await mongoose.startSession();
-    let saved;
-    try {
-      await session.withTransaction(async () => {
-        saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt },
-          { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true, session });
-        if (!saved) throw Object.assign(new Error('方案已变化，请刷新'), { statusCode: 409 });
-        await PushRecord.create([{ staffId: req.staff._id, patientId: req.params.id, type: 'plan', sourceAnnualPlanId: plan._id,
-          title: `${plan.year}年度管理方案已更新`, content: '健康顾问已补入筛查管理事项，请查看更新后的方案。' }], { session });
-      });
-    } finally { await session.endSession(); }
+    const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt },
+      { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true });
+    if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新' });
+    try { await notifyAnnualPlanRevision(plan, revision, req.staff._id, req.params.id,
+      `${plan.year}年度管理方案已更新`, '健康顾问已补入筛查管理事项，请查看更新后的方案。'); }
+    catch { return res.status(503).json({ success: false, message: '事项已补入，但客户通知未完成；请再次点击确认补入以重试通知' }); }
     res.json({ success: true, data: saved, message: '已补入方案；执行安排已进入健康顾问复核，尚未自动创建任务' });
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : '补入方案失败，请刷新后重试' }); }
 });
@@ -11094,6 +11114,16 @@ router.patch('/patients/:id/annual-plan/:planId/management-goals', staffAuth, as
     const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
     if (!plan || !plan.pushedAt || !plan.confirmedAt || plan.reviewStatus !== 'approved')
       return res.status(409).json({ success: false, message: '请先打开已审核、已发布且客户已确认的年度方案' });
+    const requestId = String(req.body.requestId || '').trim();
+    if (requestId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId))
+      return res.status(400).json({ success: false, message: '修订请求无效，请重新打开方案' });
+    const applied = requestId && (plan.supplementRevisions || []).find(row => row.kind === 'pilot_management_goals' && row.id === requestId);
+    if (applied) {
+      try { await notifyAnnualPlanRevision(plan, applied, req.staff._id, req.params.id,
+        `${plan.year}年度管理目标已更新`, '健康顾问已确认年度管理目标，请查看更新后的方案。'); }
+      catch { return res.status(503).json({ success: false, message: '目标已保存，但客户通知未完成；请再次点击保存以重试通知' }); }
+      return res.json({ success: true, data: plan, message: '目标已保存，客户通知已确认' });
+    }
     if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || ''))
       return res.status(409).json({ success: false, message: '方案已变化，请刷新后重新核对' });
     const reason = String(req.body.reason || '').trim();
@@ -11103,20 +11133,15 @@ router.patch('/patients/:id/annual-plan/:planId/management-goals', staffAuth, as
     catch (error) { return res.status(400).json({ success: false, message: error.message }); }
     const oldGoals = plan.moduleData?.management_targets?.records || [];
     const moduleData = { ...(plan.moduleData || {}), management_targets: { enabled: true, records: goals } };
-    const revision = { id: require('crypto').randomUUID(), kind: 'pilot_management_goals', status: 'applied',
+    const revision = { id: requestId || require('crypto').randomUUID(), kind: 'pilot_management_goals', status: 'applied',
       createdAt: new Date(), createdBy: req.staff._id, reason, before: oldGoals, after: goals,
       note: '仅修订管理目标，不改写既有行动、岗位任务或历史阶段评估' };
-    const session = await mongoose.startSession();
-    let saved;
-    try {
-      await session.withTransaction(async () => {
-        saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt },
-          { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true, session });
-        if (!saved) throw Object.assign(new Error('方案已变化，请刷新后重新核对'), { statusCode: 409 });
-        await PushRecord.create([{ staffId: req.staff._id, patientId: req.params.id, type: 'plan', sourceAnnualPlanId: plan._id,
-          title: `${plan.year}年度管理目标已更新`, content: '健康顾问已确认年度管理目标，请查看更新后的方案。' }], { session });
-      });
-    } finally { await session.endSession(); }
+    const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt },
+      { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true });
+    if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重新核对' });
+    try { await notifyAnnualPlanRevision(plan, revision, req.staff._id, req.params.id,
+      `${plan.year}年度管理目标已更新`, '健康顾问已确认年度管理目标，请查看更新后的方案。'); }
+    catch { return res.status(503).json({ success: false, message: '目标已保存，但客户通知未完成；请再次点击保存以重试通知' }); }
     res.json({ success: true, data: saved, message: '目标已留痕更新；原有任务和历史评估未改写' });
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : '目标修订未完成，请刷新后重试' }); }
 });

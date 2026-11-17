@@ -11,6 +11,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [appendError, setAppendError] = useState('')
   const [findingsOpen, setFindingsOpen] = useState(false)
   const [findingPage, setFindingPage] = useState(1)
   const refresh = async () => {
@@ -52,21 +53,21 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
   ]
   const possibleExisting = source => (state.plan?.moduleData?.[source.direction]?.records || [])
     .some(row => String(row.items || row.department || row.name || '').replace(/\s/g, '') === String(source.title || '').replace(/\s/g, ''))
-  const openAmendment = source => { setEditing(source); setForm({ title: source.title, reason: source.note || '', advice: '',
+  const openAmendment = source => { setAppendError(''); setEditing(source); setForm({ title: source.title, reason: source.note || '', advice: '',
     date: '', timingReason: '', changeReason: '补入当前筛查核对事项' }) }
   const append = async () => {
     if (!state.plan || !editing) return
-    setSaving(true)
+    setSaving(true); setAppendError('')
     try {
       await staffAPI.appendCurrentScreeningAction(patientId, state.plan._id, { sourceKind: editing.kind, sourceId: editing.id,
         baseUpdatedAt: state.plan.updatedAt, ...form })
       setEditing(null); toast?.('已补入年度方案；请继续核对目标及执行安排')
       await refresh()
-    } catch (error) { toast?.(error.message || '补入方案失败') }
+    } catch (error) { setAppendError(error.message || '补入方案失败，请重试') }
     finally { setSaving(false) }
   }
   return <section style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><div><strong style={{ color: '#1E6B50' }}>当前筛查核对</strong><div style={{ fontSize: 12, color: '#52675D', marginTop: 4 }}>依据历年已审核报告和本年度已审核 AI 健康信息整理；只判断当下资料与管理去向，不补做往年小结。</div></div><button type="button" className="btn btn-secondary btn-sm" onClick={refresh} disabled={state.loading}>刷新核对</button></div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><div><strong style={{ color: '#1E6B50' }}>资料与管理去向</strong><div style={{ fontSize: 12, color: '#52675D', marginTop: 4 }}>逐项核实报告、异常线索和 AI 建议，决定是否补入当前年度方案；此处不形成年度综合判断。</div></div><button type="button" className="btn btn-secondary btn-sm" onClick={refresh} disabled={state.loading}>刷新核对</button></div>
     {state.error && <div role="alert" style={{ color: '#B42318', marginTop: 8 }}>{state.error}</div>}
     {state.loading ? <p>正在核对来源…</p> : <>
       <p style={{ fontSize: 13 }}>已审核报告 {currentReports.length} 份 · 有检查记录的专项 {covered.length} 项 · 异常或需关注的结构化线索 {findings.length} 项 · AI 待完善检查 {state.checkup?.items?.length || 0} 项 · 待补入当前方案 {pendingSources.length} 项</p>
@@ -91,7 +92,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
       <details style={{ marginTop: 10 }} open><summary>AI 健康信息整理提出的待完善检查（{state.checkup?.items?.length || 0}）</summary>
         <AICheckupReview patientId={patientId} year={year} versionKey={state.checkup?.version || ''} staff={staff} toast={toast} onSaved={refresh} />
       </details>
-      <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>已核对事项的方案去向</b>
+      <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>已核对、待补入方案的事项</b>
         {!state.plan && <p style={{ fontSize: 12 }}>未找到已确认的本年度方案；请先核对年度方案。</p>}
         {!pendingSources.length && <p style={{ fontSize: 12 }}>目前没有已确认但尚未进入方案的事项。仍须核对上方未处理线索。</p>}
         {pendingSources.map(source => <div key={`${source.kind}:${source.id}`} style={{ borderTop: '1px solid #E4ECE7', marginTop: 8, paddingTop: 8, fontSize: 13 }}>
@@ -113,6 +114,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
       {form.date && <label>日期依据<input className="form-input" value={form.timingReason} onChange={event => setForm({ ...form, timingReason: event.target.value })} /></label>}
       <label>修订原因<input className="form-input" value={form.changeReason} onChange={event => setForm({ ...form, changeReason: event.target.value })} /></label>
       <p style={{ fontSize: 12 }}>保存会通知客户并进入顾问执行安排复核；不会自动创建或完成任务。</p>
+      {appendError && <p role="alert" style={{ margin: 0, color: '#B42318' }}>{appendError}</p>}
     </div><div className="modal-footer"><button type="button" className="btn btn-secondary" onClick={() => setEditing(null)}>取消</button><button type="button" className="btn btn-primary" disabled={saving || !form.reason?.trim() || !form.advice?.trim()} onClick={append}>{saving ? '保存中…' : '确认补入'}</button></div></div></div>}
   </section>
 }

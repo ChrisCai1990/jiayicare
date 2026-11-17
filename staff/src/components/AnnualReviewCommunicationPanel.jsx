@@ -79,9 +79,10 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
   return <section id="annual-review-communication" style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
     <button type="button" aria-expanded={expanded} aria-controls="annual-review-communication-content" onClick={() => setExpanded(value => !value)}
       style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: 0, padding: 0, background: 'transparent', textAlign: 'left', cursor: 'pointer', fontWeight: 700, color: '#1E6B50', fontSize: 16 }}>
-      <span>客户沟通前的研判核对 · {year}年度</span><span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>{expanded ? '收起 ▲' : '展开 ▼'}</span>
+      <span>年度综合研判与客户沟通 · {year}年度</span><span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>{expanded ? '收起 ▲' : '展开 ▼'}</span>
     </button>
     {expanded && <div id="annual-review-communication-content">{loading ? <div style={{ fontSize: 13, marginTop: 10 }}>正在读取研判…</div> : <>
+      <p style={{ fontSize: 13, color: '#52675D', margin: '10px 0' }}>汇总已审核的健康问题与检查依据，由健康顾问确认优先级、目标和沟通结论；不重复逐项补入检查。</p>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>① 年度研判中的健康问题与发现 · {problemRows.length}</div>
         {review && canConfirm && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={syncReviewedConcerns} style={{ marginBottom: 8 }}>{busy ? '核对中…' : '同步已审核关注线索'}</button>}
