@@ -31,8 +31,8 @@ router.get('/', async (req, res) => {
     ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean(),
   ]);
 
-  const { paidOrderCounts, paidBuyerCounts, displayedPaidOrderCount } = require('../utils/productPaidBuyers');
-  const [paidOrderCount, paidBuyerCount] = await Promise.all([paidOrderCounts(products), paidBuyerCounts(products)]);
+  const { paidOrderCounts, displayedPaidOrderCount } = require('../utils/productPaidBuyers');
+  const paidOrderCount = await paidOrderCounts(products);
 
   const productCountByCategory = products.reduce((counts, product) => {
     const name = String(product.category || '').trim();
@@ -84,7 +84,7 @@ router.get('/', async (req, res) => {
       price: firstPrice ? firstPrice.price : (firstSku?.price ?? p.originalPrice),
       originalPrice: p.originalPrice,
       rating: 5.0,
-      reviewCount: paidBuyerCount.get(String(p._id)) || 0,
+      reviewCount: displayedPaidOrderCount(p, paidOrderCount),
       paidOrderCount: displayedPaidOrderCount(p, paidOrderCount),
       tag: '',
       tagColor: '',

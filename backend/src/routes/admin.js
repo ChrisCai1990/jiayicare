@@ -2102,15 +2102,15 @@ router.get('/products', adminAuth, async (req, res) => {
 
 // Historical completed purchases can be entered from verified offline records; online purchases are counted from orders.
 router.patch('/products/:id/historical-paid-orders', adminAuth, async (req, res) => {
-  if (!['superadmin', 'manager'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '无权限维护历史成交数' });
+  if (!['superadmin', 'manager'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '无权限维护展示已购基数' });
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '商品 ID 无效' });
   const body = req.body || {};
   const count = Number(body.count);
   const note = String(body.note || '').trim();
   const expectedUpdatedAt = new Date(body.expectedUpdatedAt);
   if (body.count === '' || body.count === null || body.count === undefined || !Number.isSafeInteger(count) || count < 0 || count > 1000000)
-    return res.status(400).json({ success: false, message: '历史成交笔数须为 0 至 1000000 的整数' });
-  if (count > 0 && !note) return res.status(400).json({ success: false, message: '请填写历史成交记录来源' });
+    return res.status(400).json({ success: false, message: '展示已购基数须为 0 至 1000000 的整数' });
+  if (count > 0 && !note) return res.status(400).json({ success: false, message: '请填写设置依据' });
   if (note.length > 500 || Number.isNaN(expectedUpdatedAt.getTime()))
     return res.status(400).json({ success: false, message: '来源说明或商品版本无效' });
   const product = await Product.findOneAndUpdate({ _id: req.params.id, tenantId: req.admin.tenantId,
@@ -2118,7 +2118,7 @@ router.patch('/products/:id/historical-paid-orders', adminAuth, async (req, res)
       historicalPaidOrdersNote: note, historicalPaidOrdersUpdatedAt: new Date(),
       historicalPaidOrdersUpdatedBy: req.admin._id } }, { new: true, runValidators: true });
   if (!product) return res.status(409).json({ success: false, message: '商品已更新，请刷新后重试' });
-  res.json({ success: true, data: { historicalPaidOrders: product.historicalPaidOrders }, message: '历史成交笔数已更新' });
+  res.json({ success: true, data: { historicalPaidOrders: product.historicalPaidOrders }, message: '展示已购基数已更新' });
 });
 
 // 产品标准成本按版本配置；它是预算，不代替订单实际成本凭据。

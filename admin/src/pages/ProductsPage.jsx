@@ -1313,7 +1313,7 @@ function HistoricalOrdersModal({ product, onClose, onSaved }) {
       await adminAPI.updateProductHistoricalPaidOrders(product._id, {
         count: parsed, note: note.trim(), expectedUpdatedAt: product.updatedAt,
       })
-      toast('✅ 历史成交笔数已更新')
+      toast('✅ 展示已购基数已更新')
       onSaved()
       onClose()
     } catch (error) { toast('❌ ' + (error.message || '保存失败')) }
@@ -1321,15 +1321,15 @@ function HistoricalOrdersModal({ product, onClose, onSaved }) {
   }
   return <div className="modal-overlay" onClick={onClose}>
     <div className="modal" style={{ maxWidth: 480, width: '96%' }} onClick={event => event.stopPropagation()}>
-      <div className="modal-header"><div className="modal-title">设置历史成交笔数</div><button className="modal-close" onClick={onClose}>×</button></div>
+      <div className="modal-header"><div className="modal-title">设置展示已购基数</div><button className="modal-close" onClick={onClose}>×</button></div>
       <div className="modal-body">
         <strong>{product.name}</strong>
-        <p style={{ color: '#667a6d', fontSize: 13 }}>线上已付款订单 {online} 笔，由订单自动统计；同一客户重复购买分别计入，全额退款后不再计入。</p>
-        <div className="form-group"><label className="form-label">已核实的历史线下成交笔数</label>
+        <p style={{ color: '#667a6d', fontSize: 13 }}>当前线上有效付款订单 {online} 笔；新增付款自动加 1，重复购买分别计入，全额退款后不再计入。客户只看到合计已购数。</p>
+        <div className="form-group"><label className="form-label">展示已购基数</label>
           <input className="form-input" type="number" min="0" max="1000000" step="1" value={count} onChange={event => setCount(event.target.value)} /></div>
         <div className="form-group"><label className="form-label">记录来源{parsed > 0 ? ' *' : ''}</label>
           <textarea className="form-input" rows={3} maxLength={500} value={note} onChange={event => setNote(event.target.value)} placeholder="例如：已核对的线下订单台账及截止日期" /></div>
-        <p style={{ color: '#1E6B50', fontSize: 13 }}>商城将显示：已购 {valid ? parsed + online : '—'} 笔；合计为 0 时不显示数字。</p>
+        <p style={{ color: '#1E6B50', fontSize: 13 }}>商城将显示：{valid ? parsed + online : '—'}人已购；合计为 0 时不显示数字。</p>
       </div>
       <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>取消</button>
         <button className="btn btn-primary" onClick={save} disabled={!valid || saving}>{saving ? '保存中...' : '保存'}</button></div>
@@ -1537,7 +1537,7 @@ export default function ProductsPage({ commissionMode = false }) {
                 <th>分类</th>
                 <th>市场价</th>
                 <th>收费项目</th>
-                <th>已购笔数</th>
+                <th>展示已购数</th>
                 <th>库存</th>
                 <th>状态</th>
                 <th>排序</th>
@@ -1577,8 +1577,8 @@ export default function ProductsPage({ commissionMode = false }) {
                   <td>{pricePreview(p)}</td>
                   <td>
                     <div>{p.displayedPaidOrderCount || '—'}</div>
-                    <small style={{ color: '#8a9891' }}>线上 {p.onlinePaidOrders || 0} · 历史 {p.historicalPaidOrders || 0}</small>
-                    {['superadmin', 'manager'].includes(admin?.role) && <div><button className="btn btn-sm btn-ghost" onClick={() => setEditingHistoricalOrders(p)}>设置历史数</button></div>}
+                    <small style={{ color: '#8a9891' }}>线上 {p.onlinePaidOrders || 0} · 基数 {p.historicalPaidOrders || 0}</small>
+                    {['superadmin', 'manager'].includes(admin?.role) && <div><button className="btn btn-sm btn-ghost" onClick={() => setEditingHistoricalOrders(p)}>设置基数</button></div>}
                   </td>
                   <td style={{ color: p.stock === 0 && !p.stockLimited ? '#aaa' : '#333' }}>
                     {p.usesSharedInventory || p.inventoryTracking?.enabled ? '见物资台账' : p.stock === 0 && !p.stockLimited ? '不限' : p.stock}
