@@ -15927,6 +15927,7 @@ const TODO_REVIEW_ROLE = {
   report_interpretation:'familyDoctor',
   archive_review:       'healthManager',
   checkup_plan_review:  'familyDoctor',
+  annual_plan_create:   'familyDoctor',
   annual_plan_customer_response: 'familyDoctor',
   summary_review:       'familyDoctor',
   risk_review:          'familyDoctor',
@@ -16085,6 +16086,10 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
+
+    if (can('annual_plan_create')) {
+      todos.push(...await require('../utils/annualPlanCreationTodos').loadAnnualPlanCreationTodos(req.staff, now));
+    }
 
     // A chat image remains actionable until the assigned manager explicitly
     // archives it as a report or marks it as not included. Reading the chat
