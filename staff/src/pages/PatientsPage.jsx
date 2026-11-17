@@ -155,7 +155,7 @@ export default function PatientsPage() {
               <label className="form-label">搜索</label>
               <input
                 className="form-input"
-                placeholder="姓名 / 手机号 / 客户编号"
+                placeholder="姓名 / 手机号 / 客户编号 / 会员类型"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -243,8 +243,8 @@ export default function PatientsPage() {
                   <td style={{ color: '#666' }}>{p.assignedFamilyDoctor?.name || '-'}</td>
                   <td style={{ color: '#666' }}>{p.assignedHealthPlanner?.name || '-'}</td>
                   <td>
-                    {p.servicePackage
-                      ? <span className="badge badge-success">{p.servicePackage}</span>
+                    {p.memberType || p.servicePackage
+                      ? <span className="badge badge-success">{p.memberType || p.servicePackage}</span>
                       : <span style={{ color: '#ccc' }}>-</span>}
                   </td>
                   <td>

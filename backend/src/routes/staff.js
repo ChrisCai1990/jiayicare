@@ -934,9 +934,12 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
   const filter = { ...assignFilter, isDeleted: { $ne: true } };
   if (search) {
     const customerId = require('../../../shared/customerNumber.cjs').parseCustomerNumber(search);
+    const searchText = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const searchOr = [
-      { name: { $regex: search, $options: 'i' } },
-      { phone: { $regex: search, $options: 'i' } },
+      { name: { $regex: searchText, $options: 'i' } },
+      { phone: { $regex: searchText, $options: 'i' } },
+      { memberType: { $regex: searchText, $options: 'i' } },
+      { servicePackage: { $regex: searchText, $options: 'i' } },
       ...(customerId ? [{ _id: customerId }] : []),
     ];
     // 导师模式下 assignFilter 已占用 $or（归属过滤），此时用 $and 组合归属与搜索，避免互相覆盖
@@ -960,7 +963,7 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
-      .select('name phone gender age patientCategory height weight healthScore servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner source createdAt contactPhone')
+      .select('name phone gender age patientCategory height weight healthScore memberType servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner source createdAt contactPhone')
       .populate('assignedHealthManager', 'name title')
       .populate('assignedFamilyDoctor', 'name title')
       .populate('assignedNutritionist', 'name title')
