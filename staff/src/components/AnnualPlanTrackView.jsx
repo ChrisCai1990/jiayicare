@@ -26,8 +26,8 @@ export default function AnnualPlanTrackView({ actions, renderAction, nutritionTa
     const consensus = keys.includes('health_consensus')
     if (!items.length && !nutrition && !consensus) return null
     const itemCount = items.length + (nutrition ? 1 : 0)
-    return <div key={title} style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0' }}>
-      <strong style={{ fontSize: 16, color: '#183E30' }}>{title}</strong><span style={{ marginLeft: 8, fontSize: 12, color: '#71877B' }}>{itemCount ? `${itemCount} 项` : '待安排'}</span>
+    return <div key={title} style={{ borderTop: title === '年度体检' ? 0 : '1px solid #E1EAE4', padding: '15px 0' }}>
+      {title !== '年度体检' && <><strong style={{ fontSize: 16, color: '#183E30' }}>{title}</strong><span style={{ marginLeft: 8, fontSize: 12, color: '#71877B' }}>{itemCount ? `${itemCount} 项` : '待安排'}</span></>}
       {nutrition && <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.7 }}>
         <div>纳入数据：{nutritionMetrics.join('、') || '体重、骨骼肌、体脂率、内脏脂肪'}</div>
         <div>目标：由营养师评估后确定</div>

@@ -1168,7 +1168,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   return (
     <StaffListContext.Provider value={staffList}>
     <MedicalResourcesContext.Provider value={medicalResources}>
-    <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
+    <div className={annualPilot ? 'annual-plan-page--pilot' : undefined} style={{ maxWidth: annualPilot ? 1000 : 860, margin: '0 auto', padding: '24px 20px 80px' }}>
 
       {/* 顶部导航 */}
       <div id="annual-plan-actions" className={`annual-plan-actions${annualPilot && patientMode ? ' annual-plan-actions--pilot' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>

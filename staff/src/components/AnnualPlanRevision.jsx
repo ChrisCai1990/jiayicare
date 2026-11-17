@@ -64,8 +64,8 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, onS
     return () => window.removeEventListener('annual-plan-save-revision', saveFromPage)
   })
   if (!options.length) return null
-  return <details id="annual-plan-revision" style={{ marginBottom: 16, padding: 14, border: '1px solid #C7D8CB', borderRadius: 10, background: '#fff' }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>局部修订并通知客户</summary>
+  return <details id="annual-plan-revision" className="annual-plan-revision" style={{ marginBottom: 16, padding: 14, border: '1px solid #C7D8CB', borderRadius: 10, background: '#fff' }}>
+    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>修改方案事项</summary>
     <p style={{ fontSize: 13, color: '#52675D' }}>选择事项，修改后保存。已派发任务的实际排期另行核对。</p>
     <label>方案事项<select className="form-input" value={selection} onChange={event => choose(event.target.value)} style={{ display: 'block', width: '100%', marginTop: 5 }}><option value="">请选择</option>{options.map(option => <option key={`${option.key}:${option.target}`} value={`${option.key}:${option.target}`}>{option.label} · {titleOf(option.row)}</option>)}</select></label>
     {selected && <div style={{ display: 'grid', gap: 9, marginTop: 10 }}>
