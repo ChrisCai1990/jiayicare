@@ -19,6 +19,9 @@ const annualPlanPreparationSchema = new mongoose.Schema({
   },
   advisorReadyConfirmedAt: { type: Date, default: null },
   advisorReadyConfirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  screeningConfirmedAt: { type: Date, default: null },
+  screeningConfirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  screeningConfirmedNote: { type: String, default: '' },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
 }, { timestamps: true });
 
