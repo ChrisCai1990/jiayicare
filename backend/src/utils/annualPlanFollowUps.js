@@ -351,7 +351,9 @@ async function syncAnnualPlanFollowUps(plan) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
       if (require('../../../shared/annualNutrition.cjs').isTask(keep)) continue;
-      if (!row.sourceScheduleKey?.startsWith('health-consensus:')) assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
+      const continuedInPlace = keep.status === 'in_progress' && keep.progressRecords?.length
+        && keep.nextFollowUpDate && +new Date(keep.date) === +new Date(keep.nextFollowUpDate);
+      if (!row.sourceScheduleKey?.startsWith('health-consensus:') && !continuedInPlace) assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if(row.formData?.healthDataPlan && keep.status==='cancelled' && keep.cancelReason==='健康数据周期跟进已从方案关闭') {
