@@ -44,11 +44,12 @@ function setup(patch = {}) {
     },
   };
   const args = { FollowUp: model, id: 'task', actor: { _id: 'manager', role: 'healthManager', name: '健管' },
-    body: { requestId: 'request-0001', content: '客户下周检查', type: 'wechat', updatedAt: row.updatedAt, nextContactAt: '2026-09-25T09:00:00+08:00' } };
+    body: { requestId: 'request-0001', content: '客户下周检查', type: 'wechat', updatedAt: row.updatedAt, nextContactAt: new Date(Date.now() + 7 * 86400000).toISOString() } };
   return { args, get: () => row };
 }
 test('two contacts append to one plan, preserve requirements, never complete', async () => {
-  const s = setup(); const first = await saveProgress(s.args);
+  const s = setup(medical); const first = await saveProgress(s.args);
+  assert.equal(+first.date, +new Date(s.args.body.nextContactAt));
   const second = await saveProgress({ ...s.args, body: { ...s.args.body, updatedAt: first.updatedAt, requestId: 'request-0002', content: '已检查，等待报告', nextContactAt: null } });
   assert.equal(second.status, 'in_progress'); assert.equal(second.content, '完成本次复查');
   assert.equal(second.progressRecords.length, 2); assert.equal(second.plannedContent, '完成本次复查');

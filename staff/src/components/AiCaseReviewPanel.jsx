@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { staffAPI, API_ORIGIN, managementReviewAPI } from '../api'
+import AnnualGoalEvidencePreview from './AnnualGoalEvidencePreview'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
@@ -135,7 +136,8 @@ function StageWorkflow({ assessment }) {
 
 export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all', onNavigate }) {
   const [cyclePilot,setCyclePilot]=useState(false)
-  useEffect(()=>{setCyclePilot(false);managementReviewAPI.get(patientId).then(r=>setCyclePilot(r.enabled===true)).catch(()=>{})},[patientId])
+  const [cycleRestored,setCycleRestored]=useState(false)
+  useEffect(()=>{setCyclePilot(false);setCycleRestored(false);managementReviewAPI.get(patientId).then(r=>{setCyclePilot(r.enabled===true);setCycleRestored(r.restored===true)}).catch(()=>{})},[patientId])
   const [assessmentDomain, setAssessmentDomain] = useState(({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role] || 'comprehensive')
   const [topics, setTopics] = useState([])
   const [managedTemplates, setManagedTemplates] = useState([])
@@ -458,6 +460,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           {['familyDoctor', 'nutritionist', 'rehabSpecialist', 'tcmDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => generateAssessment()}>生成月度复盘底稿</button>}
         </div>
       <div className="card-body" style={{ display: 'grid', gap: 12 }}>
+        {cycleRestored && ['familyDoctor', 'superadmin'].includes(staff?.role) && <AnnualGoalEvidencePreview patientId={patientId} />}
         {closedLoop && ['familyDoctor', 'superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => generateAssessment('yearly')}>生成年度总评草稿（进入第11个月）</button>}
         {closedLoop && <label>评估领域 <select className="form-input" value={assessmentDomain} onChange={event => setAssessmentDomain(event.target.value)}>{Object.entries(PHASE_DOMAINS).filter(([key]) => ['familyDoctor', 'superadmin'].includes(staff?.role) || key === ({ nutritionist: 'nutrition', rehabSpecialist: 'exercise', tcmDoctor: 'tcm' })[staff?.role]).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
         {!visibleAssessments.length && <div style={{ color: '#8AA89C' }}>暂无阶段性评估与复盘记录，可由对应岗位按评估周期发起。</div>}

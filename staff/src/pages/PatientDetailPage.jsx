@@ -7,6 +7,8 @@ import ReferralScreeningList, { ScreeningResult } from '../components/ReferralSc
 import { currentRecords, screeningAttachments, diseaseHistoryAttachments } from '../utils/referralAttachments.mjs'
 import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
+import BodyCompInvitation, { isBodyCompInvitation } from '../components/BodyCompInvitation'
+import DeferMedicalFollowUp from '../components/DeferMedicalFollowUp'
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
 import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
 import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from '../utils/aiReviewConflictField.mjs'
@@ -3005,6 +3007,7 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
+    if (isBodyCompInvitation(f)) { setExecItem(f); return }
     if (annualNutrition.isTask(f) && ['nutritionist', 'superadmin'].includes(staff?.role)) {
       setTab('records'); setHealthBaseView('lifestyle')
       nav(`/patients/${id}?tab=records&recordView=lifestyle&interviewTaskId=${f._id}`)
@@ -11229,6 +11232,7 @@ export default function PatientDetailPage() {
                               <button className="btn btn-primary btn-sm" onClick={() => referSymptomToDoctor(record)}>转健康顾问</button>
                             </>}
                             {['familyDoctor', 'superadmin'].includes(staff?.role) && workflow.status === 'pending_doctor' && !!workflow.verifiedAt && <button className="btn btn-primary btn-sm" onClick={() => handleDoctorSymptom(record)}>处理</button>}
+                            {['familyDoctor', 'superadmin'].includes(staff?.role) && year === new Date().getFullYear() && ['referred', 'manager_followup'].includes(workflow.status) && !!workflow.decidedAt && <SpecialtyConcernButton patientId={id} year={year} source={{ kind:'symptom', recordId:record._id }} sourceLabel="健康顾问已处理的不适主诉" sourceText={`${record.value || ''} ${workflow.decisionNote || ''}`} suggestedIssue={String(record.value || '').slice(0, 80)} staff={staff} toast={toast} />}
                             {['healthManager', 'superadmin'].includes(staff?.role) && <button className="btn btn-sm" style={{ color: '#B42318', background: '#FFF', border: '1px solid #FDA29B' }} onClick={() => deleteSymptomRecord(record)}>删除</button>}
                           </div>
                         </div>
@@ -11412,6 +11416,10 @@ export default function PatientDetailPage() {
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingInterpretations.length > 0 && <div className="card" style={{ padding: 16, marginBottom: 16, border: '1px solid #CFE5D8' }}>
               <strong>健康顾问报告解读 · 待确认 {pendingInterpretations.length} 份</strong>
               <p style={{ margin: '8px 0', fontSize: 13, color: '#4A6558' }}>可跨年份一起解读。核对原件后勾选本次已完成解读的报告，确认后进入对应的问题建议审核。</p>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={reportFlowSaving || selectedInterpretationIds.length === pendingInterpretations.length} onClick={() => setReportInterpretationSelection(current => ({ ...current, ...Object.fromEntries(pendingInterpretations.map(report => [report._id, true])) }))}>全选当前待确认资料</button>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={reportFlowSaving || selectedInterpretationIds.length === 0} onClick={() => setReportInterpretationSelection(current => ({ ...current, ...Object.fromEntries(pendingInterpretations.map(report => [report._id, false])) }))}>清空选择</button>
+              </div>
               <div style={{ display: 'grid', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
                 {pendingInterpretations.map(report => <label key={report._id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                   <input type="checkbox" checked={reportInterpretationSelection[report._id] === true} onChange={event => setReportInterpretationSelection(current => ({ ...current, [report._id]: event.target.checked }))} />
@@ -12523,7 +12531,8 @@ export default function PatientDetailPage() {
       )}
 
       {/* 执行任务弹窗：随访、监测、复查与就医等任务共用执行结果表单。 */}
-      {execItem && (
+      {execItem && isBodyCompInvitation(execItem) && <BodyCompInvitation task={execItem} onClose={() => setExecItem(null)} onSaved={action => { setExecItem(null); loadFollowUps(); load(); toast(action === 'rescheduled' ? '邀约日期已更新' : '本轮已完成，下一轮邀约已生成') }} />}
+      {execItem && !isBodyCompInvitation(execItem) && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (isCheckupAppointmentBookingTask(execItem) || medicalProxyStage(execItem) || medicationProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
@@ -12532,6 +12541,7 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               {!ibdStage(execItem) && <FollowUpDueDateBanner task={execItem} />}
+              <DeferMedicalFollowUp task={execItem} onSaved={() => { setExecItem(null); loadFollowUps(); load(); toast('本轮已办结，下一轮已按新日期安排') }} />
               <ServiceTaskContextBanner task={execItem} />
               {staff?.role === 'healthManager' && medicalProxyStage(execItem) === 'post_visit_audit' && /专家约诊/.test(execItem.sourceOrderId?.serviceName || '') && <ExpertAppointmentRescheduleForm task={execItem} onSaved={() => { setExecItem(null); loadFollowUps(); loadServiceRecords(); toast('已补记预约改期，原服务任务继续等待就诊资料') }} />}
               <OnsiteBookingCard key={`onsite-exec-${execItem._id}`} task={execItem} staff={staff} />
@@ -13259,6 +13269,25 @@ export default function PatientDetailPage() {
                   </div>
                 )
               })()}
+
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited'
+                && showReportDetail.advisorInterpretationConfirmedAt && !showReportDetail.archiveOnly && !showReportDetail.duplicateOf
+                && !['outpatient_record', 'prescription_order'].includes(inferDocumentCategory(showReportDetail)) && (() => {
+                  const items = (showReportDetail.reportItems || []).filter(item => !item.screeningKey && !item.screeningKeys?.length)
+                    .filter(item => {
+                      const itemId = String(item.itemId || item.name || '').trim()
+                      return itemId && (showReportDetail.reportItems || []).filter(row => [row.itemId, row.name, row.screeningKey, ...(row.screeningKeys || [])]
+                        .some(value => String(value || '') === itemId)).length === 1
+                    })
+                  return items.length ? <div style={{ marginTop: 12, padding: 12, background: '#F2F8F5', borderRadius: 8 }}>
+                    <b style={{ fontSize: 13 }}>其他已解读检查项目 · 纳入年度管理</b>
+                    <div style={{ fontSize: 12, color: '#60756B', margin: '5px 0 8px' }}>逐项核对原报告，再确定目标、行动和时间；已归入专项筛查的项目沿专项筛查入口处理。</div>
+                    {items.map(item => <div key={item.itemId || item.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid #DCEBE3' }}>
+                      <span style={{ flex: 1, fontSize: 12 }}>{item.name || '检查项目'}：{String(item.findings || item.value || item.conclusion || item.diagnosis || '结果待核对').slice(0, 100)}</span>
+                      <SpecialtyConcernButton patientId={id} year={new Date().getFullYear()} source={{ kind: 'report_item', reportId: showReportDetail._id, itemId: item.itemId || item.name }} sourceLabel="已解读检查报告项目" sourceText={[item.name, item.value, item.findings, item.conclusion].filter(Boolean).join(' ')} suggestedIssue={String(item.name || '').slice(0, 80)} staff={staff} toast={toast} />
+                    </div>)}
+                  </div> : null
+                })()}
 
               {/* 专项筛查详情 */}
               {reportScreeningData.length > 0 && (

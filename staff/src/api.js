@@ -243,6 +243,10 @@ export const staffAPI = {
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
   continueFollowUp:    (id, data) => req(`/staff/followups/${id}/continue`, { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  getBodyCompInvitationOptions: id => req(`/staff/followups/${id}/body-composition-options`),
+  completeBodyCompInvitation: (id, data) => req(`/staff/followups/${id}/body-composition-complete`, { method: 'POST', body: JSON.stringify(data) }),
+  rescheduleBodyCompInvitation: (id, data) => req(`/staff/followups/${id}/body-composition-reschedule`, { method: 'POST', body: JSON.stringify(data) }),
+  deferMedicalFollowUp: (id, data) => req(`/staff/followups/${id}/defer-to-next`, { method: 'POST', body: JSON.stringify(data) }),
   completeMonitoringFollowUp: (id, d) => req(`/staff/followups/${id}/monitoring-result`, { method: 'POST', body: JSON.stringify(d) }),
   getDecisionReferralTask: id => req(`/staff/decision-referral/tasks/${id}`),
   getDecisionReferralCoordinators: () => req('/staff/decision-referral/coordinators'),
@@ -408,6 +412,7 @@ export const staffAPI = {
   reviewPhaseAssessment: (patientId, assessmentId, data) => req(`/staff/patients/${patientId}/phase-assessments/${assessmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),
   getAnnualManagementDecisions: (patientId, year) => req(`/staff/patients/${patientId}/annual-management-decisions?year=${year}`),
+  draftAnnualManagementDecision: (patientId, data) => req(`/staff/patients/${patientId}/annual-management-decision-draft`, { method: 'POST', body: JSON.stringify(data) }),
   saveAnnualManagementDecision: (patientId, data) => req(`/staff/patients/${patientId}/annual-management-decisions`, { method: 'PUT', body: JSON.stringify(data) }),
   withdrawLegacyAnnualManagementDecision: (patientId, decisionId, reason) => req(`/staff/patients/${patientId}/annual-management-decisions/${decisionId}/withdraw`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getAICheckupReviews: (patientId, year) => req(`/staff/patients/${patientId}/ai-checkup-reviews?year=${year}`),
@@ -542,6 +547,7 @@ export const staffAPI = {
   // Annual Plan
   getAnnualHealthPlans: (year, patientName) => req(`/staff/annual-health-plans?` + qs({ year: year || '', patientName: patientName || '' })),
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
+  getAnnualIssueProgress: (patientId, planId) => req(`/staff/patients/${patientId}/annual-plan/${planId}/issue-progress`),
   updateDentalGift: (planId, data) => req(`/staff/annual-plans/${planId}/dental-gift`, {method:'POST', body:JSON.stringify(data)}),
   getAnnualExecutionReview: (patientId, planId) => req(`/staff/patients/${patientId}/annual-plan-execution-review/${planId}`),
   completeAnnualExecutionReview: (patientId, planId, data) => req(`/staff/patients/${patientId}/annual-plan-execution-review/${planId}`, { method: 'POST', body: JSON.stringify(data) }),
@@ -813,6 +819,7 @@ export const staffAPI = {
 }
 
 export const managementReviewAPI = {
+ goalPreview: (id, period = '') => req(`/staff/patients/${id}/management-reviews/goal-preview${period ? `?period=${encodeURIComponent(period)}` : ''}`),
  prepare: (id,data) => req(`/staff/patients/${id}/management-reviews/prepare`, {method:'POST',body:JSON.stringify(data)}),
  get: id => req(`/staff/patients/${id}/management-reviews`),
  sources: (id, period) => req(`/staff/patients/${id}/management-reviews/sources?period=${encodeURIComponent(period)}`),

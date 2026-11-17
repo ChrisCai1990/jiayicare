@@ -108,6 +108,7 @@ async function buildAnnualPlanFollowUps(plan) {
       content: content || '',
       status: 'planned',
       sourceAnnualPlanId: plan._id,
+      managementIssueIds: [...new Set((delivery.sourceIds || []).map(String))],
       sourceScheduleKey,
       sourceType: 'scheduled',
       deliveryMode: delivery.serviceMode || 'reminder',
@@ -131,13 +132,15 @@ async function buildAnnualPlanFollowUps(plan) {
   if (standardNutrition && standardNutrition.enabled !== false) {
     const metrics = require('../../../shared/nutritionComparisonMetrics.cjs').selectedFromAnnualPlan(plan);
     const nutritionDispatch = require('./annualNutritionDispatch');
+    const goals = nutritionDispatch.nutritionGoalsForPlan(plan);
     const date = standardNutrition.executionDate || plan.confirmedAt || plan.followUpReleasedAt || new Date();
     const before = created.length;
     const dateKey = Number.isFinite(new Date(date).getTime()) ? new Date(date).toISOString().slice(0, 10) : 'invalid';
     push(date, '年度标准营养评估', nutritionDispatch.contentForPlan(plan), patient?.assignedNutritionist,
       `nutrition-assessment:${dateKey}`, standardNutrition);
     if (created.length > before) Object.assign(created.at(-1), { workflowKey: 'annual_nutrition_assessment', reviewAssignedTo: null, reviewRole: null,
-      formData: { annualNutritionMetrics: metrics, annualNutritionGoals: nutritionDispatch.nutritionGoalsForPlan(plan) } });
+      managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))],
+      formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals } });
   }
 
   // ① 有具体日期的多条记录模块：每条各生成一条，content拼该条记录的关键字段
@@ -295,6 +298,21 @@ async function buildAnnualPlanFollowUps(plan) {
     });
   }
 
+  // 健康认知属于顾问持续沟通：首次只建一条内部任务；每次沟通在原任务追加进展并重排下次联系。
+  if (moduleData.health_consensus?.enabled !== false) (moduleData.health_consensus?.records || []).forEach((rec, index) => {
+    if (!rec.question || !rec.firstDate) return;
+    const before = created.length;
+    const content = [`待澄清：${rec.question}`, rec.method && `方式：${rec.method}`, rec.frequency && `计划频率：${rec.frequency}`].filter(Boolean).join('\n');
+    push(rec.firstDate, `健康认知与共识 · ${String(rec.question).slice(0, 30)}`, content,
+      patient?.assignedFamilyDoctor || plan.createdBy, `health-consensus:${rec.consensusId || index}`,
+      { sourceIds: rec.sourceIds || [] });
+    if (created.length > before) Object.assign(created.at(-1), {
+      clientVisible: false, plannedContent: content,
+      formData: { healthConsensus: { currentUnderstanding: rec.currentUnderstanding || '', concern: rec.concern || '', question: rec.question,
+        method: rec.method || '', frequency: rec.frequency || '' } },
+    });
+  });
+
   return created;
 }
 
@@ -333,7 +351,9 @@ async function syncAnnualPlanFollowUps(plan) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
       if (require('../../../shared/annualNutrition.cjs').isTask(keep)) continue;
-      assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
+      const continuedInPlace = keep.status === 'in_progress' && keep.progressRecords?.length
+        && keep.nextFollowUpDate && +new Date(keep.date) === +new Date(keep.nextFollowUpDate);
+      if (!row.sourceScheduleKey?.startsWith('health-consensus:') && !continuedInPlace) assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if(row.formData?.healthDataPlan && keep.status==='cancelled' && keep.cancelReason==='健康数据周期跟进已从方案关闭') {
@@ -351,6 +371,7 @@ async function syncAnnualPlanFollowUps(plan) {
       if (['planned', 'in_progress', 'missed'].includes(keep.status) && row.content) {
         keep.theme = row.theme;
         keep.content = row.content;
+        keep.managementIssueIds = row.managementIssueIds || [];
         keep.deliveryMode = row.deliveryMode;
         keep.deliveryType = row.deliveryType;
         keep.clientVisible = row.clientVisible !== false;

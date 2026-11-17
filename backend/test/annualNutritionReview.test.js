@@ -19,7 +19,7 @@ test('legacy review is disabled',async()=>{await assert.rejects(()=>transition({
 test('年度标准营养评估派营养师一项，保留顾问勾选的对比指标',async t=>{
  const date=new Date(Date.now()+10*86400000).toISOString().slice(0,10);
  const team={assignedNutritionist:'bbbbbbbbbbbbbbbbbbbbbbbb'};
- const plan={_id:'plan',patientId:'patient',moduleData:{nutrition_assessment:{enabled:true,executionDate:date,nutritionComparisonMetrics:['糖化血红蛋白','甘油三酯']},personalized_followups:{records:[{directNutritionAssessment:true,executionDate:date,standardPlanId:'legacy'}]}}};
+ const plan={_id:'plan',patientId:'patient',moduleData:{nutrition_assessment:{enabled:true,executionDate:date,nutritionComparisonMetrics:['糖化血红蛋白','甘油三酯']},management_targets:{records:[{issueId:'management_issue:1',goal:'稳定血糖',nutritionRelevant:true}]},personalized_followups:{records:[{directNutritionAssessment:true,executionDate:date,standardPlanId:'legacy'}]}}};
  const User=require('../src/models/User'),Admin=require('../src/models/Admin');
  t.mock.method(User,'findById',()=>({select:()=>({lean:async()=>team})}));t.mock.method(Admin,'find',()=>({select:()=>({lean:async()=>[]})}));
  const rows=await require('../src/utils/annualPlanFollowUps').buildAnnualPlanFollowUps(plan);
@@ -27,4 +27,5 @@ test('年度标准营养评估派营养师一项，保留顾问勾选的对比�
  assert.equal(rows[0].workflowKey,'annual_nutrition_assessment');
  assert.equal(rows[0].assignedTo,team.assignedNutritionist);
  assert.deepEqual(rows[0].formData.annualNutritionMetrics,['糖化血红蛋白','甘油三酯']);
+ assert.deepEqual(rows[0].managementIssueIds,['management_issue:1']);
 });

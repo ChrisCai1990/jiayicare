@@ -88,6 +88,7 @@ const orderSchema = new mongoose.Schema({
   },
   checkupIntake: { type: mongoose.Schema.Types.Mixed, default: null },
   rehabBooking: { type: mongoose.Schema.Types.Mixed, default: null },
+  rehabAnnualLink: { type: mongoose.Schema.Types.Mixed, default: null }, // 已支付运动服务与年度管理问题的人工关联；不代表服务已执行
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
   desiredServiceDate: { type: Date, default: null },

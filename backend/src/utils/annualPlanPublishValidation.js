@@ -20,6 +20,11 @@ function validate(data = {}, today = new Date(Date.now() + 8 * 3600000).toISOStr
   if (annualCheckup?.enabled !== false && annualCheckup && (annualCheckup.focus || annualCheckup.standardPlanId || annualCheckup.date) && !validDate(annualCheckup.date)) return '推送前请补全年度体检日期（不早于今天）';
   const personalized = data?.personalized_followups?.enabled === false ? [] : data?.personalized_followups?.records || [];
   if (personalized.some(r => !validDate(r.executionDate))) return '推送前请补全每项随访日期（不早于今天）；由客户所属健管专员跟进，当前可暂存草稿';
+  const consensus = data?.health_consensus?.enabled === false ? [] : data?.health_consensus?.records || [];
+  const issueIds = new Set((data?.management_targets?.records || []).map(row => String(row.issueId || '')).filter(Boolean));
+  if (consensus.some(row => !String(row.question || '').trim() || !String(row.method || '').trim() || !String(row.frequency || '').trim() || !validDate(row.firstDate))) return '推送前请补全健康认知与共识的待澄清问题、沟通方式、频率和首次日期';
+  if (consensus.some(row => [row.currentUnderstanding, row.concern, row.question, row.method, row.frequency].some(value => String(value || '').length > 1000))) return '健康认知与共识每项内容不得超过 1000 字';
+  if (consensus.some(row => (row.sourceIds || []).some(id => !issueIds.has(String(id))))) return '健康认知与共识关联的管理问题已变化，请重新选择';
   return '';
 }
 module.exports = { validate };

@@ -72,6 +72,7 @@ const healthPlanSchema = new mongoose.Schema({
   content: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 来源商城订单（就医协助方案等由订单触发生成时关联，用于订单-方案-随访状态联动追溯）
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
+  sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null }, // 专业方案承接的年度管理来源
   // 独立体检准备来源：不可由通用内容编辑移除，也不回退匹配旧服务。
   preparationTaskId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', immutable: true },
   // Durable opt-in outbox, written with a newly created preparation draft only.

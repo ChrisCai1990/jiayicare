@@ -22,14 +22,17 @@ function ground(value,context){
   out[3][0]='由营养师围绕上述反馈核对行为目标与实际障碍，针对确认未落实的部分调整做法；责任人和复核时间待确认。';
  }
  const medical=followups.filter(r=>!r.isBlocked&&/就医|检查|复查|门诊|接种|医务代办|医疗代诊|配药|陪诊/.test((r.theme||'')+' '+(r.plannedContent||''))&&!/审核.*报告|报告.*审核|解读报告|报告解读/.test(r.theme||''));
- const pending=medical.filter(r=>r.status!=='completed');
- const duplicate=pending.filter(r=>/重复/.test(r.cancelReason||''));
- const actual=pending.filter(r=>!duplicate.includes(r));
- const names=actual.slice(0,2).map(r=>text(r.theme||r.plannedContent).slice(0,55)).join('、');
+ const active=medical.filter(r=>['planned','in_progress','missed'].includes(r.status));
+ const duplicate=medical.filter(r=>r.status==='cancelled'&&/重复/.test(r.cancelReason||''));
+ const completed=medical.filter(r=>r.status==='completed');
+ const names=active.slice(0,2).map(r=>text(r.theme||r.plannedContent).slice(0,55)).join('、');
+ const asOf=context.capturedAt?new Date(context.capturedAt):new Date();
+ const asOfDay=new Date(asOf.getTime()+8*3600000).toISOString().slice(0,10);
+ const overdue=active.filter(r=>r.date&&new Date(new Date(r.date).getTime()+8*3600000).toISOString().slice(0,10)<asOfDay);
  if(!medical.length){out[2][1]='本期暂无明确的就医检查计划与执行对照记录，无法判断是否按期完成；无记录不代表未就医。';out[3][1]='本期尚未识别明确的就医检查执行问题，继续既有已确认安排，不凭旧检查结果新增医疗任务。';}
- else if(!pending.length){out[2][1]='本期相关任务已标记完成；是否及时仍需与实际完成凭据和约定期限核对，不能把服务任务完成直接等同于客户已就医。';out[3][1]='结合既有服务记录核对实际完成时间与约定安排；如无延误，不新增补办任务。';}
- else {out[2][1]=short((names?'待核实事项：'+names+'。系统状态尚未闭环，须核对实际完成情况及约定期限，不能仅凭状态认定逾期。':'')+(duplicate.length?'存在重复发起后取消的任务，不应归因为客户放弃。':'')+(actual.some(r=>r.cancelReason)?'已记录取消原因：'+actual.filter(r=>r.cancelReason).slice(0,2).map(r=>text(r.cancelReason)).join('；')+'。':'')+(actual.length?'未及时完成的实际原因尚待核实。':''));
- out[3][1]=actual.length?short('由营养健康团队核对'+names+'的实际完成凭据、约定时间及客户反馈；确认未按期完成后，针对实际障碍协调安排，责任人、完成及复核日期待确认。'):'核对重复任务是否已正确关闭，保留对应的有效安排；不将重复取消列为客户未完成事项。';}
+ else if(!active.length){out[2][1]=short((completed.length?'本期相关工作人员任务已办结；本次客户是否完成就医或检查，须另看实际资料与结论，不能从任务状态推断。':'本期无有效待办；已取消轮次保留原因，不能当作工作人员逾期。')+(duplicate.length?'存在重复发起后取消的任务，不应归因为客户放弃。':''));out[3][1]='核对已归档结果；如仍需跟进，以新的有效计划和日期安排，不重新将已完结轮次计为逾期。';}
+ else {out[2][1]=short((completed.length?'已有上一轮办结记录；':'')+`当前有效待办：${names}。`+(overdue.length?`其中 ${overdue.length} 条当前任务计划日期已过，属于工作人员待办逾期；客户是否完成医疗行为仍须核对资料。`:'当前任务未超过计划日期，不能视作工作人员逾期。')+(duplicate.length?'重复发起后取消的任务不计逾期。':''));
+ out[3][1]=overdue.length?short(`由责任岗位优先处理当前逾期待办${names}，记录联系及安排结果；客户实际就医或检查情况以资料核对。`):short(`按当前有效计划跟进${names}；本次未做的原因和下次安排依据实际反馈记录，不将上一轮已办结任务重新标为逾期。`);}
  return out;
 }
 module.exports={ground};

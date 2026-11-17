@@ -4,7 +4,7 @@ import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { staffAPI } from '../api'
+import { staffAPI, rehabAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, MedicalResourcesContext, ModulePanel, RecordEditor, NutritionComparisonMetricPicker } from '../components/ModulePanel'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
@@ -22,6 +22,28 @@ import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
 import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
+
+const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
+function mergeManagementTargetEdits(incoming, existing = []) {
+  const byIssue = new Map(existing.filter(row => row.issueId).map(row => [row.issueId, row]))
+  const editable = ['goal', 'focus', 'goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'nutritionRelevant', 'rehabRelevant']
+  return incoming.map(row => {
+    const old = byIssue.get(row.issueId)
+    if (!old) return row
+    const kept = {}
+    for (const key of editable) if (Object.hasOwn(old, key)) kept[key] = old[key]
+    return { ...row, ...kept }
+  })
+}
+function GoalMetricEditor({ value, onChange, disabled }) {
+  const metric = value || null
+  return <div style={{ gridColumn:'1/-1', borderTop:'1px solid #E4ECE7', paddingTop:8 }}>
+    <label style={{ fontSize:12, color:'#62776A' }}>对照指标 <select className="form-input" value={metric?.source || ''} disabled={disabled} onChange={event => onChange(event.target.value === 'vital' ? { source:'vital', key:'weight', unit:'kg', operator:'', targetValue:'' } : event.target.value === 'report_item' ? { source:'report_item', name:'', unit:'', operator:'', targetValue:'' } : null)}><option value="">暂不绑定结构化指标</option><option value="vital">日常健康数据</option><option value="report_item">已审核报告检查项</option></select></label>
+    {metric?.source === 'vital' && <label style={{ marginLeft:8, fontSize:12, color:'#62776A' }}>指标 <select className="form-input" value={metric.key} disabled={disabled} onChange={event => onChange({ ...metric, key:event.target.value, unit:GOAL_VITALS[event.target.value][1] })}>{Object.entries(GOAL_VITALS).map(([key,[label]]) => <option key={key} value={key}>{label}</option>)}</select></label>}
+    {metric?.source === 'report_item' && <><label style={{ marginLeft:8, fontSize:12, color:'#62776A' }}>检查项原名 <input className="form-input" maxLength={100} value={metric.name || ''} disabled={disabled} onChange={event => onChange({ ...metric, name:event.target.value })} placeholder="与报告检查项名称完全一致" /></label><label style={{ marginLeft:8, fontSize:12, color:'#62776A' }}>单位 <input className="form-input" maxLength={30} value={metric.unit || ''} disabled={disabled} onChange={event => onChange({ ...metric, unit:event.target.value })} placeholder="与报告单位一致" /></label></>}
+    {metric && <><label style={{ marginLeft:8, fontSize:12, color:'#62776A' }}>目标方向 <select className="form-input" value={metric.operator || ''} disabled={disabled} onChange={event => onChange({ ...metric, operator:event.target.value })}><option value="">仅展示变化</option><option value="lte">不高于</option><option value="gte">不低于</option><option value="lt">低于</option><option value="gt">高于</option><option value="eq">等于</option></select></label><label style={{ marginLeft:8, fontSize:12, color:'#62776A' }}>目标数值 <input className="form-input" type="number" step="any" value={metric.targetValue ?? ''} disabled={disabled} onChange={event => onChange({ ...metric, targetValue:event.target.value })} /></label><p style={{ fontSize:12, color:'#62776A', margin:'6px 0 0' }}>仅按相同指标、相同单位对照记录；是否达到医疗或管理目标仍由健康顾问判断。</p></>}
+  </div>
+}
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -250,6 +272,17 @@ const MODULE_DEFS = {
       ...SERVICE_MODE_FIELDS,
     ],
   },
+  health_consensus: {
+    name: '健康认知与共识', icon: '💬', multi: true, summaryKey: 'question', summaryLabel: '待澄清问题',
+    fields: [
+      { key: 'currentUnderstanding', label: '客户当前理解', type: 'textarea' },
+      { key: 'concern', label: '客户顾虑', type: 'textarea' },
+      { key: 'question', label: '希望澄清的具体问题', type: 'textarea' },
+      { key: 'method', label: '沟通方式', type: 'text', placeholder: '如：面谈、电话、微信' },
+      { key: 'frequency', label: '沟通频率', type: 'text', placeholder: '如：先沟通一次，后续按反馈约定' },
+      { key: 'firstDate', label: '首次沟通日期', type: 'date' },
+    ],
+  },
 }
 
 // Admin v2年度模板确认的统一事项字段。原模块专属字段继续保留，公共字段用于依据追溯、
@@ -335,15 +368,16 @@ const templateEntries = template => {
     usedBaseKeys.add(key)
   })
   entries.push({ key: 'personalized_followups', def: MODULE_DEFS.personalized_followups, source: { key: 'global_followup_library' } })
+  entries.push({ key: 'health_consensus', def: MODULE_DEFS.health_consensus, source: { key: 'advisor_consensus' } })
   return entries
 }
 
 // ── 各方案类型包含的板块（按顺序）──────────────────────────────────
 const PLAN_TYPE_MODULES = {
-  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  young_state:       ['abnormal_followup', 'vaccine', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  chronic_stable:    ['abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  health_prevention: ['abnormal_followup', 'vaccine', 'annual_checkup'],
+  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval', 'health_consensus'],
+  young_state:       ['abnormal_followup', 'vaccine', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval', 'health_consensus'],
+  chronic_stable:    ['abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval', 'health_consensus'],
+  health_prevention: ['abnormal_followup', 'vaccine', 'annual_checkup', 'health_consensus'],
 }
 
 
@@ -365,6 +399,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [moduleData, setModuleData] = useState({})
   const [confirmedReviewTargets, setConfirmedReviewTargets] = useState([])
   const [unresolvedAiCheckups, setUnresolvedAiCheckups] = useState([])
+  const [unresolvedSymptoms, setUnresolvedSymptoms] = useState([])
   const [staleManagementSources, setStaleManagementSources] = useState([])
   const [staleLegacyDecisions, setStaleLegacyDecisions] = useState([])
   const [withdrawalTarget, setWithdrawalTarget] = useState(null)
@@ -383,12 +418,50 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [metricSelectionDirty, setMetricSelectionDirty] = useState(false)
   const [metricSelectionSaving, setMetricSelectionSaving] = useState(false)
   const [nutritionTask, setNutritionTask] = useState(null)
+  const [issueProgress, setIssueProgress] = useState([])
+  const [issueProgressError, setIssueProgressError] = useState('')
+  const [rehabOrders, setRehabOrders] = useState([])
+  const [rehabOrderSelections, setRehabOrderSelections] = useState({})
+  const [rehabLinkBusy, setRehabLinkBusy] = useState(false)
   const [nutritionTaskLoading, setNutritionTaskLoading] = useState(false)
   const [nutritionDispatching, setNutritionDispatching] = useState(false)
   const [remotePlanChanged, setRemotePlanChanged] = useState(false)
   useEffect(() => setRemotePlanChanged(false), [id, year, planType])
   const currentPlanVersion = plansByType[planType]?.updatedAt
   const currentPlanId = plansByType[planType]?._id
+  const progressEligible = Boolean(patientMode && currentPlanId && plansByType[planType]?.pushedAt)
+  const refreshRehabOrders = async () => {
+    if (!patientMode) return
+    try { const response = await rehabAPI.get(id); setRehabOrders(response.data?.orders || []) }
+    catch { setRehabOrders([]) }
+  }
+  useEffect(() => { if (progressEligible) refreshRehabOrders(); else setRehabOrders([]) }, [progressEligible, id, currentPlanId])
+  const linkRehabIssue = async issueId => {
+    const orderId = rehabOrderSelections[issueId]
+    if (!orderId) { toast('请先选择已支付的运动服务订单'); return }
+    setRehabLinkBusy(true)
+    try {
+      await rehabAPI.send(id, 'link-annual-issue', { planId: currentPlanId, orderId, issueId })
+      await Promise.all([refreshRehabOrders(), refreshIssueProgress()])
+      toast('运动服务已关联年度管理问题')
+    } catch (error) { toast(error.message || '关联失败') }
+    finally { setRehabLinkBusy(false) }
+  }
+  const refreshIssueProgress = async () => {
+    if (!progressEligible) return
+    try {
+      const res = await staffAPI.getAnnualIssueProgress(id, currentPlanId)
+      setIssueProgress(res.data || []); setIssueProgressError('')
+    } catch (error) { setIssueProgressError(error.message || '执行进展读取失败') }
+  }
+  useEffect(() => {
+    if (!progressEligible) { setIssueProgress([]); setIssueProgressError(''); return }
+    let active = true
+    staffAPI.getAnnualIssueProgress(id, currentPlanId)
+      .then(res => { if (active) { setIssueProgress(res.data || []); setIssueProgressError('') } })
+      .catch(error => { if (active) setIssueProgressError(error.message || '执行进展读取失败') })
+    return () => { active = false }
+  }, [progressEligible, id, currentPlanId])
   useEffect(() => {
     if (!patientMode || !currentPlanId) { setNutritionTask(null); return }
     let active = true
@@ -522,6 +595,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const confirmedTargets = targetsRes.data || []
         setConfirmedReviewTargets(confirmedTargets)
         setUnresolvedAiCheckups(targetsRes.unresolved || [])
+        setUnresolvedSymptoms(targetsRes.unresolvedSymptoms || [])
         setStaleManagementSources(targetsRes.stale || [])
         setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
           (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
@@ -650,12 +724,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     try {
       const [res, decisionsRes] = await Promise.all([staffAPI.getAnnualManagementTargets(id, year), staffAPI.getAnnualManagementDecisions(id, year)])
       setUnresolvedAiCheckups(res.unresolved || [])
+      setUnresolvedSymptoms(res.unresolvedSymptoms || [])
       setStaleManagementSources(res.stale || [])
       setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
         (res.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
       if (!res.data?.length) return toast('专项筛查及AI健康信息整理中暂无已纳入管理的问题')
       setConfirmedReviewTargets(res.data)
-      setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: res.data } }))
+      setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: mergeManagementTargetEdits(res.data, prev.management_targets?.records) } }))
       setDirty(true)
       toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
     } catch (error) { toast(error.message || '读取管理方向失败') }
@@ -672,6 +747,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
         (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
       setUnresolvedAiCheckups(targetsRes.unresolved || [])
+      setUnresolvedSymptoms(targetsRes.unresolvedSymptoms || [])
       setModuleData(prev => ({ ...prev, management_targets: { ...(prev.management_targets || {}),
         records: (prev.management_targets?.records || []).filter(row => row.issueId !== `management_issue:${withdrawalTarget._id}`) } }))
       setDirty(true)
@@ -762,7 +838,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       const allowedKeys = [...new Set([...configuredKeys, ...BASIC_STANDARD_MODULE_KEYS, ...(!monitoringRule || (monitoringRule.enabled !== false && monitoringRule.aiCanGenerate !== false) ? ['monitoring'] : [])])]
       setModuleData(prev => {
         const merged = { ...prev }
-        if (Array.isArray(res.managementTargets)) merged.management_targets = { enabled: true, records: res.managementTargets }
+        if (Array.isArray(res.managementTargets)) merged.management_targets = { enabled: true, records: mergeManagementTargetEdits(res.managementTargets, prev.management_targets?.records) }
         // 本次为覆盖式重新筛选。先清掉旧的筛选结果，避免“不适用”的旧方案继续残留。
         ;[...allowedKeys, 'personalized_followups'].forEach(key => { delete merged[key] })
         Object.entries(aiData).forEach(([key, val]) => {
@@ -975,6 +1051,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const integratedActions = planActions.map(action => ({ ...action, issueId: patientMode ? displayIssueId(action.record, managementTargets) : '' }))
   const managementTargetGroups = groupTargetsBySharedActions(managementTargets, integratedActions)
   const groupActions = group => integratedActions.filter(action => actionTargetIds(action, managementTargets).some(id => group.ids.includes(id)))
+  const groupTaskProgress = group => [...new Map(issueProgress.filter(row => group.ids.includes(row.issueId))
+    .flatMap(row => row.tasks || []).map(task => [task.id, task])).values()]
   const groupHeading = group => {
     const actions = groupActions(group)
     const sameDayAndCategory = actions.length > 1 && actions[0].date && actions.every(action => action.date === actions[0].date && action.key === actions[0].key)
@@ -1004,6 +1082,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next) }}
         onDelete={() => handleModuleChange(action.key, 'records', moduleData[action.key].records.filter((_, index) => index !== action.index))} />
         : <ModulePanel moduleKey={action.key} def={def} data={moduleData[action.key]} onChange={handleModuleChange} showPlanSummary executionReviewChanges={changes} />}
+      {action.key === 'health_consensus' && <label style={{ display: 'block', margin: '8px 0 12px', fontSize: 12, color: '#62776A' }}>关联管理问题
+        <select className="form-input" style={{ display: 'block', width: '100%', marginTop: 4 }} value={action.record.sourceIds?.[0] || ''} disabled={!canEdit || !!pushedAt} onChange={event => handleModuleChange('health_consensus', 'records', moduleData.health_consensus.records.map((row, index) => index === action.index ? { ...row, sourceIds: event.target.value ? [event.target.value] : [] } : row))}>
+          <option value="">一般健康认知，不关联特定问题</option>
+          {managementTargets.map((target, index) => <option key={target.issueId || index} value={target.issueId}>{target.goal || `管理问题 ${index + 1}`}</option>)}
+        </select>
+      </label>}
     </div>
   }
   const activePlanType = selectedAdminTemplate
@@ -1309,6 +1393,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>已纳入的问题与对应方案</div>
             {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>同步最新纳入问题</button>}
             {unresolvedAiCheckups.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>AI健康信息整理还有 {unresolvedAiCheckups.length} 项待完善检查未逐项核对：{unresolvedAiCheckups.join('、')}。请在体检资料覆盖板块处理后再生成或推送方案。</div>}
+            {unresolvedSymptoms.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>截至本方案年度有尚未处理的不适主诉（展示最近 {unresolvedSymptoms.length} 条），请先核对是否需要立即就医及是否进入年度管理：{unresolvedSymptoms.map(row => row.value).join('、')}。<a href={`/patients/${id}?tab=symptoms`} style={{ marginLeft: 6 }}>查看并处理主诉</a></div>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。可在专项筛查选择“纳入管理”，或在AI健康信息整理中核对待完善检查。</div>}
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
               {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>{groupHeading(group)}</div>}
@@ -1319,13 +1404,31 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
                 <label style={{ fontSize: 12, color: '#62776A' }}>管理目标<textarea className="form-input" aria-label={`管理目标 ${index + 1}`} rows={2} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.goal || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, goal: e.target.value } : item))} /></label>
                 <label style={{ fontSize: 12, color: '#62776A' }}>干预重点<textarea className="form-input" aria-label={`干预重点 ${index + 1}`} rows={2} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.focus || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, focus: e.target.value } : item))} /></label>
+                <label style={{ fontSize: 12, color: '#62776A' }}>目标维度<select className="form-input" aria-label={`目标维度 ${index + 1}`} style={{ display: 'block', width: '100%' }} value={row.goalDimension || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, goalDimension: e.target.value } : item))}><option value="">待确定</option><option value="data">数据</option><option value="symptom">症状</option><option value="lifestyle">生活方式</option></select></label>
+                <label style={{ fontSize: 12, color: '#62776A' }}>当前基线<textarea className="form-input" aria-label={`当前基线 ${index + 1}`} rows={2} maxLength={500} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.baseline || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, baseline: e.target.value } : item))} /></label>
+                {row.goalDimension === 'data' && <GoalMetricEditor value={row.goalMetric} disabled={!canEdit || !!pushedAt} onChange={value => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, goalMetric:value } : item))} />}
+                {row.goalDimension === 'symptom' && <label style={{ fontSize: 12, color: '#62776A' }}>追踪的症状关键词<input className="form-input" aria-label={`症状关键词 ${index + 1}`} maxLength={80} value={row.symptomTerm || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, symptomTerm:e.target.value } : item))} placeholder="如便秘；空白时仅显示本期全部主诉线索" /></label>}
+                {row.goalDimension === 'lifestyle' && <label style={{ fontSize: 12, color: '#62776A' }}>追踪的记录类别<select className="form-input" aria-label={`生活方式记录类别 ${index + 1}`} value={row.lifestyleType || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, lifestyleType:e.target.value } : item))}><option value="">待选择</option><option value="diet">饮食</option><option value="exercise">运动</option><option value="sleep">睡眠</option><option value="smoking">吸烟</option><option value="alcohol">饮酒</option><option value="mood">情绪</option></select></label>}
               </div>
               <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养师参与此项目</label>
+              <label style={{ fontSize: 13, display: 'inline-block', marginLeft: 14, marginTop: 7 }}><input type="checkbox" checked={row.rehabRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, rehabRelevant: e.target.checked } : item))} /> 建议运动复健评估</label>
               </details>
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
+              {row.rehabRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>运动复健评估建议 · 具体服务由客户选择后进入现有运动服务流程{progressEligible && <div style={{ marginTop: 7 }}>{rehabOrders.filter(order => order.rehabAnnualLink?.issueIds?.includes(row.issueId)).map(order => <span key={order._id} style={{ marginRight: 8 }}>已关联 {order.serviceName || order.orderNo}</span>)}{canEdit && <><select className="form-input" aria-label={`运动服务订单 ${index + 1}`} value={rehabOrderSelections[row.issueId] || ''} onChange={event => setRehabOrderSelections(previous => ({ ...previous, [row.issueId]: event.target.value }))}><option value="">选择已支付的运动服务订单</option>{rehabOrders.filter(order => order.paymentStatus === 'paid' && !['cancelled', 'completed'].includes(order.status) && !['closed', 'refund_pending', 'refunded'].includes(order.tradeStatus) && (!order.rehabAnnualLink?.annualPlanId || String(order.rehabAnnualLink.annualPlanId) === String(currentPlanId))).map(order => <option key={order._id} value={order._id}>{order.serviceName || '运动服务'} · {order.orderNo || order._id}</option>)}</select> <button type="button" className="btn btn-secondary btn-sm" disabled={rehabLinkBusy} onClick={() => linkRehabIssue(row.issueId)}>关联服务</button></>}</div>}</div>}
               </div>)}
               {groupActions(group).map(renderPlanAction)}
+              {progressEligible && <details style={{ marginTop: 10, borderTop: '1px solid #E4ECE7', paddingTop: 9 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13, color: '#1E6B50' }}>查看岗位执行进展 · {groupTaskProgress(group).length} 条关联任务</summary>
+                {groupTaskProgress(group).length === 0 && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无关联任务。请核对方案是否已派发，或由顾问确认本项下一步安排。</div>}
+                {groupTaskProgress(group).map(task => <div key={task.id} style={{ marginTop: 8, padding: 9, background: '#F6F9F7', borderRadius: 7, fontSize: 12 }}>
+                  <div><strong>{task.theme || '执行事项'}</strong> · {({ planned: '待执行', in_progress: '执行中', missed: '待跟进', completed: '已完成', cancelled: '已取消' })[task.status] || task.status}{task.serviceStatus ? ` · 服务${task.serviceStatus}` : ''}</div>
+                  <div style={{ color: '#62776A', marginTop: 3 }}>{task.assignee || task.role || '负责人待核对'}{task.plannedAt ? ` · 计划 ${new Date(task.plannedAt).toLocaleDateString('zh-CN')}` : ''}{task.completedAt ? ` · 完成 ${new Date(task.completedAt).toLocaleDateString('zh-CN')}` : ''}</div>
+                  {task.latestProgress && <div style={{ marginTop: 4 }}>最近进展：{task.latestProgress}</div>}
+                  {task.result && <div style={{ marginTop: 4 }}>执行记录：{task.result}</div>}
+                </div>)}
+              </details>}
             </div>)}
+            {progressEligible && <div style={{ marginBottom: 12, fontSize: 12 }}><button type="button" className="btn btn-secondary btn-sm" onClick={refreshIssueProgress}>刷新执行进展</button>{issueProgressError && <span role="alert" style={{ marginLeft: 8, color: '#B42318' }}>{issueProgressError}</span>}</div>}
           </section>}
           <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
           {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
@@ -1367,7 +1470,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <div style={{ fontSize: 15, fontWeight: 700 }}>其他年度安排 · {sharedActions.length} 项</div>
             {sharedActions.map(renderPlanAction)}
           </section>}
-          {canEdit && <details style={{ marginBottom: 12 }}><summary style={{cursor:'pointer'}}>补充执行安排</summary><div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>{templateModuleEntries.filter(entry => entry.def.multi).map(entry => <button key={entry.key} type="button" className="btn btn-secondary btn-sm" onClick={() => handleModuleChange(entry.key,'records',[...(moduleData[entry.key]?.records || []),{}])}>＋ {entry.def.name}</button>)}</div></details>}
+          {canEdit && <details style={{ marginBottom: 12 }}><summary style={{cursor:'pointer'}}>补充执行安排</summary><div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>{templateModuleEntries.filter(entry => entry.def.multi).map(entry => <button key={entry.key} type="button" className="btn btn-secondary btn-sm" onClick={() => handleModuleChange(entry.key,'records',[...(moduleData[entry.key]?.records || []),entry.key === 'health_consensus' ? { consensusId: crypto.randomUUID() } : {}])}>＋ {entry.def.name}</button>)}</div></details>}
           {patientMode && <AnnualServiceRecommendations patient={patient} staffList={staffList} planId={plansByType[planType]?._id} pushedAt={pushedAt} canEdit={canEdit} toast={toast} />}
           {visibleModuleEntries.length === 0 && (
             <div style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: '30px 20px', textAlign: 'center', color: '#8AA89C' }}>
