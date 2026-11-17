@@ -8,6 +8,7 @@ const { buildStageAssessmentContext } = require('./aiCaseReviewContext');
 const { chat } = require('./ai');
 const { routingFor, ROLE_FIELDS, ROLE_LABELS } = require('./phaseAssessmentRouting');
 const { PHASE_ASSESSMENT_EVIDENCE_RULES } = require('./phaseAssessmentEvidenceRules');
+const annualFlowPilot = require('./annualFlowPilot');
 
 const INTENSIVE_NUTRITION_WEEKS = [1, 2, 3, 4, 6, 8, 10, 12];
 const intensiveNutritionCheckpoint = elapsedWeek => [...INTENSIVE_NUTRITION_WEEKS].reverse().find(week => week <= elapsedWeek) || null;
@@ -97,6 +98,16 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
   const structuredAI = monthlyReview && routing.assessmentDomain === 'comprehensive';
   const localDraft = monthlyReview ? await (async () => { const window = contextWindow || { start: new Date(Date.now() - windowDays * 86400000), end: new Date() }; return structuredAI ? require('./phaseReviewScheduledService').run(user, () => require('./phaseFourDimensionDraft').generate(user, window)) : require('./monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft(user, window); })() : null;
   const context = monthlyReview ? { sources: localDraft.sources } : await buildStageAssessmentContext(user, windowDays, contextWindow);
+  let goalReviews = [];
+  if (monthlyReview && annualFlowPilot.enabled(user._id) && /^\d{4}-\d{2}$/.test(period.key) && contextWindow) {
+    const start = new Date(contextWindow.start).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+    const end = new Date(contextWindow.end.getTime() - 1).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+    const goalPeriod = { start, end };
+    const origin = await require('../routes/managementReviews').sources(user, goalPeriod, { includeObservationRecords: true });
+    goalReviews = require('./managementReviewGoals').goalReviews(origin.annualPlans, origin.followups, goalPeriod, origin.services,
+      origin.metricHealthRecords, origin.metricReports, origin.metricSourcesIncomplete, origin.observationRecords,
+      origin.observationSourcesIncomplete, origin.linkedRehabOrders, origin.priorGoalReviews);
+  }
   // 月度综合复盘独立于年度方案；专项/年度来源才附上已确认方案。
   if (assessmentMode === 'routine' && frequency === 'monthly') {
     delete context.confirmedAnnualPlan;
@@ -127,7 +138,7 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
     patientId: user._id, annualPlanId: assessmentMode === 'routine' && frequency !== 'yearly' ? null : plan?._id || null, templateId: template._id,
     assessmentMode, sourceNutritionPlanId, interventionWeek, ...routing,
     ...(assessmentMode === 'routine' ? { status: 'team_review', reviewWorkflow: advisorNutritionReview ? 'advisor_nutrition' : 'single_owner', teamRoles, teamReviews: {} } : {}),
-    periodKey: period.key, periodLabel: period.label, content,
+    periodKey: period.key, periodLabel: period.label, content, goalReviews,
     evidenceSources: context.sources || [], templateSnapshot: { name: template.name, frequency, windowDays, focus, instructions, minimumData, outputSections, triggerRule: template.content?.triggerRule || '', source: monthlyReview && !structuredAI ? 'local_manual' : 'ai', contentFormat: structuredAI ? 'four-dimensions-v2' : undefined },
   });
   await PhaseAssessmentGeneration.updateOne({ _id: generationId, token }, { $set: { status: 'completed', assessmentId: item._id || null } });

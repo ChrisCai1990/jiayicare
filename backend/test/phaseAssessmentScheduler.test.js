@@ -84,6 +84,24 @@ test('月度综合评估不依赖年度方案，按客户和月份去重', async
   assert.match(row.content, /统一4\/5\/2\/2/);
   assert.equal(calls, 0);
 });
+test('试点月度评估冻结已生效目标，非试点保持原复盘内容', async t => {
+  const pilot = require('../src/utils/annualFlowPilot');
+  const management = require('../src/routes/managementReviews');
+  const goals = require('../src/utils/managementReviewGoals');
+  t.mock.method(pilot, 'enabled', () => true);
+  t.mock.method(management, 'sources', async (user, period) => {
+    assert.deepEqual(period, { start: '2026-11-01', end: '2026-11-30' });
+    return { annualPlans: [], followups: [], services: [], metricHealthRecords: [], metricReports: [],
+      metricSourcesIncomplete: false, observationRecords: [], observationSourcesIncomplete: false, linkedRehabOrders: [], priorGoalReviews: [] };
+  });
+  t.mock.method(goals, 'goalReviews', () => [{ issueId: 'issue-1', goal: '改善生活习惯', outcome: 'unverified' }]);
+  t.mock.method(PhaseAssessment, 'exists', async () => false);
+  t.mock.method(PhaseAssessment, 'create', async row => row);
+  const row = await createAssessment({ ...input(), plan: null, template: { _id: 'template', content: { frequency: 'monthly' } },
+    periodOverride: { key: '2026-11', label: '2026年11月' }, contextWindow: { start: new Date('2026-10-31T16:00:00Z'), end: new Date('2026-11-30T16:00:00Z') } });
+  assert.equal(row.goalReviews.length, 1);
+  assert.equal(row.goalReviews[0].issueId, 'issue-1');
+});
 test('自动月度扫描直接遍历有效客户，无需已确认年度方案', async t => {
   const User = require('../src/models/User');
   const PlanTemplate = require('../src/models/PlanTemplate');

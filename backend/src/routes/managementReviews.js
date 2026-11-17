@@ -12,21 +12,36 @@ async function userFor(req) {
  if(!u||!policy.enabled(u._id))fail('该客户未进入新复盘试点',404);
  if(!policy.canRead(u,req.staff))fail('仅所属服务团队可访问',403);return u;
 }
-async function sources(user,period) {
+async function sources(user,period,options={}) {
  const range={$gte:new Date(period.start+'T00:00:00+08:00'),$lt:new Date(Date.parse(period.end+'T00:00:00+08:00')+86400000)};
- const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews]=await Promise.all([
+ const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans,priorGoalReviews]=await Promise.all([
  Phase.find({patientId:user._id}).select('periodKey periodLabel status content createdAt finalizedAt').sort({createdAt:1}).lean(),
  Monthly.find({patientId:user._id,month:{$gte:period.start.slice(0,7),$lte:period.end.slice(0,7)}}).lean(),
  require('../models/HealthPlan').find({patientId:user._id,createdAt:{$lt:range.$lt}}).select('type title items content createdAt startDate endDate status pushedAt confirmedAt').sort({createdAt:-1}).limit(40).lean(),
- require('../models/FollowUp').find({patientId:user._id,date:range}).select('date theme status plannedContent executedContent content completedAt cancelReason progressRecords isBlocked').sort({date:1}).limit(200).lean(),
+ require('../models/FollowUp').find({patientId:user._id,date:range}).select('date theme status plannedContent executedContent content completedAt cancelReason progressRecords isBlocked managementIssueIds sourceAnnualPlanId').sort({date:1}).limit(500).lean(),
  require('../models/MedicalReport').find({user:user._id,audit_status:'audited',checkDate:{$gte:period.start,$lte:period.end}}).select('title checkDate reportItems type documentCategory screeningItemId screeningL1 screeningCategory').sort({checkDate:1}).limit(100).lean(),
  require('../models/ServiceRecord').find({patientId:user._id,date:range}).select('date title type content result structuredContent aiStatus').sort({date:1}).limit(100).lean(),
  require('../models/HealthRecord').find({user:user._id,recordedAt:range}).select('type label value unit extra note recordedAt').sort({recordedAt:1}).limit(500).lean(),
  require('../models/Feedback').find({user:user._id,createdAt:range}).select('type content status reply handlingResult createdAt repliedAt resultAt').sort({createdAt:1}).limit(100).lean(),
  require('../models/NutritionInterventionDraft').find({patientId:user._id,status:'published',publishedAt:{$lt:range.$lt}}).select('actions reviewDate approvedAt publishedAt').sort({publishedAt:-1}).limit(10).lean(),
- Review.find({patientId:user._id,kind:'monthly',start:{$gte:period.start},end:{$lte:period.end}}).select('periodKey label start end status focus contributions summary actions finalizedAt').sort({start:1}).lean()
+ Review.find({patientId:user._id,kind:'monthly',start:{$gte:period.start},end:{$lte:period.end}}).select('periodKey label start end status focus contributions summary actions finalizedAt').sort({start:1}).lean(),
+ require('../models/AnnualPlan').find({patientId:user._id,confirmedAt:{$ne:null,$lt:range.$lt}}).select('year confirmedAt moduleData.management_targets').sort({confirmedAt:-1}).limit(3).lean(),
+ Review.find({patientId:user._id,status:'finalized',end:{$lt:period.start}}).select('label end goalReviews').sort({end:-1}).limit(24).lean()
  ]);
- return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
+ const goalPlan=require('../utils/managementReviewGoals').activePlan(annualPlans,period);
+ const goalMetrics=(goalPlan?.moduleData?.management_targets?.records||[]).filter(row=>row.goalDimension==='data'&&require('../utils/managementGoalMetrics').validate(row.goalMetric)).map(row=>row.goalMetric).filter(Boolean);
+ const vitalTypes=[...new Set(goalMetrics.filter(metric=>metric.source==='vital').map(metric=>require('../utils/managementGoalMetrics').VITAL_KEYS[metric.key].type))];
+ const reportNames=[...new Set(goalMetrics.filter(metric=>metric.source==='report_item').map(metric=>metric.name.trim()))];
+ const hasObservationGoal=options.includeObservationRecords===true||(goalPlan?.moduleData?.management_targets?.records||[]).some(row=>['symptom','lifestyle'].includes(row.goalDimension));
+ const hasRehabGoal=(goalPlan?.moduleData?.management_targets?.records||[]).some(row=>row.rehabRelevant===true);
+ const [metricHealthRecords,metricReports,observationRecords,linkedRehabOrders]=await Promise.all([
+  vitalTypes.length?require('../models/HealthRecord').find({user:user._id,recordedAt:range,type:{$in:vitalTypes}}).select('type value unit extra recordedAt').sort({recordedAt:1}).limit(10000).lean():[],
+  reportNames.length?require('../models/MedicalReport').find({user:user._id,audit_status:'audited',checkDate:{$gte:period.start,$lte:period.end},'reportItems.name':{$in:reportNames}}).select('checkDate reportItems').sort({checkDate:1}).limit(1000).lean():[],
+  hasObservationGoal?require('../models/HealthRecord').find({user:user._id,recordedAt:range,type:{$in:['symptom','diet','exercise','sleep','smoking','alcohol','mood']}}).select('type value unit note recordedAt').sort({recordedAt:1}).limit(10000).lean():[],
+  hasRehabGoal?require('../models/Order').find({user:user._id,'rehabAnnualLink.annualPlanId':goalPlan._id}).select('rehabAnnualLink').lean():[],
+ ]);
+ const metricSourcesIncomplete=metricHealthRecords.length===10000||metricReports.length===1000;
+ return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans,priorGoalReviews,metricHealthRecords,metricReports,metricSourcesIncomplete,observationRecords,observationSourcesIncomplete:observationRecords.length===10000,linkedRehabOrders,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
 }
 router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
  if(!policy.enabled(req.params.id))return res.json({success:true,enabled:false,restored:policy.restored(req.params.id)});
@@ -34,7 +49,28 @@ router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
  const preparations=policy.advisor(user,req.staff)?await require('../models/ManagementReviewPreparation').find({patientId:user._id}).lean():[];
  res.json({success:true,enabled:true,data:{patientName:user.name,serviceStart:user.serviceStartDate,serviceEnd:user.serviceExpiry,periods:policy.periods(user),rows,preparations,labels:policy.labels,assigned:Object.fromEntries(Object.entries(policy.fields).map(([r,f])=>[r,!!user[f]])),canReview:policy.advisor(user,req.staff),role:req.staff.role}});
 }));
-router.get('/patients/:id/management-reviews/sources',wrap(async(req,res)=>{const user=await userFor(req),period=policy.periods(user).find(x=>x.key===req.query.period);if(!period)fail('周期无效');res.json({success:true,data:await sources(user,period)});}));
+router.get('/patients/:id/management-reviews/goal-preview',wrap(async(req,res)=>{
+ if(!policy.restored(req.params.id))fail('该客户未开放目标证据预览',404);
+ if(!mongoose.isValidObjectId(req.params.id))fail('客户不存在',404);
+ const user=await User.findOne({_id:req.params.id,isDeleted:{$ne:true}}).lean();
+ if(!user)fail('客户不存在',404);
+ if(!policy.advisor(user,req.staff))fail('仅所属健康顾问可核对目标证据',403);
+ const periods=policy.periods(user).filter(row=>row.due);
+ const available=periods.map(({key,kind,label,start,end})=>({key,kind,label,start,end}));
+ if(!req.query.period)return res.json({success:true,data:{periods:available,readOnly:true}});
+ const period=periods.find(row=>row.key===req.query.period);
+ if(!period)fail('评估周期尚未结束或不在服务期内');
+ const origin=await sources(user,period,{includeObservationRecords:true});
+ const goals=require('../utils/managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services,
+  origin.metricHealthRecords,origin.metricReports,origin.metricSourcesIncomplete,origin.observationRecords,
+  origin.observationSourcesIncomplete,origin.linkedRehabOrders,origin.priorGoalReviews);
+ const summarize=require('../utils/managementObservationEvidence').summarize;
+ const recordOverview=Object.fromEntries(['symptom','diet','exercise','sleep','smoking','alcohol','mood']
+  .map(type=>[type,summarize(origin.observationRecords,type,'',origin.observationSourcesIncomplete,period)]));
+ return res.json({success:true,data:{period:{key:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end},
+  goals,recordOverview,readOnly:true,note:'仅供核对年度目标和本期已填写记录；不会创建、修改或替代已归档的阶段性评估。'}});
+}));
+router.get('/patients/:id/management-reviews/sources',wrap(async(req,res)=>{const user=await userFor(req),period=policy.periods(user).find(x=>x.key===req.query.period);if(!period)fail('周期无效');const {metricHealthRecords,metricReports,observationRecords,linkedRehabOrders,priorGoalReviews,...data}=await sources(user,period);res.json({success:true,data});}));
 router.post('/patients/:id/management-reviews/prepare',wrap(async(req,res)=>{
  const user=await userFor(req),period=policy.periods(user).find(p=>p.key===req.body.periodKey);
  if(!policy.advisor(user,req.staff))fail('仅健康顾问可准备季度年度评估',403);
@@ -60,7 +96,8 @@ router.post('/patients/:id/management-reviews',wrap(async(req,res)=>{
  const focus=text(req.body.focus||(period.kind==='monthly'?'待AI整理本期重点':''),200);if(!focus)fail('请填写本周期重点');
  const questions={};for(const role of roles){questions[role]=text(req.body.questions?.[role]||'',3000);if(period.kind!=='monthly'&&!questions[role])fail('请明确分发给'+policy.labels[role]+'的问题');}
  const origin=await sources(user,period);
- const row=await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus,roles,questions,sources:{phase:origin.phase.map(x=>x._id),monthly:origin.monthly.map(x=>x._id)},audit:[{action:'created',by:req.staff._id,at:new Date(),note:req.body.includeRehab?req.body.rehabBasis:''}]});
+ const goalReviews=require('../utils/managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services,origin.metricHealthRecords,origin.metricReports,origin.metricSourcesIncomplete,origin.observationRecords,origin.observationSourcesIncomplete,origin.linkedRehabOrders,origin.priorGoalReviews);
+ const row=await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus,roles,questions,goalReviews,sources:{phase:origin.phase.map(x=>x._id),monthly:origin.monthly.map(x=>x._id)},audit:[{action:'created',by:req.staff._id,at:new Date(),note:req.body.includeRehab?req.body.rehabBasis:''}]});
  try {const draft=await require('../utils/managementReviewAI').generate({Review,user,row:row.toObject(),staff:req.staff,source:origin,roles});res.status(201).json({success:true,data:draft});}
  catch(e){res.status(201).json({success:true,data:await Review.findById(row._id),warning:'周期已建立，AI草稿生成未完成：'+e.message});}
 }));
@@ -106,6 +143,7 @@ router.post('/patients/:id/management-reviews/:reviewId/:action',wrap(async(req,
   if(row.status!=='advisor_review'||!row.roles.every(r=>row.contributions?.[r]?.status==='submitted'))fail('各岗位尚未完成提交',409);
   if(!policy.periods(user).some(x=>x.key===row.periodKey&&x.due))fail('该周期尚未到期');
   set.summary=text(req.body.summary||'');if(!set.summary)fail('请填写审核结论');set.nextPlan=text(req.body.nextPlan||'',4000);if(row.kind==='annual'&&!set.nextPlan)fail('年度总评须形成下一年度目标、行动和评估节点');
+  if(row.goalReviews?.length){try{set.goalReviews=require('../utils/managementReviewGoals').reviewedGoals(row.goalReviews,req.body.goalReviews)}catch(error){fail(error.message)}}
   if(!Array.isArray(req.body.actions)||req.body.actions.length>15)fail('行动清单最多15项');
   set.actions=req.body.actions.map(a=>({title:text(a.title,200),role:a.role,dueAt:a.dueAt,status:'pending'}));
   if(set.actions.some(a=>!a.title||!policy.fields[a.role]||!user[policy.fields[a.role]]||!/^\d{4}-\d{2}-\d{2}$/.test(a.dueAt)||a.dueAt<policy.day(now)))fail('行动须有有效责任岗位和今天或之后的期限');

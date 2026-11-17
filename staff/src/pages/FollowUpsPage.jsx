@@ -8,6 +8,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import BodyCompInvitation, { isBodyCompInvitation } from '../components/BodyCompInvitation'
+import DeferMedicalFollowUp from '../components/DeferMedicalFollowUp'
 import ExpertConsultationsPage from './ExpertConsultationsPage'
 import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
@@ -639,7 +641,8 @@ export default function FollowUpsPage() {
       )}
 
       {/* 服务事务与健康随访共用数据模型，但界面按业务语义区分。 */}
-      {execItem && (
+      {execItem && isBodyCompInvitation(execItem) && <BodyCompInvitation task={execItem} onClose={() => setExecItem(null)} onSaved={action => { setExecItem(null); load(); toast(action === 'rescheduled' ? '邀约日期已更新' : '本轮已完成，下一轮邀约已生成') }} />}
+      {execItem && !isBodyCompInvitation(execItem) && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (isCheckupAppointmentBookingTask(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
@@ -648,6 +651,7 @@ export default function FollowUpsPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               <FollowUpDueDateBanner task={execItem} />
+              <DeferMedicalFollowUp task={execItem} onSaved={() => { setExecItem(null); load(); toast('本轮已办结，下一轮已按新日期安排') }} />
               {!nutritionStageType && <ServiceTaskContextBanner task={execItem} />}
               {checkupConclusionStage(execItem) ? <CheckupConclusionForm onMergedMode={checkupMerged => setExecForm(form => ({ ...form, checkupMerged }))} onSaved={() => window.location.reload()} task={execItem} value={execForm.content} onChange={content => setExecForm(form => ({ ...form, content }))} /> : isCheckupAppointmentBookingTask(execItem) ? <CheckupAppointmentBookingForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientEscortVisitTask(execItem) ? <OutpatientEscortVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientPostVisitReviewTask(execItem) ? <OutpatientPostVisitReviewForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAppointmentTask(execItem) ? <OutpatientAppointmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientStaffAssignmentTask(execItem) ? <OutpatientStaffAssignmentForm task={execItem} value={execForm.formData} staffList={staffList} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientProxyVisitTask(execItem) ? <OutpatientProxyVisitForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isOutpatientAdvisorAssessmentTask(execItem) ? <OutpatientAdvisorAssessmentForm task={execItem} value={execForm.formData} onChange={formData => setExecForm(form => ({ ...form, formData }))} /> : isCheckupReportCollectionTask(execItem) ? <CheckupReportCollectionForm task={execItem} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} /> : isCheckupBookingTask(execItem) ? <CheckupBookingForm value={execForm.appointmentDetails} onChange={appointmentDetails => setExecForm(form => ({ ...form, appointmentDetails }))} /> : execItem.taskRole && !nutritionStageType && <ServiceTaskChecklist mode={execItem.taskRole === 'supervisor' ? 'supervisor' : 'executor'} purposes={execItem.taskPurposes || []} source={execItem.dependsOnTaskId?.serviceChecklist || []} value={execForm.serviceChecklist} onChange={serviceChecklist => setExecForm(form => ({ ...form, serviceChecklist }))} />}
               {nutritionStageType && <div style={{ padding: 12, borderRadius: 8, background: '#F0F8F4', fontSize: 13 }}>

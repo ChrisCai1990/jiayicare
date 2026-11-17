@@ -85,8 +85,10 @@ const followUpSchema = new mongoose.Schema({
   completedBy: { type: String, enum: ['user', 'staff', null], default: null },
   // 方案确认后自动生成的随访计划：sourceType区分固定周期占位 / 月度AI回顾建议，aiStatus走审核
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
+  managementIssueIds: { type: [String], default: [] }, // 已确认年度管理问题；只用于追溯执行，不代表目标已达成
   sourceScheduleKey: { type: String, default: '' }, // 年度方案内稳定排期键，防止定时刷新重复生成
   assessmentActionKey: { type: String }, // 仅新评估动态任务使用；缺省不建键，兼容历史任务
+  bodyCompCycle: { type: mongoose.Schema.Types.Mixed, default: null }, // 营养师体成分邀约的一次测量；同一方案按 cycle 连续追溯
   aiNoResponse: { type: mongoose.Schema.Types.Mixed, default: null }, // 新个性化随访的隔日三次无回应流程；历史任务不回填
   serviceTracking: { type: mongoose.Schema.Types.Mixed, default: null }, // 关联服务的只读投影，不允许通用编辑接口写入
   checkupPreparationCompletion: { type: mongoose.Schema.Types.Mixed, default: null }, // 服务验收回写凭据，不接受通用编辑

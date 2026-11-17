@@ -326,6 +326,10 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
       if (!note && item.reviewWorkflow !== 'advisor_nutrition') return res.status(400).json({ success: false, message: '请填写本岗位的情况与问题；没有问题请填写“没有问题”' });
       const reviewedContent = String(req.body.content ?? item.content).trim();
       if (!reviewedContent || reviewedContent.length > 20000) return res.status(400).json({ success: false, message: '请核对评估内容，正文不能空白或超过20000字' });
+      if (reviewerRole === 'familyDoctor' && item.goalReviews?.length) {
+        try { item.goalReviews = require('../utils/managementReviewGoals').reviewedGoals(item.goalReviews, req.body.goalReviews); }
+        catch (error) { return res.status(400).json({ success: false, message: error.message }); }
+      }
       const now = new Date();
       item.content = reviewedContent;
       item.teamReviews = { ...(item.teamReviews || {}), [reviewerRole]: { status: 'approved', note: note.slice(0, 5000), ...(item.reviewWorkflow === 'advisor_nutrition' ? { content: reviewedContent } : {}), reviewedBy: req.staff._id, reviewedByName: req.staff.name || '', reviewedAt: now } };

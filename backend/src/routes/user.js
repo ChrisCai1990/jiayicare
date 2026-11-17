@@ -964,6 +964,15 @@ async function generateHealthPlanFollowUp(plan) {
   return 1;
 }
 
+async function ensureNutritionBodyCompInvitation(plan) {
+  if (!require('../utils/annualFlowPilot').enabled(plan.patientId)) return;
+  if (plan.type !== 'nutrition' || plan.content?.nutritionTaskVersion !== 1 || !plan.confirmedAt) return;
+  const patient = await User.findById(plan.patientId).select('tenantId assignedNutritionist').lean();
+  if (!patient) throw new Error('会员不存在，无法生成体成分邀约');
+  const bodyComp = require('../utils/nutritionBodyCompFollowUp');
+  await bodyComp.ensureTask(FollowUp, plan, patient, 1, bodyComp.addDays(plan.confirmedAt, 28));
+}
+
 // PATCH /api/user/annual-mgmt-plans/:id/confirm — 用户确认年度管理方案
 router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
   try {
@@ -1077,6 +1086,7 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
     }
     if (plan.confirmedAt) {
       if (plan.type === 'annual_checkup') await onCustomerConfirmedCheckupPlan(plan);
+      await ensureNutritionBodyCompInvitation(plan);
       return res.json({ success: true, data: plan });
     }
     if (plan.status === 'draft') plan.status = 'active';
@@ -1085,8 +1095,10 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
     if (plan.type === 'annual_checkup') {
       await onCustomerConfirmedCheckupPlan(plan);
     }
+    await ensureNutritionBodyCompInvitation(plan);
     // 一站式体检在客户确认后直接交棒给健康规划师，不再另建模糊的“确认后随访”占位。
-    if (plan.type !== 'annual_checkup' && !(plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1)) await generateHealthPlanFollowUp(plan).catch(() => {});
+    if (plan.type !== 'annual_checkup' && !(plan.type === 'nutrition' && plan.content?.nutritionTaskVersion === 1
+      && require('../utils/annualFlowPilot').enabled(plan.patientId))) await generateHealthPlanFollowUp(plan).catch(() => {});
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });

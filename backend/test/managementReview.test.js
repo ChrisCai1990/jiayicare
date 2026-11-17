@@ -46,3 +46,26 @@ test('HTTP workflow enforces role, evidence, CAS and advisor approval',async()=>
 });
 
 test('restoration returns only selected patients to original four-section workflow',()=>{const env={MANAGEMENT_REVIEW_MODE:'phase_assessment',MANAGEMENT_REVIEW_PATIENT_IDS:user._id};assert.equal(p.enabled(user._id,env),false);assert.equal(p.restored(user._id,env),true);assert.equal(p.restored('507f1f77bcf86cd799439099',env),false)});
+
+test('restored customer can preview due periods without creating a review', async () => {
+ const express=require('express'), User=require('../src/models/User');
+ const original=User.findOne, mode=process.env.MANAGEMENT_REVIEW_MODE, ids=process.env.MANAGEMENT_REVIEW_PATIENT_IDS;
+ process.env.MANAGEMENT_REVIEW_MODE='phase_assessment'; process.env.MANAGEMENT_REVIEW_PATIENT_IDS=user._id;
+ User.findOne=()=>({lean:async()=>user});
+ const app=express(); app.use((req,res,next)=>{req.staff={role:req.headers['x-role'],_id:req.headers['x-staff-id']};next()});
+ app.use(require('../src/routes/managementReviews').router);
+ const server=app.listen(0,'127.0.0.1'); await new Promise(resolve=>server.once('listening',resolve));
+ try {
+  const url=`http://127.0.0.1:${server.address().port}/patients/${user._id}/management-reviews/goal-preview`;
+  const advisor=await fetch(url,{headers:{'x-role':'familyDoctor','x-staff-id':user.assignedFamilyDoctor}});
+  assert.equal(advisor.status,200);
+  const body=await advisor.json(); assert.equal(body.data.readOnly,true); assert.ok(body.data.periods.length);
+  assert.equal((await fetch(`${url}?period=M:2099-01`,{headers:{'x-role':'familyDoctor','x-staff-id':user.assignedFamilyDoctor}})).status,400);
+  assert.equal((await fetch(url,{headers:{'x-role':'nutritionist','x-staff-id':user.assignedNutritionist}})).status,403);
+  assert.equal((await fetch(url.replace(user._id,'507f1f77bcf86cd799439099'),{headers:{'x-role':'familyDoctor','x-staff-id':user.assignedFamilyDoctor}})).status,404);
+ } finally {
+  server.close(); User.findOne=original;
+  for(const [key,value] of [['MANAGEMENT_REVIEW_MODE',mode],['MANAGEMENT_REVIEW_PATIENT_IDS',ids]])
+   if(value===undefined)delete process.env[key];else process.env[key]=value;
+ }
+});

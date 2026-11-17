@@ -12,6 +12,7 @@ test('new monthly plans keep the advisor as reviewer and the manager as executor
 
 test('workbench leaves AI drafts in the advisor review queue', () => {
   assert.deepEqual(humanFollowUpQuery.aiStatus, { $ne: 'pending' });
+  assert.deepEqual(humanFollowUpQuery.$and[0].$or[1], { 'bodyCompCycle.planId': { $exists: true } });
 });
 
 test('legacy monthly followups assigned to the advisor move to the patient manager', async () => {

@@ -30,6 +30,13 @@ function currentSourceItem(report, decision) {
 function sourceChanged(report, decision) {
   if (!report) return true;
   const snapshot = decision.sourceSnapshot || {};
+  if (decision.sourceKey === `report_item:${decision.reportId}:${decision.itemId}`) {
+    if (!report.advisorInterpretationConfirmedAt || report.archiveOnly || report.duplicateOf
+      || ['outpatient_record', 'prescription_order'].includes(report.documentCategory)) return true;
+    const matches = (report.reportItems || []).filter(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])]
+      .some(value => String(value || '') === String(decision.itemId)));
+    if (matches.length !== 1 || matches[0].screeningKey || matches[0].screeningKeys?.length) return true;
+  }
   if (decision.sourceKey === `screening_report:${decision.reportId}`) {
     return String(report.updatedAt) !== String(snapshot.reportUpdatedAt);
   }
@@ -43,12 +50,31 @@ async function load(patientId, year, dependencies = {}) {
   const Decision = dependencies.Decision || require('../models/AnnualManagementDecision');
   const Report = dependencies.Report || require('../models/MedicalReport');
   const CheckupReview = dependencies.CheckupReview || require('../models/AIHealthCheckupReview');
+  const HealthRecord = dependencies.HealthRecord || require('../models/HealthRecord');
   const User = dependencies.User || require('../models/User');
   const decisions = effectiveDecisions(await Decision.find({ patientId, year, status: { $ne: 'withdrawn' } }).sort({ reviewedAt: 1 }).lean());
   const evidence = [], stale = [], staleDecisionIds = [];
   for (const decision of decisions) {
+    if (decision.sourceKey === `symptom:${decision.symptomRecordId}` && decision.symptomRecordId) {
+      const record = await HealthRecord.findOne({ _id: decision.symptomRecordId, user: patientId, type: 'symptom' })
+        .select('value note recordedAt symptomWorkflow').lean();
+      const snapshot = decision.sourceSnapshot || {};
+      if (!record || record.value !== snapshot.value || record.note !== snapshot.note
+        || String(record.recordedAt) !== String(snapshot.recordedAt)
+        || String(record.symptomWorkflow?.decidedAt) !== String(snapshot.decidedAt)
+        || record.symptomWorkflow?.decisionNote !== snapshot.decisionNote) {
+        stale.push(`${decision.title}（主诉来源已变化）`); staleDecisionIds.push(String(decision._id)); continue;
+      }
+      evidence.push({ id: `management_issue:${decision._id}`, content: {
+        problem: decision.title, direction: decision.direction, advisorNote: decision.note,
+        goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
+        reportTitle: '已处理不适主诉', sourceKind: 'symptom', source: { name: '主诉', value: record.value },
+        sourceRecordId: record._id, checkDate: record.recordedAt, reviewedAt: decision.reviewedAt,
+      } });
+      continue;
+    }
     const report = await Report.findOne({ _id: decision.reportId, user: patientId, audit_status: 'audited' })
-      .select('_id title checkDate updatedAt reportItems').lean();
+      .select('_id title checkDate updatedAt reportItems advisorInterpretationConfirmedAt archiveOnly duplicateOf documentCategory').lean();
     const changed = sourceChanged(report, decision);
     if (changed) { stale.push(decision.title); staleDecisionIds.push(String(decision._id)); continue; }
     if (decision.sourceKey === `screening_report:${report._id}`) {
@@ -61,6 +87,7 @@ async function load(patientId, year, dependencies = {}) {
     evidence.push({ id: `management_issue:${decision._id}`, content: {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
       problem: decision.title, direction: decision.direction, advisorNote: decision.note,
+      goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
       reviewPlan, legacyReviewNote: reviewPlan?.kind !== 'recheck' && reviewRules.legacyReviewNote(decision.note),
       source: decision.sourceSnapshot?.item || null, reviewedAt: decision.reviewedAt,
     } });
@@ -92,13 +119,19 @@ const DIRECTION_LABELS = {
   medical_treatment: '安排就医', checkup_completion: '完善检查', abnormal_followup: '定期复查',
   vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察',
 };
-function managementTargets(evidence = []) {
+function managementTargets(evidence = [], pilot = true) {
   return evidence.slice(0, 32).map(item => {
-    const { problem, direction, reportTitle, advisorNote } = item.content;
+    const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming, source } = item.content;
     const directionLabel = DIRECTION_LABELS[direction] || '持续管理';
-    return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
+    if (!pilot) return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
       focus: [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
       nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+    return { issueId: item.id, goal: goal || `${problem} · ${directionLabel}`,
+      focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
+      goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)
+        ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
+      ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
+      nutritionRelevant: direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });
 }
 

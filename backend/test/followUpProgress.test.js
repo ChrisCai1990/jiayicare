@@ -1,7 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { saveProgress } = require('../src/utils/followUpProgress');
-const medical = {sourceType:'scheduled',sourceScheduleKey:'medical_treatment:2026-09-23',deliveryMode:'reminder'};
+const pilotId = '6a4ef1980f2291549b4ffd8d';
+process.env.MANAGEMENT_REVIEW_MODE = 'phase_assessment';
+process.env.MANAGEMENT_REVIEW_PATIENT_IDS = pilotId;
+const medical = {patientId:pilotId,sourceType:'scheduled',sourceScheduleKey:'medical_treatment:2026-09-23',deliveryMode:'reminder'};
 test('reminder outcomes retain one task and require confirmed real visit date',async()=>{
   const s=setup(medical);
   for(const outcome of ['reminded','unreachable','deferred','booked']){
@@ -44,15 +47,22 @@ function setup(patch = {}) {
     },
   };
   const args = { FollowUp: model, id: 'task', actor: { _id: 'manager', role: 'healthManager', name: '健管' },
-    body: { requestId: 'request-0001', content: '客户下周检查', type: 'wechat', updatedAt: row.updatedAt, nextContactAt: '2026-09-25T09:00:00+08:00' } };
+    body: { requestId: 'request-0001', content: '客户下周检查', type: 'wechat', updatedAt: row.updatedAt, nextContactAt: new Date(Date.now() + 7 * 86400000).toISOString() } };
   return { args, get: () => row };
 }
 test('two contacts append to one plan, preserve requirements, never complete', async () => {
-  const s = setup(); const first = await saveProgress(s.args);
+  const s = setup(medical); const first = await saveProgress(s.args);
+  assert.equal(+first.date, +new Date(s.args.body.nextContactAt));
   const second = await saveProgress({ ...s.args, body: { ...s.args.body, updatedAt: first.updatedAt, requestId: 'request-0002', content: '已检查，等待报告', nextContactAt: null } });
   assert.equal(second.status, 'in_progress'); assert.equal(second.content, '完成本次复查');
   assert.equal(second.progressRecords.length, 2); assert.equal(second.plannedContent, '完成本次复查');
   assert.equal(+second.remindAt, +first.remindAt); assert.ok(!second.completedAt);
+});
+test('outside the pilot, ordinary medical progress keeps its original due date', async () => {
+  const s = setup({ ...medical, patientId: '6a4ef1980f2291549b4ffd8e', date: new Date('2026-11-10T00:00:00Z') });
+  const original = s.get().date;
+  const row = await saveProgress(s.args);
+  assert.equal(+row.date, +original);
 });
 test('response retry is idempotent', async () => { const s = setup(); await saveProgress(s.args); await saveProgress(s.args); assert.equal(s.get().progressRecords.length, 1); });
 test('parallel contacts cannot overwrite each other', async () => {

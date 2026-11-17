@@ -72,6 +72,11 @@
 .research-candidate-table td { white-space: normal; }
 .research-row-actions { display: flex; gap: 7px; }
 .research-row-actions .btn { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+.research-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px 18px; padding: 14px 20px; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; }
+.research-pagination label, .research-pagination-actions { display: inline-flex; align-items: center; gap: 8px; }
+.research-pagination select { padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; background: white; color: var(--text-primary); }
+.research-pagination-actions .btn { padding: 5px 9px; font-size: 12px; }
+@media (max-width: 640px) { .research-pagination { justify-content: space-between; } }
 .research-setting-shell { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 20px 22px; margin: 18px 0; }
 .research-setting-shell h2 { margin: 0 0 5px; font-size: 16px; }
 .research-setting-shell .research-status { max-width: 100%; overflow-wrap: anywhere; }

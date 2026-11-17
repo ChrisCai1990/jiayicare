@@ -17,7 +17,7 @@ import uuid
 from ssh_config import connect
 
 repo = Path(__file__).resolve().parent.parent
-base = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], cwd=repo, text=True).strip()
+base = subprocess.check_output(['git', 'rev-parse', os.environ.get('JIAYICARE_FETCH_BASE', 'HEAD^')], cwd=repo, text=True).strip()
 if not re.fullmatch(r'[0-9a-f]{40}', base):
     raise SystemExit('无法确认本地基线')
 known_hosts = Path('C:/Users/huawei/.ssh/known_hosts')
