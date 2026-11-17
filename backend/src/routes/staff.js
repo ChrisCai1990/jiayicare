@@ -19023,7 +19023,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   let localScan = null;
   if (isPdf && report.type === 'annual') {
     try {
-      const { readPdfPageLayout, parseLayoutResultPairs } = require('../utils/reportOcrWords');
+      const { readPdfPageLayout } = require('../utils/reportOcrWords');
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
       const { parseTextLabTable } = require('../utils/reportTextLabTable');
       const textCandidate = parseTextLabTable(layout, pageNum);
@@ -19044,11 +19044,16 @@ async function runReportPageParseControlled(reportId, pageNum) {
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
         ] };
-      } else if (parseLayoutResultPairs(layout, pageNum).length < 3) {
+      }
+      if (!localScan || localScan.items.length < 25) {
+        // Loose text-layer name/value pairs are only omission signals. Scanned
+        // pages can contain many such pairs while no structured table is
+        // readable; a small structured result may also cover only one table.
         const { extractScannedLabTable } = require('../utils/reportScanOcr');
         const scanImage = await renderSinglePage(pdfBuf, pageNum, 300);
         const candidate = await extractScannedLabTable(Buffer.from(scanImage, 'base64'), pageNum);
-        if (candidate.supported && candidate.items.length >= 6) {
+        if (candidate.supported && candidate.items.length >= 6
+          && candidate.items.length > (localScan?.items.length || 0) + 5) {
           localScan = { ...candidate, source: 'local_ocr' };
         }
       }
@@ -19062,10 +19067,12 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // row. Repeating a full candidate list as a coverage audit is both costly
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
-  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+  const { hasBroadLocalLabScan } = require('../utils/reportPageSupplement');
+  const useLocalScanOnly = hasBroadLocalLabScan(localScan);
+  if (!useLocalScanOnly) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
-  for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
+  for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -19196,7 +19203,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
     : '';
   const resultMessage = localScan
-    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选并完成分段补漏，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选${useLocalScanOnly ? '' : '并完成分段补漏'}，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
     : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'

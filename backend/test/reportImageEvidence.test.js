@@ -485,6 +485,7 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     '../utils/reportPageSupplement': {
       alignSupplementCandidate: (_, item) => item, describeExistingReportItems: () => '',
       filterMissingReportItems: (_, items) => items, hasReportItemEvidence: () => true,
+      hasBroadLocalLabScan: () => false,
       inferMissingUltrasoundOrgans: () => [], mergeSupplementItems: () => { throw new Error('Not reached'); },
       supplementMatches: () => [],
     },
