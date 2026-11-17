@@ -56,6 +56,6 @@ export default function AnnualPlanTrackView({ actions, targets, renderAction, nu
       </div>
       <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 12, padding: 14 }}><h3 style={{ margin: 0, fontSize: 18 }}>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A' }}>暂无已确认的年度体检安排</div>}</div>
     </div>
-    {unknown.length > 0 && <details style={{ marginTop: 12, padding: 12, background: '#fff', border: '1px solid #E1EAE4', borderRadius: 9 }}><summary style={{ cursor: 'pointer' }}>其他既有安排 · {unknown.length} 项（待核对归类）</summary>{unknown.map(action => <div key={`${action.key}:${action.index}`}>{renderAction(action)}</div>)}</details>}
+    {unknown.length > 0 && <details style={{ marginTop: 12, padding: 12, background: '#fff', border: '1px solid #E1EAE4', borderRadius: 9 }}><summary style={{ cursor: 'pointer' }}>历史未归类安排 · {unknown.length} 项（按需核对）</summary><p style={{ fontSize: 13, color: '#62776A' }}>以下为旧方案保留的事项，不属于上方三条服务线路；请核对后再决定如何承接。</p>{unknown.map(action => <div key={`${action.key}:${action.index}`}>{renderAction(action)}</div>)}</details>}
   </section>
 }

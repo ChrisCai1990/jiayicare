@@ -1133,6 +1133,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} toast={toast} />}
     consensusEditor={canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualConsensus patientId={id} plan={plansByType[planType]} topics={CONSENSUS_TOPICS} toast={toast}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />} />
+  const SecondaryPlanSection = annualPilot && pushedAt ? 'details' : 'div'
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === strategyOf(planType)) || PLAN_TYPES[3]), key: planType, name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
     : PLAN_TYPES.find(pt => pt.key === strategyOf(planType))
@@ -1247,11 +1248,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {patientMode && pushedAt && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
       {pilotOverview}
       {patientMode && plansByType[planType]?.returnedAt && pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户修改意见：{plansByType[planType].returnReason || '请核对客户反馈'}。</div>}
-      {patientMode && canEdit && pushedAt && plansByType[planType] && <AnnualPlanRevision patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
-      {annualPilot && patientMode && canEdit && pushedAt && confirmedAt && plansByType[planType] && <div id="annual-management-goals"><PublishedAnnualGoals key={plansByType[planType]._id} patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} /></div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
+      <SecondaryPlanSection {...(annualPilot && pushedAt ? { open: pendingExecutionChanges.length > 0 || ['#annual-management-goals', '#annual-plan-details', '#annual-plan-preparation', '#professional-assessments', '#annual-execution-review'].includes(window.location.hash) } : {})} style={annualPilot && pushedAt ? { marginBottom: 20, padding: '14px 16px', border: '1px solid #C7DCCF', borderRadius: 12, background: '#fff' } : undefined}>
+      {annualPilot && pushedAt && <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 16 }}>方案调整与办理记录{pendingExecutionChanges.length > 0 ? ` · ${pendingExecutionChanges.length} 项执行待核对` : ''}</summary>}
+      {patientMode && canEdit && pushedAt && plansByType[planType] && <AnnualPlanRevision patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
+      {annualPilot && patientMode && canEdit && pushedAt && confirmedAt && plansByType[planType] && <div id="annual-management-goals"><PublishedAnnualGoals key={plansByType[planType]._id} patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} /></div>}
       {patientMode && plansByType[planType]?.internalTaskReleaseEligible && !confirmedAt && <section aria-label="郭学清年度方案内部任务启动" style={{ background: '#FFF9ED', border: '1px solid #E9D3A3', borderRadius: 10, padding: 14, marginBottom: 14 }}>
         <strong style={{ fontSize: 14 }}>郭学清 · 内部执行任务</strong>
         <div style={{ fontSize: 12, color: '#6B5C3D', marginTop: 5 }}>客户暂无法在客户端确认。健康顾问核对已沟通的方案后，可先把随访交给健管专员、服务需求交给健康规划师；此操作不代表客户确认，也不会生成客户的方案启动任务。</div>
@@ -1531,6 +1534,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           请先选择方案类型，然后填写对应板块内容
         </div>
       )}
+      </SecondaryPlanSection>
 
       <div className="annual-plan-footer">
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
