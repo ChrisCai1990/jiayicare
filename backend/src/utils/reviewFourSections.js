@@ -2,24 +2,52 @@ const {comparableWeightChange}=require('./phaseAssessmentWeightEvidence');
 const headings=['阶段变化','生活方式关联','问题分析','下一步规划'];
 const rules=`评估固定为四板块，不以记录数量、覆盖天数或报告目录代替分析。不要用记录条数、覆盖天数代替指标变化。不能仅凭零散数据推断客户存在误区。补充记录建议须经营养师或健康顾问确认。
 一、阶段变化：分别核对专项筛查近期复查、日常健康数据（体重/血压/大便等）、体成分、不适症状主诉四个维度。有记录则写日期、实际数值或主诉及可支持的变化；无记录写“本期暂无记录”，不推断没有症状或没有变化。只有同指标、同单位、可比条件才比较；单次记录只描述现值。体成分独立于日常体重。首次筛查与复查区分，不把任意新报告称作复查。
-二、生活方式关联：按饮食、运动、睡眠、烟酒、情绪五个维度概述整月记录覆盖和主要情况，不逐日罗列；没有记录明确写“本期暂无记录”，不从旧档案补造本期行为。同期数据支持时说明时间上的关联，不作因果判断；无可比证据不强行分析，不自动增加打卡要求。
+二、生活方式关联：按饮食、运动、睡眠、烟酒、情绪五个维度概述整月记录覆盖和主要生活模式，不逐日罗列；覆盖半个月以上时应归纳记录反映的规律，不只列条数和免责声明。没有记录明确写“本期暂无记录”，不从旧档案补造本期行为。只描述已记录日期，不推断未记录日期；同期数据支持时说明时间上的关联，不作因果判断；无可比证据不强行分析，不自动增加打卡要求。
 三、问题分析：固定且只分为“生活方式行为改变”和“就医或检查完成及时性”两个维度，分别写执行情况及未做好/未及时完成的原因。不能把医疗执行混进生活方式，不能以记录条数或资料缺口替代执行分析。仅针对有依据的行为改变未落实，及就医、检查、复查等医疗行为未按计划完成，区分原计划/期限、实际执行、原因、影响。必须有实际计划和执行证据；缺少记录不等于没有执行。取消/未到诊记录不自动代表客户主动放弃。已知原因引用客户或服务记录，未知写“原因待核实”，推测不能当事实。客户对问题解决及服务的反馈可以作为原因分析依据，但不能编造满意度。本期无明确未完成问题则如实说明，不强造问题。
 四、下一步规划：固定且只分为“生活方式行为改变”和“就医或检查完成及时性”两个维度，与第三板块两方面逐一对应。逐项对应第三板块已识别的问题及原因，写拟采取的措施、责任岗位、时间/复评节点和如何验证落实。时间或责任人未确定写待确认，不编造已约定安排。原因未知先安排针对性核实；无明确问题不额外强加任务，已有资料足够时写“暂无增加记录的必要”。每项简短，依据放在对应项内，不单独堆砌资料。`;
 const text=v=>String(v??'').replace(/\s+/g,' ').trim();
 const day=v=>v?new Date(new Date(v).getTime()+8*3600000).toISOString().slice(0,10):'';
 const sample=rows=>rows.slice(-3).map(r=>`${day(r.recordedAt)} ${text(r.label||r.type)} ${text(r.value)}${r.unit?' '+r.unit:''}${r.note?'（'+text(r.note)+'）':''}`).join('；');
-function lifestyleSummary(rows){
- const covered=new Set(rows.map(r=>day(r.recordedAt)).filter(Boolean));
+const recordValue=row=>text(row.value).replace(/【[^】]+】/g,'').trim();
+const coveredDays=rows=>new Set(rows.map(r=>day(r.recordedAt)).filter(Boolean)).size;
+function commonValues(rows){
  const counts=new Map();
- for(const row of rows){
-  const value=text(row.value).replace(/【[^】]+】/g,'').trim();
-  const prefix=['smoking','smoke','tobacco'].includes(row.type)?'吸烟：':row.type==='alcohol'?'饮酒：':'';
-  const detail=value+ (row.unit?` ${text(row.unit)}`:'');
-  if(value) counts.set(prefix+detail,(counts.get(prefix+detail)||0)+1);
+ for(const row of rows){const value=recordValue(row);if(value)counts.set(value,(counts.get(value)||0)+1);}
+ return [...counts].sort((a,b)=>b[1]-a[1]).slice(0,3);
+}
+function numericSummary(rows,unit){
+ const values=rows.map(r=>recordValue(r)).filter(x=>/^-?\d+(?:\.\d+)?$/.test(x)).map(Number);
+ if(values.length<Math.max(2,Math.ceil(rows.length*0.7)))return '';
+ const min=Math.min(...values),max=Math.max(...values),mean=values.reduce((a,b)=>a+b,0)/values.length;
+ return `记录值平均约${mean.toFixed(1)}${unit}，范围${min.toFixed(1)}～${max.toFixed(1)}${unit}`;
+}
+function lifestyleSummary(label,rows){
+ const days=coveredDays(rows),scope=`本期记录覆盖${days}天、共${rows.length}条`;
+ let pattern='';
+ if(label==='饮食'){
+  const no=rows.filter(r=>/^(没有|无)应酬/.test(recordValue(r))).length;
+  const yes=rows.filter(r=>/^应酬/.test(recordValue(r))).length;
+  if(no+yes>=rows.length*0.6)pattern=`记录主要反映应酬情况：${no}条无应酬、${yes}条有应酬；餐食结构仍需结合原记录核对`;
+ }else if(label==='运动'){
+  const terms=new Map();
+  for(const row of rows)for(const term of new Set(recordValue(row).split(/[+＋加与和、，,]/).map(text).filter(x=>x.length>=2&&x.length<=12)))terms.set(term,(terms.get(term)||0)+1);
+  const leading=[...terms].sort((a,b)=>b[1]-a[1]).filter(([,n])=>n>=2).slice(0,3);
+  if(leading.length)pattern=`已记录运动以${leading.map(([value,n])=>`${value}（${n}条）`).join('、')}较常见；频次不等于运动时长或强度`;
+ }else if(label==='睡眠'){
+  pattern=numericSummary(rows,'小时');
+ }else if(label==='情绪'){
+  pattern=numericSummary(rows,'分');
+ }else if(label==='烟酒'){
+  const smoking=rows.filter(r=>['smoking','smoke','tobacco'].includes(r.type));
+  const alcohol=rows.filter(r=>r.type==='alcohol');
+  const smokeTop=commonValues(smoking)[0],alcoholTop=commonValues(alcohol)[0];
+  const parts=[];
+  if(smoking.length)parts.push(`吸烟记录覆盖${coveredDays(smoking)}天${smokeTop?`，${smokeTop[1]===smoking.length?'均填':'较多填'}“${smokeTop[0]}”` :''}`);
+  if(alcohol.length)parts.push(`饮酒记录覆盖${coveredDays(alcohol)}天${alcoholTop?`，${alcoholTop[1]}条填“${alcoholTop[0]}”`:''}`);
+  pattern=parts.join('；');
  }
- const common=[...counts].filter(([,count])=>count>1).sort((a,b)=>b[1]-a[1]).slice(0,3)
-  .map(([value,count])=>`${value.slice(0,30)}${value.length>30?'…':''}（${count}条）`).join('、');
- return `本期覆盖${covered.size}天、共${rows.length}条记录${common?`；较常见的记录内容：${common}`:'；具体内容多样或文字信息不足，需结合原始记录核对'}。记录仅反映已填写的情况，不能据此推断整月每天的行为或健康变化。`;
+ if(!pattern){const common=commonValues(rows).filter(([,n])=>n>1);pattern=common.length?`较常见的记录为${common.map(([value,n])=>`${value.slice(0,24)}（${n}条）`).join('、')}`:'具体内容多样，需结合原记录核对';}
+ return `${scope}；${pattern}。${days<15?'这些描述仅代表已记录的日期。':''}`;
 }
 function sections({records=[],reports=[],followups=[]}={}){
  const body=reports.filter(r=>r.documentCategory==='body_composition'||r.type==='body_composition');
@@ -34,7 +62,7 @@ function sections({records=[],reports=[],followups=[]}={}){
  `日常健康数据：${daily.length?types.map(type=>type==='weight'&&weight?weight.observation:sample(daily.filter(r=>r.type===type))).join('；'):'本期暂无记录。'}`,
  `体成分：${body.length||composition.length?[reportText(body),sample(composition)].filter(Boolean).join('；')+'。仅描述现有记录，可比测量条件及前次结果待核对。':'本期暂无记录。'}`,
  `不适症状主诉：${symptoms.length?sample(symptoms)+'。症状变化与处理结果按已记录情况核实。':'本期暂无记录，不代表没有不适。'}`];
- const life=lifestyle.map(([label,types])=>{const rows=records.filter(r=>types.includes(r.type));return `${label}：${rows.length?lifestyleSummary(rows)+'与健康变化的关联须结合同期证据，不能认定因果。':'本期暂无记录。'}`});
+ const life=lifestyle.map(([label,types])=>{const rows=records.filter(r=>types.includes(r.type));return `${label}：${rows.length?lifestyleSummary(label,rows):'本期暂无记录。'}`});
  const categories=[['生活方式行为改变',/饮食|营养|运动|睡眠|烟|酒|情绪|生活方式/],['就医或检查完成及时性',/就医|检查|复查|预约|门诊/]];
  const grouped=categories.map(([label,pattern],index)=>followups.filter(r=>!r.isBlocked&&pattern.test([r.theme,r.plannedContent].join(' '))&&(index===1||!categories[1][1].test([r.theme,r.plannedContent].join(' ')))));
  const issues=categories.map(([label],index)=>`${label}：${grouped[index].length?grouped[index].map(r=>`计划：${text(r.plannedContent||r.theme)}；实际：${text(r.executedContent)||({completed:'任务标记完成，实际执行详情待核实',cancelled:'任务已取消',missed:'任务标记未完成',planned:'待执行',in_progress:'进行中'})[r.status]||'待核实'}；${r.cancelReason?'已记录原因：'+text(r.cancelReason):'未落实原因待核实'}。计划日期${day(r.date)}仅为任务日期，不自动认定医疗完成期限或逾期`).join('；'):'本期暂无足够计划与执行记录，无法判断执行情况及原因；没有记录不等于没有执行。'}`);
