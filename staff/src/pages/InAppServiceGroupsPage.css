@@ -63,8 +63,8 @@
 
 .sg-workspace {
   display: grid;
-  grid-template-columns: minmax(240px, 310px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 12px;
   flex: none;
   height: max(560px, calc(100dvh - 300px));
   min-height: 560px;
@@ -78,10 +78,11 @@
   border: 1px solid #d8e2dc;
   border-radius: 12px;
 }
-.sg-group-list { padding: 12px; overflow-y: auto; }
+.sg-group-list { padding: 8px; overflow-y: auto; }
 .service-assistant .sg-group-item {
   display: block;
   width: 100%;
+  padding: 10px;
   margin-bottom: 8px;
   text-align: left;
   overflow-wrap: anywhere;
