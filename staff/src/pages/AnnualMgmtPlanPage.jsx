@@ -1096,6 +1096,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const sharedActions = integratedActions.filter(action => actionTargetIds(action, managementTargets).length === 0)
   const renderPlanAction = action => {
     const entry = visibleModuleEntries.find(item => item.key === action.key)
+    if (annualPilot && pushedAt) return <div key={`${action.key}:${action.index}`} style={{ display: 'grid', gap: 5, paddingTop: 8, fontSize: 13, color: '#52675D' }}>
+      {action.record.hospital && <div>医院：{action.record.hospital}</div>}
+      {action.record.department && <div>科室：{action.record.department}</div>}
+      {action.record.goal && <div>目标：{action.record.goal}</div>}
+      {action.record.reviewItems?.length > 0 && <div>检查：{action.record.reviewItems.join('、')}</div>}
+      {canEdit && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" style={{ justifySelf: 'start', marginTop: 4 }} onClick={() => window.dispatchEvent(new CustomEvent('annual-plan-edit-item', { detail: { key: action.key, target: action.index } }))}>修改本项</button>}
+    </div>
     const def = annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, currentPlanId, dirty)
     if (action.record.reviewGroupVersion === 1) def.fields = def.fields.filter(field => field.key !== 'items')
     if (action.issueId) def.fields = def.fields.filter(field => field.key !== 'goal' && (field.key !== 'completionStandard' || action.record.completionStandard))
@@ -1108,7 +1115,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return <div key={`${action.key}:${action.index}`} style={{ marginTop: 8 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 4 }}>{action.date || '时间待确认'}{action.record.hospital ? ` · ${action.record.hospital}` : ''}{action.record.department ? ` · ${action.record.department}` : ''}</div>
       {!!action.record.reviewItems?.length && <div style={{ fontSize: 13, color: '#254C3B', marginBottom: 5 }}>本次复查项目：{action.record.reviewItems.join('、')}</div>}
-      {pushedAt && canEdit && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 8 }} onClick={() => { const editor = document.getElementById('annual-plan-revision'); const tools = document.getElementById('annual-plan-tools'); if (tools?.tagName === 'DETAILS') tools.open = true; if (editor) { editor.open = true; editor.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }}>修改本项并保存</button>}
+      {pushedAt && canEdit && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 8 }} onClick={() => window.dispatchEvent(new CustomEvent('annual-plan-edit-item', { detail: { key: action.key, target: action.index } }))}>修改本项</button>}
       <fieldset disabled={!!pushedAt} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
       {entry.def.multi ? <RecordEditor def={{ ...def, summaryKey: '__displayTitle' }} record={{ ...action.record, __displayTitle: action.title }} index={action.index} total={Math.max(2, planActions.length)} executionReviewChanges={changes}
         visitCandidates={visitCandidates} onShareVisit={() => {
@@ -1129,8 +1136,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     </div>
   }
   const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction}
-    nutritionTask={nutritionTask} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
+    nutritionTask={nutritionTask} nutritionMetrics={nutritionSummary.metrics} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
     onNutrition={() => {
+      if (annualPilot && pushedAt) {
+        if (nutritionTask) nav(`/patients/${id}?tab=followups&followUpId=${nutritionTask._id}`)
+        else dispatchNutritionTask()
+        return
+      }
       const tools = document.getElementById('annual-plan-tools')
       if (tools?.tagName === 'DETAILS') tools.open = true
       const assessment = document.querySelector('[aria-label="年度标准营养评估"]')
@@ -1139,10 +1151,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }}
     consensusTopics={CONSENSUS_TOPICS} canAddConsensus={canEdit && !pushedAt && !(moduleData.health_consensus?.records || []).length}
     onConsensus={() => handleModuleChange('health_consensus', 'records', [{ consensusId: crypto.randomUUID(), question: CONSENSUS_TOPICS[0], topicPath: CONSENSUS_TOPICS }])}
-    manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} toast={toast} />}
+    manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
     consensusEditor={canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualConsensus patientId={id} plan={plansByType[planType]} topics={CONSENSUS_TOPICS} toast={toast}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />} />
-  const SecondaryPlanSection = annualPilot && pushedAt ? 'details' : 'div'
+  const SecondaryPlanSection = annualPilot ? 'details' : 'div'
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === strategyOf(planType)) || PLAN_TYPES[3]), key: planType, name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
     : PLAN_TYPES.find(pt => pt.key === strategyOf(planType))
@@ -1182,7 +1194,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </select>
         )}
         <div className="annual-plan-action-buttons" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {patientMode && monthlyReviewEnabled && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/monthly-reviews`)}>月度服务复盘</button>}
+          {patientMode && monthlyReviewEnabled && !(annualPilot && pushedAt) && <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/monthly-reviews`)}>月度服务复盘</button>}
           {pushedAt && !dirty && (
             <span style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', padding: '4px 10px', borderRadius: 20 }}>
               ✓ 已推送 {new Date(pushedAt).toLocaleDateString('zh-CN')}
@@ -1198,7 +1210,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </span>
           ) : null}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
-          {annualPilot && canEdit && pushedAt && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { const tools = document.getElementById('annual-plan-tools'); if (tools?.tagName === 'DETAILS') tools.open = true; const editor = document.getElementById('annual-plan-revision'); if (editor) { editor.open = true; editor.scrollIntoView({ behavior: 'smooth', block: 'start' }) } else tools?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>修改方案</button>}
+          {annualPilot && canEdit && pushedAt && <button type="button" className="btn btn-primary btn-sm" onClick={() => { const editor = document.getElementById('annual-plan-revision'); if (editor) { editor.open = true; editor.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }}>修改并保存方案</button>}
           {canEdit && (!annualPilot || !pushedAt) && ((!patientMode && plan) || (patientMode && plansByType[planType])) && (
             <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>删除方案</button>
           )}
@@ -1256,14 +1268,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>)}
         {!staleLegacyDecisions.length && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看专项筛查来源</button>}
       </div>}
-      {patientMode && pushedAt && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
+      {patientMode && pushedAt && !annualPilot && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
+      {annualPilot && pushedAt && canEdit && plansByType[planType] && <AnnualPlanRevision patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
       {pilotOverview}
       {patientMode && plansByType[planType]?.returnedAt && pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户修改意见：{plansByType[planType].returnReason || '请核对客户反馈'}。</div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
-      <SecondaryPlanSection id="annual-plan-tools" {...(annualPilot && pushedAt ? { open: pendingExecutionChanges.length > 0 || ['#annual-management-goals', '#annual-plan-details', '#annual-plan-preparation', '#professional-assessments', '#annual-execution-review'].includes(window.location.hash) } : {})} style={annualPilot && pushedAt ? { marginBottom: 20, padding: '14px 16px', border: '1px solid #C7DCCF', borderRadius: 12, background: '#fff' } : undefined}>
-      {annualPilot && pushedAt && <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 16 }}>方案调整与办理记录{pendingExecutionChanges.length > 0 ? ` · ${pendingExecutionChanges.length} 项执行待核对` : ''}</summary>}
+      {!(annualPilot && pushedAt) && <SecondaryPlanSection id="annual-plan-tools" {...(annualPilot && pushedAt ? { open: pendingExecutionChanges.length > 0 || ['#annual-management-goals', '#annual-plan-details', '#annual-plan-preparation', '#professional-assessments', '#annual-execution-review'].includes(window.location.hash) } : {})} style={annualPilot && pushedAt ? { marginBottom: 20, padding: '14px 16px', border: '1px solid #C7DCCF', borderRadius: 12, background: '#fff' } : undefined}>
+      {annualPilot && <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 16 }}>方案准备与详细设置</summary>}
       {patientMode && canEdit && pushedAt && plansByType[planType] && <AnnualPlanRevision patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
       {annualPilot && patientMode && canEdit && pushedAt && confirmedAt && plansByType[planType] && <div id="annual-management-goals"><PublishedAnnualGoals key={plansByType[planType]._id} patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} /></div>}
       {patientMode && plansByType[planType]?.internalTaskReleaseEligible && !confirmedAt && <section aria-label="郭学清年度方案内部任务启动" style={{ background: '#FFF9ED', border: '1px solid #E9D3A3', borderRadius: 10, padding: 14, marginBottom: 14 }}>
@@ -1546,10 +1559,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       )}
       {annualPilot && pushedAt && canEdit && plansByType[planType] && <details style={{ marginTop: 14, fontSize: 13 }}><summary style={{ cursor: 'pointer', color: '#62776A' }}>其他操作</summary><button type="button" onClick={handleDelete} style={{ marginTop: 10, background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>删除方案</button></details>}
-      </SecondaryPlanSection>
+      </SecondaryPlanSection>}
 
       <div className="annual-plan-footer">
         {canEdit && !pushedAt && planType && <button type="button" className="btn btn-primary" disabled={saving} onClick={() => handleSave()}>{saving ? '保存中…' : '保存方案草稿'}</button>}
+        {annualPilot && canEdit && pushedAt && <button type="button" className="btn btn-primary" onClick={() => window.dispatchEvent(new Event('annual-plan-save-revision'))}>保存方案修改</button>}
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
     </div>

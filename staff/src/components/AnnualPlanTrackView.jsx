@@ -11,7 +11,6 @@ const management = [
   ['疫苗接种', ['vaccine']],
   ['健康认知与共识', ['health_consensus']],
 ]
-const grouped = new Set([...medical, ...management, ['年度体检', ['annual_checkup']]].flatMap(([, keys]) => keys))
 const displayDate = value => value ? String(value).slice(0, 10) : '时间待确认'
 const conciseTitle = action => {
   if (action.key === 'annual_checkup') return '年度体检'
@@ -19,24 +18,24 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, targets, renderAction, nutritionTask, nutritionEnabled, onNutrition, onConsensus, consensusTopics, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
+export default function AnnualPlanTrackView({ actions, renderAction, nutritionTask, nutritionEnabled, nutritionMetrics = [], onNutrition, onConsensus, consensusTopics, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
     const nutrition = keys.includes('nutrition_assessment') && (nutritionEnabled || actions.some(action => action.key === 'nutrition_assessment'))
     const consensus = keys.includes('health_consensus')
-    const monitoring = title === '日常监测'
-    if (!items.length && !nutrition && !consensus && !monitoring) return null
+    if (!items.length && !nutrition && !consensus) return null
     const itemCount = items.length + (nutrition ? 1 : 0)
-    return <div key={title} style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0' }}>
-      <strong style={{ fontSize: 15 }}>{title} · {itemCount ? `${itemCount} 项` : '待安排'}</strong>
-      {nutrition && <div style={{ marginTop: 8, fontSize: 13 }}>
-        营养师评估{nutritionTask ? ' · 已派发' : ' · 待核对'}　
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onNutrition}>查看评估与干预</button>
+    return <div key={title} style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0' }}>
+      <strong style={{ fontSize: 16, color: '#183E30' }}>{title}</strong><span style={{ marginLeft: 8, fontSize: 12, color: '#71877B' }}>{itemCount ? `${itemCount} 项` : '待安排'}</span>
+      {nutrition && <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.7 }}>
+        <div>纳入数据：{nutritionMetrics.join('、') || '体重、骨骼肌、体脂率、内脏脂肪'}</div>
+        <div>目标：由营养师评估后确定</div>
+        <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={onNutrition}>{nutritionTask ? '查看营养师任务' : '安排营养师评估'}</button>
       </div>}
-      {items.map(action => <details key={`${action.key}:${action.index}`} style={{ marginTop: 8, border: '1px solid #E1EAE4', borderRadius: 8, padding: '10px 12px' }}>
-        <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600 }} title={action.title}>
-          {conciseTitle(action)}　<span style={{ color: '#62776A', fontSize: 12, fontWeight: 400 }}>{action.key === 'specialist_collab' ? '多学科会诊 · ' : action.key === 'medical_treatment' ? '门诊／检查 · ' : ''}{displayDate(action.date)}{!action.issueId && action.key !== 'annual_checkup' ? ' · 目标待核对' : ''}</span>
+      {items.map(action => <details key={`${action.key}:${action.index}`} style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC' }}>
+        <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600, lineHeight: 1.55 }} title={action.title}>
+          {conciseTitle(action)}<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>{action.key === 'specialist_collab' ? '多学科会诊 · ' : action.key === 'medical_treatment' ? '门诊／检查 · ' : ''}{displayDate(action.date)}</span>
         </summary>
         {renderAction(action)}
       </details>)}
@@ -50,18 +49,14 @@ export default function AnnualPlanTrackView({ actions, targets, renderAction, nu
       </div>}
     </div>
   }
-  const unknown = actions.filter(action => !grouped.has(action.key) && action.key !== 'monitoring' && action.key !== 'management_targets')
   return <section id="annual-plan-content" aria-label="年度方案按服务线路查看" style={{ marginBottom: 16 }}>
-    <h2 style={{ margin: '0 0 8px', fontSize: 20, color: '#1A2B24' }}>本年度管理方案</h2>
-    <div style={{ fontSize: 13, color: '#62776A', marginBottom: 12 }}>管理问题 {targets.length} 项 · 年度行动 {actions.length} 项。点击事项查看依据与办理内容。</div>
-    {targets.length === 0 && actions.length > 0 && <div role="status" style={{ padding: 10, borderRadius: 8, background: '#FFF5E8', color: '#8A5A18', fontSize: 13, marginBottom: 12 }}>历史方案尚未关联逐项管理目标。请先核对来源，再用于阶段评估。</div>}
+    <h2 style={{ margin: '0 0 12px', fontSize: 21, color: '#1A2B24' }}>年度管理方案</h2>
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
-      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 12, padding: 14 }}><h3 style={{ margin: 0, fontSize: 18 }}>医疗服务</h3>{medical.map(renderGroup)}</div>
-      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 12, padding: 14 }}><h3 style={{ margin: 0, fontSize: 18 }}>健康管理</h3>{management.map(renderGroup)}
+      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 14, padding: '18px 20px' }}><h3 style={{ margin: 0, fontSize: 19 }}>医疗服务</h3>{medical.map(renderGroup)}</div>
+      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 14, padding: '18px 20px' }}><h3 style={{ margin: 0, fontSize: 19 }}>健康管理</h3>{management.map(renderGroup)}
         <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · 按已有每周计划执行</strong>{manualMonitoringEditor}</div>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 12, padding: 14 }}><h3 style={{ margin: 0, fontSize: 18 }}>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A' }}>暂无已确认的年度体检安排</div>}</div>
+      <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 14, padding: '18px 20px' }}><h3 style={{ margin: 0, fontSize: 19 }}>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A' }}>待安排</div>}</div>
     </div>
-    {unknown.length > 0 && <details style={{ marginTop: 12, padding: 12, background: '#fff', border: '1px solid #E1EAE4', borderRadius: 9 }}><summary style={{ cursor: 'pointer' }}>历史未归类安排 · {unknown.length} 项（按需核对）</summary><p style={{ fontSize: 13, color: '#62776A' }}>以下为旧方案保留的事项，不属于上方三条服务线路；请核对后再决定如何承接。</p>{unknown.map(action => <div key={`${action.key}:${action.index}`}>{renderAction(action)}</div>)}</details>}
   </section>
 }

@@ -81,6 +81,20 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const source={kind:'advisor_revision',reason,customerFeedback:plan.returnReason||'',customerFeedbackAt:plan.returnedAt||null};
       const catalog=item.key==='personalized_followups'?await logic.templateCatalog():[];
       const {moduleData,changes}=logic.apply(plan.moduleData,[item],source,catalog);
+      const location=req.body.item?.location;
+      if(location !== undefined) {
+        if(!['medical_treatment','checkup_completion','abnormal_followup'].includes(item.key)
+          || !location || typeof location!=='object' || Array.isArray(location))
+          return res.status(400).json({success:false,message:'此事项不支持修改就医地点'});
+        const after=moduleData[item.key].records[item.target];
+        for(const field of ['hospital','department']) {
+          if(!Object.hasOwn(location,field)) continue;
+          const value=location[field];
+          if(typeof value!=='string' || value.trim().length>200) return res.status(400).json({success:false,message:'医院或科室内容过长'});
+          after[field]=value.trim();
+        }
+        changes[0].after=after;
+      }
       const revisionId=logic.hash({planId,baseUpdatedAt,item,reason});
       const executionReview=require('../utils/annualExecutionReview').markForReview(plan,changes);
       const revision={id:revisionId,status:'applied',createdAt:new Date(),createdBy:req.staff._id,source,baseUpdatedAt:plan.updatedAt,changes,taskStatus:'not_created',...(executionReview?{executionReview}:{})};

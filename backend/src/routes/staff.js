@@ -10989,7 +10989,11 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
     if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可安排人工提醒' });
-    if (!patient.assignedHealthManager) return res.status(409).json({ success: false, message: '请先分配健管专员' });
+    const managerId = String(req.body.managerId || '');
+    if (!mongoose.isValidObjectId(managerId)) return res.status(400).json({ success: false, message: '请选择负责随访的健管专员' });
+    const manager = await Admin.findOne({ _id: managerId, role: 'healthManager', tenantId: patient.tenantId,
+      staffStatus: { $in: ['active', null] } }).select('_id name').lean();
+    if (!manager) return res.status(400).json({ success: false, message: '所选健管专员已停用或不属于当前机构，请重新选择' });
     const date = String(req.body.date || '');
     const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
     if (req.body.noClientAppConfirmed !== true
@@ -11003,12 +11007,12 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
     const template = { type: 'phone', theme: '人工健康监测 · 血压和体重', content,
       formData: { '监测频率': '每周1次', manualNoClientApp: true, confirmedBy: String(req.staff._id) }, checkInItems: ['bloodPressure', 'weight'] };
     const result = await FollowUp.updateOne({ _id }, { $setOnInsert: { _id, tenantId: patient.tenantId, patientId: patient._id,
-      staffId: req.staff._id, assignedTo: patient.assignedHealthManager, date: new Date(`${date}T00:00:00+08:00`),
+      staffId: req.staff._id, assignedTo: manager._id, date: new Date(`${date}T00:00:00+08:00`),
       status: 'planned', clientVisible: false, repeatWeekly: true, weeklyTemplate: template,
       theme: template.theme, content, plannedContent: content, type: 'phone', formData: template.formData, checkInItems: template.checkInItems, aiStatus: 'approved' } },
     { upsert: true, setDefaultsOnInsert: true });
     if (!result.upsertedCount) return res.status(409).json({ success: false, message: '血压和体重的人工监测计划已存在，请核对原任务' });
-    res.json({ success: true, message: '已给健管专员安排血压和体重的同一条每周任务，完成后接续下一周' });
+    res.json({ success: true, message: `已给${manager.name}安排血压和体重的同一条每周任务，完成后接续下一周` });
   } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? '人工提醒已存在，请刷新' : '安排人工提醒失败' }); }
 });
 
