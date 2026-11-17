@@ -7,12 +7,12 @@ const { buildAnnualCheckupPreparation: build } = require('../src/utils/annualChe
 const { buildAnnualPlanServiceTasks } = require('../src/utils/annualPlanServiceTasks');
 test('annual eligibility uses actual reviewed exam dates and inclusive rolling twelve months', () => {
  const now = new Date('2026-10-07T08:00:00Z');
- const r = {audit_status:'audited',type:'annual',checkDate:'2025-10-07',examConclusion:'体检综合结论',advisorInterpretationConfirmedAt:new Date()};
+ const r = {audit_status:'audited',type:'annual',title:'年度体检报告',checkDate:'2025-10-07',examConclusion:'体检综合结论',advisorInterpretationConfirmedAt:new Date()};
  assert.equal(eligibility([r],now).allowed,true);
  for(const other of [{...r,checkDate:'2025-10-06'},{...r,checkDate:'2026-10-08'},{...r,checkDate:'2026-02-30'},{...r,documentCategory:'outpatient_record'},{...r,audit_status:'pending'}]) assert.equal(eligibility([other],now).allowed,false);
 });
 test('logistics only inherit exact report provenance; explicit choice is retained', () => {
- const reports=[{_id:'r',type:'annual',checkDate:'2026-09-01',institution:'原机构',reportItems:[{itemId:'i',institution:'原医院'}]}];
+ const reports=[{_id:'r',type:'annual',title:'年度体检报告',checkDate:'2026-09-01',institution:'原机构',examConclusion:'体检综合结论',reportItems:[{itemId:'i',institution:'原医院'}]}];
  const raw={annual_checkup:{date:'2027-09-01'},medical_treatment:[{timingSourceId:'report:r:i'},{timingSourceId:'report:r:other'},{timingSourceId:'report:r:i',hospital:'顾问指定'}]};
  const next=inheritArrangements(raw,reports);
  assert.equal(next.annual_checkup.institution,'原机构');assert.equal(next.medical_treatment[0].hospital,'原医院');assert.equal(next.medical_treatment[1].hospital,undefined);assert.equal(next.medical_treatment[2].hospital,'顾问指定');assert.equal(raw.medical_treatment[0].hospital,undefined);

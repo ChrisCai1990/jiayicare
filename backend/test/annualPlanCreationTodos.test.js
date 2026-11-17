@@ -32,7 +32,7 @@ test('only the assigned advisor receives active annual members without a publish
   const plans = { find: () => ({ select: () => ({ lean: async () => [{ patientId: 'p2', year: 2026, pushedAt: now }] }) }) };
   const packages = { find: () => ({ select: () => ({ lean: async () => [] }) }) };
   const reports = { find: () => ({ select: () => ({ lean: async () => [
-    { user: 'p1', _id: 'r1', audit_status: 'audited', documentCategory: 'physical_exam', checkDate: '2026-09-10', examConclusion: '完整体检结论', advisorInterpretationConfirmedAt: now },
+    { user: 'p1', _id: 'r1', audit_status: 'audited', documentCategory: 'physical_exam', title: '年度体检报告', checkDate: '2026-09-10', examConclusion: '完整体检结论', advisorInterpretationConfirmedAt: now },
     { user: 'p4', _id: 'r4', audit_status: 'audited', documentCategory: 'physical_exam', checkDate: '2026-07-01', examConclusion: '历史体检结论', advisorInterpretationConfirmedAt: now },
   ] }) }) };
   const deps = {

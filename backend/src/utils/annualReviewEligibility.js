@@ -32,13 +32,22 @@ function examReports(reports) {
     batches.get(date).push(report);
   }
   return [...batches.values()].flatMap(batch => {
-    const explicit = batch.some(r => r.documentCategory === 'physical_exam' || (!r.documentCategory && r.type === 'annual') || /年度.{0,6}体检报告|全面体检|健康体检报告/.test(r.title || ''));
     const items = batch.flatMap(r => r.reportItems || []);
     const titles = new Set(batch.map(r => String(r.title || '').trim()).filter(Boolean));
     const text = batch.flatMap(r => [r.title, r.screeningL1, r.screeningL2, r.screeningCategory,
       ...(r.reportItems || []).flatMap(i => [i.name, i.orderName, i.sourceSection])]).filter(Boolean).join(' ');
     const domains = medicalDomainRules.filter(rule => rule.test(text)).length;
-    return explicit || (items.length >= 8 && domains >= 4) || (batch.length >= 5 && titles.size >= 5 && domains >= 3) ? batch : [];
+    // Historical imports may call a single specialty test "annual" or even
+    // classify it as physical_exam. A title/category alone cannot establish a
+    // comprehensive checkup; require a whole-exam conclusion or broad coverage.
+    const wholeExamConclusion = batch.some(r => /体检|总检|健康检查/.test(r.title || '')
+      && (String(r.examConclusion || r.examDescription || '').trim()
+        || Object.values(r.examMainConclusions || {}).some(Boolean)));
+    const coreCoverage = [medicalDomainRules[0], medicalDomainRules[2], medicalDomainRules[3], medicalDomainRules[4]]
+      .filter(rule => rule.test(text)).length;
+    const broadCoverage = domains >= 4 && coreCoverage >= 3
+      && (items.length >= 8 || (batch.length >= 5 && titles.size >= 5));
+    return wholeExamConclusion || broadCoverage ? batch : [];
   });
 }
 function eligibility(reports, now = new Date(), options = {}) {
