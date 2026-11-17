@@ -131,11 +131,11 @@ router.get('/candidates', async (req, res, next) => {
 
 async function snapshotFor(patientId, year) {
   const [reports, annualPlan] = await Promise.all([
-    Report.find({ user: patientId }).select('_id aiStatus audit_status reviewedAt familyDoctorAudit').sort({ createdAt: -1 }).limit(100).lean(),
+    Report.find({ user: patientId }).select('_id type documentCategory checkDate date createdAt aiStatus audit_status reviewedAt familyDoctorAudit.status').sort({ createdAt: -1 }).limit(100).lean(),
     AnnualPlan.findOne({ patientId, year }).select('reviewStatus pushedAt confirmedAt').lean(),
   ]);
   const drafts = reports.length
-    ? await Draft.find({ patientId, reportId: { $in: reports.map(row => row._id) } }).select('status advisorReviewedAt createdAt').sort({ createdAt: -1 }).limit(100).lean()
+    ? await Draft.find({ patientId, reportId: { $in: reports.map(row => row._id) } }).select('reportId status advisorReviewedAt createdAt').sort({ createdAt: -1 }).limit(100).lean()
     : [];
   const followUps = annualPlan ? await FollowUp.find({ patientId, sourceAnnualPlanId: annualPlan._id }).select('status assignedTo date completedAt').lean() : [];
   return deriveJourneySnapshot({ reports, drafts, annualPlan, followUps });

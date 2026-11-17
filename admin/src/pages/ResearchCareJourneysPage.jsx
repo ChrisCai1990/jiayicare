@@ -3,10 +3,16 @@ import { adminAPI } from '../api'
 import './ResearchCareJourneysPage.css'
 
 const STATE = { enrolled: '进行中', withdrawn: '已撤回', locked: '已锁定' }
+const DRAFT_STATE = { advisor_review: '待顾问审核', approved: '已批准', rejected: '已退回', superseded: '已被新稿替代', excluded: '已排除', no_action: '无需随访' }
+const FOLLOWUP_STATE = { planned: '待执行', in_progress: '执行中', missed: '未完成', completed: '已完成', cancelled: '已取消' }
+const CATEGORY = { physical_exam: '体检资料', lab_report: '检验报告', exam_report: '检查报告', body_composition: '人体成分', functional_medicine: '功能医学', genetic_test: '基因检测', outpatient_record: '门诊病历', inpatient_record: '住院病历', prescription_order: '处方', questionnaire: '问卷', other_customer_material: '其他资料' }
+const dateText = value => value ? new Date(value).toLocaleDateString('zh-CN') : '未记录日期'
+const shortId = value => value ? String(value).slice(-6).toUpperCase() : '—'
 
 export default function ResearchCareJourneysPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [journeys, setJourneys] = useState([])
+  const [expandedJourney, setExpandedJourney] = useState(null)
   const [candidateList, setCandidateList] = useState([])
   const [setting, setSetting] = useState(null)
   const [settingLoaded, setSettingLoaded] = useState(false)
@@ -217,20 +223,24 @@ export default function ResearchCareJourneysPage() {
     </section>
 
     <section className="card research-list-card">
-      <div className="research-list-heading"><div><h2>正式纳入的服务旅程</h2><p>仅展示去标识化编号与流程进度。资料审核为历年最近100条上传资料（含体检、门诊、处方等）；年度方案与随访按所选年度显示。</p></div><span className="research-total">共 {journeys.length} 条</span></div>
+      <div className="research-list-heading"><div><h2>正式纳入的服务旅程</h2><p>资料审核统计历年最近100条上传资料；两道审核分别计数，某类资料是否需要顾问审核须按业务流程判断。AI 草稿是报告问题/随访建议稿。随访只统计所选年度方案关联的任务。“进行中”表示研究纳入状态，不代表报告或随访未完成。点击研究编号查看逐项明细。</p></div><span className="research-total">共 {journeys.length} 条</span></div>
       {loading ? <div className="research-empty"><strong>正在加载研究旅程</strong></div>
         : journeys.length === 0 ? <div className="research-empty"><strong>尚未正式纳入客户</strong><p>候选名单建好后，可逐人核验并纳入。</p></div>
         : <div className="research-table-wrap"><table className="research-table">
-          <thead><tr>{['研究编号', '参与者编码', '资料审核（最近100条）', 'AI 草稿', '年度方案', '随访闭环', '状态'].map(x => <th key={x}>{x}</th>)}</tr></thead>
-          <tbody>{journeys.map(row => <tr key={row._id}>
-            <td><span className="research-code">{row.researchNumber}</span></td>
+          <thead><tr>{['研究编号', '参与者编码', '资料审核（最近100条）', '报告随访AI稿（已批准/记录）', '年度方案', '年度方案关联随访（已完成/记录）', '纳入状态'].map(x => <th key={x}>{x}</th>)}</tr></thead>
+          <tbody>{journeys.map(row => <React.Fragment key={row._id}><tr>
+            <td><button type="button" className="research-code research-expand" aria-expanded={expandedJourney === row._id} onClick={() => setExpandedJourney(expandedJourney === row._id ? null : row._id)}>{row.researchNumber} {expandedJourney === row._id ? '▴' : '▾'}</button></td>
             <td><span className="research-participant">{row.participantCode}</span></td>
             <td><div>健管专员 {row.snapshot.report.managerAudited}/{row.snapshot.report.total}</div><div className="research-review-secondary">健康顾问 {row.snapshot.report.advisorAudited}/{row.snapshot.report.total}</div></td>
             <td>{row.snapshot.draft.approved}/{row.snapshot.draft.total}</td>
             <td><span className={row.snapshot.annualPlan ? 'research-plan-ready' : 'research-plan-empty'}>{row.snapshot.annualPlan ? row.snapshot.annualPlan.reviewStatus : '未创建'}</span></td>
             <td>{row.snapshot.followUp.completed}/{row.snapshot.followUp.total}{row.snapshot.followUp.overdue ? <span className="research-overdue">超期 {row.snapshot.followUp.overdue}</span> : null}</td>
             <td><span className={`research-status ${row.status}`}>{STATE[row.status]}</span></td>
-          </tr>)}</tbody>
+          </tr>{expandedJourney === row._id && <tr><td colSpan={7} className="research-detail-cell"><div className="research-detail-grid">
+            <section><h3>最近100条资料的逐项审核</h3>{row.snapshot.report.items?.length ? <ul>{row.snapshot.report.items.map(item => <li key={item.id}>资料 #{shortId(item.id)} · {CATEGORY[item.category] || item.category} · {dateText(item.date)}：健管专员{item.managerStatus === 'audited' ? '已审' : '未审'}，健康顾问{item.advisorStatus === 'audited' ? '已审' : '未审'}</li>)}</ul> : <p>无上传资料</p>}</section>
+            <section><h3>报告随访 AI 稿</h3>{row.snapshot.draft.items?.length ? <ul>{row.snapshot.draft.items.map(item => <li key={item.id}>草稿 #{shortId(item.id)}（资料 #{shortId(item.reportId)}）· {DRAFT_STATE[item.status] || item.status}</li>)}</ul> : <p>无草稿记录；这不表示资料未审核。</p>}</section>
+            <section><h3>所选年度方案关联随访</h3>{row.snapshot.followUp.items?.length ? <ul>{row.snapshot.followUp.items.map(item => <li key={item.id}>随访 #{shortId(item.id)} · {dateText(item.date)} · {FOLLOWUP_STATE[item.status] || item.status}{item.overdue ? ' · 已逾期' : ''}{!item.assigned ? ' · 未分配' : ''}</li>)}</ul> : <p>无关联任务；不代表整个随访计划已结束。</p>}</section>
+          </div></td></tr>}</React.Fragment>)}</tbody>
         </table></div>}
     </section>
 
