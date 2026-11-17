@@ -23,16 +23,8 @@ function fundLimit(type, value, amount) {
 }
 
 
-function StarRow({ rating }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-      {[1,2,3,4,5].map(i => (
-        <Ionicons key={i} name={i <= Math.round(rating) ? 'star' : 'star-outline'} size={11} color="#F39C12" />
-      ))}
-      <Text style={styles.ratingNum}>{rating}</Text>
-    </View>
-  );
-}
+const descriptionLines = value => String(value || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
+const isDescriptionHeading = value => /^【.+】$/.test(value) || /^(服务内容|服务流程|产品说明|适合人群|服务成果|注意事项|购买须知)$/.test(value);
 
 // ── 图片全屏预览 ──────────────────────────────────────────────────
 function ImageViewer({ url, onClose }) {
@@ -54,48 +46,24 @@ function ImageViewer({ url, onClose }) {
 function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
   const [previewImg, setPreviewImg] = useState(null);
   if (!item) return null;
-  const hasContent = item.description || (item.images && item.images.length > 0);
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalCard, { paddingBottom: 0 }]}>
           <View style={styles.modalHandle} />
 
-          {/* 标题行 */}
           <View style={styles.modalServiceRow}>
-            <View style={[styles.modalServiceIcon, { backgroundColor: (item.iconColor || '#1E6B50') + '15' }]}>
-              <Ionicons name={item.icon || 'star-outline'} size={28} color={item.iconColor || '#1E6B50'} />
-            </View>
             <View style={styles.modalServiceInfo}>
               <Text style={styles.modalServiceName} numberOfLines={2}>{item.name}</Text>
-              <StarRow rating={item.rating || 5} />
+              {!!item.subtitle && <Text style={styles.serviceSubtitle}>{item.subtitle}</Text>}
             </View>
           </View>
 
           {/* 图文内容区 */}
           <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-            {/* 图片：完整宽度纵向平铺，不裁切，点击看大图 */}
-            {item.images && item.images.length > 0 && (
-              <View style={{ marginBottom: spacing.md, gap: spacing.sm }}>
-                {item.images.map((url, i) => (
-                  <TouchableOpacity key={i} activeOpacity={0.9} onPress={() => setPreviewImg(url)}>
-                    <Image source={{ uri: mediaUrl(url) }} style={styles.detailImg} resizeMode="contain" />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {/* 描述文字 */}
-            {item.description ? (
-              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 22, marginBottom: spacing.md }}>
-                {item.description}
-              </Text>
-            ) : null}
-
-            {/* 特色功能 */}
-            {!hasContent && (
+            {(item.features || []).length > 0 && (
               <View style={styles.modalFeatures}>
-                {(item.features || []).map((f, i) => (
+                {item.features.slice(0, 3).map((f, i) => (
                   <View key={i} style={styles.modalFeatureChip}>
                     <Ionicons name="checkmark" size={11} color={colors.primary} />
                     <Text style={styles.modalFeatureText}>{f}</Text>
@@ -103,6 +71,31 @@ function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
                 ))}
               </View>
             )}
+            {item.images && item.images.length > 0 && (
+              <View style={{ marginBottom: spacing.md }}>
+                <TouchableOpacity activeOpacity={0.9} onPress={() => setPreviewImg(item.images[0])}>
+                  <Image source={{ uri: mediaUrl(item.images[0]) }} style={styles.detailImg} resizeMode="contain" />
+                </TouchableOpacity>
+                <Text style={styles.imageHint}>点击图片查看大图 · 共 {item.images.length} 张</Text>
+                {item.images.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.sm }}>
+                  {item.images.slice(1).map((url, i) => (
+                    <TouchableOpacity key={i} onPress={() => setPreviewImg(url)} style={{ marginRight: spacing.sm }}>
+                      <Image source={{ uri: mediaUrl(url) }} style={styles.detailThumbnail} resizeMode="contain" />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>}
+              </View>
+            )}
+
+            {/* 描述文字 */}
+            {item.description ? (
+              <View style={{ marginBottom: spacing.md }}>
+                <Text style={styles.detailSectionTitle}>服务详情</Text>
+                {descriptionLines(item.description).map((line, i) => (
+                  <Text key={i} style={[styles.descriptionLine, isDescriptionHeading(line) && styles.descriptionHeading]}>{line}</Text>
+                ))}
+              </View>
+            ) : null}
 
             {/* 价格 */}
             <View style={[styles.modalPriceRow, { marginBottom: spacing.lg }]}>
@@ -244,7 +237,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             </View>
             <View style={styles.modalServiceInfo}>
               <Text style={styles.modalServiceName} numberOfLines={2}>{item.name}</Text>
-              <StarRow rating={item.rating} />
+              {!!item.subtitle && <Text style={styles.serviceSubtitle} numberOfLines={2}>{item.subtitle}</Text>}
             </View>
           </View>
 
@@ -476,25 +469,23 @@ function ServiceCard({ item, onDetail, onBuy, onPay }) {
         </View>
       ) : null}
       {/* 封面图：有图直接展示（不点开也能看到），无图退回图标 */}
-      <View style={[styles.serviceCardLayout, isWide && styles.serviceCardLayoutWide]}>
+      <View style={styles.serviceCardLayout}>
         {item.images && item.images.length > 0 && (
           <Image source={{ uri: mediaUrl(item.images[0]) }} style={[styles.serviceCover, isWide && styles.serviceCoverWide]} resizeMode="contain" />
         )}
         <View style={styles.serviceCardContent}>
       <View style={styles.serviceCardTop}>
-        <View style={[styles.serviceIcon, { backgroundColor: item.iconColor + '15' }]}>
+        {(!item.images || item.images.length === 0) && <View style={[styles.serviceIcon, { backgroundColor: (item.iconColor || colors.primary) + '15' }]}>
           <Ionicons name={item.icon} size={26} color={item.iconColor} />
-        </View>
+        </View>}
         <View style={styles.serviceInfo}>
           <Text style={styles.serviceName} numberOfLines={2}>{item.name}</Text>
-          <Text style={styles.serviceSubtitle} numberOfLines={2}>{item.subtitle}</Text>
-          <StarRow rating={item.rating} />
-          <Text style={styles.reviewCount}>{item.reviewCount}人已购</Text>
+          {!!item.subtitle && <Text style={styles.serviceSubtitle} numberOfLines={2}>{item.subtitle}</Text>}
         </View>
       </View>
 
       <View style={styles.featureRow}>
-        {item.features.map((f, i) => (
+        {(item.features || []).slice(0, 2).map((f, i) => (
           <View key={i} style={styles.featureChip}>
             <Ionicons name="checkmark" size={10} color={colors.primary} />
             <Text style={styles.featureText}>{f}</Text>
@@ -823,8 +814,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white, borderRadius: radius.xl, padding: spacing.md, ...shadow.sm,
     position: 'relative', overflow: 'hidden',
   },
-  serviceCardLayout: { gap: spacing.md },
-  serviceCardLayoutWide: { flexDirection: 'row', alignItems: 'stretch' },
+  serviceCardLayout: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.md },
   serviceCardContent: { flex: 1, minWidth: 0, justifyContent: 'space-between' },
   serviceTag: {
     position: 'absolute', top: 12, right: 12,
@@ -836,8 +826,6 @@ const styles = StyleSheet.create({
   serviceInfo: { flex: 1 },
   serviceName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4, paddingRight: 48 },
   serviceSubtitle: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginBottom: 6 },
-  ratingNum: { fontSize: 11, color: colors.warning, fontWeight: '700', marginLeft: 3 },
-  reviewCount: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   featureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
   featureChip: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primary + '10', paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
   featureText: { fontSize: 11, color: colors.primary },
@@ -858,12 +846,17 @@ const styles = StyleSheet.create({
   consultBtnSmText: { fontSize: 14, color: colors.primary, fontWeight: '700' },
   // 列表卡片封面图
   serviceCover: {
-    width: '100%', height: 260, borderRadius: radius.md,
-    backgroundColor: colors.background,
+    width: 108, height: 108, borderRadius: radius.md, flexShrink: 0,
+    backgroundColor: '#F6F4EB',
   },
-  serviceCoverWide: { width: '56%', height: 390, flexShrink: 0 },
+  serviceCoverWide: { width: 132, height: 132 },
   // 详情弹窗完整图片
-  detailImg: { width: '100%', minHeight: 200, borderRadius: radius.md, backgroundColor: colors.background },
+  detailImg: { width: '100%', height: 230, borderRadius: radius.md, backgroundColor: '#F6F4EB' },
+  detailThumbnail: { width: 72, height: 72, borderRadius: radius.sm, backgroundColor: '#F6F4EB' },
+  imageHint: { fontSize: 11, color: colors.textMuted, marginTop: spacing.xs },
+  detailSectionTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs },
+  descriptionLine: { fontSize: 14, color: colors.textSecondary, lineHeight: 22, marginTop: 4 },
+  descriptionHeading: { fontWeight: '700', color: colors.textPrimary, marginTop: spacing.md },
   // 图片全屏预览
   imgViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
   imgViewerImg: { width: '100%', height: '80%' },
