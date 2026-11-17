@@ -342,19 +342,19 @@ test('single-page route stops before coverage/classification and preserves exist
   assert.equal(report.reportItems[0], oldItem);
 });
 
-for (const imageSize of [250000, 520000, 648096]) test(`annual PDF supplement splits ${imageSize}-character page and checks four calls`, async () => {
+for (const imageSize of [250000, 520000, 648096]) test(`annual PDF supplement uses four bands for ${imageSize}-character page and checks eight calls`, async () => {
   const fs = require('fs');
   const vm = require('vm');
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
   const start = source.indexOf('async function runReportPageParse(');
   const end = source.indexOf('// POST /api/staff/medical-reports/:id/parse-ai', start);
   const report = { _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] };
-  let regions = 0, requiredCalls = 0, modelCalls = 0;
+  let bands = 0, requiredCalls = 0, modelCalls = 0;
   const modules = {
     '../utils/aiBudget': { assertSupplementCallCapacity: async (_, __, calls) => { requiredCalls = calls; } },
     '../utils/ai': { parseImage: async (_, prompt) => {
       modelCalls++;
-      assert.match(prompt, /上半部分/);
+      assert.match(prompt, /第1\/4分区/);
       throw new (require('../src/utils/aiBudgetPolicy').AiControlError)('stopped', 'AI_CIRCUIT_PAUSED');
     } },
     '../utils/reportImageEvidence': require('../src/utils/reportImageEvidence'),
@@ -362,8 +362,7 @@ for (const imageSize of [250000, 520000, 648096]) test(`annual PDF supplement sp
     '../models/MedicalReport': { findById: async () => report },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(imageSize),
-      renderSinglePageRegions: async () => { regions++; return ['top', 'bottom']; },
+      renderSinglePageBands: async () => { bands++; return ['top', 'upper', 'lower', 'bottom']; },
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('No model result'); } },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
@@ -378,8 +377,8 @@ for (const imageSize of [250000, 520000, 648096]) test(`annual PDF supplement sp
     isManualOnlyReport: () => false, console,
   });
   await assert.rejects(run('fixture', 9), /stopped/);
-  assert.equal(regions, 1);
-  assert.equal(requiredCalls, 4);
+  assert.equal(bands, 1);
+  assert.equal(requiredCalls, 8);
   assert.equal(modelCalls, 1);
 });
 
@@ -447,7 +446,7 @@ test('annual supplement targets only rows missed by the first pass and keeps lat
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
     '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', reportItems: [] }) },
     '../utils/pdf': { isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(520000), renderSinglePageRegions: async () => ['top', 'bottom'] },
+      renderSinglePageBands: async () => ['top', 'upper', 'lower', 'bottom'] },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('Not reached'); } },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
     '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
@@ -464,7 +463,7 @@ test('annual supplement targets only rows missed by the first pass and keeps lat
     resequenceSupplementSourceOrder: items => items, console,
   });
   await assert.rejects(run('fixture', 5), /focused-rows-retained/);
-  assert.deepEqual(calls, [4, 3]);
+  assert.deepEqual(calls, [8, 7]);
 });
 
 test('image-only upper crop does not discard lower crop lab results', async () => {
@@ -492,7 +491,7 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     '../models/MedicalReport': { findById: async () => ({ _id: 'fixture', user: 'synthetic', type: 'annual', title: '测试体检', reportItems: [] }) },
     '../utils/pdf': {
       isPdfReport: () => true, fetchReportBuffer: async () => Buffer.from('fixture'),
-      renderSinglePage: async () => 'x'.repeat(550000), renderSinglePageRegions: async () => ['top', 'bottom'],
+      renderSinglePageBands: async () => ['top', 'upper', 'lower', 'bottom'],
     },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('Not reached'); } },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
@@ -505,7 +504,8 @@ test('image-only upper crop does not discard lower crop lab results', async () =
     User: { findById: () => ({ select: () => ({ lean: async () => ({ age: 30 }) }) }) },
     isPediatricAge: () => false, UPLOADS_DIR: '', REPORT_PARSE_PROMPT: 'extract', reportParsePromptForCategory: () => 'extract', PAGE_COVERAGE_AUDIT_PROMPT: 'coverage',
     isManualOnlyReport: () => false, safeParseJSON: JSON.parse, shouldSkipParsedReportPage: parsed => parsed.skipPage === true,
-    mergeCoverageAuditItems: (left, right) => [...left, ...right], resequenceSupplementSourceOrder: items => items, str: String, console,
+    mergeCoverageAuditItems: require('../src/utils/reportAuditMerge').mergeCoverageAuditItems,
+    resequenceSupplementSourceOrder: items => items, str: String, console,
     tagReportPageItems: items => { assert.equal(JSON.stringify(items), JSON.stringify([lab])); throw new Error('lower-crop-retained'); },
   });
   await assert.rejects(run('fixture', 9), /lower-crop-retained/);

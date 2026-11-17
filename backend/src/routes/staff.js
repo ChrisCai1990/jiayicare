@@ -18994,19 +18994,15 @@ async function runReportPageParseControlled(reportId, pageNum) {
     pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
     // 单页补提必须保留整张表格的同一行关系。过去无差别左右切图，会把左侧项目名和右侧数值拆开，
     // 导致模型返回“有名称、无数值”的空壳项；先渲染整页，再对较大的页按上下分区。
-    images = [await renderSinglePage(pdfBuf, pageNum, 200)];
-    // Large, dense pages can repeatedly hit the model's 180-second limit as a
-    // whole image. Split top/bottom with overlap while retaining each table row's
-    // left/right relationship. The independent evidence check still runs per crop.
-    // 约 375 KB JPEG 起分区：线上 648K 字符整页在 180 秒内连续超时，
-    // 同页 160 DPI 上下分区分别仅约 296K / 226K 字符。
+    images = report.type === 'annual'
+      ? await renderSinglePageBands(pdfBuf, pageNum, 160)
+      : [await renderSinglePage(pdfBuf, pageNum, 200)];
+    // Annual reports contain several dense tables on one page. Four overlapping
+    // horizontal bands keep left/right result pairs together and bound each
+    // response. Other large PDFs use the existing size-based split.
     const densePageBase64Threshold = 500000;
-    // The independent transcript already audits printed table rows. On annual
-    // pages the extra coverage pass repeatedly hit OUTPUT_LENGTH, and four
-    // bands doubled the minimum calls without improving that page. Keep the
-    // full table row in each top/bottom crop; reserve four bands for unusually
-    // large rendered pages that cannot fit two crops.
-    if (report.type === 'annual' || images[0]?.length > densePageBase64Threshold) {
+    // 约 375 KB JPEG 起分区：线上 648K 字符整页在 180 秒内连续超时。
+    if (report.type !== 'annual' && images[0]?.length > densePageBase64Threshold) {
       const useBands = images[0].length > 1000000;
       images = useBands
         ? await renderSinglePageBands(pdfBuf, pageNum, 160)
@@ -19065,10 +19061,10 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // row. Repeating a full candidate list as a coverage audit is both costly
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
-  if (!localScan) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+  await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
-  for (let regionIndex = 0; regionIndex < (localScan ? 0 : images.length); regionIndex++) {
+  for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -19082,6 +19078,16 @@ async function runReportPageParseControlled(reportId, pageNum) {
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);
+      // The same crop cannot produce a complete response after hitting the
+      // output cap. A fresh request uses four narrower bands and is preflighted
+      // against the full per-page call budget before changing any report items.
+      if (error.code === 'AI_OUTPUT_LENGTH') {
+        const canNarrow = isPdf && report.type === 'annual' && images.length < 4;
+        const message = canNarrow
+          ? `第${pageNum}页输出过长；请再次点击补提，系统将改用四段识别，已有审核结果保持不变`
+          : `第${pageNum}页分段识别仍超出输出上限，请对照原件人工核对，已有审核结果保持不变`;
+        throw Object.assign(new Error(message), { code: error.code });
+      }
       if (error.aiControl || attempt === 3) throw error;
       console.log(`[parse-page] ${reportId} P${pageNum} 第${attempt}次失败，自动重试: ${error.message}`);
     }
@@ -19189,7 +19195,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
     : '';
   const resultMessage = localScan
-    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选并完成分段补漏，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
     : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'
