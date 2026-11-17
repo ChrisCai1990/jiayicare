@@ -14,11 +14,11 @@ const management = [
 const grouped = new Set([...medical, ...management, ['年度体检', ['annual_checkup']]].flatMap(([, keys]) => keys))
 const displayDate = value => value ? String(value).slice(0, 10) : '时间待确认'
 
-export default function AnnualPlanTrackView({ actions, targets, renderAction, nutritionTask, onNutrition, onConsensus, consensusTopics, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
+export default function AnnualPlanTrackView({ actions, targets, renderAction, nutritionTask, nutritionEnabled, onNutrition, onConsensus, consensusTopics, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
-    const nutrition = keys.includes('nutrition_assessment') && actions.some(action => action.key === 'nutrition_assessment')
+    const nutrition = keys.includes('nutrition_assessment') && (nutritionEnabled || actions.some(action => action.key === 'nutrition_assessment'))
     const consensus = keys.includes('health_consensus')
     const monitoring = title === '日常监测'
     if (!items.length && !nutrition && !consensus && !monitoring) return null

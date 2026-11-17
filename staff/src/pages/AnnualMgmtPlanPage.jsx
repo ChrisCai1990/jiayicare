@@ -1126,7 +1126,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     </div>
   }
   const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction}
-    nutritionTask={nutritionTask} onNutrition={() => document.querySelector('[aria-label="年度标准营养评估"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+    nutritionTask={nutritionTask} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
+    onNutrition={() => document.querySelector('[aria-label="年度标准营养评估"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
     consensusTopics={CONSENSUS_TOPICS} canAddConsensus={canEdit && !pushedAt && !(moduleData.health_consensus?.records || []).length}
     onConsensus={() => handleModuleChange('health_consensus', 'records', [{ consensusId: crypto.randomUUID(), question: CONSENSUS_TOPICS[0], topicPath: CONSENSUS_TOPICS }])}
     manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} toast={toast} />}
