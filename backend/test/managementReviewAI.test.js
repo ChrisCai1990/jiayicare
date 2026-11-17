@@ -35,3 +35,12 @@ test('quarter summary includes approved month results but excludes pending draft
  let prompt,n=0;await ai.generate({Review:{findOneAndUpdate:async(f,u)=>++n===1?{__v:2}:u.$set,updateOne:async()=>{}},user:{_id:'p'},row:{_id:'r',__v:1,status:'advisor_review',roles:['familyDoctor'],contributions:{familyDoctor:{status:'submitted'}}},staff:{_id:'s'},roles:['familyDoctor'],summary:true,source:{cycleReviews:[{status:'finalized',summary:'已核实的当月行动结果'},{status:'collecting',summary:'未核实内容不能进入最终汇总'}]},chat:async m=>{prompt=m[0].content;return JSON.stringify({summary:'季度与月度综合摘要',nextPlan:''})}});
  assert.ok(prompt.includes('已核实的当月行动结果'));assert.ok(!prompt.includes('未核实内容不能进入最终汇总'));
 });
+
+test('AI goal note remains a draft and cannot mark a health goal achieved',async()=>{
+ let n=0;
+ const goal={issueId:'management_issue:1',goal:'核对血压变化',outcome:'unverified',outcomeNote:''};
+ const result=await ai.generate({Review:{findOneAndUpdate:async(f,u)=>++n===1?{__v:2}:u.$set,updateOne:async()=>{}},user:{_id:'p'},row:{_id:'r',__v:1,status:'advisor_review',roles:['nutritionist'],contributions:{nutritionist:{status:'submitted'}},goalReviews:[goal]},staff:{_id:'s'},roles:['nutritionist'],summary:true,source:{},chat:async()=>JSON.stringify({summary:'待顾问核实血压变化',nextPlan:'',goalNotes:[{issueId:goal.issueId,analysis:'已提醒复查；尚缺本期血压数据和专家意见'}]})});
+ assert.equal(result.goalReviews[0].aiDraftNote,'已提醒复查；尚缺本期血压数据和专家意见');
+ assert.equal(result.goalReviews[0].outcome,'unverified');
+ assert.equal(result.goalReviews[0].outcomeNote,'');
+});
