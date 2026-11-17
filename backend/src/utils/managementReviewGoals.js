@@ -6,16 +6,20 @@ function activePlan(plans, period) {
     .sort((a, b) => new Date(b.confirmedAt) - new Date(a.confirmedAt))[0] || null;
 }
 
-function goalReviews(plans, followups, period, services = [], healthRecords = [], reports = [], metricSourcesIncomplete = false, observationRecords = [], observationSourcesIncomplete = false) {
+function goalReviews(plans, followups, period, services = [], healthRecords = [], reports = [], metricSourcesIncomplete = false, observationRecords = [], observationSourcesIncomplete = false, linkedRehabOrders = []) {
   const plan = activePlan(plans, period);
   if (!plan) return [];
   const rows = plan.moduleData?.management_targets?.records || [];
   const periodEnd = new Date(`${period.end}T23:59:59+08:00`);
   const planStart = new Date(plan.confirmedAt);
   const activeObservations = observationRecords.filter(record => new Date(record.recordedAt) >= planStart);
+  const rehabIssuesByOrder = new Map(linkedRehabOrders.filter(order => id(order.rehabAnnualLink?.annualPlanId) === id(plan))
+    .map(order => [id(order), order.rehabAnnualLink.issueIds || []]));
   return rows.filter(row => row.issueId && row.goal).slice(0, 32).map(row => {
     const tasks = (followups || []).filter(task => new Date(task.date) >= planStart && (task.managementIssueIds || []).includes(row.issueId));
-    const linkedServices = (services || []).filter(service => new Date(service.date) >= planStart && (service.structuredContent?.rehab?.managementIssueIds || []).includes(row.issueId));
+    const linkedServices = (services || []).filter(service => new Date(service.date) >= planStart
+      && ((service.structuredContent?.rehab?.managementIssueIds || []).includes(row.issueId)
+        || (rehabIssuesByOrder.get(id(service.structuredContent?.rehab?.orderId)) || []).includes(row.issueId)));
     return {
       issueId: row.issueId, annualPlanId: id(plan), goal: String(row.goal).slice(0, 240),
       goalDimension: ['data', 'symptom', 'lifestyle'].includes(row.goalDimension) ? row.goalDimension : '',

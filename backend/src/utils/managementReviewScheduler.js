@@ -55,7 +55,7 @@ async function scan(now=new Date()) {
      if(rehab){if(!user.assignedRehabSpecialist)continue;roles.push('rehabSpecialist');}
      try{
       const origin=await require('../routes/managementReviews').sources(user,period);
-      const goalReviews=require('./managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services,origin.metricHealthRecords,origin.metricReports,origin.metricSourcesIncomplete,origin.observationRecords,origin.observationSourcesIncomplete);
+      const goalReviews=require('./managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services,origin.metricHealthRecords,origin.metricReports,origin.metricSourcesIncomplete,origin.observationRecords,origin.observationSourcesIncomplete,origin.linkedRehabOrders);
       row=(await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus:'待AI整理本期重点',roles,goalReviews,audit:[{action:'auto_created',at:now,note:'到期自动建立各岗位复盘'}]})).toObject();
      }
      catch(e){if(e.code!==11000)throw e;row=await Review.findOne({patientId:user._id,periodKey:period.key}).lean();}

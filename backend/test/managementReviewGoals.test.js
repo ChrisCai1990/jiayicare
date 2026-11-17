@@ -50,3 +50,20 @@ test('symptom and lifestyle observations summarize recorded days without decidin
   assert.equal(rows[0].outcome, 'unverified');
   assert.equal(rows[1].outcome, 'unverified');
 });
+
+test('published rehab record remains attributable when its order is linked after the record', () => {
+  const period = { start: '2026-10-01', end: '2026-10-31' };
+  const plans = [{ _id: 'plan-1', confirmedAt: '2026-09-01', moduleData: { management_targets: { records: [
+    { issueId: 'rehab-1', goal: '改善活动能力', rehabRelevant: true },
+  ] } } }];
+  const services = [{ _id: 'service-1', date: '2026-10-20', title: '运动能力评估',
+    structuredContent: { rehab: { orderId: 'order-1', status: 'published', managementIssueIds: [] } } }];
+  const orders = [{ _id: 'order-1', rehabAnnualLink: { annualPlanId: 'plan-1', issueIds: ['rehab-1'], linkedAt: '2026-11-01' } }];
+  const [row] = goalReviews(plans, [], period, services, [], [], false, [], false, orders);
+  assert.equal(row.serviceEvidence.length, 1);
+  assert.equal(row.serviceEvidence[0].serviceRecordId, 'service-1');
+  assert.equal(row.outcome, 'unverified');
+  const [other] = goalReviews(plans, [], period, services, [], [], false, [], false,
+    [{ _id: 'order-1', rehabAnnualLink: { annualPlanId: 'another-plan', issueIds: ['rehab-1'] } }]);
+  assert.equal(other.serviceEvidence.length, 0);
+});
