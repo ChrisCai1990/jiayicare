@@ -65,8 +65,10 @@ function RelatedFollowUpItem({ draftId, item }) {
     {detail.loading ? <p role="status">正在读取随访内容…</p> : detail.error ? <p role="alert">读取失败：{detail.error} <button type="button" onClick={loadDetail}>重试</button></p> : task ? <div className="report-followup-related-content">
       {task.plannedContent && <p><b>计划内容：</b>{task.plannedContent}</p>}
       {task.content && task.content !== task.plannedContent && <p><b>随访内容：</b>{task.content}</p>}
+      {task.taskRequirements && ![task.plannedContent, task.content].includes(task.taskRequirements) && <p><b>具体随访要求：</b>{task.taskRequirements}</p>}
       {task.executedContent && <p><b>已记录进展：</b>{task.executedContent}</p>}
-      {!task.plannedContent && !task.content && !task.executedContent && <p>这条随访尚未填写具体内容，请到客户随访记录进一步核对。</p>}
+      {task.progressRecords?.length > 0 && <div><b>随访过程：</b>{task.progressRecords.map((record, index) => <p key={`${record.recordedAt || ''}:${index}`}>{record.recordedAt ? new Date(record.recordedAt).toLocaleString('zh-CN') : '时间未记录'} {record.staffName || ''}：{record.content}</p>)}</div>}
+      {!task.plannedContent && !task.content && !task.taskRequirements && !task.executedContent && !task.progressRecords?.length && <p>这条随访尚未填写具体内容，请到客户随访记录进一步核对。</p>}
     </div> : null}
   </details></li>
 }

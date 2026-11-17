@@ -72,11 +72,17 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
       _id: req.params.taskId, patientId: row.patientId, clientVisible: { $ne: false },
       taskRole: { $in: ['', null] }, sourceType: { $nin: ['order', 'medication_reminder', 'supply_reminder'] },
       status: { $in: ['planned', 'in_progress', 'missed', 'completed'] },
-    }).select('theme date status plannedContent content executedContent').lean();
+    }).select('theme date status plannedContent content executedContent formData sourceHealthPlanId progressRecords')
+      .populate('sourceHealthPlanId', 'type title description content').lean();
     if (!task) fail('随访不存在或无法查看', 404);
+    const taskRequirements = require('../utils/medicalAssistRequirements').followUpTaskRequirements(task);
     res.json({ success: true, data: {
       id: String(task._id), theme: task.theme || '未命名随访', date: task.date, status: task.status,
       plannedContent: task.plannedContent || '', content: task.content || '', executedContent: task.executedContent || '',
+      taskRequirements,
+      progressRecords: (task.progressRecords || []).map(record => ({
+        content: record.content || '', staffName: record.staffName || '', recordedAt: record.recordedAt || null,
+      })),
     } });
   }));
   router.post('/:id/generate', staffAuth, wrap(async (req, res) => {

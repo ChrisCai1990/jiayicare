@@ -52,14 +52,29 @@ test('点击已有随访读取完整内容时再次校验客户和执行任务�
     assert.equal(String(filter.patientId), ids.patient);
     assert.equal(filter._id, taskId);
     assert.deepEqual(filter.taskRole.$in, ['', null]);
-    return { select: () => ({ lean: async () => ({ _id: taskId, theme: '专项筛查', plannedContent: '完整计划内容', content: '', executedContent: '本周已联系' }) }) };
+    return { select: () => ({ populate: () => ({ lean: async () => ({ _id: taskId, theme: '专项筛查', plannedContent: '完整计划内容', content: '', executedContent: '本周已联系' }) }) }) };
   });
   const result = await relatedRequest(t, taskId);
   assert.equal(result.status, 200);
   assert.equal(result.body.data.plannedContent, '完整计划内容');
   assert.equal(result.body.data.executedContent, '本周已联系');
+  assert.equal(result.body.data.taskRequirements, '完整计划内容');
   visible = [];
   assert.equal((await relatedRequest(t, taskId)).status, 403);
+});
+
+test('结构化表单有具体安排时，顾问核对详情返回与客户随访列表一致的要求', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  const taskId = '000000000000000000000006';
+  t.mock.method(Draft, 'findById', async () => row({ reportId: '000000000000000000000004' }));
+  t.mock.method(FollowUp, 'findOne', () => ({ select: () => ({ populate: () => ({ lean: async () => ({
+    _id: taskId, theme: '【年度体检】', plannedContent: '', content: '', executedContent: '',
+    formData: { 计划体检日期: '2026-11-10', 计划体检机构: '当地机构', 重点关注: '根据个人情况填写' },
+  }) }) }) }));
+  const result = await relatedRequest(t, taskId);
+  assert.equal(result.status, 200);
+  assert.match(result.body.data.taskRequirements, /计划体检日期：2026-11-10/);
+  assert.match(result.body.data.taskRequirements, /计划体检机构：当地机构/);
 });
 
 test('问题确认仅存年度依据，零执行派单，旧发布入口拒绝', async t => {
