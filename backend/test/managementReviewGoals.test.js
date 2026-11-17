@@ -88,3 +88,16 @@ test('compares only a finalized prior review of the same annual issue and tracki
     [{ ...prior[0], goalReviews: [{ ...prior[0].goalReviews[0], annualPlanId: 'plan-2' }] }]);
   assert.equal(differentPlan.previousEvidence, null);
 });
+
+test('observation coverage starts when the annual goal takes effect mid-period', () => {
+  const plan = [{ _id: 'plan-midmonth', confirmedAt: '2026-10-16T02:00:00Z', moduleData: { management_targets: { records: [
+    { issueId: 'sleep-midmonth', goal: '记录睡眠', goalDimension: 'lifestyle', lifestyleType: 'sleep' },
+  ] } } }];
+  const observations = [
+    { type: 'sleep', value: '7.0', recordedAt: '2026-10-10T02:00:00Z' },
+    { type: 'sleep', value: '8.0', recordedAt: '2026-10-20T02:00:00Z' },
+  ];
+  const [row] = goalReviews(plan, [], { start: '2026-10-01', end: '2026-10-31' }, [], [], [], false, observations);
+  assert.equal(row.observationEvidence.count, 1);
+  assert.equal(row.observationEvidence.periodDays, 16);
+});

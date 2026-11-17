@@ -13,6 +13,8 @@ function goalReviews(plans, followups, period, services = [], healthRecords = []
   const periodEnd = new Date(`${period.end}T23:59:59+08:00`);
   const planStart = new Date(plan.confirmedAt);
   const activeObservations = observationRecords.filter(record => new Date(record.recordedAt) >= planStart);
+  const activeStart = planStart.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+  const observationPeriod = { start: activeStart > period.start ? activeStart : period.start, end: period.end };
   const rehabIssuesByOrder = new Map(linkedRehabOrders.filter(order => id(order.rehabAnnualLink?.annualPlanId) === id(plan))
     .map(order => [id(order), order.rehabAnnualLink.issueIds || []]));
   return rows.filter(row => row.issueId && row.goal).slice(0, 32).map(row => {
@@ -35,9 +37,9 @@ function goalReviews(plans, followups, period, services = [], healthRecords = []
       metricEvidence: row.goalDimension === 'data' && row.goalMetric
         ? { ...require('./managementGoalMetrics').metricEvidence(row.goalMetric, healthRecords, reports, period), incomplete: metricSourcesIncomplete } : null,
       observationEvidence: row.goalDimension === 'symptom'
-        ? require('./managementObservationEvidence').summarize(activeObservations, 'symptom', row.symptomTerm, observationSourcesIncomplete, period)
+        ? require('./managementObservationEvidence').summarize(activeObservations, 'symptom', row.symptomTerm, observationSourcesIncomplete, observationPeriod)
         : row.goalDimension === 'lifestyle' && row.lifestyleType
-          ? require('./managementObservationEvidence').summarize(activeObservations, row.lifestyleType, '', observationSourcesIncomplete, period) : null,
+          ? require('./managementObservationEvidence').summarize(activeObservations, row.lifestyleType, '', observationSourcesIncomplete, observationPeriod) : null,
       previousEvidence: previousGoal ? { label: String(prior.label || prior.end || '').slice(0, 60),
         observationEvidence: previousGoal.observationEvidence || null,
         metricLatest: previousGoal.metricEvidence?.ambiguous ? null : previousGoal.metricEvidence?.latest || null } : null,
