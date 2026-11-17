@@ -3,6 +3,7 @@ import GroupVoiceMessage from '../components/GroupVoiceMessage';
 import ServiceGroupHistory from '../components/ServiceGroupHistory';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { API_ORIGIN, inAppServiceGroupAPI as api, staffAPI } from '../api';
+import { messageTimeSeparator } from '../utils/messageTime.js';
 import './ServiceAssistantPage.css';
 import './InAppServiceGroupsPage.css';
 
@@ -282,11 +283,13 @@ export default function InAppServiceGroupsPage() {
           <div className="sg-messages" ref={messagePane} onScroll={event => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 48; }}>
             {older&&<button onClick={()=>{followLatest.current=false;loadMessages(selected.id,messages[0]?.id);}}>查看更早消息</button>}
             {messages.length === 0 && <p className="sg-empty-messages">暂无消息，可以开始沟通。</p>}
-            {messages.map(message => <article onContextMenu={e=>{if(selected.status!=='closed'&&!selected.supervised){e.preventDefault();setQuoteMenu(message);}}} id={'sg-msg-'+message.id} key={message.id}
+            {messages.map((message, index) => <React.Fragment key={message.id}>
+              {messageTimeSeparator(message.createdAt, messages[index - 1]?.createdAt) && <div className="sg-time-separator"><time dateTime={message.createdAt}>{messageTimeSeparator(message.createdAt, messages[index - 1]?.createdAt)}</time></div>}
+              <article title={stamp(message.createdAt)} onContextMenu={e=>{if(selected.status!=='closed'&&!selected.supervised){e.preventDefault();setQuoteMenu(message);}}} id={'sg-msg-'+message.id} key={message.id}
               className={`sg-message${message.senderType === 'staff' ? ' is-staff' : ''}`}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 {message.senderAvatar && <img alt="" src={message.senderAvatar.startsWith('/') ? API_ORIGIN + message.senderAvatar : message.senderAvatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />}
-                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'} · {stamp(message.createdAt)}</small>
+                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'}</small>
               </div>
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
               {quoteMenu?.id===message.id&&<div><button onClick={()=>{setQuote(message);setQuoteMenu(null);}}>引用</button><button onClick={()=>setQuoteMenu(null)}>取消</button></div>}
@@ -298,7 +301,7 @@ export default function InAppServiceGroupsPage() {
                 <a href={`/patients/${selected.patientId}?tab=reports&reportId=${message.material.id}`}>查看原始资料 / 核对</a>
               </div>}
               {!!message.mentions?.length&&<div className="sg-mention-links">{message.mentions.map(p=><button key={p.id} onClick={()=>window.alert(`${p.name} · ${p.role || '服务成员'}`)}> @{p.name} · {p.role}</button>)}</div>}
-            </article>)}
+            </article></React.Fragment>)}
           </div>
           {selected.status==='closed' ? <p className="sg-readonly">本次服务已结束，历史记录仅供查看。</p> : selected.supervised ? <p className="sg-readonly">仅监管查看，未入群不能回复。</p>
             : <div className="sg-composer">

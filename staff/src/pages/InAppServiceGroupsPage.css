@@ -208,3 +208,5 @@
 .sg-manual{flex-shrink:0;margin:4px 0;}
 .sg-manual summary{cursor:pointer;font-size:13px;color:#1e6b50;}
 .in-app-service-groups>h1{font-size:28px;margin:0 0 8px;}
+
+.sg-time-separator { text-align: center; color: #677c72; font-size: 12px; line-height: 1.5; margin: 4px 0 14px; }
