@@ -10872,6 +10872,99 @@ router.get('/patients/:id/annual-plan/:planId/goal-candidates', staffAuth, async
   } catch (error) { res.status(500).json({ success: false, message: '读取目标候选失败' }); }
 });
 
+// Trial: add one advisor-owned consensus path to an already confirmed annual
+// plan. The ten suggested topics are a queue, not ten simultaneous follow-ups.
+router.get('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, async (req, res) => {
+  try {
+    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
+    const patient = await User.findById(req.params.id).select('tenantId').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '无权查看其他机构客户' });
+    const task = await FollowUp.findOne({ patientId: patient._id, sourceAnnualPlanId: req.params.planId,
+      sourceScheduleKey: /^health-consensus:/ }).sort({ createdAt: -1 })
+      .select('_id status date formData.healthConsensus progressRecords.consensusTopic progressRecords.consensusTopicOutcome').lean();
+    res.json({ success: true, data: task || null });
+  } catch (error) { res.status(500).json({ success: false, message: '读取共识沟通任务失败' }); }
+});
+router.post('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, async (req, res) => {
+  try {
+    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可安排共识沟通' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可安排共识沟通' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
+    if (!plan?.pushedAt || !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: '请先选择已确认的年度方案' });
+    if ((plan.moduleData?.health_consensus?.records || []).length) {
+      await require('../utils/annualPlanFollowUps').syncAnnualPlanFollowUps(plan);
+      return res.json({ success: true, data: plan, message: '已有共识沟通安排，请继续原计划' });
+    }
+    if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || '')) return res.status(409).json({ success: false, message: '方案已变化，请刷新' });
+    const clean = (value, max) => String(value || '').trim().slice(0, max);
+    const date = clean(req.body.firstDate, 10);
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
+    const row = {
+      consensusId: require('crypto').randomUUID(), currentUnderstanding: clean(req.body.currentUnderstanding, 1000),
+      concern: clean(req.body.concern, 1000), question: clean(req.body.question, 1000),
+      method: clean(req.body.method, 1000), frequency: clean(req.body.frequency, 1000), firstDate: date,
+      topicPath: Array.isArray(req.body.topicPath) ? req.body.topicPath.map(value => clean(value, 120)).filter(Boolean).slice(0, 10) : [],
+    };
+    if (!row.question || !row.method || !row.frequency || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < today || !Number.isFinite(Date.parse(date)))
+      return res.status(400).json({ success: false, message: '请填写当前主题、沟通方式、频率及未来首次日期' });
+    if (!row.topicPath.length) row.topicPath = [row.question];
+    if (row.topicPath[0] !== row.question) row.topicPath.unshift(row.question);
+    const moduleData = { ...(plan.moduleData || {}), health_consensus: { enabled: true, records: [row] } };
+    const revision = { id: require('crypto').randomUUID(), kind: 'consensus_trial', status: 'applied', createdAt: new Date(),
+      createdBy: req.staff._id, before: null, after: row, note: '顾问试用逐主题沟通；原方案其他事项不变' };
+    const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt },
+      { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true });
+    if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新' });
+    await require('../utils/annualPlanFollowUps').syncAnnualPlanFollowUps(saved);
+    res.json({ success: true, data: saved, message: '已安排首个共识主题，后续在同一任务中逐次跟进' });
+  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : '共识安排未完成，请刷新并核对任务' }); }
+});
+
+// Explicit fallback for a pilot customer who does not use either client app.
+// The usual onboarding monitoring reminders remain untouched.
+router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res) => {
+  try {
+    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可安排人工提醒' });
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可安排人工提醒' });
+    if (!patient.assignedHealthManager) return res.status(409).json({ success: false, message: '请先分配健管专员' });
+    const item = String(req.body.item || '');
+    const date = String(req.body.date || '');
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date());
+    if (req.body.noClientAppConfirmed !== true || !['bloodPressure', 'weight'].includes(item)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < today || !Number.isFinite(Date.parse(date)))
+      return res.status(400).json({ success: false, message: '请先确认客户不使用客户端，并填写有效项目和首次日期' });
+    const existing = await FollowUp.exists({ patientId: patient._id, repeatWeekly: true, clientVisible: false,
+      checkInItems: item, status: { $in: ['planned', 'in_progress', 'missed'] } });
+    if (existing) return res.status(409).json({ success: false, message: '已有此项目的健管专员每周提醒，请继续原计划' });
+    const label = item === 'bloodPressure' ? '血压' : '体重';
+    const content = `客户不使用 App／小程序；请健管专员每周联系客户，记录${label}实测结果。完成本次后按实际完成日期安排下一周。`;
+    const _id = new mongoose.Types.ObjectId(require('crypto').createHash('sha256').update(`manual-monitoring:v1:${patient._id}:${item}`).digest('hex').slice(0, 24));
+    const template = { type: 'phone', theme: `人工健康监测 · ${label}`, content,
+      formData: { '监测频率': '每周1次', manualNoClientApp: true, confirmedBy: String(req.staff._id) }, checkInItems: [item] };
+    const result = await FollowUp.updateOne({ _id }, { $setOnInsert: { _id, tenantId: patient.tenantId, patientId: patient._id,
+      staffId: req.staff._id, assignedTo: patient.assignedHealthManager, date: new Date(`${date}T00:00:00+08:00`),
+      status: 'planned', clientVisible: false, repeatWeekly: true, weeklyTemplate: template,
+      theme: template.theme, content, plannedContent: content, type: 'phone', formData: template.formData, checkInItems: [item], aiStatus: 'approved' } },
+    { upsert: true, setDefaultsOnInsert: true });
+    if (!result.upsertedCount) return res.status(409).json({ success: false, message: '此项目已有人工监测计划，请核对原任务' });
+    res.json({ success: true, message: '已给健管专员安排首次人工监测提醒，完成后接续下一周' });
+  } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? '此项目已有人工提醒，请刷新' : '安排人工提醒失败' }); }
+});
+
 // A confirmed plan stays intact. New screening decisions become one audited
 // amendment; task changes remain in the existing execution-review workbench.
 router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAuth, async (req, res) => {
@@ -14961,7 +15054,8 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     };
     const requiredScreeningKeys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
     const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[strategyType] || GENERATABLE), ...requiredScreeningKeys, 'monitoring'])]
-      .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k)));
+      .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k))
+        && !(k === 'monitoring' && require('../utils/annualFlowPilot').enabled(user._id)));
     const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active', reviewStatus: { $ne: 'pending_review' } })
       .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1, _id: 1 }).lean();
     const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({

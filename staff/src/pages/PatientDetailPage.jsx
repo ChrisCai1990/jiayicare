@@ -3118,7 +3118,7 @@ export default function PatientDetailPage() {
       try {
         await staffAPI.saveFollowUpProgress(execItem._id, { content: execForm.content.trim(), type: execForm.type,
           requestId: execForm.requestId, updatedAt: execItem.updatedAt,
-          outcome:execForm.outcome,visitDate:execForm.visitDate,visitConfirmed:execForm.visitConfirmed,
+          outcome:execForm.outcome,visitDate:execForm.visitDate,visitConfirmed:execForm.visitConfirmed,topicOutcome:execForm.topicOutcome,
           nextContactAt: execForm.nextContactAt ? new Date(execForm.nextContactAt).toISOString() : null })
         toast(execForm.outcome==='obtained'?'已结束本次配药提醒':execForm.outcome==='visited'?'已转资料收集与审核，原事项尚未结束':'过程已保存，同一事项继续跟进')
         setExecItem(null)

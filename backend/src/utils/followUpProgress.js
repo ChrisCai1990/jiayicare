@@ -18,10 +18,15 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   const healthDataPlan = task.formData?.healthDataPlan;
   const annualPilot = require('./annualFlowPilot').enabled(task.patientId);
   const medicalContinuation = annualPilot && require('./deferredMedicalFollowUp').eligible(task);
+  const consensus = annualPilot ? task.formData?.healthConsensus : null;
+  const topicOutcome = consensus ? String(body.topicOutcome || 'continue') : '';
+  const topics = consensus ? (Array.isArray(consensus.topicPath) && consensus.topicPath.length ? consensus.topicPath : [consensus.question]).filter(Boolean) : [];
+  const topicIndex = consensus ? Math.max(0, Math.min(topics.length - 1, Number(consensus.currentTopicIndex) || 0)) : 0;
+  if (consensus && (!['continue', 'next', 'complete'].includes(topicOutcome) || topicOutcome === 'next' && topicIndex >= topics.length - 1)) throw fail('请选择有效的共识主题结果', 400);
   const next = healthDataPlan?.enabled ? require('../../../shared/healthDataPlan.cjs').nextContact(healthDataPlan, now, body.nextContactAt) : body.nextContactAt ? new Date(body.nextContactAt) : null;
   if (next && !Number.isFinite(next.getTime())) throw fail('下次跟进时间无效', 400);
   if (medicalContinuation && next && next <= now) throw fail('下次跟进时间须晚于本次处理时间', 400);
-  if (annualPilot && task.formData?.healthConsensus && (!next || next <= now)) throw fail('未达成共识时请安排下一次沟通时间', 400);
+  if (consensus && topicOutcome !== 'complete' && (!next || next <= now)) throw fail('继续共识沟通时请安排下一次时间', 400);
   if (!body.updatedAt || new Date(body.updatedAt).getTime() !== new Date(task.updatedAt).getTime()) throw fail('记录已更新，请刷新后补充，原记录不会覆盖');
   const reminder=require('../../../shared/reminderFollowUp.cjs');
   const outcome=body.outcome||'';
@@ -30,7 +35,8 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   if(outcome==='visited'&&(body.visitConfirmed!==true||!require('./careFlowRuntime').validDate(visitDate)||visitDate>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai'}).format(now)))throw fail('请填写实际就医日期并确认本事项已完成就医；只是提醒或预约请勿勾选',400);
   const obtained = outcome === 'obtained';
   if (obtained && (reminder.kindOf(task) !== 'medication' || body.visitConfirmed !== true)) throw fail('请先核实客户已取得药品；仅提醒或预约不能结束事项', 400);
-  const record = { requestId: body.requestId, content, type, staffId: actor._id, staffName: actor.name || '', recordedAt: now, nextContactAt: next, outcome, visitDate };
+  const record = { requestId: body.requestId, content, type, staffId: actor._id, staffName: actor.name || '', recordedAt: now, nextContactAt: next, outcome, visitDate,
+    ...(consensus ? { consensusTopic: topics[topicIndex], consensusTopicOutcome: topicOutcome } : {}) };
   const records = [];
   if (!task.progressRecords?.length && task.executedContent) records.push({ requestId: 'legacy-execution', content: task.executedContent,
     type: task.executedType || task.type, recordedAt: task.updatedAt });
@@ -38,9 +44,13 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   const saved = await FollowUp.findOneAndUpdate({ _id: task._id, updatedAt: task.updatedAt, status: task.status, careFlowId: null,
     assignedTo: task.assignedTo || null, 'progressRecords.requestId': { $ne: body.requestId } }, {
     $push: { progressRecords: { $each: records } }, $inc: { __v: 1 },
-    $set: { status: obtained ? 'completed' : 'in_progress', completedAt: obtained ? now : null, completedBy: obtained ? 'staff' : null,
-      completedByStaffId: obtained ? actor._id : null,
+    $set: { status: obtained || topicOutcome === 'complete' ? 'completed' : 'in_progress', completedAt: obtained || topicOutcome === 'complete' ? now : null,
+      completedBy: obtained || topicOutcome === 'complete' ? 'staff' : null,
+      completedByStaffId: obtained || topicOutcome === 'complete' ? actor._id : null,
       plannedContent: task.plannedContent || task.content || '', executedContent: content, executedType: type,
+      ...(consensus && topicOutcome === 'next' ? { formData: { ...(task.formData || {}), healthConsensus: { ...consensus, currentTopicIndex: topicIndex + 1 } },
+        theme: `健康认知与共识 · ${String(topics[topicIndex + 1]).slice(0, 30)}`,
+        plannedContent: `当前主题：${topics[topicIndex + 1]}\n沟通方式：${consensus.method || '待确认'}` } : {}),
       ...(next && !obtained ? { nextFollowUpDate: next, remindAt: next, ...((healthDataPlan?.enabled || annualPilot && (task.formData?.healthConsensus || medicalContinuation)) ? {date:next} : {}) } : {}) },
   }, { new: true, runValidators: true });
   if (!saved) throw fail('记录已更新，请刷新后补充，原记录不会覆盖');

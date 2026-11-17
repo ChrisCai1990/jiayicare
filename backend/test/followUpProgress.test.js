@@ -94,3 +94,18 @@ test('health recording keeps one task and advances its workbench date by the fol
  await saveProgress({...s.args,body,now});assert.equal(s.get().progressRecords.length,1);
  await assert.rejects(saveProgress({...s.args,body:{...body,requestId:'new-contact-003',updatedAt:result.updatedAt,nextContactAt:'2026-09-30'},now}),{statusCode:400});
 });
+test('consensus trial advances topics on one task and closes after advisor decision', async () => {
+  const s = setup({ patientId: pilotId, formData: { healthConsensus: { question: '主题一', topicPath: ['主题一', '主题二'], currentTopicIndex: 0 } } });
+  const now = new Date('2026-11-17T10:00:00+08:00');
+  const nextAt = new Date('2026-11-24T10:00:00+08:00').toISOString();
+  const first = await saveProgress({ ...s.args, now, body: { ...s.args.body, topicOutcome: 'next', nextContactAt: nextAt } });
+  assert.equal(first.formData.healthConsensus.currentTopicIndex, 1);
+  assert.match(first.theme, /主题二/);
+  assert.equal(first.progressRecords[0].consensusTopic, '主题一');
+  assert.equal(first.status, 'in_progress');
+  await assert.rejects(saveProgress({ ...s.args, now, body: { ...s.args.body, requestId: 'request-0002', updatedAt: first.updatedAt, topicOutcome: 'next', nextContactAt: nextAt } }), { statusCode: 400 });
+  const done = await saveProgress({ ...s.args, now, body: { ...s.args.body, requestId: 'request-0003', updatedAt: first.updatedAt, topicOutcome: 'complete', nextContactAt: null } });
+  assert.equal(done.status, 'completed');
+  assert.equal(done.progressRecords[1].consensusTopic, '主题二');
+  assert.equal(done.progressRecords[1].consensusTopicOutcome, 'complete');
+});

@@ -309,7 +309,7 @@ async function buildAnnualPlanFollowUps(plan) {
     if (created.length > before) Object.assign(created.at(-1), {
       clientVisible: false, plannedContent: content,
       formData: { healthConsensus: { currentUnderstanding: rec.currentUnderstanding || '', concern: rec.concern || '', question: rec.question,
-        method: rec.method || '', frequency: rec.frequency || '' } },
+        method: rec.method || '', frequency: rec.frequency || '', topicPath: rec.topicPath?.length ? [rec.question, ...rec.topicPath.slice(1)] : [rec.question], currentTopicIndex: 0 } },
     });
   });
 
@@ -368,7 +368,8 @@ async function syncAnnualPlanFollowUps(plan) {
       }
       // 自动排期仍未执行时，用方案中的完整结构化内容修复旧版只保存了“空腹”等
       // 单个字段的展示问题；已完成历史记录保持原样。
-      if (['planned', 'in_progress', 'missed'].includes(keep.status) && row.content) {
+      if (['planned', 'in_progress', 'missed'].includes(keep.status) && row.content
+        && !(keep.formData?.healthConsensus && (keep.progressRecords || []).length)) {
         keep.theme = row.theme;
         keep.content = row.content;
         if (require('./annualFlowPilot').enabled(plan.patientId)) keep.managementIssueIds = row.managementIssueIds || [];

@@ -24,6 +24,7 @@ const followUpSchema = new mongoose.Schema({
     content: { type: String, required: true },
     staffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
     staffName: String, type: { type: String }, recordedAt: Date, nextContactAt: Date,
+    consensusTopic: String, consensusTopicOutcome: String,
     outcome: {type:String,enum:['reminded','unreachable','deferred','booked','visited','']}, visitDate: String,
   }], default: undefined }, // 只追加的沟通过程；不代表管理事项完成
   predecessorFollowUpId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
