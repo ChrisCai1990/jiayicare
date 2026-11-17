@@ -8,12 +8,28 @@ const FOLLOWUP_STATE = { planned: '待执行', in_progress: '执行中', missed:
 const CATEGORY = { physical_exam: '体检资料', lab_report: '检验报告', exam_report: '检查报告', body_composition: '人体成分', functional_medicine: '功能医学', genetic_test: '基因检测', outpatient_record: '门诊病历', inpatient_record: '住院病历', prescription_order: '处方', questionnaire: '问卷', other_customer_material: '其他资料' }
 const dateText = value => value ? new Date(value).toLocaleDateString('zh-CN') : '未记录日期'
 const shortId = value => value ? String(value).slice(-6).toUpperCase() : '—'
+const pageCount = (total, size) => Math.max(1, Math.ceil(total / size))
+
+function Pagination({ label, total, size, onSizeChange, page, onPageChange }) {
+  if (!total) return null
+  const pages = pageCount(total, size)
+  const current = Math.min(page, pages)
+  return <div className="research-pagination">
+    <span>{label}：第 {(current - 1) * size + 1}–{Math.min(current * size, total)} 位，共 {total} 位</span>
+    <label>每页 <select aria-label={`${label}每页人数`} value={size} onChange={event => { onSizeChange(Number(event.target.value)); onPageChange(1) }}><option value={5}>5 人</option><option value={10}>10 人</option></select></label>
+    <div className="research-pagination-actions"><button type="button" className="btn btn-secondary" disabled={current === 1} onClick={() => onPageChange(current - 1)}>上一页</button><span>{current} / {pages}</span><button type="button" className="btn btn-secondary" disabled={current === pages} onClick={() => onPageChange(current + 1)}>下一页</button></div>
+  </div>
+}
 
 export default function ResearchCareJourneysPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [journeys, setJourneys] = useState([])
   const [expandedJourney, setExpandedJourney] = useState(null)
   const [candidateList, setCandidateList] = useState([])
+  const [candidatePage, setCandidatePage] = useState(1)
+  const [candidatePageSize, setCandidatePageSize] = useState(5)
+  const [journeyPage, setJourneyPage] = useState(1)
+  const [journeyPageSize, setJourneyPageSize] = useState(5)
   const [setting, setSetting] = useState(null)
   const [settingLoaded, setSettingLoaded] = useState(false)
   const [showSetting, setShowSetting] = useState(false)
@@ -37,6 +53,10 @@ export default function ResearchCareJourneysPage() {
 
   const enrolledCount = journeys.filter(row => row.status === 'enrolled').length
   const canEnroll = enrollTarget && setting && authorizationReference.trim() && authorizationConfirmed
+  const currentCandidatePage = Math.min(candidatePage, pageCount(candidateList.length, candidatePageSize))
+  const currentJourneyPage = Math.min(journeyPage, pageCount(journeys.length, journeyPageSize))
+  const visibleCandidates = candidateList.slice((currentCandidatePage - 1) * candidatePageSize, currentCandidatePage * candidatePageSize)
+  const visibleJourneys = journeys.slice((currentJourneyPage - 1) * journeyPageSize, currentJourneyPage * journeyPageSize)
 
   const loadJourneys = async () => {
     setLoading(true)
@@ -188,7 +208,7 @@ export default function ResearchCareJourneysPage() {
 
     <section className="card research-toolbar">
       <div className="research-filter"><label className="form-label" htmlFor="research-year">流程观察年度</label>
-        <div className="research-filter-controls"><input id="research-year" className="form-input research-year-input" type="number" value={year} onChange={e => setYear(Number(e.target.value) || new Date().getFullYear())} /><button className="btn btn-secondary" onClick={() => { loadCandidates(); loadJourneys() }} disabled={loading}>{loading ? '加载中…' : '刷新'}</button></div>
+        <div className="research-filter-controls"><input id="research-year" className="form-input research-year-input" type="number" value={year} onChange={e => { setJourneyPage(1); setExpandedJourney(null); setYear(Number(e.target.value) || new Date().getFullYear()) }} /><button className="btn btn-secondary" onClick={() => { loadCandidates(); loadJourneys() }} disabled={loading}>{loading ? '加载中…' : '刷新'}</button></div>
       </div>
       <div className="research-counts"><div className="research-count-card"><span>候选名单</span><strong>{candidateList.length}</strong><em>位</em></div><div className="research-count-card"><span>正式纳入</span><strong>{enrolledCount}</strong><em>位</em></div></div>
     </section>
@@ -200,13 +220,14 @@ export default function ResearchCareJourneysPage() {
       {candidateList.length === 0 ? <div className="research-empty"><div className="research-empty-icon">⌘</div><strong>尚无候选客户</strong><p>按姓名或手机号搜索你们选定的年度管理客户，先加入候选名单。</p><button className="btn btn-primary" onClick={startSearch}>添加候选客户</button></div>
         : <div className="research-table-wrap"><table className="research-table research-candidate-table">
           <thead><tr>{['序号', '客户', '手机号', '服务包', '加入日期', '进度', '操作'].map(x => <th key={x}>{x}</th>)}</tr></thead>
-          <tbody>{candidateList.map((row, index) => <tr key={row._id}>
-            <td>{index + 1}</td><td>{row.name}</td><td>{row.phone || '—'}</td><td>{row.servicePackage || '—'}</td>
+          <tbody>{visibleCandidates.map((row, index) => <tr key={row._id}>
+            <td>{(currentCandidatePage - 1) * candidatePageSize + index + 1}</td><td>{row.name}</td><td>{row.phone || '—'}</td><td>{row.servicePackage || '—'}</td>
             <td>{new Date(row.addedAt).toLocaleDateString('zh-CN')}</td>
             <td>{row.enrolled ? <span className="research-status">已正式纳入</span> : row.isDeleted ? '客户已归档' : row.isAnnual ? '待核验授权' : '年度身份待核对'}</td>
             <td>{row.enrolled ? '—' : <div className="research-row-actions"><button className="btn btn-primary" onClick={() => startEnroll(row)} disabled={row.isDeleted || !row.isAnnual} title={!row.isAnnual ? '请核对年度服务包或年度管理身份' : ''}>正式纳入</button><button className="btn btn-secondary" onClick={() => removeCandidate(row)}>移除</button></div>}</td>
           </tr>)}</tbody>
         </table></div>}
+      <Pagination label="候选名单" total={candidateList.length} size={candidatePageSize} onSizeChange={setCandidatePageSize} page={currentCandidatePage} onPageChange={setCandidatePage} />
     </section>
 
     <section className="card research-setting-shell" id="research-setting">
@@ -228,7 +249,7 @@ export default function ResearchCareJourneysPage() {
         : journeys.length === 0 ? <div className="research-empty"><strong>尚未正式纳入客户</strong><p>候选名单建好后，可逐人核验并纳入。</p></div>
         : <div className="research-table-wrap"><table className="research-table">
           <thead><tr>{['研究编号', '参与者编码', '资料审核（最近100条）', '报告随访AI稿（已批准/记录）', '年度方案', '年度方案关联随访（已完成/记录）', '纳入状态'].map(x => <th key={x}>{x}</th>)}</tr></thead>
-          <tbody>{journeys.map(row => <React.Fragment key={row._id}><tr>
+          <tbody>{visibleJourneys.map(row => <React.Fragment key={row._id}><tr>
             <td><button type="button" className="research-code research-expand" aria-expanded={expandedJourney === row._id} onClick={() => setExpandedJourney(expandedJourney === row._id ? null : row._id)}>{row.researchNumber} {expandedJourney === row._id ? '▴' : '▾'}</button></td>
             <td><span className="research-participant">{row.participantCode}</span></td>
             <td><div>健管专员 {row.snapshot.report.managerAudited}/{row.snapshot.report.total}</div><div className="research-review-secondary">健康顾问 {row.snapshot.report.advisorAudited}/{row.snapshot.report.total}</div></td>
@@ -242,6 +263,7 @@ export default function ResearchCareJourneysPage() {
             <section><h3>所选年度方案关联随访</h3>{row.snapshot.followUp.items?.length ? <ul>{row.snapshot.followUp.items.map(item => <li key={item.id}>随访 #{shortId(item.id)} · {dateText(item.date)} · {FOLLOWUP_STATE[item.status] || item.status}{item.overdue ? ' · 已逾期' : ''}{!item.assigned ? ' · 未分配' : ''}</li>)}</ul> : <p>无关联任务；不代表整个随访计划已结束。</p>}</section>
           </div></td></tr>}</React.Fragment>)}</tbody>
         </table></div>}
+      <Pagination label="正式纳入" total={journeys.length} size={journeyPageSize} onSizeChange={setJourneyPageSize} page={currentJourneyPage} onPageChange={page => { setExpandedJourney(null); setJourneyPage(page) }} />
     </section>
 
     {searchOpen && <div className="modal-overlay" onClick={() => !saving && setSearchOpen(false)}><section className="modal research-modal" onClick={event => event.stopPropagation()}>
