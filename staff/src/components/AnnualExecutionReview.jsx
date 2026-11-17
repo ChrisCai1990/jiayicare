@@ -40,6 +40,11 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
   }
   if (!data && !error) return null
   if (!data?.reviews?.length && !error) return null
+  if (!pending.length && !error) return <details ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16 }}>
+    <summary style={{ cursor: 'pointer', color: '#52675D' }}>历史执行核对记录（{done.length}）</summary>
+    <p style={{ color: '#62776A', fontSize: 13 }}>方案修改后核对原有执行任务是否需要同步调整；以下事项已经完成核对。</p>
+    {done.map(r => <p key={r.id}>{dateText(r.reviewedAt)} · {r.reviewedByName || '健康顾问'} · {r.outcome === 'arranged' ? '已衔接原流程' : '无需调整'}<br />{r.note}</p>)}
+  </details>
   return <section ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16, border: pending.length ? '1px solid #E4BE75' : undefined }}>
     <h3 style={{ margin: '0 0 8px' }}>执行安排核对{pending.length ? ` · ${pending.length}次方案修订` : ''}</h3>
     {error && <div role="alert">{error} <button className="btn btn-secondary btn-sm" disabled={busy} onClick={reload}>刷新核对</button></div>}

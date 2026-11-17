@@ -1,6 +1,6 @@
 const { createHash } = require('crypto');
-const labels = { medical_treatment: '医疗问题解决', checkup_completion: '体检完善', abnormal_followup: '异常复查', vaccine: '疫苗接种', nutrition_assessment: '标准营养评估', personalized_followups: '个性化方案', annual_checkup: '年度体检' };
-const fields = ['items', 'name', 'department', 'standardPlanId', 'standardContent', 'standardSchedule', 'sourceCycles', 'defaultRole', 'personalizedAdvice', 'personalization', 'time', 'visit_time', 'executionDate', 'timeWindow', 'timingStatus', 'date', 'institution', 'focus'];
+const labels = { medical_treatment: '医疗问题解决', specialist_collab: '多学科会诊', checkup_completion: '体检完善', abnormal_followup: '异常复查', vaccine: '疫苗接种', nutrition_assessment: '标准营养评估', personalized_followups: '个性化方案', annual_checkup: '年度体检' };
+const fields = ['items', 'name', 'purpose', 'department', 'standardPlanId', 'standardContent', 'standardSchedule', 'sourceCycles', 'defaultRole', 'personalizedAdvice', 'personalization', 'time', 'visit_time', 'plan_time', 'executionDate', 'timeWindow', 'timingStatus', 'date', 'institution', 'focus', 'hospital', 'campus', 'expert', 'followUpStaff', 'bookingRequired', 'serviceMode', 'serviceType', 'managedServiceType'];
 function comparable(row) {
   if (!row) return null;
   return Object.fromEntries(fields.map(key => [key, row[key] ?? null]));
@@ -16,13 +16,13 @@ function reviews(plan) {
   return (plan.supplementRevisions || []).filter(r => r.status === 'applied' && r.executionReview?.version === 1);
 }
 function pending(plan) { return reviews(plan).filter(r => r.executionReview.status === 'pending'); }
-function title(row) { return row?.items || row?.name || row?.department || row?.standardPlanName || (row?.institution !== undefined ? '年度体检' : '事项'); }
+function title(row) { return row?.items || row?.name || row?.purpose || row?.department || row?.standardPlanName || (row?.institution !== undefined ? '年度体检' : '事项'); }
 function summary(change) {
   return { key: change.key, index: change.index, module: labels[change.key], title: title(change.after || change.before),
     action: !change.before ? '新增' : !change.after ? (change.operation === 'remove' ? '移除事项' : '移出原分类') : '更新',
     deletionReason: change.deletionReason || '',
-    before: change.before ? { title: title(change.before), advice: change.before.personalizedAdvice || change.before.personalization || change.before.reason || change.before.focus || '', date: change.before.executionDate || change.before.visit_time || change.before.time || change.before.date || '', timing: change.before.timeWindow || '' } : null,
-    after: change.after ? { title: title(change.after), advice: change.after.personalizedAdvice || change.after.personalization || change.after.reason || change.after.focus || '', date: change.after.executionDate || change.after.visit_time || change.after.time || change.after.date || '', timing: change.after.timeWindow || '', datePending: change.after.timingStatus === 'pending_confirmation' } : null,
+    before: change.before ? { title: title(change.before), advice: change.before.personalizedAdvice || change.before.personalization || change.before.reason || change.before.focus || '', date: change.before.executionDate || change.before.visit_time || change.before.plan_time || change.before.time || change.before.date || '', timing: change.before.timeWindow || '' } : null,
+    after: change.after ? { title: title(change.after), advice: change.after.personalizedAdvice || change.after.personalization || change.after.reason || change.after.focus || '', date: change.after.executionDate || change.after.visit_time || change.after.plan_time || change.after.time || change.after.date || '', timing: change.after.timeWindow || '', datePending: change.after.timingStatus === 'pending_confirmation' } : null,
   };
 }
 function todo(plan) {

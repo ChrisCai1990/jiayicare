@@ -11252,10 +11252,23 @@ router.patch('/patients/:id/annual-nutrition-metrics', staffAuth, async (req, re
       if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
       if (!Array.isArray(req.body.advisorTargets) || req.body.advisorTargets.length > 10) return res.status(400).json({ success: false, message: '异常指标最多填写10项' });
       advisorTargets = req.body.advisorTargets.map(row => ({
-        metric: String(row?.metric || '').trim(), baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(),
+        metric: String(row?.metric || '').trim(), baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(), sourceIssueId: String(row?.sourceIssueId || '').trim(),
       }));
-      if (advisorTargets.some(row => !row.metric || !row.baseline || !row.target || row.metric.length > 100 || row.baseline.length > 200 || row.target.length > 200))
-        return res.status(400).json({ success: false, message: '请逐项填写异常指标、当前数据和顾问期望目标' });
+      if (advisorTargets.some(row => !row.metric || !row.target || row.metric.length > 100 || row.baseline.length > 200 || row.target.length > 200 || row.sourceIssueId.length > 100))
+        return res.status(400).json({ success: false, message: '请逐项核对异常指标和顾问期望目标' });
+    }
+    const executionDate = String(req.body.executionDate || '').trim();
+    const executorId = String(req.body.executorId || '').trim();
+    if (hasAdvisorTargets && (!/^\d{4}-\d{2}-\d{2}$/.test(executionDate) || !Number.isFinite(Date.parse(executionDate)) || new Date(executionDate).toISOString().slice(0, 10) !== executionDate))
+      return res.status(400).json({ success: false, message: '请选择有效的营养评估日期' });
+    if (hasAdvisorTargets) {
+      if (!mongoose.isValidObjectId(executorId)) return res.status(400).json({ success: false, message: '请选择执行营养师' });
+      const [nutritionPatient, nutritionExecutor] = await Promise.all([
+        User.findById(req.params.id).select('tenantId').lean(), Admin.findById(executorId).select('tenantId role staffStatus').lean(),
+      ]);
+      if (!nutritionPatient || !nutritionExecutor || nutritionExecutor.role !== 'nutritionist' || nutritionExecutor.staffStatus === 'inactive'
+        || String(nutritionPatient.tenantId || '') !== String(nutritionExecutor.tenantId || ''))
+        return res.status(400).json({ success: false, message: '执行人须为本机构在职营养师' });
     }
     const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: req.params.id }).select('+nutritionMetricHistory').lean();
     if (!plan) return res.status(404).json({ success: false, message: '年度方案不存在' });
@@ -11263,15 +11276,24 @@ router.patch('/patients/:id/annual-nutrition-metrics', staffAuth, async (req, re
     if (String(plan.updatedAt?.toISOString()) !== req.body.baseUpdatedAt) return res.status(409).json({ success: false, message: '年度方案已变化，请刷新后重新选择指标' });
     const before = require('../../../shared/nutritionComparisonMetrics.cjs').selectedFromAnnualPlan(plan);
     const beforeTargets = plan.moduleData?.nutrition_assessment?.advisorTargets || [];
-    if (JSON.stringify(before) === JSON.stringify(metrics) && (!hasAdvisorTargets || JSON.stringify(beforeTargets) === JSON.stringify(advisorTargets))) return res.json({ success: true, data: plan });
+    if (JSON.stringify(before) === JSON.stringify(metrics) && (!hasAdvisorTargets || JSON.stringify(beforeTargets) === JSON.stringify(advisorTargets))
+      && (!hasAdvisorTargets || plan.moduleData?.nutrition_assessment?.executionDate === executionDate && String(plan.moduleData?.nutrition_assessment?.executorId || '') === executorId)) return res.json({ success: true, data: plan });
     const saved = await AnnualPlan.findOneAndUpdate(
       { _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt, pushedAt: { $ne: null } },
       { $set: { 'moduleData.nutrition_assessment': { ...(plan.moduleData?.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: metrics, metricsManuallyAdjusted: true,
+          ...(hasAdvisorTargets ? { executionDate, executorId, advisorTargetsManuallyAdjusted: true } : {}),
           ...(hasAdvisorTargets ? { advisorTargets } : {}) } },
         $push: { nutritionMetricHistory: { before, after: metrics, beforeTargets, afterTargets: hasAdvisorTargets ? advisorTargets : beforeTargets,
           changedAt: new Date(), changedBy: req.staff._id, changedByName: req.staff.name || req.staff.username || '' } } },
       { new: true }).select('+nutritionMetricHistory');
     if (!saved) return res.status(409).json({ success: false, message: '年度方案已变化，请刷新后重试' });
+    const plannedTask = hasAdvisorTargets ? await FollowUp.findOne({ patientId: req.params.id, sourceAnnualPlanId: plan._id, workflowKey: 'annual_nutrition_assessment', status: 'planned' }).lean() : null;
+    if (plannedTask) {
+      const taskContent = require('../utils/annualNutritionDispatch').contentForPlan(saved);
+      await FollowUp.updateOne({ _id: plannedTask._id, status: 'planned' }, { $set: { assignedTo: executorId, date: new Date(`${executionDate}T09:00:00+08:00`), content: taskContent, plannedContent: taskContent,
+        'formData.plannedAssessmentDate': executionDate, 'formData.annualNutritionAdvisorTargets': advisorTargets || beforeTargets,
+        'formData.annualNutritionMetrics': metrics } });
+    }
     res.json({ success: true, data: saved });
   } catch (error) { res.status(400).json({ success: false, message: error.message }); }
 });
@@ -11295,7 +11317,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (moduleData?.nutrition_assessment?.advisorTargets !== undefined) {
         const rows = moduleData.nutrition_assessment.advisorTargets;
         if (!require('../utils/annualFlowPilot').enabled(req.params.id) || !Array.isArray(rows) || rows.length > 10
-          || rows.some(row => !String(row?.metric || '').trim() || !String(row?.baseline || '').trim() || !String(row?.target || '').trim()
+          || rows.some(row => !String(row?.metric || '').trim() || !String(row?.target || '').trim()
             || String(row.metric).length > 100 || String(row.baseline).length > 200 || String(row.target).length > 200))
           throw new Error('请逐项填写异常指标、当前数据和顾问期望目标（最多10项）');
       }
@@ -11638,6 +11660,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       nutritionPatient = patient;
       if (!patient.assignedHealthManager) return res.status(409).json({ success: false, message: '请先为客户分配责任健管专员，再推送并生成随访计划' });
       if (plan.moduleData?.nutrition_assessment?.enabled !== false) {
+        if (require('../utils/annualFlowPilot').enabled(req.params.id) && !plan.pushedAt && !/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData?.nutrition_assessment?.executionDate || ''))
+          return res.status(409).json({ success: false, message: '请先在营养干预中确定计划日期，再推送方案' });
         if (!patient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再推送并派发方案' });
         const nutritionist = await Admin.findById(patient.assignedNutritionist).select('_id role staffStatus tenantId').lean();
         if (!nutritionist || nutritionist.role !== 'nutritionist' || nutritionist.staffStatus === 'inactive'

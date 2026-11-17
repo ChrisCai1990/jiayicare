@@ -552,9 +552,9 @@ textarea.form-control { resize: vertical; }
 .workbench-compact { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; margin-bottom: 12px; border: 1px solid #e1e9e4; border-radius: 10px; background: #fff; color: #52685d; font-size: 13px; }
 .workbench-compact > button { flex-shrink: 0; }
 .annual-plan-actions, .annual-plan-action-buttons { flex-wrap: wrap; }
-.annual-plan-actions--pilot { padding: 16px 18px; border: 1px solid #DCE9E0; border-radius: 14px; background: #fff; box-shadow: 0 5px 20px rgba(30, 78, 56, .04); }
+.annual-plan-actions--pilot { padding: 16px 18px; border: 1px solid #DCE9E0; border-radius: 14px; background: linear-gradient(115deg, #fff 0%, #fff 62%, #F7FAF8 100%); box-shadow: 0 5px 20px rgba(30, 78, 56, .04); }
 .annual-plan-actions--pilot .annual-plan-action-buttons { flex-basis: 100%; justify-content: flex-end; padding-top: 3px; }
-.annual-service-type-badge { margin-left: auto; border: 1px solid #D7E4DA; background: #F7FAF8; color: #315B45; border-radius: 8px; padding: 7px 12px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.annual-service-type-badge { margin-left: auto; border: 0; border-left: 3px solid #287052; background: transparent; color: #245842; border-radius: 0; padding: 5px 10px; font-weight: 700; font-size: 12px; white-space: nowrap; }
 .annual-plan-actions { scroll-margin-top: 70px; }
 .annual-plan-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .annual-plan-footer a { text-decoration: none; }
@@ -574,7 +574,8 @@ textarea.form-control { resize: vertical; }
 @media (max-width: 680px) { .annual-nutrition-advisor-summary > div, .annual-nutrition-advisor-row { grid-template-columns: 1fr; } }
 .annual-plan-page--pilot { color: #18342A; }
 .annual-plan-page--pilot .annual-plan-actions { margin-bottom: 20px !important; }
-.annual-plan-page--pilot .annual-plan-action-buttons > span { display: inline-flex; align-items: center; min-height: 34px; box-sizing: border-box; white-space: nowrap; border: 1px solid #D5E7DC; border-radius: 8px !important; background: #F1F8F3 !important; color: #287052 !important; padding: 6px 11px !important; font-size: 12px !important; font-weight: 600 !important; }
+.annual-plan-page--pilot .annual-plan-action-buttons > span { display: inline-flex; align-items: center; min-height: 34px; box-sizing: border-box; white-space: nowrap; border: 0; border-radius: 0 !important; background: transparent !important; color: #287052 !important; padding: 6px 11px !important; font-size: 12px !important; font-weight: 600 !important; }
+.annual-plan-page--pilot .annual-plan-action-buttons > span + span { border-left: 1px solid #CFE0D4; }
 .annual-plan-page--pilot .annual-plan-action-buttons > .btn { min-height: 34px; border-radius: 8px; font-size: 13px; }
 .annual-plan-page--pilot #annual-plan-content > h2 { font-size: 22px !important; margin: 0 0 16px !important; letter-spacing: .015em; }
 .annual-plan-page--pilot .annual-track-panel > div:last-child { padding-bottom: 0 !important; }
@@ -586,6 +587,10 @@ textarea.form-control { resize: vertical; }
 .annual-plan-revision--inline label:has(textarea), .annual-plan-revision--inline .btn-primary { grid-column: 1 / -1; }
 .annual-plan-revision--inline label { display: grid; gap: 5px; color: #435E50; font-size: 13px; font-weight: 600; }
 .annual-plan-revision--inline .form-input { min-height: 40px; border-radius: 9px; background: #fff; font-size: 14px; font-weight: 400; }
+.annual-plan-revision--inline .annual-plan-revision-checkbox { display: flex; align-items: center; gap: 8px; }
+.annual-plan-revision--inline .annual-plan-revision-checkbox input { width: 17px; height: 17px; }
+.annual-plan-revision-controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.annual-plan-revision-controls .btn-primary { flex: 1 1 180px; }
 @media (max-width: 680px) { .annual-plan-revision--inline > div { grid-template-columns: 1fr; } }
 .annual-plan-revision-close { display: none; }
 .annual-plan-page--pilot .annual-plan-footer { position: sticky; bottom: 0; z-index: 4; align-items: center; padding: 14px 16px; border: 1px solid #DFEAE1; border-radius: 12px; background: rgba(255, 255, 255, .97); box-shadow: 0 -6px 22px rgba(26, 60, 40, .06); }

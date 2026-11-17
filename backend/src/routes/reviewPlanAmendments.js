@@ -3,6 +3,8 @@ const mongoose=require('mongoose');
 const staffAuth=require('../middleware/staffAuth');
 const Plan=require('../models/AnnualPlan');
 const Review=require('../models/AiCaseReview');
+const Admin=require('../models/Admin');
+const User=require('../models/User');
 const logic=require('../utils/reviewPlanAmendment');
 module.exports=({getVisiblePlanPatientIds})=>{
   const router=express.Router();
@@ -73,10 +75,14 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const plan=await Plan.findOne({_id:planId,patientId:req.amendmentPatientId}).select('+supplementRevisions').lean();
       if(!plan || !plan.pushedAt || plan.reviewStatus!=='approved') return res.status(409).json({success:false,message:'请先打开已发布的年度方案'});
       if(String(plan.updatedAt?.toISOString())!==baseUpdatedAt) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
-      const reason=String(req.body.reason||'').trim();
+      const pilot=require('../utils/annualFlowPilot').enabled(req.params.patientId);
+      const delivery=req.body.item?.delivery;
+      const directServiceEdit=pilot && ['medical_treatment','specialist_collab','checkup_completion','abnormal_followup'].includes(req.body.item?.key) && delivery!==undefined && req.body.item?.operation!=='remove';
+      const reason=String(req.body.reason || (directServiceEdit?'顾问调整就医与检查安排':req.body.item?.key==='annual_checkup' && pilot?'顾问调整年度体检安排':'')).trim();
       if(reason.length<2 || reason.length>500) return res.status(400).json({success:false,message:'请填写2至500字的修订原因'});
       const source={kind:'advisor_revision',reason,customerFeedback:plan.returnReason||'',customerFeedbackAt:plan.returnedAt||null};
       const checkupEdit=req.body.item?.key==='annual_checkup';
+      const removeItem=req.body.item?.operation==='remove';
       let item,moduleData,changes;
       if(checkupEdit) {
         if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
@@ -89,40 +95,93 @@ module.exports=({getVisiblePlanPatientIds})=>{
         if(date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)) return res.status(400).json({success:false,message:'体检日期格式无效'});
         if(institution.length>200 || focus.length>2000) return res.status(400).json({success:false,message:'体检机构或重点关注内容过长'});
         const after={...before,date,institution,focus};
-        if(JSON.stringify([before.date||'',before.institution||'',before.focus||''])===JSON.stringify([date,institution,focus])) return res.status(400).json({success:false,message:'年度体检内容没有变化'});
         item={key:'annual_checkup',target:0,title:'年度体检',date,institution,focus};
         moduleData={...plan.moduleData,annual_checkup:after};
         changes=[{key:'annual_checkup',index:0,before,after}];
+      } else if(directServiceEdit) {
+        const input=req.body.item;
+        const key=input.key,target=input.target;
+        const before=plan.moduleData?.[key]?.records?.[target];
+        if(!Number.isInteger(target) || target<0 || !before) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
+        const titleField=key==='medical_treatment'?'department':key==='specialist_collab'?'purpose':'items';
+        const dateField=key==='medical_treatment'?'visit_time':key==='specialist_collab'?'plan_time':'time';
+        const title=String(input.title||'').trim(),date=String(input.date||'').trim(),basis=String(input.reason||'').trim();
+        if(!title || title.length>200) return res.status(400).json({success:false,message:'请填写就诊科室或检查事项'});
+        if(!basis || basis.length>4000) return res.status(400).json({success:false,message:'请填写设置依据（不超过4000字）'});
+        if(date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)) return res.status(400).json({success:false,message:'建议日期格式无效'});
+        const after={...before,[titleField]:title,[dateField]:date};
+        const originalAdvice=before.personalizedAdvice || before.personalization || String(before.reason||'').split('\n处理建议：')[1] || '';
+        after.basisSummary=basis;
+        after.reason=originalAdvice?`${basis}\n处理建议：${originalAdvice}`:basis;
+        if(date!==String(before[dateField]||'')) after.timingReason='';
+        moduleData={...plan.moduleData,[key]:{...plan.moduleData[key],records:plan.moduleData[key].records.map((row,index)=>index===target?after:row)}};
+        item={key,target,title,date,basis,delivery};
+        changes=[{key,index:target,before,after}];
+      } else if(removeItem && pilot) {
+        const key=req.body.item?.key,target=req.body.item?.target;
+        if(!['medical_treatment','specialist_collab','checkup_completion','abnormal_followup','vaccine','nutrition_assessment'].includes(key)
+          || !Number.isInteger(target) || target<0 || !plan.moduleData?.[key]?.records?.[target])
+          return res.status(400).json({success:false,message:'请选择当前方案中需要删除的事项'});
+        const deletionReason=String(req.body.item?.deletionReason||'').trim();
+        if(deletionReason.length<2 || deletionReason.length>500) return res.status(400).json({success:false,message:'请填写2至500字的删除原因'});
+        const before=plan.moduleData[key].records[target];
+        moduleData={...plan.moduleData,[key]:{...plan.moduleData[key],records:plan.moduleData[key].records.filter((_,index)=>index!==target)}};
+        item={key,target,operation:'remove',deletionReason};
+        changes=[{key,index:target,before,after:null,operation:'remove',deletionReason}];
       } else {
         item=logic.clean([req.body.item])[0];
         if(item.target<0 || !plan.moduleData?.[item.key]?.records?.[item.target]) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
-        if(item.operation==='remove' || item.moveFrom) return res.status(400).json({success:false,message:'此入口仅修改原事项内容'});
+        if(item.moveFrom) return res.status(400).json({success:false,message:'此入口仅修改或删除原事项'});
+        if(removeItem && !require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
         const catalog=item.key==='personalized_followups'?await logic.templateCatalog():[];
         ({moduleData,changes}=logic.apply(plan.moduleData,[item],source,catalog));
       }
-      const location=req.body.item?.location;
-      if(location !== undefined) {
+      if(delivery !== undefined) {
         if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
-        if(!['medical_treatment','checkup_completion','abnormal_followup'].includes(item.key)
-          || !location || typeof location!=='object' || Array.isArray(location))
-          return res.status(400).json({success:false,message:'此事项不支持修改就医地点'});
-        const after=moduleData[item.key].records[item.target];
-        for(const field of ['hospital','department']) {
-          if(!Object.hasOwn(location,field)) continue;
-          const value=location[field];
-          if(typeof value!=='string' || value.trim().length>200) return res.status(400).json({success:false,message:'医院或科室内容过长'});
+        if(!['medical_treatment','specialist_collab','checkup_completion','abnormal_followup','annual_checkup'].includes(item.key)
+          || removeItem || !delivery || typeof delivery!=='object' || Array.isArray(delivery))
+          return res.status(400).json({success:false,message:'此事项不支持修改就医服务安排'});
+        const mode=String(delivery.serviceMode||'');
+        const type=String(delivery.serviceType||'');
+        const managedType=String(delivery.managedServiceType||'');
+        if(!['reminder','single','managed'].includes(mode)
+          || (mode==='single' && !['proxy_booking','proxy_visit','escort_visit','escort_exam','consult_coordination'].includes(type))
+          || (mode==='managed' && !['outpatient','checkup'].includes(managedType)))
+          return res.status(400).json({success:false,message:'请选择有效的服务方式和具体就医协助类型'});
+        const executorId=String(delivery.followUpStaff||'');
+        if(!mongoose.isValidObjectId(executorId)) return res.status(400).json({success:false,message:'请选择执行健管专员'});
+        const patient=await User.findById(req.params.patientId).select('tenantId').lean();
+        const executor=await Admin.findById(executorId).select('role staffStatus tenantId').lean();
+        if(!patient || !executor || executor.role!=='healthManager' || executor.staffStatus==='inactive'
+          || String(executor.tenantId||'')!==String(patient.tenantId||''))
+          return res.status(400).json({success:false,message:'执行人须为本机构在职健管专员'});
+        const after=item.key==='annual_checkup'?moduleData.annual_checkup:moduleData[item.key].records[item.target];
+        for(const field of ['hospital','campus','department','expert']) {
+          const value=delivery[field];
+          if(typeof value!=='string' || value.trim().length>200) return res.status(400).json({success:false,message:'医院、院区、科室或专家内容过长'});
           after[field]=value.trim();
         }
+        if(item.key==='annual_checkup') after.institution=after.hospital;
+        after.followUpStaff=executorId;
+        after.coordinator=executorId;
+        after.bookingRequired=delivery.bookingRequired===true;
+        after.serviceMode=mode;
+        after.serviceType=mode==='single'?type:'';
+        after.managedServiceType=mode==='managed'?managedType:'';
+        if(after.expert!==String(changes[0].before?.expert||'')) { after.expertIds=[]; after.expertSnapshots=[]; }
         changes[0].after=after;
       }
+      if(changes[0]?.before && changes[0]?.after && JSON.stringify(changes[0].before)===JSON.stringify(changes[0].after))
+        return res.status(400).json({success:false,message:'本项内容没有变化'});
       const revisionId=logic.hash({planId,baseUpdatedAt,item,reason});
       const executionReview=require('../utils/annualExecutionReview').markForReview(plan,changes);
       const revision={id:revisionId,status:'applied',createdAt:new Date(),createdBy:req.staff._id,source,baseUpdatedAt:plan.updatedAt,changes,taskStatus:'not_created',...(executionReview?{executionReview}:{})};
       const saved=await Plan.findOneAndUpdate({_id:plan._id,patientId:req.amendmentPatientId,updatedAt:plan.updatedAt,'supplementRevisions.id':{$ne:revisionId}},
         {$set:{moduleData,returnedAt:null,returnReason:''},$push:{supplementRevisions:revision}},{new:true}).select('+supplementRevisions');
       if(!saved) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
+      const itemTitle=checkupEdit?'年度体检':removeItem?(logic.title(changes[0].before)||changes[0].before?.purpose||'该事项'):item.title;
       await require('../models/PushRecord').create({staffId:req.staff._id,patientId:req.amendmentPatientId,type:'plan',sourceAnnualPlanId:plan._id,
-        title:`${plan.year}年度${plan.templateName||'健康管理方案'}已更新`,content:`您的年度方案中“${item.title}”已修订，点击通知查看完整方案。`});
+        title:`${plan.year}年度${plan.templateName||'健康管理方案'}已更新`,content:`您的年度方案中“${itemTitle}”已${removeItem?'取消':'修订'}，点击通知查看完整方案。`});
       res.json({success:true,data:saved,message:executionReview?'修订已推送客户；执行安排已进入顾问核对，原任务保留':'修订已推送客户；原执行任务保留'});
     }catch(error){res.status(error.statusCode||400).json({success:false,message:error.message});}
   });

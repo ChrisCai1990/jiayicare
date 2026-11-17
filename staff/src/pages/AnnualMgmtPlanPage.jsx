@@ -17,6 +17,7 @@ import AnnualServiceRecommendations from '../components/AnnualServiceRecommendat
 import AnnualVisitScheduleReview from '../components/AnnualVisitScheduleReview'
 import AnnualPlanTrackView from '../components/AnnualPlanTrackView'
 import AnnualNutritionAdvisorTargets from '../components/AnnualNutritionAdvisorTargets'
+import nutritionAdvisorTargets from '../../../shared/annualNutritionAdvisorTargets.cjs'
 import PublishedAnnualConsensus from '../components/PublishedAnnualConsensus'
 import ManualMonitoringTrial from '../components/ManualMonitoringTrial'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
@@ -1092,8 +1093,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const sharedActions = integratedActions.filter(action => actionTargetIds(action, managementTargets).length === 0)
   const renderPlanAction = action => {
     const entry = visibleModuleEntries.find(item => item.key === action.key)
-    if (annualPilot && pushedAt && canEdit && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment', 'annual_checkup'].includes(action.key) && plansByType[planType])
-      return <AnnualPlanRevision key={`${action.key}:${action.index}`} pilot inlineItem={{ key: action.key, target: action.index }} patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
+    if (annualPilot && pushedAt && canEdit && ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment', 'annual_checkup'].includes(action.key) && plansByType[planType])
+      return <AnnualPlanRevision key={`${action.key}:${action.index}`} pilot inlineItem={{ key: action.key, target: action.index }} patientId={id} plan={plansByType[planType]} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
     if (annualPilot && pushedAt) return <div key={`${action.key}:${action.index}`} style={{ display: 'grid', gap: 5, paddingTop: 8, fontSize: 13, color: '#52675D' }}>
       {action.record.hospital && <div>医院：{action.record.hospital}</div>}
       {action.record.department && <div>科室：{action.record.department}</div>}
@@ -1135,10 +1136,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     </div>
   }
   const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction}
-    nutritionTask={nutritionTask} nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargets || []} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
+    nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted ? moduleData.nutrition_assessment?.advisorTargets || [] : nutritionAdvisorTargets.mergeAdvisorTargets(moduleData.nutrition_assessment?.advisorTargets || [], managementTargets)} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
+    nutritionExecutionDate={moduleData.nutrition_assessment?.executionDate || ''} nutritionExecutorName={staffList.find(staff => String(staff._id) === String(moduleData.nutrition_assessment?.executorId || patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''))?.name || patient?.assignedNutritionist?.name || ''}
     nutritionAdvisorEditor={<AnnualNutritionAdvisorTargets patientId={id} plan={plansByType[planType]} rows={moduleData.nutrition_assessment?.advisorTargets || []}
-      metrics={nutritionMetricRules.selectedFromAnnualPlan({ moduleData })} canEdit={canEdit} toast={toast}
-      onDraftChange={rows => handleModuleChange('nutrition_assessment', 'advisorTargets', rows)}
+      metrics={nutritionMetricRules.selectedFromAnnualPlan({ moduleData })} managementTargets={managementTargets} autoImport={!moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted}
+      executionDate={moduleData.nutrition_assessment?.executionDate || ''} executorId={moduleData.nutrition_assessment?.executorId || ''}
+      assignedNutritionistId={patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''} staffList={staffList} canEdit={canEdit} toast={toast}
+      onDraftChange={change => { setModuleData(previous => ({ ...previous, nutrition_assessment: { ...previous.nutrition_assessment, ...change } })); setDirty(true) }}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
     onNutrition={() => {
       if (annualPilot && pushedAt) {
@@ -1153,7 +1157,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       requestAnimationFrame(() => assessment?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
     }}
     consensusTopics={CONSENSUS_TOPICS} canAddConsensus={canEdit && !pushedAt && !(moduleData.health_consensus?.records || []).length}
-    onConsensus={() => handleModuleChange('health_consensus', 'records', [{ consensusId: crypto.randomUUID(), question: CONSENSUS_TOPICS[0], topicPath: [CONSENSUS_TOPICS[0]] }])}
+    onConsensus={() => handleModuleChange('health_consensus', 'records', [{ consensusId: crypto.randomUUID(), question: '', topicPath: [] }])}
     manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
     consensusEditor={canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualConsensus patientId={id} plan={plansByType[planType]} topics={CONSENSUS_TOPICS} toast={toast}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />} />

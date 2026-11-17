@@ -6,6 +6,8 @@ function draftModule(moduleData = {}) {
   const current = moduleData.nutrition_assessment || {};
   if (current.enabled === false) return { ...current, enabled: false };
   return { ...current, enabled: true,
+    advisorTargets: current.advisorTargetsManuallyAdjusted ? current.advisorTargets || []
+      : require('../../../shared/annualNutritionAdvisorTargets.cjs').mergeAdvisorTargets(current.advisorTargets || [], moduleData.management_targets?.records || []),
     nutritionComparisonMetrics: current.nutritionComparisonMetrics
       ?? require('../../../shared/nutritionComparisonMetrics.cjs').metricsFromTargets(moduleData.management_targets?.records) };
 }
@@ -22,7 +24,7 @@ function contentForPlan(plan) {
   const summary = require('../../../shared/nutritionComparisonMetrics.cjs').nutritionSummary(plan);
   const advisorTargets = plan?.moduleData?.nutrition_assessment?.advisorTargets || [];
   const advisorGoalText = advisorTargets.length ? `顾问纳入的异常指标与期望目标：${advisorTargets.map(row => `${row.metric}（当前${row.baseline}，期望${row.target}）`).join('；')}。请核对后制定营养干预方案。` : '';
-  return `营养师评估膳食、生活方式及体成分，形成营养方案。${advisorGoalText}相关问题：${summary.problems.join('、') || '研判中的营养相关问题'}。对比指标：${metrics.join('、') || '基础体成分指标'}。研判参考目标：${summary.references.join('；') || '未给出明确数值，由营养师结合原报告参考范围及实际情况制定'}。基线依据已有资料核实，阶段目标由营养师调整。${focus.length ? `专项重点：${focus.map(r=>[r.items, r.personalizedAdvice].filter(Boolean).join('：')).join('；')}。` : ''}医疗背景仅供参考，就医、检查及用药评估由对应医疗安排执行。`;
+  return `营养师评估膳食、生活方式及体成分，形成营养方案。${advisorGoalText}营养相关管理目标：${goals.map(row => row.goal).join('；') || '待确认'}。相关问题：${summary.problems.join('、') || '研判中的营养相关问题'}。对比指标：${metrics.join('、') || '基础体成分指标'}。研判参考目标：${summary.references.join('；') || '未给出明确数值，由营养师结合原报告参考范围及实际情况制定'}。基线依据已有资料核实，阶段目标由营养师调整。${focus.length ? `专项重点：${focus.map(r=>[r.items, r.personalizedAdvice].filter(Boolean).join('：')).join('；')}。` : ''}医疗背景仅供参考，就医、检查及用药评估由对应医疗安排执行。`;
 
 }
 
@@ -39,7 +41,7 @@ function buildTask(plan, patient, actor, attempt = 1, now = new Date()) {
   const content = contentForPlan(plan);
   return {
     _id: taskId(plan._id, attempt), tenantId: patient.tenantId || null,
-    staffId: actor._id, patientId: patient._id, assignedTo: patient.assignedNutritionist,
+    staffId: actor._id, patientId: patient._id, assignedTo: plan.moduleData?.nutrition_assessment?.executorId || patient.assignedNutritionist,
     date: Number.isFinite(date.getTime()) ? date : now, type: 'phone', status: 'planned',
     theme: '年度标准营养评估', content, plannedContent: content,
     sourceAnnualPlanId: plan._id, sourceType: 'professional_assessment',
@@ -53,6 +55,13 @@ function buildTask(plan, patient, actor, attempt = 1, now = new Date()) {
 }
 
 async function dispatch(plan, patient, actor, FollowUp) {
+  const executorId = plan.moduleData?.nutrition_assessment?.executorId;
+  if (executorId) {
+    if (!mongoose.isValidObjectId(executorId)) throw new Error('执行营养师无效，请重新选择');
+    const executor = await require('../models/Admin').findById(executorId).select('role staffStatus tenantId').lean();
+    if (!executor || executor.role !== 'nutritionist' || executor.staffStatus === 'inactive'
+      || String(executor.tenantId || '') !== String(patient.tenantId || '')) throw new Error('执行营养师不可用，请重新选择');
+  }
   const query = { patientId: patient._id, sourceAnnualPlanId: plan._id, workflowKey: 'annual_nutrition_assessment' };
   const existing = await FollowUp.findOne({ ...query, status: { $ne: 'cancelled' } }).sort({ createdAt: 1 }).lean();
   if (existing) return { task: existing, reused: true };

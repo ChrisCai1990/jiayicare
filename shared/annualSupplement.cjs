@@ -18,7 +18,7 @@ function supplementChanges(base = {}, proposed = {}) {
       const index = rows.findIndex(old => identity(old) && identity(old) === identity(row));
       const before = index >= 0 ? rows[index] : null;
       // Do not replace manually coordinated logistics with an AI's empty defaults.
-      const logistics = before ? Object.fromEntries(['hospital', 'expert', 'serviceMode', 'serviceType', 'managedServiceType', 'followUpStaff'].filter(key => before[key] !== undefined && before[key] !== '').map(key => [key, before[key]])) : {};
+      const logistics = before ? Object.fromEntries(['hospital', 'campus', 'department', 'expert', 'expertIds', 'expertSnapshots', 'coordinator', 'bookingRequired', 'serviceMode', 'serviceType', 'managedServiceType', 'followUpStaff'].filter(key => before[key] !== undefined && before[key] !== '').map(key => [key, before[key]])) : {};
       const after = before ? { ...before, ...row, ...logistics } : row;
       if (!equal(before, after)) changes.push({ key, index, label: identity(row) || key, before, after });
     }

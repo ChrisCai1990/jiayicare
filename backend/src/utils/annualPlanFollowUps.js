@@ -158,7 +158,8 @@ async function buildAnnualPlanFollowUps(plan) {
       const label = rec.hospital || rec.name || rec.items || rec.standardPlanName || fallbackLabels[mod.key] || `第${i + 1}条`;
       // 年度方案随访统一由客户的健管专员承接；patientId 让同一计划同步展示给客户。
       // 其他岗位的代约、陪同、会诊等服务任务由 annualPlanServiceTasks 另行拆分。
-      const executor = patient?.assignedHealthManager;
+      const executor = require('./annualFlowPilot').enabled(plan.patientId) && require('mongoose').Types.ObjectId.isValid(rec.followUpStaff)
+        ? rec.followUpStaff : patient?.assignedHealthManager;
       const visitItems = rec.visitGroupId ? sharedVisitItems(moduleData, rec.visitGroupId) : [];
       const details = [
         rec.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(rec[mod.dateField])}；建议就医/检查日期：${rec[mod.dateField]}。一周内完成预约安排，日期已过则立即处理；实际就医时间以预约确认为准。`,
@@ -222,12 +223,14 @@ async function buildAnnualPlanFollowUps(plan) {
     const checkupLines = [
       annualCheckup.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(annualCheckup.date)}；建议体检日期：${annualCheckup.date}。一周内完成预约安排，日期已过则立即处理。`,
       annualCheckup.institution && `计划体检机构：${annualCheckup.institution}`,
+      annualCheckup.campus && `院区：${annualCheckup.campus}`,
+      annualCheckup.expert && `专家：${annualCheckup.expert}`,
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
       annualCheckup.goal && `管理目标：${annualCheckup.goal}`,
       annualCheckup.completionStandard && `完成标准：${annualCheckup.completionStandard}`,
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
-    push(annualCheckup.appointmentSchedulingVersion === 1 ? appointmentDay(annualCheckup.date) : annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, patient?.assignedHealthManager,
+    push(annualCheckup.appointmentSchedulingVersion === 1 ? appointmentDay(annualCheckup.date) : annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, annualCheckup.followUpStaff || patient?.assignedHealthManager,
       `annual_checkup:${String(sourceDate(plan, 'annual_checkup', 0, 'date', annualCheckup.date)).slice(0, 10)}`, annualCheckup);
   }
 

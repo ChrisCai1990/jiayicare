@@ -5,19 +5,21 @@ const mongoose = require('mongoose');
 
 test('顾问只修订本人客户的一项，保留日期和已发布状态并通知客户', async t => {
   const id = () => new mongoose.Types.ObjectId().toString();
-  const patientId = id(); const planId = id(); const advisorId = id();
+  const patientId = id(); const planId = id(); const advisorId = id(); const managerId = id(); const tenantId = id();
   const plan = { _id: planId, patientId, year: 2026, templateName: '健康预防方案',
     updatedAt: new Date('2026-10-27T00:00:00Z'), pushedAt: new Date('2026-10-26T00:00:00Z'), reviewStatus: 'approved',
     returnedAt: new Date(), returnReason: '请修改复查说明', supplementRevisions: [],
-    moduleData: { abnormal_followup: { enabled: true, records: [{ items: '尿酸复查', time: '2027-01-26', reason: '原依据' }] } } };
+    moduleData: { abnormal_followup: { enabled: true, records: [{ items: '尿酸复查', time: '2027-01-26', reason: '原依据' }] }, annual_checkup: { enabled: true, date: '2027-05-01', institution: '原体检机构', focus: '原重点' } } };
   let role = 'familyDoctor'; let visible = [patientId]; let update; let notification;
-  const paths = ['../src/middleware/staffAuth', '../src/models/AnnualPlan', '../src/models/PushRecord'].map(p => require.resolve(p));
+  const paths = ['../src/middleware/staffAuth', '../src/models/AnnualPlan', '../src/models/PushRecord', '../src/models/Admin', '../src/models/User'].map(p => require.resolve(p));
   const prior = paths.map(p => require.cache[p]);
   const mocks = [
     (req, res, next) => { req.staff = { _id: advisorId, role }; next(); },
     { findOne: () => ({ select: () => ({ lean: async () => plan }) }),
       findOneAndUpdate: (query, changes) => { update = { query, changes }; return { select: async () => ({ ...plan, moduleData: changes.$set.moduleData, returnedAt: null, returnReason: '' }) }; } },
     { create: async row => { notification = row; } },
+    { findById: () => ({ select: () => ({ lean: async () => ({ _id: managerId, role: 'healthManager', tenantId, staffStatus: 'active' }) }) }) },
+    { findById: () => ({ select: () => ({ lean: async () => ({ _id: patientId, tenantId }) }) }) },
   ];
   paths.forEach((p, i) => { require.cache[p] = { id: p, filename: p, loaded: true, exports: mocks[i] }; });
   const routePath = require.resolve('../src/routes/reviewPlanAmendments');
@@ -45,10 +47,16 @@ test('顾问只修订本人客户的一项，保留日期和已发布状态并�
   const oldMode = process.env.MANAGEMENT_REVIEW_MODE, oldIds = process.env.MANAGEMENT_REVIEW_PATIENT_IDS;
   process.env.MANAGEMENT_REVIEW_MODE = 'phase_assessment'; process.env.MANAGEMENT_REVIEW_PATIENT_IDS = patientId;
   t.after(() => { if (oldMode === undefined) delete process.env.MANAGEMENT_REVIEW_MODE; else process.env.MANAGEMENT_REVIEW_MODE = oldMode; if (oldIds === undefined) delete process.env.MANAGEMENT_REVIEW_PATIENT_IDS; else process.env.MANAGEMENT_REVIEW_PATIENT_IDS = oldIds; });
-  const relocated = await call({ item: { ...body.item, date: '2027-02-26', timingReason: '专家建议调整复查时间', location: { hospital: '浙江省人民医院', department: '风湿免疫科' } } });
+  const checkup = await call({ item: { key: 'annual_checkup', date: '2027-05-02', institution: '新体检机构', focus: '核对重点', delivery: { hospital: '新体检机构', campus: '东院区', department: '', expert: '', followUpStaff: managerId, bookingRequired: true, serviceMode: 'managed', serviceType: '', managedServiceType: 'checkup' } } });
+  assert.equal(checkup.status, 200, JSON.stringify(checkup));
+  assert.equal(update.changes.$set.moduleData.annual_checkup.campus, '东院区');
+  assert.equal(update.changes.$set.moduleData.annual_checkup.managedServiceType, 'checkup');
+  const relocated = await call({ item: { ...body.item, date: '2027-02-26', delivery: { hospital: '浙江省人民医院', campus: '朝晖院区', department: '风湿免疫科', expert: '李医生', followUpStaff: managerId, bookingRequired: true, serviceMode: 'single', serviceType: 'escort_exam', managedServiceType: '' } } });
   assert.equal(relocated.status, 200, JSON.stringify(relocated));
   assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].time, '2027-02-26');
   assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].hospital, '浙江省人民医院');
   assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].department, '风湿免疫科');
+  assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].campus, '朝晖院区');
+  assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].followUpStaff, managerId);
   assert.equal(update.changes.$push.supplementRevisions.executionReview.status, 'pending');
 });

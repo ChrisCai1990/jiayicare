@@ -71,7 +71,10 @@ export default function PublishedAnnualConsensus({ patientId, plan, topics, onSa
       <div style={{ fontSize: 12, color: '#62776A' }}>先选本次要沟通的一个主题。后续每次沟通后，再决定继续或选择下一主题。</div>
       <label>客户当前理解<textarea className="form-input" rows={2} maxLength={1000} value={draft.currentUnderstanding} onChange={event => setDraft({ ...draft, currentUnderstanding: event.target.value })} /></label>
       <label>客户顾虑<textarea className="form-input" rows={2} maxLength={1000} value={draft.concern} onChange={event => setDraft({ ...draft, concern: event.target.value })} /></label>
-      <label>本次沟通主题<input className="form-input" list="annual-consensus-topics" maxLength={120} value={currentTopic} onChange={event => setCurrentTopic(event.target.value)} placeholder="从建议主题中选一个，也可填写客户专属主题" /><datalist id="annual-consensus-topics">{topics.map(topic => <option key={topic} value={topic} />)}</datalist></label>
+      <fieldset style={{ border: '1px solid #DCE8DF', borderRadius: 10, padding: 12 }}><legend>本次沟通主题（选一个）</legend>
+        <div style={{ display: 'grid', gap: 8 }}>{topics.map(topic => <label key={topic} style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}><input type="radio" name="annual-consensus-current-topic" checked={currentTopic === topic} onChange={() => setCurrentTopic(topic)} />{topic}</label>)}</div>
+        <label style={{ display: 'block', marginTop: 10 }}>客户专属主题<input className="form-input" maxLength={120} value={topics.includes(currentTopic) ? '' : currentTopic} onChange={event => setCurrentTopic(event.target.value)} placeholder="可自行填写" /></label>
+      </fieldset>
       <label>沟通方式<select className="form-input" value={draft.method} onChange={event => setDraft({ ...draft, method: event.target.value })}><option value="电话">电话</option><option value="到店">到店</option><option value="上门">上门</option></select></label>
       <label>沟通频率<input className="form-input" maxLength={100} value={draft.frequency} onChange={event => setDraft({ ...draft, frequency: event.target.value })} /></label>
       <label>首次沟通日期<input className="form-input" type="date" min={new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date())} value={draft.firstDate} onChange={event => setDraft({ ...draft, firstDate: event.target.value })} /></label>
