@@ -167,7 +167,7 @@ export default function ServiceGroupPage() {
     finally { setBusy(false); }
   };
 
-  return <View onClick={()=>setEmojiOpen(false)} style={{ position:'relative',height: process.env.TARO_ENV === 'h5' ? (viewportHeight?viewportHeight+'px':'100vh') : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
+  return <View onClick={()=>{setEmojiOpen(false);setQuoteMenu(null);}} style={{ position:'relative',height: process.env.TARO_ENV === 'h5' ? (viewportHeight?viewportHeight+'px':'100vh') : '100vh', overflow: 'hidden', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', backgroundColor: colors.background }}>
     <View style={{ padding: `${safeHeaderTop + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', position: 'relative', zIndex: 30, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <BackButton onClick={back} destination={!group ? "/pages/chat/index" : undefined} />
       <Text style={{ color: colors.textPrimary, fontSize: '16px', fontWeight: 700, flex: 1, textAlign: 'center' }}>{group?.name || '我的服务群'}</Text>
@@ -199,8 +199,9 @@ export default function ServiceGroupPage() {
           style={{ flex:1,height:0,minHeight:0,overflowY:'auto',WebkitOverflowScrolling:'touch',overscrollBehavior:'contain',padding:'12px 16px 24px',boxSizing:'border-box' }}>
           <View id="group-message-content">
           {older&&<Text onClick={loadEarlier} style={{display:'block',textAlign:'center',padding:'10px',color:colors.primary}}>{loadingEarlier?"正在加载…":"查看更早消息"}</Text>}
-          {messages.map(message => <View onLongPress={()=>group.status!=='closed'&&setQuoteMenu(message)} id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
+          {messages.map(message => <View onClick={event=>event.stopPropagation()} onLongPress={()=>group.status!=='closed'&&setQuoteMenu(message)} id={`group-msg-${message.id}`} key={message.id} style={{ maxWidth: '85%', marginBottom: '10px', marginLeft: message.senderType === 'customer' ? 'auto' : 0,
             padding: '10px 12px', borderRadius: `${radius.sm}px`, backgroundColor: message.senderType === 'customer' ? '#D8EFE4' : '#fff' }}>
+            {quoteMenu?.id===message.id&&<View onClick={event=>event.stopPropagation()} style={{padding:'8px 10px',marginTop:'8px',borderRadius:'6px',background:'#34473f',color:'#fff',display:'flex',gap:'24px',width:'fit-content'}}><Text onClick={()=>{setQuote(message);setQuoteMenu(null);}}>引用</Text><Text onClick={()=>setQuoteMenu(null)}>取消</Text></View>}
             {String(unreadAnchor) === String(message.id) && <Text style={{ display: 'block', color: '#B42318', fontSize: '12px', marginBottom: '6px' }}>以下为未读消息</Text>}
             {message.senderAvatar && <Image src={mediaUrl(message.senderAvatar)} mode="aspectFill" style={{ width: '36px', height: '36px', borderRadius: '50%', marginBottom: '5px' }} />}
             <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName}{message.senderType !== 'customer' && ` · ${({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',specialist:'专科医师',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
@@ -219,7 +220,6 @@ export default function ServiceGroupPage() {
         </MessageScroll>
         <View style={{position:"relative",flexShrink:0}}>{hasNewMessage&&<Text onClick={()=>{setHasNewMessage(false);followLatest.current=true;setScrollRequest({target:"group-msg-"+lastMessage.current,bottom:true});}} style={{position:"absolute",right:"12px",bottom:"8px",padding:"8px 12px",background:"#fff",borderRadius:"8px",color:colors.primary,fontSize:"12px",boxShadow:"0 2px 8px #0002"}}>↓ 有新消息</Text>}</View>
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
-        {quoteMenu&&<View style={{padding:'10px',background:'#fff',display:'flex',gap:'20px'}}><Text onClick={()=>{setQuote(quoteMenu);setQuoteMenu(null);}}>引用</Text><Text onClick={()=>setQuoteMenu(null)}>取消</Text></View>}
         {quote&&<View style={{padding:'8px',background:'#eef1ef',display:'flex',gap:'10px'}}><Text style={{flex:1,fontSize:'12px'}}>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)}</Text><Text onClick={()=>setQuote(null)}>取消引用</Text></View>}
         <GroupMaterialUpload key={group.id} groupId={group.id} onSent={()=>{followLatest.current=true;refresh();}} />
         {emojiOpen&&<View onClick={event=>event.stopPropagation()} style={{display:'flex',flexWrap:'wrap',flexShrink:0,padding:'8px',background:'#fff'}}>{emojis.map(emoji=><Text key={emoji} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))} style={{fontSize:'24px',padding:'8px'}}>{emoji}</Text>)}</View>}
