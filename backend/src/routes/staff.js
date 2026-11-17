@@ -19129,6 +19129,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
 router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
   try {
     const { isPdfReport } = require('../utils/pdf');
+    const { isImageReport } = require('../utils/reportImageType');
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
@@ -19138,8 +19139,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const forceOutpatientParse = req.body?.forceOutpatientParse === true
       && report.documentCategory === 'outpatient_record' && report.audit_status !== 'audited';
 
-    const hasFile = !!report.fileUrl || !!report.content;
-    const isImage = report.mimeType?.startsWith('image/');
+    const hasFile = !!report.fileUrl || !!report.fileUrls?.length || !!report.content;
+    const isImage = isImageReport(report);
     const isPdf = isPdfReport(report);
 
     if (!hasFile) {
