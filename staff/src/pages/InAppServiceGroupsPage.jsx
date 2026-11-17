@@ -1,7 +1,7 @@
 import GroupVoiceInput from '../components/GroupVoiceInput';
 import GroupVoiceMessage from '../components/GroupVoiceMessage';
 import ServiceGroupHistory from '../components/ServiceGroupHistory';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { API_ORIGIN, inAppServiceGroupAPI as api, staffAPI } from '../api';
 import './ServiceAssistantPage.css';
 import './InAppServiceGroupsPage.css';
@@ -47,6 +47,28 @@ export default function InAppServiceGroupsPage() {
   const [voiceMode,setVoiceMode]=useState(false);
   useEffect(()=>{if(!voiceMode&&!emojiOpen)draftInput.current?.focus();},[voiceMode]);
   const [draft, setDraft] = useState('');
+  useLayoutEffect(() => {
+    const input = draftInput.current;
+    if (!input) return;
+    const fit = () => {
+      const style = getComputedStyle(input);
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+      const line = parseFloat(style.lineHeight);
+      input.style.height = 'auto';
+      const height = Math.min(input.scrollHeight + border, line * 3 + padding + border);
+      input.style.height = `${height}px`;
+      input.style.overflowY = input.scrollHeight + border > height ? 'auto' : 'hidden';
+    };
+    fit();
+    let width = input.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth !== width) { width = input.clientWidth; fit(); }
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [draft, voiceMode, selected?.id, selected?.supervised, selected?.status]);
+
   const [scope, setScope] = useState(() => new URLSearchParams(window.location.search).get('scope') === 'pending' ? 'pending' : 'all');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -247,17 +269,16 @@ export default function InAppServiceGroupsPage() {
           {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} initialMessageId={historyAnchor} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
           <div className="sg-chat-header">
             <div className="sg-chat-heading"><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
-              <div className="sg-chat-meta"><small>客户：{selected.patientName}</small>
-              <small>团队：{selected.staff.map(memberLabel).join('、')}</small></div></div>
+              {selected.assistant && <div className="sg-assistant-status">
+                <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} />
+                <small>{selected.supervised ? '小嘉 · AI接待不受监管查看影响' : '小嘉 · 人工接待中，@小嘉协助；离开后恢复自动接待'}</small>
+              </div>}
+            </div>
             <div className="sg-chat-actions">
             <button type="button" aria-label="群聊更多" onClick={()=>setHistoryOpen(true)}>…</button>
             {selected.canConfigure && selected.status !== 'closed' && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
             </div>
           </div>
-          {selected.assistant && <div className="sg-assistant-status">
-            <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} />
-            <small>{selected.supervised ? '小嘉 · AI接待不受监管查看影响' : '人工接待中 · 小嘉暂停自动回复，@小嘉可单次协助；离开后恢复自动接待'}</small>
-          </div>}
           <div className="sg-messages" ref={messagePane} onScroll={event => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 48; }}>
             {older&&<button onClick={()=>{followLatest.current=false;loadMessages(selected.id,messages[0]?.id);}}>查看更早消息</button>}
             {messages.length === 0 && <p className="sg-empty-messages">暂无消息，可以开始沟通。</p>}
@@ -284,7 +305,7 @@ export default function InAppServiceGroupsPage() {
               <button type="button" aria-label={voiceMode?'切换到键盘':'切换到语音'} title={voiceMode?'切换到键盘':'切换到语音'} style={{width:44,minWidth:44,height:44,padding:8,flexShrink:0}} onClick={()=>{setEmojiOpen(false);setShowMentions(false);setVoiceMode(v=>!v);}}>{voiceMode?<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M6 16h12"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg>}</button>
               <div ref={emojiPicker} className="sg-mention-picker"><button type="button" aria-label="选择表情" onClick={()=>{setEmojiOpen(v=>!v);setShowMentions(false);setVoiceMode(false);}}>☺</button>{emojiOpen&&<div style={{display:'flex',flexWrap:'wrap'}}>{emojis.map(emoji=><button key={emoji} style={{width:48,minWidth:48,fontSize:22}} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))}>{emoji}</button>)}</div>}{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
               <div style={{display:'flex',flexDirection:'column',flex:1,minWidth:0}}>{quote&&<div>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)} <button onClick={()=>setQuote(null)}>取消引用</button></div>}{voiceMode?<GroupVoiceInput key={selected.id} groupId={selected.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;loadMessages(selected.id);refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<textarea ref={draftInput} aria-label="服务群消息" onFocus={()=>setEmojiOpen(false)} onClick={()=>setEmojiOpen(false)} value={draft} onChange={e => {setDraft(e.target.value);const at=e.target.selectionStart-1;mentionPosition.current=e.target.value[at]==='@'?at:null;setShowMentions(mentionPosition.current!==null);if(mentionPosition.current!==null)setEmojiOpen(false);}}
-                maxLength={2000} rows={4} placeholder="给客户发送消息…" />}</div>
+                maxLength={2000} rows={1} placeholder="给客户发送消息…" />}</div>
               {!voiceMode&&<button type="button" className="sa-primary" disabled={busy || !draft.trim()} onClick={send}>发送</button>}
             </div>}
         </> : <p className="sg-select-prompt">从左侧选择一个服务群，查看对话记录。</p>}

@@ -102,13 +102,11 @@
   padding: 10px 14px;
   border-bottom: 1px solid #e3eae5;
 }
-.sg-chat-heading { flex: 1; min-width: 0; }
-.sg-chat-header h2 { margin: 0 0 3px; font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
-.sg-chat-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; }
-.sg-chat-meta small { margin: 0; line-height: 1.5; }
+.sg-chat-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; flex: 1; min-width: 0; }
+.sg-chat-header h2 { margin: 0; font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
 .sg-chat-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex-shrink: 0; max-width: 45%; }
 .service-assistant .sg-chat-actions button { padding: 6px 10px; min-height: 36px; margin: 0; }
-.sg-assistant-status { display: flex; align-items: center; gap: 7px; padding: 5px 14px; background: #eef9f9; }
+.sg-assistant-status { display: flex; align-items: center; gap: 7px; padding: 3px 8px; border-radius: 6px; background: #eef9f9; }
 .sg-assistant-status img { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
 .sg-assistant-status small { margin: 0; line-height: 1.5; }
 .sg-chat-header small { overflow-wrap: anywhere; }
@@ -141,7 +139,7 @@
   display: flex;
   align-items: flex-end;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 8px 12px;
   background: #fff;
   border-top: 1px solid #e3eae5;
 }
@@ -149,9 +147,14 @@
   flex: 1;
   width: auto;
   min-width: 0;
-  min-height: 64px;
-  height: 80px;
-  max-height: 120px;
+  box-sizing: border-box;
+  min-height: 44px;
+  height: 44px;
+  max-height: 88px;
+  padding: 10px 12px;
+  line-height: 22px;
+  resize: none;
+  overflow-y: hidden;
   margin: 0;
 }
 .service-assistant .sg-composer button { flex: 0 0 auto; min-width: 76px; }
@@ -180,7 +183,6 @@
   .in-app-service-groups > p { max-height: 42px; overflow-y: auto; font-size: 12px; }
   .sg-filters { margin: 8px 0; }
   .sg-chat-header { padding: 8px 12px; }
-  .service-assistant .sg-composer textarea { height: 64px; }
   .sg-composer { padding: 8px 12px; }
 }
 @media (max-width: 768px) {
