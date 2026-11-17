@@ -784,7 +784,7 @@ function normalizePackageAllocationNames(configuration) {
   if (!Array.isArray(configuration?.businessAllocations)) return configuration;
   return { ...configuration, businessAllocations: configuration.businessAllocations.map(row => ({ ...row,
     name: String(row.name || '').trim() || (row.businessType === 'enterprise' ? '企业资源'
-      : row.businessType === 'product' ? '产品／检测归属'
+      : row.businessType === 'product' ? (row.childProductId ? '产品／检测归属' : '')
         : `${PACKAGE_ALLOCATION_ROLE_NAMES[row.teamRole] || '服务团队'}管理服务`),
   })) };
 }
@@ -800,11 +800,11 @@ async function validatePackageBusinessAllocations(rows, tenantId) {
       || (row.businessType === 'enterprise' ? row.teamRole !== 'enterpriseResource' || !!row.childProductId
         : !roles.includes(row.teamRole))
       || !Number.isFinite(Number(row.revenueSharePercent)) || Number(row.revenueSharePercent) <= 0
-      || (row.businessType === 'product' && !mongoose.isValidObjectId(row.childProductId))))
-    return '业务归属项目须填写类型、负责团队和有效金额；产品项目须关联产品库';
+      || (row.businessType === 'product' && row.childProductId && !mongoose.isValidObjectId(row.childProductId))))
+    return '业务归属项目须填写名称、类型、负责团队和有效金额；关联产品须来自产品库';
   if (Math.abs(rows.reduce((sum, row) => sum + Number(row.revenueSharePercent), 0) - 100) > 0.001)
     return '服务、产品与资源归属比例合计须为100%';
-  const productIds = [...new Set(rows.filter(row => row.businessType === 'product').map(row => String(row.childProductId)))];
+  const productIds = [...new Set(rows.filter(row => row.businessType === 'product' && row.childProductId).map(row => String(row.childProductId)))];
   if (productIds.length) {
     const found = await Product.find({ _id: { $in: productIds }, tenantId }).select('_id').lean();
     if (found.length !== productIds.length) return '关联产品须来自本机构产品库';

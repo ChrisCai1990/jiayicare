@@ -860,6 +860,22 @@ test('online and offline partner payments, renewals, refunds and team incentives
           teamRole: 'enterpriseResource', revenueSharePercent: 100 }] } });
     assert.equal(resourcePackage.status, 200, JSON.stringify(resourcePackage.body));
     assert.equal(resourcePackage.body.data.configuration.businessAllocations[0].name, '企业资源');
+    const includedTesting = await call(clerkId, 'PUT', `/api/admin/service-packages/${memberPackageId}`,
+      { ...packagePayload, configuration: { ...packagePayload.configuration,
+        businessAllocations: [
+          packagePayload.configuration.businessAllocations[0],
+          { key: 'allergy', name: '慢性食物过敏检测', businessType: 'product',
+            teamRole: 'healthManager', revenueSharePercent: 40 },
+        ] } });
+    assert.equal(includedTesting.status, 200, JSON.stringify(includedTesting.body));
+    assert.equal(includedTesting.body.data.configuration.businessAllocations[1].name, '慢性食物过敏检测');
+    assert.equal(includedTesting.body.data.configuration.businessAllocations[1].childProductId, undefined);
+    const unnamedTesting = await call(clerkId, 'PUT', `/api/admin/service-packages/${memberPackageId}`,
+      { ...packagePayload, configuration: { ...packagePayload.configuration,
+        businessAllocations: [packagePayload.configuration.businessAllocations[0],
+          { key: 'unnamed', name: '', businessType: 'product',
+            teamRole: 'healthManager', revenueSharePercent: 40 }] } });
+    assert.equal(unnamedTesting.status, 400);
     const configuredPackage = await call(clerkId, 'PUT', `/api/admin/service-packages/${memberPackageId}`,
       packagePayload);
     assert.equal(configuredPackage.status, 200, JSON.stringify(configuredPackage.body));
