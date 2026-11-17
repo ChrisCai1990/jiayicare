@@ -49,7 +49,7 @@ export default function AnnualPlanTrackView({ actions, targets, renderAction, nu
     <h2 style={{ margin: '0 0 8px', fontSize: 20, color: '#1A2B24' }}>本年度管理方案</h2>
     <div style={{ fontSize: 13, color: '#62776A', marginBottom: 12 }}>管理问题 {targets.length} 项 · 年度行动 {actions.length} 项。一个问题可关联多条独立行动，各自跟进结果。</div>
     {targets.length === 0 && actions.length > 0 && <div role="status" style={{ padding: 10, borderRadius: 8, background: '#FFF5E8', color: '#8A5A18', fontSize: 13, marginBottom: 12 }}>历史方案尚未关联逐项管理目标。请先核对来源，再用于阶段评估。</div>}
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}>
       <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 12, padding: 14 }}><h3 style={{ margin: 0, fontSize: 18 }}>医疗服务</h3>{medical.map(renderGroup)}</div>
       <div style={{ background: '#fff', border: '1px solid #C7DCCF', borderRadius: 12, padding: 14 }}><h3 style={{ margin: 0, fontSize: 18 }}>健康管理</h3>{management.map(renderGroup)}
         <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测</strong><div style={{ marginTop: 6, color: '#52675D' }}>建档时已设置，沿现有每周监测接续。年度方案不重复建立监测任务。</div>{manualMonitoringEditor}</div>
