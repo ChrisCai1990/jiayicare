@@ -6,7 +6,7 @@ function activePlan(plans, period) {
     .sort((a, b) => new Date(b.confirmedAt) - new Date(a.confirmedAt))[0] || null;
 }
 
-function goalReviews(plans, followups, period, services = [], healthRecords = [], reports = [], metricSourcesIncomplete = false, observationRecords = [], observationSourcesIncomplete = false, linkedRehabOrders = []) {
+function goalReviews(plans, followups, period, services = [], healthRecords = [], reports = [], metricSourcesIncomplete = false, observationRecords = [], observationSourcesIncomplete = false, linkedRehabOrders = [], priorGoalReviews = []) {
   const plan = activePlan(plans, period);
   if (!plan) return [];
   const rows = plan.moduleData?.management_targets?.records || [];
@@ -20,6 +20,12 @@ function goalReviews(plans, followups, period, services = [], healthRecords = []
     const linkedServices = (services || []).filter(service => new Date(service.date) >= planStart
       && ((service.structuredContent?.rehab?.managementIssueIds || []).includes(row.issueId)
         || (rehabIssuesByOrder.get(id(service.structuredContent?.rehab?.orderId)) || []).includes(row.issueId)));
+    const prior = priorGoalReviews.find(review => (review.goalReviews || []).some(previous => previous.issueId === row.issueId
+      && id(previous.annualPlanId) === id(plan) && previous.goalDimension === row.goalDimension
+      && (row.goalDimension !== 'symptom' || String(previous.symptomTerm || '') === String(row.symptomTerm || ''))
+      && (row.goalDimension !== 'lifestyle' || String(previous.lifestyleType || '') === String(row.lifestyleType || ''))
+      && (row.goalDimension !== 'data' || JSON.stringify(previous.goalMetric || null) === JSON.stringify(row.goalMetric || null))));
+    const previousGoal = prior?.goalReviews.find(previous => previous.issueId === row.issueId && id(previous.annualPlanId) === id(plan));
     return {
       issueId: row.issueId, annualPlanId: id(plan), goal: String(row.goal).slice(0, 240),
       goalDimension: ['data', 'symptom', 'lifestyle'].includes(row.goalDimension) ? row.goalDimension : '',
@@ -32,6 +38,9 @@ function goalReviews(plans, followups, period, services = [], healthRecords = []
         ? require('./managementObservationEvidence').summarize(activeObservations, 'symptom', row.symptomTerm, observationSourcesIncomplete, period)
         : row.goalDimension === 'lifestyle' && row.lifestyleType
           ? require('./managementObservationEvidence').summarize(activeObservations, row.lifestyleType, '', observationSourcesIncomplete, period) : null,
+      previousEvidence: previousGoal ? { label: String(prior.label || prior.end || '').slice(0, 60),
+        observationEvidence: previousGoal.observationEvidence || null,
+        metricLatest: previousGoal.metricEvidence?.ambiguous ? null : previousGoal.metricEvidence?.latest || null } : null,
       taskEvidence: tasks.slice(0, 20).map(task => ({
         followUpId: id(task), date: task.date,
         status: task.completedAt && new Date(task.completedAt) > periodEnd ? 'period_end_pending' : task.status,

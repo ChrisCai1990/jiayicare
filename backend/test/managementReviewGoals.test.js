@@ -67,3 +67,24 @@ test('published rehab record remains attributable when its order is linked after
     [{ _id: 'order-1', rehabAnnualLink: { annualPlanId: 'another-plan', issueIds: ['rehab-1'] } }]);
   assert.equal(other.serviceEvidence.length, 0);
 });
+
+test('compares only a finalized prior review of the same annual issue and tracking definition', () => {
+  const plans = [{ _id: 'plan-1', confirmedAt: '2026-08-01', moduleData: { management_targets: { records: [
+    { issueId: 'sleep-1', goal: '改善睡眠', goalDimension: 'lifestyle', lifestyleType: 'sleep' },
+  ] } } }];
+  const period = { start: '2026-10-01', end: '2026-10-31' };
+  const observations = [{ type: 'sleep', value: '8.0', recordedAt: '2026-10-10T02:00:00Z' }];
+  const prior = [{ label: '2026年9月', end: '2026-09-30', goalReviews: [
+    { issueId: 'sleep-1', annualPlanId: 'plan-1', goalDimension: 'lifestyle', lifestyleType: 'sleep', observationEvidence: { days: 20, periodDays: 30, count: 20 } },
+  ] }];
+  const [current] = goalReviews(plans, [], period, [], [], [], false, observations, false, [], prior);
+  assert.equal(current.previousEvidence.label, '2026年9月');
+  assert.equal(current.previousEvidence.observationEvidence.days, 20);
+  assert.equal(current.outcome, 'unverified');
+  const [changedTracking] = goalReviews(plans, [], period, [], [], [], false, observations, false, [],
+    [{ ...prior[0], goalReviews: [{ ...prior[0].goalReviews[0], lifestyleType: 'mood' }] }]);
+  assert.equal(changedTracking.previousEvidence, null);
+  const [differentPlan] = goalReviews(plans, [], period, [], [], [], false, observations, false, [],
+    [{ ...prior[0], goalReviews: [{ ...prior[0].goalReviews[0], annualPlanId: 'plan-2' }] }]);
+  assert.equal(differentPlan.previousEvidence, null);
+});

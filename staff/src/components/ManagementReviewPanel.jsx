@@ -10,7 +10,7 @@ function GoalMetricEvidence({goal}) {
  if(!goal.goalMetric)return null
  if(!evidence?.count)return <p>本期指标：没有同名且同单位的可比数值，需核对原始记录。{evidence?.incomplete?'资料达到读取上限，当前对照可能不完整。':''}</p>
  if(evidence.ambiguous)return <p>本期指标：同一天的已审核报告存在多个不同数值，系统未选择其中一个作为末次值，请核对原始报告。</p>
- return <p>本期指标：{evidence.first.date} {evidence.first.value} {evidence.first.unit} → {evidence.latest.date} {evidence.latest.value} {evidence.latest.unit}{evidence.change!==null?`；变化 ${evidence.change>0?'+':''}${evidence.change} ${evidence.latest.unit}`:''}{evidence.target?`；顾问设定目标 ${metricOperators[evidence.target.operator]} ${evidence.target.value} ${evidence.target.unit}，当前与目标相差 ${evidence.target.difference} ${evidence.target.unit}`:''}。数值对照不代替健康顾问判断。{evidence.incomplete?'资料达到读取上限，当前对照可能不完整。':''}</p>
+ return <p>本期指标：{evidence.first.date} {evidence.first.value} {evidence.first.unit} → {evidence.latest.date} {evidence.latest.value} {evidence.latest.unit}{evidence.change!==null?`；变化 ${evidence.change>0?'+':''}${evidence.change} ${evidence.latest.unit}`:''}{goal.previousEvidence?.metricLatest?`；前次已归档${goal.previousEvidence.label}末值 ${goal.previousEvidence.metricLatest.value} ${goal.previousEvidence.metricLatest.unit}`:''}{evidence.target?`；顾问设定目标 ${metricOperators[evidence.target.operator]} ${evidence.target.value} ${evidence.target.unit}，当前与目标相差 ${evidence.target.difference} ${evidence.target.unit}`:''}。数值对照不代替健康顾问判断。{evidence.incomplete?'资料达到读取上限，当前对照可能不完整。':''}</p>
 }
 const observationLabels={diet:'饮食',exercise:'运动',sleep:'睡眠',smoking:'吸烟',alcohol:'饮酒',mood:'情绪'}
 function GoalObservationEvidence({goal}) {
@@ -18,7 +18,8 @@ function GoalObservationEvidence({goal}) {
  const evidence=goal.observationEvidence
  if(!evidence)return <p>本期记录对照：尚未指定生活方式记录类别，需由顾问核对。</p>
  const scope=goal.goalDimension==='symptom'?(goal.symptomTerm?`含“${goal.symptomTerm}”的主诉候选`:'全部主诉记录（未指定症状关键词）'):`${observationLabels[goal.lifestyleType]||goal.lifestyleType}记录`
- return <p>本期{scope}：覆盖 {evidence.days}{evidence.periodDays?` / ${evidence.periodDays}`:''} 天，共 {evidence.count} 条{evidence.common?.length?`；较常见的填写内容：${evidence.common.map(item=>`${item.value}（${item.count}条）`).join('、')}`:''}{evidence.latest?`；末次记录 ${evidence.latest.date} ${evidence.latest.value}${evidence.latest.unit||''}`:''}。{goal.goalDimension==='symptom'?'关键词匹配仅提供候选线索，需核对是否为同一症状。':'只反映已填写情况，需结合目标和基线判断。'}{evidence.incomplete?'资料达到读取上限，对照可能不完整。':''}</p>
+ const previous=goal.previousEvidence?.observationEvidence
+ return <p>本期{scope}：覆盖 {evidence.days}{evidence.periodDays?` / ${evidence.periodDays}`:''} 天，共 {evidence.count} 条{evidence.common?.length?`；较常见的填写内容：${evidence.common.map(item=>`${item.value}（${item.count}条）`).join('、')}`:''}{evidence.latest?`；末次记录 ${evidence.latest.date} ${evidence.latest.value}${evidence.latest.unit||''}`:''}。{previous?`前次已归档${goal.previousEvidence.label}覆盖 ${previous.days}${previous.periodDays?` / ${previous.periodDays}`:''} 天、${previous.count} 条；两期填写情况需结合基线核对。`:''}{goal.goalDimension==='symptom'?'关键词匹配仅提供候选线索，需核对是否为同一症状。':'只反映已填写情况，需结合目标和基线判断。'}{evidence.incomplete||previous?.incomplete?'资料达到读取上限，对照可能不完整。':''}</p>
 }
 const fields={action:'本岗位行动 / 分析重点',execution:'专项筛查复查 / 日常健康数据 / 体成分 / 不适主诉',lifestyle:'饮食 / 运动 / 睡眠 / 烟酒 / 情绪',reason:'未完成原因 / 变化原因（区分已核实与待核实）',impact:'影响与待解决问题',feedback:'客户反馈与处理结果',evidence:'依据：来源记录、日期及已核实事实',next:'下一步建议'}
 const evidenceText=s=>[typeof s.content==='string'?s.content:'',s.executedContent, ...Object.values(s.sections||{}),...(s.items||s.reportItems||[]).map(x=>[x.name,x.value,x.unit,x.status,x.scheduledDate?.slice(0,10),x.notes].filter(Boolean).join(' · '))].filter(Boolean).join('\n') || '请结合客户完整方案或原始报告核对具体内容。'

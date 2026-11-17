@@ -14,7 +14,7 @@ async function userFor(req) {
 }
 async function sources(user,period) {
  const range={$gte:new Date(period.start+'T00:00:00+08:00'),$lt:new Date(Date.parse(period.end+'T00:00:00+08:00')+86400000)};
- const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans]=await Promise.all([
+ const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans,priorGoalReviews]=await Promise.all([
  Phase.find({patientId:user._id}).select('periodKey periodLabel status content createdAt finalizedAt').sort({createdAt:1}).lean(),
  Monthly.find({patientId:user._id,month:{$gte:period.start.slice(0,7),$lte:period.end.slice(0,7)}}).lean(),
  require('../models/HealthPlan').find({patientId:user._id,createdAt:{$lt:range.$lt}}).select('type title items content createdAt startDate endDate status pushedAt confirmedAt').sort({createdAt:-1}).limit(40).lean(),
@@ -25,7 +25,8 @@ async function sources(user,period) {
  require('../models/Feedback').find({user:user._id,createdAt:range}).select('type content status reply handlingResult createdAt repliedAt resultAt').sort({createdAt:1}).limit(100).lean(),
  require('../models/NutritionInterventionDraft').find({patientId:user._id,status:'published',publishedAt:{$lt:range.$lt}}).select('actions reviewDate approvedAt publishedAt').sort({publishedAt:-1}).limit(10).lean(),
  Review.find({patientId:user._id,kind:'monthly',start:{$gte:period.start},end:{$lte:period.end}}).select('periodKey label start end status focus contributions summary actions finalizedAt').sort({start:1}).lean(),
- require('../models/AnnualPlan').find({patientId:user._id,confirmedAt:{$ne:null,$lt:range.$lt}}).select('year confirmedAt moduleData.management_targets').sort({confirmedAt:-1}).limit(3).lean()
+ require('../models/AnnualPlan').find({patientId:user._id,confirmedAt:{$ne:null,$lt:range.$lt}}).select('year confirmedAt moduleData.management_targets').sort({confirmedAt:-1}).limit(3).lean(),
+ Review.find({patientId:user._id,status:'finalized',end:{$lt:period.start}}).select('label end goalReviews').sort({end:-1}).limit(24).lean()
  ]);
  const goalPlan=require('../utils/managementReviewGoals').activePlan(annualPlans,period);
  const goalMetrics=(goalPlan?.moduleData?.management_targets?.records||[]).filter(row=>row.goalDimension==='data'&&require('../utils/managementGoalMetrics').validate(row.goalMetric)).map(row=>row.goalMetric).filter(Boolean);
@@ -40,7 +41,7 @@ async function sources(user,period) {
   hasRehabGoal?require('../models/Order').find({user:user._id,'rehabAnnualLink.annualPlanId':goalPlan._id}).select('rehabAnnualLink').lean():[],
  ]);
  const metricSourcesIncomplete=metricHealthRecords.length===10000||metricReports.length===1000;
- return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans,metricHealthRecords,metricReports,metricSourcesIncomplete,observationRecords,observationSourcesIncomplete:observationRecords.length===10000,linkedRehabOrders,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
+ return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans,priorGoalReviews,metricHealthRecords,metricReports,metricSourcesIncomplete,observationRecords,observationSourcesIncomplete:observationRecords.length===10000,linkedRehabOrders,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
 }
 router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
  if(!policy.enabled(req.params.id))return res.json({success:true,enabled:false,restored:policy.restored(req.params.id)});
@@ -48,7 +49,7 @@ router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
  const preparations=policy.advisor(user,req.staff)?await require('../models/ManagementReviewPreparation').find({patientId:user._id}).lean():[];
  res.json({success:true,enabled:true,data:{patientName:user.name,serviceStart:user.serviceStartDate,serviceEnd:user.serviceExpiry,periods:policy.periods(user),rows,preparations,labels:policy.labels,assigned:Object.fromEntries(Object.entries(policy.fields).map(([r,f])=>[r,!!user[f]])),canReview:policy.advisor(user,req.staff),role:req.staff.role}});
 }));
-router.get('/patients/:id/management-reviews/sources',wrap(async(req,res)=>{const user=await userFor(req),period=policy.periods(user).find(x=>x.key===req.query.period);if(!period)fail('周期无效');const {metricHealthRecords,metricReports,observationRecords,linkedRehabOrders,...data}=await sources(user,period);res.json({success:true,data});}));
+router.get('/patients/:id/management-reviews/sources',wrap(async(req,res)=>{const user=await userFor(req),period=policy.periods(user).find(x=>x.key===req.query.period);if(!period)fail('周期无效');const {metricHealthRecords,metricReports,observationRecords,linkedRehabOrders,priorGoalReviews,...data}=await sources(user,period);res.json({success:true,data});}));
 router.post('/patients/:id/management-reviews/prepare',wrap(async(req,res)=>{
  const user=await userFor(req),period=policy.periods(user).find(p=>p.key===req.body.periodKey);
  if(!policy.advisor(user,req.staff))fail('仅健康顾问可准备季度年度评估',403);
@@ -74,7 +75,7 @@ router.post('/patients/:id/management-reviews',wrap(async(req,res)=>{
  const focus=text(req.body.focus||(period.kind==='monthly'?'待AI整理本期重点':''),200);if(!focus)fail('请填写本周期重点');
  const questions={};for(const role of roles){questions[role]=text(req.body.questions?.[role]||'',3000);if(period.kind!=='monthly'&&!questions[role])fail('请明确分发给'+policy.labels[role]+'的问题');}
  const origin=await sources(user,period);
- const goalReviews=require('../utils/managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services,origin.metricHealthRecords,origin.metricReports,origin.metricSourcesIncomplete,origin.observationRecords,origin.observationSourcesIncomplete,origin.linkedRehabOrders);
+ const goalReviews=require('../utils/managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services,origin.metricHealthRecords,origin.metricReports,origin.metricSourcesIncomplete,origin.observationRecords,origin.observationSourcesIncomplete,origin.linkedRehabOrders,origin.priorGoalReviews);
  const row=await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus,roles,questions,goalReviews,sources:{phase:origin.phase.map(x=>x._id),monthly:origin.monthly.map(x=>x._id)},audit:[{action:'created',by:req.staff._id,at:new Date(),note:req.body.includeRehab?req.body.rehabBasis:''}]});
  try {const draft=await require('../utils/managementReviewAI').generate({Review,user,row:row.toObject(),staff:req.staff,source:origin,roles});res.status(201).json({success:true,data:draft});}
  catch(e){res.status(201).json({success:true,data:await Review.findById(row._id),warning:'周期已建立，AI草稿生成未完成：'+e.message});}
