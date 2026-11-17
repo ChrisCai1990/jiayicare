@@ -28,6 +28,7 @@ test('medication reminder stays in one task until verified pickup, then closes w
   const done = await saveProgress({ ...s.args, body: { ...s.args.body, updatedAt: first.updatedAt, requestId: 'pickup-001', outcome: 'obtained', visitConfirmed: true } });
   assert.equal(done.status, 'completed');
   assert.equal(done.completedBy, 'staff');
+  assert.equal(done.completedByStaffId, 'manager');
   assert.ok(done.completedAt);
   assert.equal(done.careFlowId, undefined);
 });

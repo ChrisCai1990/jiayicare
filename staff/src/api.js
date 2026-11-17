@@ -241,6 +241,7 @@ export const staffAPI = {
   getRelatedReportFollowUps: id => req(`/staff/report-followups/${id}/related-followups`),
   getRelatedReportFollowUpDetail: (draftId, taskId) => req(`/staff/report-followups/${draftId}/related-followups/${taskId}`),
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
+  continueFollowUp:    (id, data) => req(`/staff/followups/${id}/continue`, { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   completeMonitoringFollowUp: (id, d) => req(`/staff/followups/${id}/monitoring-result`, { method: 'POST', body: JSON.stringify(d) }),
   getDecisionReferralTask: id => req(`/staff/decision-referral/tasks/${id}`),

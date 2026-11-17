@@ -2275,6 +2275,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .limit(Number(limit))
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
+      .populate('completedByStaffId', 'name role')
       .populate('sourceHealthPlanId', 'title description content type status')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
@@ -2396,6 +2397,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('patientId', 'name phone gender age chronicDiseases')
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
+      .populate('completedByStaffId', 'name role')
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
@@ -2506,6 +2508,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     status: finalStatus,
     completedAt: finalStatus === 'completed' ? new Date() : null, // 完成态记录完成时间
     completedBy: finalStatus === 'completed' ? 'staff' : null,
+    completedByStaffId: finalStatus === 'completed' ? req.staff._id : null,
     content: content || '',
     theme: theme || '',
     cancelReason: cancelReason || '',
@@ -2817,12 +2820,67 @@ router.post('/followups/:id/monitoring-result', staffAuth, checkPermission('foll
   }
 });
 
+// 一次续建同时固化旧计划未完成原因、关闭旧待办、建立有独立创建人的新计划。
+router.post('/followups/:id/continue', staffAuth, checkPermission('followups', 'create'), async (req, res) => {
+  const reason = String(req.body?.unfinishedReason || '').trim();
+  const content = String(req.body?.content || '').trim();
+  const theme = String(req.body?.theme || '').trim();
+  const date = String(req.body?.date || '');
+  const type = String(req.body?.type || 'phone');
+  if (!reason || reason.length > 5000 || !content || !theme || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+    || !Number.isFinite(new Date(date).getTime()) || new Date(date).toISOString().slice(0, 10) !== date
+    || !['phone', 'wechat', 'visit', 'video', 'other'].includes(type)) {
+    return res.status(400).json({ success: false, message: '请填写未完成原因、新计划日期、主题、内容及随访方式' });
+  }
+  const assignee = await Admin.findById(req.body?.assignedTo).select('_id name role').lean().catch(() => null);
+  if (!assignee) return res.status(400).json({ success: false, message: '请选择有效的随访执行人' });
+  const session = await FollowUp.startSession();
+  let successor;
+  try {
+    await session.withTransaction(async () => {
+      const original = await FollowUp.findById(req.params.id).session(session);
+      if (!original) throw Object.assign(new Error('原随访计划不存在'), { statusCode: 404 });
+      if (req.staff.role !== 'superadmin' && String(original.assignedTo || original.staffId) !== String(req.staff._id))
+        throw Object.assign(new Error('仅当前随访执行人可记录未完成原因并续建'), { statusCode: 403 });
+      if (!['planned', 'in_progress', 'missed'].includes(original.status) || original.continuedByFollowUpId)
+        throw Object.assign(new Error('原计划已结束或已续建，请刷新后查看'), { statusCode: 409 });
+      if (original.taskRole || original.workflowKey || original.careFlowId || original.aiStatus === 'pending'
+        || original.serviceTracking?.status === 'waiting' || original.repeatDaily || original.repeatWeekly
+        || require('../utils/followUpContinuity').requiresOutcomeReview(original))
+        throw Object.assign(new Error('此计划关联专用流程，请在原流程记录并处理后续安排'), { statusCode: 409 });
+      const now = new Date();
+      const unfinishedRecord = { requestId: require('crypto').randomUUID(), content: reason, type: original.type,
+        staffId: req.staff._id, staffName: req.staff.name || '', recordedAt: now, outcome: 'deferred' };
+      original.progressRecords = [...(original.progressRecords || []), unfinishedRecord];
+      original.plannedContent = original.plannedContent || original.content || '';
+      original.status = 'cancelled';
+      original.cancelReason = `未完成后续建：${reason}`;
+      successor = new FollowUp({ tenantId: original.tenantId, patientId: original.patientId,
+        staffId: req.staff._id, assignedTo: assignee._id, date: new Date(date), type, status: 'planned',
+        theme, content, plannedContent: content, clientVisible: original.clientVisible,
+        followUpSchemeId: original.followUpSchemeId, formData: original.formData,
+        tags: original.tags, checkInItems: original.checkInItems,
+        predecessorFollowUpId: original._id,
+        predecessorUnfinishedRecord: { content: reason, staffId: req.staff._id,
+          staffName: req.staff.name || '', recordedAt: now, progressRequestId: unfinishedRecord.requestId } });
+      await successor.save({ session });
+      original.continuedByFollowUpId = successor._id;
+      await original.save({ session });
+    });
+    await successor.populate([{ path: 'staffId', select: 'name role' }, { path: 'assignedTo', select: 'name role' }]);
+    res.json({ success: true, data: successor });
+  } catch (error) {
+    res.status(error.statusCode || (error.code === 11000 ? 409 : 500)).json({ success: false, message: error.code === 11000 ? '该计划已经续建，请刷新后查看' : error.message });
+  } finally { await session.endSession(); }
+});
+
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 历史任务的 staffId/assignedTo 可能以字符串保存，而当前账号 _id 是 ObjectId。
   // 先按任务 ID 读取，再统一转成字符串校验；否则负责人明明正确也会被 Mongoose
   // 查询强制转换后误报“随访记录不存在”。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (followUp.continuedByFollowUpId) return res.status(409).json({ success: false, message: '原计划已续建，记录已封存，请在新计划中继续处理' });
   if (followUp.repeatWeekly && followUp.weeklyTemplate && followUp.clientVisible === false
     && (followUp.checkInItems || []).some(item => ['bloodPressure', 'weight'].includes(item))
     && req.body.status === 'completed' && !followUp.monitoringResult) {
@@ -3149,9 +3207,11 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     if (!followUp.completedAt) followUp.completedAt = new Date();
     // 医护端在这里把状态改成completed，即为专员执行完成；不覆盖已经是'user'的情况（理论上不会走到这，用户端走的是另一个接口）
     if (!followUp.completedBy) followUp.completedBy = 'staff';
+    if (!followUp.completedByStaffId && previousStatus !== 'completed') followUp.completedByStaffId = req.staff._id;
   } else {
     followUp.completedAt = null;
     followUp.completedBy = null;
+    followUp.completedByStaffId = null;
   }
   await followUp.save();
   if (followUp.sourceType === 'insurance_service' && followUp.taskRole === 'executor' && followUp.status === 'completed') {
@@ -3616,6 +3676,8 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
   // 还错误提示“随访记录不存在”。删除权限改为与客户详情相同的服务团队范围。
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
+  if (followUp.predecessorFollowUpId || followUp.continuedByFollowUpId)
+    return res.status(409).json({ success: false, message: '续建链中的计划须保留完整记录，不能删除' });
   if (followUp.sourceType === 'order' && followUp.sourceOrderId
     && await Order.exists({ _id: followUp.sourceOrderId, serviceName: '企业家健康决策计划' }))
     return res.status(409).json({ success: false, message: '该服务的岗位任务属于转介闭环，不能删除' });

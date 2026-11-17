@@ -2325,6 +2325,7 @@ export default function PatientDetailPage() {
   const [followUpDetail, setFollowUpDetail] = useState(null)
   const [checkupAdvisorReview, setCheckupAdvisorReview] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null)
+  const [continuingFollowUp, setContinuingFollowUp] = useState(null)
   const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
   const [pendingReportJobId, setPendingReportJobId] = useState(() => {
@@ -12634,9 +12635,11 @@ export default function PatientDetailPage() {
                 {[
                   { label: followUpDetail.status === 'completed' ? '随访日期' : '计划随访日期', value: followUpDetailView.displayDate(followUpDetail.date) },
                   { label: '随访方式', value: TYPE_MAP[followUpDetail.type] || followUpDetail.type || '-' },
-                  { label: '随访状态', value: STATUS_MAP[followUpDetail.status] || followUpDetail.status || '-' },
-                  { label: '计划审核人', value: (() => { const reviewer = followUpReview.reviewer(followUpDetail, user); return reviewer?.name || staffList.find(s => String(s._id) === String(reviewer?._id || reviewer))?.name || '待指定' })() },
+                  { label: '随访状态', value: followUpDetail.continuedByFollowUpId ? '未完成，已续建' : (STATUS_MAP[followUpDetail.status] || followUpDetail.status || '-') },
+                  { label: '计划创建人（不可修改）', value: followUpDetail.staffId?.name || staffList.find(s => String(s._id) === String(followUpDetail.staffId))?.name || '历史人员待核实' },
+                  { label: '计划审核人', value: (() => { const reviewer = followUpDetail.reviewAssignedTo || ((followUpDetail.aiStatus === 'pending' || followUpReview.postVisit(followUpDetail)) ? followUpReview.reviewer(followUpDetail, user) : null); return reviewer?.name || staffList.find(s => String(s._id) === String(reviewer?._id || reviewer))?.name || '无单独审核' })() },
                   { label: '随访执行人', value: (() => { const executor = followUpReview.executor(followUpDetail, user); return executor?.name || staffList.find(s => String(s._id) === String(executor?._id || executor))?.name || '待指定' })() },
+                  { label: '实际完成人', value: followUpDetail.completedByStaffId?.name || '-' },
                   { label: '参与人员', value: followUpDetail.participants || '-' },
                   { label: '随访主题', value: serviceTaskTitle(followUpDetail) || followUpDetail.planName || '-' },
                   { label: '建立时间', value: followUpDetail.createdAt ? new Date(followUpDetail.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-' },
@@ -12709,6 +12712,21 @@ export default function PatientDetailPage() {
               )}
               {/* 随访内容 */}
               <FollowUpProgressHistory item={followUpDetail} />
+              {followUpDetail.predecessorFollowUpId && <div style={{ background: '#F0F8F4', padding: 12, borderRadius: 8, fontSize: 13 }}>
+                <strong>由上次未完成计划续建</strong>
+                <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>未完成原因：{followUpDetail.predecessorUnfinishedRecord?.content || '-'}</div>
+                <small>记录人：{followUpDetail.predecessorUnfinishedRecord?.staffName || '-'} · {followUpDetail.predecessorUnfinishedRecord?.recordedAt ? new Date(followUpDetail.predecessorUnfinishedRecord.recordedAt).toLocaleString('zh-CN') : '-'}</small>
+                <div><button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={async () => {
+                  try { const result = await staffAPI.getPatientFollowUps(id, { followUpId: followUpDetail.predecessorFollowUpId }); const previous = result.data?.followUps?.[0]; if (previous) setFollowUpDetail(previous); else toast('原计划暂无法读取') }
+                  catch (err) { toast(err.message || '读取原计划失败') }
+                }}>查看原计划与全部过程</button></div>
+              </div>}
+              {followUpDetail.continuedByFollowUpId && <div style={{ background: '#F0F8F4', padding: 12, borderRadius: 8, fontSize: 13 }}>本计划未完成，已续建新计划；原过程记录保留。
+                <div><button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={async () => {
+                  try { const result = await staffAPI.getPatientFollowUps(id, { followUpId: followUpDetail.continuedByFollowUpId }); const next = result.data?.followUps?.[0]; if (next) setFollowUpDetail(next); else toast('新计划暂无法读取') }
+                  catch (err) { toast(err.message || '读取新计划失败') }
+                }}>查看续建计划</button></div>
+              </div>}
               <FollowUpOutcomeReview key={followUpDetail._id} item={followUpDetail} onSaved={updated => { setFollowUpDetail({ ...updated, staffId: followUpDetail.staffId, assignedTo: followUpDetail.assignedTo }); loadFollowUps() }} />
               {followUpDetail.taskRequirements && medicalProxyStage(followUpDetail) !== 'supervise' && !followUpDetail.formData?.generatedFromPostCheckupSupervision && (
                 <div>
@@ -12811,7 +12829,22 @@ export default function PatientDetailPage() {
                   } catch (err) { toast(err.message || '审核失败') }
                 }}>{annualNutrition.isTask(followUpDetail) ? '通过评估审核' : '确认随访计划'}</button>
               </>}
-              {!ibdStage(followUpDetail) && !annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
+              {canRecordProgress(followUpDetail) && !requiresOutcomeReview(followUpDetail)
+                && !followUpDetail.workflowKey && !followUpDetail.careFlowId
+                && followUpDetail.aiStatus !== 'pending' && followUpDetail.serviceTracking?.status !== 'waiting'
+                && !followUpDetail.repeatDaily && !followUpDetail.repeatWeekly
+                && !followUpDetail.continuedByFollowUpId
+                && ['planned', 'in_progress', 'missed'].includes(followUpDetail.status)
+                && (staff?.role === 'superadmin' || String(followUpDetail.assignedTo?._id || followUpDetail.assignedTo || followUpDetail.staffId?._id || followUpDetail.staffId) === String(staff?._id))
+                && <button className="btn btn-primary" onClick={() => setContinuingFollowUp({
+                  original: followUpDetail,
+                  unfinishedReason: '',
+                  date: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }) : '',
+                  type: followUpDetail.type || 'phone', theme: serviceTaskTitle(followUpDetail) || followUpDetail.theme || '',
+                  content: followUpDetail.plannedContent || followUpDetail.content || '',
+                  assignedTo: followUpDetail.assignedTo?._id || followUpDetail.assignedTo || '',
+                })}>记录未完成原因并续建计划</button>}
+              {!followUpDetail.predecessorFollowUpId && !followUpDetail.continuedByFollowUpId && !ibdStage(followUpDetail) && !annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" style={{ color: '#DC3545' }}
                 onClick={async () => {
                   if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return
                   try {
@@ -12823,7 +12856,7 @@ export default function PatientDetailPage() {
                     setFollowUpDetail(null); loadFollowUps()
                   } catch (err) { toast(err.message || '删除失败') }
                 }}>删除</button>}
-              {!ibdStage(followUpDetail) && !annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
+              {!followUpDetail.continuedByFollowUpId && !ibdStage(followUpDetail) && !annualNutrition.isTask(followUpDetail) && annualBookingPlan.canEditPlan(followUpDetail, staff?.role) && medicalProxyStage(followUpDetail) !== 'supervise' && followUpDetail.serviceTracking?.status !== 'waiting' && <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
                 date: followUpDetail.date ? new Date(followUpDetail.date).toISOString().slice(0, 10) : '',
                 type: followUpDetail.type || 'phone',
                 theme: serviceTaskTitle(followUpDetail),
@@ -12911,6 +12944,32 @@ export default function PatientDetailPage() {
                 finally { setFollowUpSaving(false) }
               }}>{followUpSaving ? '保存中...' : followUpDetail.status === 'completed' ? '保存记录' : '保存计划'}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {continuingFollowUp && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-header"><h3 className="modal-title">续建随访计划</h3><button className="modal-close" onClick={() => setContinuingFollowUp(null)}>✕</button></div>
+            <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+              <div style={{ fontSize: 13, color: '#4A6558' }}>原计划创建人：{continuingFollowUp.original.staffId?.name || '历史人员待核实'}。保存时会保留原计划及全部过程记录，并以当前登录人建立新计划。</div>
+              <label className="form-label">原计划未完成原因（必填）<textarea className="form-input" rows={3} value={continuingFollowUp.unfinishedReason} onChange={e => setContinuingFollowUp(f => ({ ...f, unfinishedReason: e.target.value }))} /></label>
+              <label className="form-label">新计划日期<DateField type="date" className="form-input" value={continuingFollowUp.date} onChange={e => setContinuingFollowUp(f => ({ ...f, date: e.target.value }))} /></label>
+              <label className="form-label">随访方式<select className="form-input" value={continuingFollowUp.type} onChange={e => setContinuingFollowUp(f => ({ ...f, type: e.target.value }))}><option value="phone">电话</option><option value="wechat">微信</option><option value="visit">上门</option><option value="video">视频</option><option value="other">其他</option></select></label>
+              <label className="form-label">新计划执行人<select className="form-input" value={continuingFollowUp.assignedTo} onChange={e => setContinuingFollowUp(f => ({ ...f, assignedTo: e.target.value }))}><option value="">请选择</option>{staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}</select></label>
+              <label className="form-label">新计划主题<input className="form-input" value={continuingFollowUp.theme} onChange={e => setContinuingFollowUp(f => ({ ...f, theme: e.target.value }))} /></label>
+              <label className="form-label">新计划事项<textarea className="form-input" rows={4} value={continuingFollowUp.content} onChange={e => setContinuingFollowUp(f => ({ ...f, content: e.target.value }))} /></label>
+            </div>
+            <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setContinuingFollowUp(null)}>取消</button><button className="btn btn-primary" disabled={followUpSaving} onClick={async () => {
+              setFollowUpSaving(true)
+              try {
+                const { original, ...data } = continuingFollowUp
+                const res = await staffAPI.continueFollowUp(original._id, data)
+                setContinuingFollowUp(null); setFollowUpDetail(res.data); loadFollowUps(); toast('未完成原因已记录，新计划已建立')
+              } catch (err) { toast(err.message || '续建失败') }
+              finally { setFollowUpSaving(false) }
+            }}>{followUpSaving ? '保存中...' : '确认续建'}</button></div>
           </div>
         </div>
       )}

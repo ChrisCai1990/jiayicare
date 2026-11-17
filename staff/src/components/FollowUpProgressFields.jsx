@@ -16,7 +16,7 @@ export function FollowUpProgressHistory({ item }) {
     <summary>随访过程（{item.progressRecords.length}次）</summary>
     {item.progressRecords.map(row => <div key={row.requestId} style={{ borderTop: '1px solid #DCE5E0', marginTop: 8, paddingTop: 8 }}>
       <small>{row.recordedAt ? new Date(row.recordedAt).toLocaleString('zh-CN') : ''} {row.staffName || ''}</small>
-      {row.outcome&&<div><b>{reminder.outcomesFor(item)[row.outcome]||row.outcome}</b>{row.visitDate&&` · ${reminder.kindOf(item)==='review'?'复查':'就医'}日期：${row.visitDate}`}</div>}
+      {row.outcome&&<div><b>{row.outcome === 'deferred' && item.continuedByFollowUpId ? '未完成，已续建' : (reminder.outcomesFor(item)[row.outcome]||row.outcome)}</b>{row.visitDate&&` · ${reminder.kindOf(item)==='review'?'复查':'就医'}日期：${row.visitDate}`}</div>}
       <div style={{ whiteSpace: 'pre-wrap' }}>{row.content}</div>
       {row.nextContactAt && <small>下次跟进：{new Date(row.nextContactAt).toLocaleString('zh-CN')}</small>}
     </div>)}

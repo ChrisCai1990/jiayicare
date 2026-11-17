@@ -35,6 +35,7 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
     assignedTo: task.assignedTo || null, 'progressRecords.requestId': { $ne: body.requestId } }, {
     $push: { progressRecords: { $each: records } }, $inc: { __v: 1 },
     $set: { status: obtained ? 'completed' : 'in_progress', completedAt: obtained ? now : null, completedBy: obtained ? 'staff' : null,
+      completedByStaffId: obtained ? actor._id : null,
       plannedContent: task.plannedContent || task.content || '', executedContent: content, executedType: type,
       ...(next && !obtained ? { nextFollowUpDate: next, remindAt: next, ...(healthDataPlan?.enabled ? {date:next} : {}) } : {}) },
   }, { new: true, runValidators: true });

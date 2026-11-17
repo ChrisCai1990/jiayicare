@@ -26,6 +26,10 @@ const followUpSchema = new mongoose.Schema({
     staffName: String, type: { type: String }, recordedAt: Date, nextContactAt: Date,
     outcome: {type:String,enum:['reminded','unreachable','deferred','booked','visited','']}, visitDate: String,
   }], default: undefined }, // 只追加的沟通过程；不代表管理事项完成
+  predecessorFollowUpId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
+  continuedByFollowUpId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUp', default: null },
+  predecessorUnfinishedRecord: { type: mongoose.Schema.Types.Mixed, default: null },
+  completedByStaffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   continuityRequired: { type: Boolean, default: false },
   outcomeReview: { type: mongoose.Schema.Types.Mixed, default: null }, // 顾问结果处置的只读凭据，通用编辑不能写入
   checkupOutcomeDecision: { type: mongoose.Schema.Types.Mixed, default: null }, // 服务顾问确认，验收/核销后消费；只由专用校验写入
@@ -121,6 +125,7 @@ followUpSchema.plugin(require('../utils/outcomeEvidenceFence').outcomeEvidenceFe
 followUpSchema.plugin(require('../utils/patientTenantFence').patientTenantFence);
 followUpSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 followUpSchema.index({ staffId: 1, date: -1 });
+followUpSchema.index({ predecessorFollowUpId: 1 }, { unique: true, partialFilterExpression: { predecessorFollowUpId: { $type: 'objectId' } } });
 followUpSchema.index({ assessmentActionKey: 1 }, { unique: true, sparse: true });
 followUpSchema.index({ annualDispatchKey: 1 }, { unique: true, sparse: true });
 followUpSchema.index({ patientId: 1, date: -1 });
