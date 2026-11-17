@@ -50,7 +50,14 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
     {error && <div role="alert">{error} <button className="btn btn-secondary btn-sm" disabled={busy} onClick={reload}>刷新核对</button></div>}
     {message && <p role="status">{message}</p>}
     {pending.length > 0 && <>
-      <p>涉及 {pending.reduce((count, review) => count + review.changes.length, 0)} 项变更。请对照<a href="#annual-plan-content">方案中标记的事项</a>与<a href={`/patients/${patientId}?tab=followups`}>原执行事项</a>，确认是否需要调整。</p>
+      <p>这是方案修改后的人工衔接核对：方案已更新并通知客户，原随访和服务任务不会自动改期、删除或重新派发。同内容但日期不同的安排也不会自动合并。请逐项比较下列变更，再到<a href={`/patients/${patientId}?tab=followups`}>原执行流程</a>处理需要调整的任务，最后记录核对结论。</p>
+      <div style={{ display: 'grid', gap: 8, margin: '12px 0' }}>{pending.flatMap(review => review.changes.map((change, index) =>
+        <div key={`${review.id}:${index}`} style={{ padding: '9px 12px', border: '1px solid #E8E3D7', borderRadius: 8, background: '#FFFCF6', fontSize: 13 }}>
+          <strong>{change.module} · {change.title} · {change.action}</strong>
+          <div style={{ color: '#52675D', marginTop: 4 }}>原安排：{change.before ? `${change.before.title} · ${dateText(change.before.date)}` : '无'}</div>
+          <div style={{ color: '#52675D' }}>新方案：{change.after ? `${change.after.title} · ${dateText(change.after.date)}` : '已移除'}</div>
+          {change.deletionReason && <div style={{ color: '#8B5E28' }}>删除原因：{change.deletionReason}</div>}
+        </div>))}</div>
       <details style={{ margin: '12px 0' }}>
         <summary>本方案直接关联的执行安排：{data.totals.followUps}条医护事项、{data.totals.tasks}条会员任务</summary>
         <p>以下为核对时的参考。就医、订单等其他关联服务请在会员原流程核对。</p>
@@ -63,7 +70,7 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
       </details>
       {canEdit ? <div style={{ display: 'grid', gap: 8 }}>
         <label>核对结论 <select className="form-input" value={outcome} disabled={busy} onChange={e => setOutcome(e.target.value)}>
-          <option value="unchanged">现有执行安排无需调整</option><option value="arranged">已在原流程完成调整或衔接</option>
+          <option value="unchanged">已核对，原执行安排无需调整</option><option value="arranged">已在原流程调整或衔接</option>
         </select></label>
         <textarea className="form-input" aria-label="执行安排核对说明" maxLength={1000} placeholder="填写实际核对结果；如已调整，请说明事项、负责人及原流程记录。" value={note} disabled={busy} onChange={e => setNote(e.target.value)} />
         <div><button className="btn btn-primary btn-sm" disabled={busy || !!error || !note.trim()} onClick={submit}>{busy ? '保存中…' : '记录核对结果'}</button></div>

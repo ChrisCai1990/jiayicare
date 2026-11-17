@@ -1096,12 +1096,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (annualPilot && pushedAt && canEdit && ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment', 'annual_checkup'].includes(action.key) && plansByType[planType])
       return <AnnualPlanRevision key={`${action.key}:${action.index}`} pilot inlineItem={{ key: action.key, target: action.index }} patientId={id} plan={plansByType[planType]} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
     if (annualPilot && pushedAt) return <div key={`${action.key}:${action.index}`} style={{ display: 'grid', gap: 5, paddingTop: 8, fontSize: 13, color: '#52675D' }}>
+      {action.key === 'health_consensus' && <>
+        <div>本次主题：{action.record.question || action.record.topicPath?.[0] || '待确认'}</div>
+        <div>客户当前理解：{action.record.currentUnderstanding || '未填写'}</div>
+        <div>客户顾虑：{action.record.concern || '未填写'}</div>
+        <div>沟通安排：{[action.record.method, action.record.frequency, action.record.firstDate].filter(Boolean).join(' · ') || '待确认'}</div>
+      </>}
       {action.record.hospital && <div>医院：{action.record.hospital}</div>}
       {action.record.department && <div>科室：{action.record.department}</div>}
       {action.key === 'annual_checkup' && action.record.institution && <div>体检机构：{action.record.institution}</div>}
       {action.key === 'annual_checkup' && action.record.focus && <div>重点关注：{action.record.focus}</div>}
       {action.record.goal && <div>目标：{action.record.goal}</div>}
       {action.record.reviewItems?.length > 0 && <div>检查：{action.record.reviewItems.join('、')}</div>}
+      {action.record.notes && <div style={{ whiteSpace: 'pre-wrap' }}>内部备注：{action.record.notes}</div>}
     </div>
     const def = annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, currentPlanId, dirty)
     if (action.record.reviewGroupVersion === 1) def.fields = def.fields.filter(field => field.key !== 'items')

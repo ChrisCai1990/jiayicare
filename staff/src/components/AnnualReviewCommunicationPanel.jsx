@@ -82,7 +82,7 @@ export default function AnnualReviewCommunicationPanel({ patientId, year, staff,
       <span>年度综合研判与客户沟通 · {year}年度</span><span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>{expanded ? '收起 ▲' : '展开 ▼'}</span>
     </button>
     {expanded && <div id="annual-review-communication-content">{loading ? <div style={{ fontSize: 13, marginTop: 10 }}>正在读取研判…</div> : <>
-      <p style={{ fontSize: 13, color: '#52675D', margin: '10px 0' }}>汇总已审核的健康问题与检查依据，由健康顾问确认优先级、目标和沟通结论；不重复逐项补入检查。</p>
+      <p style={{ fontSize: 13, color: '#52675D', margin: '10px 0' }}>本区汇总已审核的问题、趋势及检查依据，供顾问确定优先级、年度目标和客户沟通结论。专项筛查是否纳入管理仍由顾问逐项确认；AI 只提示可能遗漏或异常，不在这里自动纳入方案。</p>
       <div style={{ marginTop: 10, padding: 12, background: '#fff', border: '1px solid #D9E9E1', borderRadius: 8 }}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>① 年度研判中的健康问题与发现 · {problemRows.length}</div>
         {review && canConfirm && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={syncReviewedConcerns} style={{ marginBottom: 8 }}>{busy ? '核对中…' : '同步已审核关注线索'}</button>}

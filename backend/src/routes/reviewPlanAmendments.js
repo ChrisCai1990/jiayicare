@@ -92,9 +92,10 @@ module.exports=({getVisiblePlanPatientIds})=>{
         const date=String(input.date||'').trim();
         const institution=String(input.institution||'').trim();
         const focus=String(input.focus||'').trim();
+        const notes=String(input.notes||'').trim();
         if(date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)) return res.status(400).json({success:false,message:'体检日期格式无效'});
-        if(institution.length>200 || focus.length>2000) return res.status(400).json({success:false,message:'体检机构或重点关注内容过长'});
-        const after={...before,date,institution,focus};
+        if(institution.length>200 || focus.length>2000 || notes.length>1000) return res.status(400).json({success:false,message:'体检机构、重点关注或备注内容过长'});
+        const after={...before,date,institution,focus,notes};
         item={key:'annual_checkup',target:0,title:'年度体检',date,institution,focus};
         moduleData={...plan.moduleData,annual_checkup:after};
         changes=[{key:'annual_checkup',index:0,before,after}];
@@ -105,11 +106,12 @@ module.exports=({getVisiblePlanPatientIds})=>{
         if(!Number.isInteger(target) || target<0 || !before) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
         const titleField=key==='medical_treatment'?'department':key==='specialist_collab'?'purpose':'items';
         const dateField=key==='medical_treatment'?'visit_time':key==='specialist_collab'?'plan_time':'time';
-        const title=String(input.title||'').trim(),date=String(input.date||'').trim(),basis=String(input.reason||'').trim();
+        const title=String(input.title||'').trim(),date=String(input.date||'').trim(),basis=String(input.reason||'').trim(),notes=String(input.notes||'').trim();
         if(!title || title.length>200) return res.status(400).json({success:false,message:'请填写就诊科室或检查事项'});
         if(!basis || basis.length>4000) return res.status(400).json({success:false,message:'请填写设置依据（不超过4000字）'});
+        if(notes.length>1000) return res.status(400).json({success:false,message:'备注不能超过1000字'});
         if(date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)) return res.status(400).json({success:false,message:'建议日期格式无效'});
-        const after={...before,[titleField]:title,[dateField]:date};
+        const after={...before,[titleField]:title,[dateField]:date,notes};
         const originalAdvice=before.personalizedAdvice || before.personalization || String(before.reason||'').split('\n处理建议：')[1] || '';
         after.basisSummary=basis;
         after.reason=originalAdvice?`${basis}\n处理建议：${originalAdvice}`:basis;

@@ -5,7 +5,7 @@ const LABELS = { medical_treatment: '就医安排', specialist_collab: '多学�
 const titleOf = row => row?.items || row?.name || row?.purpose || row?.department || (row?.institution !== undefined ? '年度体检' : '未命名事项')
 const originalReason = row => String(row?.basisSummary || row?.reason || '').split('\n处理建议：')[0]
 const originalAdvice = row => row?.personalizedAdvice || row?.personalization || String(row?.reason || '').split('\n处理建议：')[1] || ''
-const draftOf = (row, assignedManagerId = '') => row ? { title: titleOf(row), reason: originalReason(row), advice: originalAdvice(row), date: row.visit_time || row.plan_time || row.time || row.date || '', timingReason: row.timingReason || '', hospital: row.hospital || row.institution || '', campus: row.campus || '', department: row.department || '', expert: row.expert || '', followUpStaff: row.followUpStaff || assignedManagerId, bookingRequired: row.bookingRequired === true, serviceMode: row.serviceMode || 'reminder', serviceType: row.serviceType || '', managedServiceType: row.managedServiceType || '', institution: row.institution || '', focus: row.focus || '' } : { title: '', reason: '', advice: '', date: '', timingReason: '', hospital: '', campus: '', department: '', expert: '', followUpStaff: assignedManagerId, bookingRequired: false, serviceMode: 'reminder', serviceType: '', managedServiceType: '', institution: '', focus: '' }
+const draftOf = (row, assignedManagerId = '') => row ? { title: titleOf(row), reason: originalReason(row), advice: originalAdvice(row), notes: row.notes || '', date: row.visit_time || row.plan_time || row.time || row.date || '', timingReason: row.timingReason || '', hospital: row.hospital || row.institution || '', campus: row.campus || '', department: row.department || '', expert: row.expert || '', followUpStaff: row.followUpStaff || assignedManagerId, bookingRequired: row.bookingRequired === true, serviceMode: row.serviceMode || 'reminder', serviceType: row.serviceType || '', managedServiceType: row.managedServiceType || '', institution: row.institution || '', focus: '' } : { title: '', reason: '', advice: '', notes: '', date: '', timingReason: '', hospital: '', campus: '', department: '', expert: '', followUpStaff: assignedManagerId, bookingRequired: false, serviceMode: 'reminder', serviceType: '', managedServiceType: '', institution: '', focus: '' }
 
 export default function AnnualPlanRevision({ patientId, plan, pilot = false, inlineItem, staffList = [], assignedManagerId = '', onSaved, toast }) {
   const editorRef = useRef(null)
@@ -18,8 +18,6 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
   const inlineSelection = inlineItem ? `${inlineItem.key}:${inlineItem.target}` : ''
   const [selection, setSelection] = useState(inlineSelection)
   const [draft, setDraft] = useState(() => draftOf(options.find(option => `${option.key}:${option.target}` === inlineSelection)?.row, assignedManagerId))
-  const [revisionReason, setRevisionReason] = useState('')
-  const [deleting, setDeleting] = useState(false)
   const [saving, setSaving] = useState(false)
   const selected = options.find(option => `${option.key}:${option.target}` === selection)
   const medicalService = pilot && ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'annual_checkup'].includes(selected?.key)
@@ -52,7 +50,7 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [inlineItem])
   const save = async () => {
-    if (!selected || (selected.key !== 'annual_checkup' && (!draft.title.trim() || !draft.reason.trim() || (!medicalService && !draft.advice.trim()))) || (!medicalService && selected.key !== 'annual_checkup' && revisionReason.trim().length < 2)) {
+    if (!selected || (selected.key !== 'annual_checkup' && (!draft.title.trim() || !draft.reason.trim() || (!medicalService && !draft.advice.trim())))) {
       toast('请填写事项名称和设置依据'); return
     }
     const originalDate = selected.row.visit_time || selected.row.plan_time || selected.row.time || selected.row.date || ''
@@ -65,18 +63,17 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
     setSaving(true)
     try {
       const res = await staffAPI.reviseAnnualPlan(patientId, {
-        planId: plan._id, baseUpdatedAt: plan.updatedAt, ...(medicalService || selected.key === 'annual_checkup' ? {} : { reason: revisionReason.trim() }),
-        item: selected.key === 'annual_checkup' ? { key: 'annual_checkup', date: draft.date, institution: draft.institution.trim(), focus: draft.focus.trim(), delivery: {
+        planId: plan._id, baseUpdatedAt: plan.updatedAt, reason: draft.notes.trim() || '健康顾问调整年度方案事项',
+        item: selected.key === 'annual_checkup' ? { key: 'annual_checkup', date: draft.date, institution: draft.institution.trim(), focus: draft.focus.trim(), notes: draft.notes.trim(), delivery: {
           hospital: draft.institution, campus: draft.campus, department: '', expert: draft.expert, followUpStaff: draft.followUpStaff,
           bookingRequired: draft.bookingRequired, serviceMode: draft.serviceMode, serviceType: draft.serviceType, managedServiceType: draft.managedServiceType,
-        } } : { key: selected.key, target: selected.target, title: draft.title.trim(), reason: draft.reason.trim(), advice: draft.advice.trim(),
+        } } : { key: selected.key, target: selected.target, title: draft.title.trim(), reason: draft.reason.trim(), advice: draft.advice.trim(), notes: draft.notes.trim(),
           ...(medicalService ? { date: draft.date } : draft.date !== originalDate ? draft.date ? { date: draft.date, timingReason: draft.timingReason.trim() } : { datePending: true, timingReason: draft.timingReason.trim() } : {}) ,
           ...(medicalService ? { delivery: { hospital: draft.hospital, campus: draft.campus, department: selected.key === 'medical_treatment' ? draft.title : draft.department, expert: draft.expert,
             followUpStaff: draft.followUpStaff, bookingRequired: draft.bookingRequired, serviceMode: draft.serviceMode, serviceType: draft.serviceType, managedServiceType: draft.managedServiceType } } : {}) },
       })
       onSaved(res.data)
       if (!inlineItem) setSelection('')
-      setRevisionReason(''); setDeleting(false)
       const editor = editorRef.current
       if (editor) editor.open = false
       toast(res.message || '局部修订已推送给客户')
@@ -84,12 +81,15 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
     finally { setSaving(false) }
   }
   const remove = async () => {
-    if (!selected || revisionReason.trim().length < 2) { toast('删除前请填写修订原因'); return }
+    if (!selected) return
+    const deletionReason = window.prompt('请填写删除原因（至少2字）：', '')
+    if (deletionReason === null) return
+    if (deletionReason.trim().length < 2) { toast('删除原因至少填写2字'); return }
     if (!window.confirm('确认从年度方案删除本项并通知客户？已有执行任务仍需到执行安排核对。')) return
     setSaving(true)
     try {
       const response = await staffAPI.reviseAnnualPlan(patientId, { planId: plan._id, baseUpdatedAt: plan.updatedAt,
-        reason: revisionReason.trim(), item: { key: selected.key, target: selected.target, operation: 'remove', deletionReason: revisionReason.trim() } })
+        reason: deletionReason.trim(), item: { key: selected.key, target: selected.target, operation: 'remove', deletionReason: deletionReason.trim() } })
       onSaved(response.data)
       toast('本项已从方案删除；请核对原执行任务')
     } catch (error) { toast(error.message || '删除失败，请刷新后重试') }
@@ -140,9 +140,9 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
       <label>建议日期<input className="form-input" type="date" value={draft.date} onChange={event => setDraft({ ...draft, date: event.target.value })} /></label>
       {!medicalService && draft.date !== (selected.row.visit_time || selected.row.plan_time || selected.row.time || selected.row.date || '') && <label>时间调整依据<input className="form-input" value={draft.timingReason} onChange={event => setDraft({ ...draft, timingReason: event.target.value })} /></label>}
       </>}
-      {(!medicalService && selected.key !== 'annual_checkup' || deleting) && <label>{deleting ? '删除原因' : '修订原因'}<textarea className="form-input" rows={2} value={revisionReason} onChange={event => setRevisionReason(event.target.value)} placeholder={deleting ? '说明评估后为什么不再需要本项' : '记录客户意见及顾问核对结果'} /></label>}
+      <label>备注（内部）<textarea className="form-input" rows={2} maxLength={1000} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} placeholder="记录客户意见或执行时需要关注的事项（选填）" /></label>
       <div className="annual-plan-revision-controls"><button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? '保存中…' : '保存本项'}</button>
-        {inlineItem && selected.key !== 'annual_checkup' && <button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B73D3D' }} disabled={saving} onClick={() => deleting ? remove() : setDeleting(true)}>{deleting ? '确认删除本项' : '删除本项'}</button>}</div>
+        {inlineItem && selected.key !== 'annual_checkup' && <button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B73D3D' }} disabled={saving} onClick={remove}>删除本项</button>}</div>
     </div>}
   </>
   if (inlineItem) return <div className="annual-plan-revision annual-plan-revision--inline" onFocusCapture={event => {

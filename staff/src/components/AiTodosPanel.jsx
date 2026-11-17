@@ -230,7 +230,7 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
           <option value="priority">优先级优先，同级最久优先</option><option value="oldest">等待最久优先</option>
         </select>
         <button className="btn btn-secondary btn-sm" onClick={() => { setGroup('all'); setQuery(''); setAge('all'); setPriority('all'); setSort('priority'); setPage(0) }}>清除筛选</button>
-        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项任务，显示为 {displayGroups.length} 组 · 每页{PAGE_SIZE}组 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '显示当前账号待审事项及需协调的异常'}。同一会员同类任务可展开逐项审核，未处理项继续保留。</span>
+        <span role="status" style={{ width: '100%', fontSize: 12, color: '#65776F' }}>匹配 {filteredTodos.length} 项任务，显示为 {displayGroups.length} 组 · 每页{PAGE_SIZE}组 · {staff?.role === 'superadmin' ? '当前为全平台待审视图' : '显示当前账号待审事项及需协调的异常'}。同一会员归在一组，展开后按类型逐项处理。</span>
       </div>
       {loadError && <div role="alert" className="login-err" style={{ margin: '0 20px 10px' }}>{loadError} <button onClick={() => refreshTodos()}>重试</button></div>}
       <div className="card-body" style={{ padding: '4px 20px 12px', maxHeight: 560, overflowY: 'auto' }}>
@@ -248,7 +248,7 @@ export default function AiTodosPanel({ hideGeo = false, hideConsultations = fals
             {isGrouped && <button type="button" aria-expanded={expanded} onClick={() => setExpandedGroups(current => ({ ...current, [item.key]: !current[item.key] }))}
               style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', border: 0, borderBottom: '1px solid #f0ede8', background: item.tasks.some(task => task.overdue) ? '#FFF8F8' : '#F6F9F7', padding: '12px 10px', cursor: 'pointer', color: '#1A2B24' }}>
               <span aria-hidden="true" style={{ width: 36, height: 36, borderRadius: 10, background: groupConfig.color + '15', display: 'grid', placeItems: 'center', flexShrink: 0 }}>{groupConfig.icon}</span>
-              <span style={{ flex: 1, minWidth: 0 }}><strong style={{ color: groupConfig.color, fontSize: 13 }}>{first.patientName} · {first.label || groupConfig.label}</strong><span style={{ display: 'block', fontSize: 12, color: '#65776F', marginTop: 3 }}>{item.tasks.length} 项待处理{item.tasks.some(task => task.overdue) ? ' · 含超时任务' : ''}，展开后逐项核对原件</span></span>
+              <span style={{ flex: 1, minWidth: 0 }}><strong style={{ color: '#183E30', fontSize: 13 }}>{first.patientName} · {item.tasks.length} 项待处理</strong><span style={{ display: 'block', fontSize: 12, color: '#65776F', marginTop: 3 }}>{[...new Set(item.tasks.map(task => task.label || TYPE_CONFIG[task.type]?.label || task.type))].join('、')}{item.tasks.some(task => task.overdue) ? ' · 含超时任务' : ''}</span></span>
               <span style={{ fontSize: 12, color: '#1E6B50', flexShrink: 0 }}>{expanded ? '收起' : '展开'} {expanded ? '⌃' : '⌄'}</span>
             </button>}
             {(!isGrouped || expanded) && item.tasks.map((todo, i) => {

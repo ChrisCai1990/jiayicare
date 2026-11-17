@@ -25,6 +25,10 @@ function clean(items) {
       out[key] = typeof item[key] === 'string' ? item[key].trim() : '';
       if (out[key].length > (key==='title' ? 200 : 4000)) throw Error('补充内容过长');
     }
+    if (item.notes !== undefined) {
+      if (typeof item.notes !== 'string' || item.notes.length > 1000) throw Error('备注不能超过1000字');
+      out.notes = item.notes.trim();
+    }
     if (!out.title || !out.reason || !out.advice) throw Error('请填写事项、依据和处理建议');
     for (const key of ['precautions','customerAction','frequency']) {
       if (!Object.hasOwn(item,key)) continue;
@@ -81,6 +85,7 @@ function apply(base, items, source, catalog=[]) {
     const before=index>=0?rows[index]:null;
     const after={...before,[fields[item.key]]:item.title,reason:`${item.reason}\n处理建议：${item.advice}`,personalizedAdvice:item.advice,
       basisSummary:item.reason,reviewAmendmentSource:source};
+    if (Object.hasOwn(item, 'notes')) after.notes = item.notes;
     for (const key of ['precautions','customerAction','frequency']) {
       if (Object.hasOwn(item,key)) after[key]=item[key];
       else if(origin && Object.hasOwn(origin,key) && !Object.hasOwn(after,key)) after[key]=origin[key];
