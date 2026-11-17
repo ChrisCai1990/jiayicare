@@ -11,10 +11,10 @@ function deriveJourneySnapshot({ reports = [], drafts = [], annualPlan = null, f
   const completed = followUps.filter(row => row.status === 'completed');
   const overdue = followUps.filter(row => ['planned', 'in_progress', 'missed'].includes(row.status) && row.date && new Date(row.date) < now);
   return {
-    report: { total: reports.length, parsed: parsed.length, managerAudited: managerAudited.length, advisorAudited: advisorAudited.length, latestParsedAt: latest(parsed, 'reviewedAt') },
-    draft: { total: drafts.length, approved: approvedDrafts.length, latestReviewedAt: latest(drafts, 'advisorReviewedAt') },
+    report: { total: reports.length, parsed: parsed.length, managerAudited: managerAudited.length, advisorAudited: advisorAudited.length, latestParsedAt: latest(parsed, 'reviewedAt'), items: reports.map(row => ({ id: String(row._id), category: row.documentCategory || row.type || 'other', date: row.checkDate || row.date || row.createdAt, managerStatus: row.audit_status || 'pending', advisorStatus: row.familyDoctorAudit?.status || 'pending' })) },
+    draft: { total: drafts.length, approved: approvedDrafts.length, latestReviewedAt: latest(drafts, 'advisorReviewedAt'), items: drafts.map(row => ({ id: String(row._id), reportId: String(row.reportId), status: row.status, createdAt: row.createdAt })) },
     annualPlan: annualPlan ? { id: String(annualPlan._id), reviewStatus: annualPlan.reviewStatus, pushedAt: annualPlan.pushedAt || null, confirmedAt: annualPlan.confirmedAt || null } : null,
-    followUp: { total: followUps.length, assigned: assigned.length, completed: completed.length, overdue: overdue.length },
+    followUp: { total: followUps.length, assigned: assigned.length, completed: completed.length, overdue: overdue.length, items: followUps.map(row => ({ id: String(row._id), status: row.status, date: row.date, assigned: Boolean(row.assignedTo), overdue: ['planned', 'in_progress', 'missed'].includes(row.status) && row.date && new Date(row.date) < now })) },
   };
 }
 
