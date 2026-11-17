@@ -299,7 +299,7 @@ export default function InAppServiceGroupsPage() {
                 <div style={{display:'flex',flexWrap:'wrap',gap:8}}>{(message.material.files||[]).map((url,i)=><a key={i} href={url} target="_blank" rel="noreferrer">{message.material.mimeType==='application/pdf'?'查看PDF':<img src={url} alt={`资料第${i+1}页`} style={{width:100,height:100,objectFit:'contain'}}/>}</a>)}</div>
                 <a href={`/patients/${selected.patientId}?tab=reports&reportId=${message.material.id}`}>查看原始资料 / 核对</a>
               </div>}
-              {!!message.mentions?.length&&<div className="sg-mention-links">{message.mentions.map(p=><button key={p.id} onClick={()=>window.alert(`${p.name} · ${p.role || '服务成员'}`)}> @{p.name} · {p.role}</button>)}</div>}
+              {!!message.mentions?.length&&<div className="sg-mention-links">{message.mentions.filter(person=>!person.name || !String(message.content || '').includes('@'+person.name)).map(p=><button key={p.id} onClick={()=>window.alert(`${p.name} · ${p.role || '服务成员'}`)}> @{p.name} · {p.role}</button>)}</div>}
                 </div>
               {message.quote&&<button className="sg-quoted-message" onClick={()=>{if(message.quote.id){setHistoryAnchor(message.quote.id);setHistoryOpen(true);}}}>{message.quote.senderName}：{message.quote.content}</button>}
               </div>
