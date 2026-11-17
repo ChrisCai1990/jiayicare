@@ -10897,6 +10897,45 @@ router.get('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, async
     res.json({ success: true, data: task || null });
   } catch (error) { res.status(500).json({ success: false, message: '读取共识沟通任务失败' }); }
 });
+router.get('/patients/:id/annual-plan/:planId/consensus-trial/draft', staffAuth, async (req, res) => {
+  try {
+    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可查看共识草稿' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可查看共识草稿' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+consensusTrialDraft').lean();
+    if (!plan?.pushedAt || !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: '请先选择已确认的年度方案' });
+    res.json({ success: true, data: plan.consensusTrialDraft || null });
+  } catch (error) { res.status(500).json({ success: false, message: '读取共识草稿失败' }); }
+});
+router.put('/patients/:id/annual-plan/:planId/consensus-trial/draft', staffAuth, async (req, res) => {
+  try {
+    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可保存共识草稿' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可保存共识草稿' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).lean();
+    if (!plan?.pushedAt || !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: '请先选择已确认的年度方案' });
+    if ((plan.moduleData?.health_consensus?.records || []).length) return res.status(409).json({ success: false, message: '已安排沟通任务，请在原任务中继续跟进' });
+    if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || '')) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重新保存' });
+    const clean = (value, max) => String(value || '').trim().slice(0, max);
+    const topicPath = Array.isArray(req.body.topicPath) ? req.body.topicPath.map(value => clean(value, 120)).filter(Boolean).slice(0, 10) : [];
+    const method = clean(req.body.method, 20);
+    if (method && !['电话', '到店', '上门'].includes(method)) return res.status(400).json({ success: false, message: '请选择电话、到店或上门' });
+    const draft = { currentUnderstanding: clean(req.body.currentUnderstanding, 1000), concern: clean(req.body.concern, 1000),
+      topicPath, currentTopic: clean(req.body.currentTopic, 120), method, frequency: clean(req.body.frequency, 100),
+      firstDate: clean(req.body.firstDate, 10), savedAt: new Date(), savedBy: req.staff._id };
+    if (draft.currentTopic && !topicPath.includes(draft.currentTopic)) draft.currentTopic = topicPath[0] || '';
+    const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt,
+      'moduleData.health_consensus.records.0': { $exists: false } }, { $set: { consensusTrialDraft: draft } }, { new: true, timestamps: false });
+    if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重新保存' });
+    res.json({ success: true, data: { draft, updatedAt: saved.updatedAt }, message: '共识草稿已保存，尚未安排沟通任务' });
+  } catch (error) { res.status(500).json({ success: false, message: '保存共识草稿失败' }); }
+});
 router.post('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, async (req, res) => {
   try {
     if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
@@ -10931,7 +10970,7 @@ router.post('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, asyn
     const revision = { id: require('crypto').randomUUID(), kind: 'consensus_trial', status: 'applied', createdAt: new Date(),
       createdBy: req.staff._id, before: null, after: row, note: '顾问试用逐主题沟通；原方案其他事项不变' };
     const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt },
-      { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true });
+      { $set: { moduleData }, $unset: { consensusTrialDraft: '' }, $push: { supplementRevisions: revision } }, { new: true });
     if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新' });
     await require('../utils/annualPlanFollowUps').syncAnnualPlanFollowUps(saved);
     res.json({ success: true, data: saved, message: '已安排首个共识主题，后续在同一任务中逐次跟进' });

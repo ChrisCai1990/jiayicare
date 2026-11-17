@@ -552,10 +552,13 @@ textarea.form-control { resize: vertical; }
 .workbench-compact { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; margin-bottom: 12px; border: 1px solid #e1e9e4; border-radius: 10px; background: #fff; color: #52685d; font-size: 13px; }
 .workbench-compact > button { flex-shrink: 0; }
 .annual-plan-actions, .annual-plan-action-buttons { flex-wrap: wrap; }
+.annual-plan-actions--pilot { position: relative; }
+.annual-plan-actions--pilot .annual-plan-action-buttons { padding-top: 34px; }
+.annual-service-type-badge { position: absolute; top: 0; right: 0; border: 1px solid #C7DCCF; background: #F0F8F3; color: #1E6B50; border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 13px; white-space: nowrap; }
 .annual-plan-actions { scroll-margin-top: 70px; }
 .annual-plan-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .annual-plan-footer a { text-decoration: none; }
-@media (max-width: 680px) { .workbench-compact { flex-wrap: wrap; padding: 12px; } .annual-plan-action-buttons { width: 100%; } }
+@media (max-width: 680px) { .workbench-compact { flex-wrap: wrap; padding: 12px; } .annual-plan-action-buttons { width: 100%; } .annual-service-type-badge { position: static; margin-left: auto; } .annual-plan-actions--pilot .annual-plan-action-buttons { padding-top: 0; } }
 
 /* Workload overview stays above task queues without occupying a tall first screen. */
 .home-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }

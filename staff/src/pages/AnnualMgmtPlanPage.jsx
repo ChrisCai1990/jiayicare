@@ -1159,7 +1159,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
 
       {/* 顶部导航 */}
-      <div id="annual-plan-actions" className="annual-plan-actions" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+      <div id="annual-plan-actions" className={`annual-plan-actions${annualPilot && patientMode ? ' annual-plan-actions--pilot' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
           onClick={goBack}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}
@@ -1168,9 +1168,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           <div style={{ fontSize: 18, fontWeight: 700, color: '#1A2B24' }}>{planTitle}</div>
           <div style={{ fontSize: 13, color: '#8AA89C', marginTop: 2 }}>
             {patientName}
-            {activePlanType && <span style={{ marginLeft: 8, color: activePlanType.color, fontWeight: 600 }}>{activePlanType.icon} {activePlanType.name}</span>}
+            {!annualPilot && activePlanType && <span style={{ marginLeft: 8, color: activePlanType.color, fontWeight: 600 }}>{activePlanType.icon} {activePlanType.name}</span>}
           </div>
         </div>
+        {annualPilot && patientMode && <span className="annual-service-type-badge" aria-label="客户服务类型">客户服务类型：{activePlanType?.name || (templatesLoading ? '匹配中' : '待匹配')}</span>}
         {patientMode && (
           <select
             value={year}
@@ -1197,6 +1198,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </span>
           ) : null}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
+          {annualPilot && canEdit && pushedAt && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { const tools = document.getElementById('annual-plan-tools'); if (tools?.tagName === 'DETAILS') tools.open = true; const editor = document.getElementById('annual-plan-revision'); if (editor) { editor.open = true; editor.scrollIntoView({ behavior: 'smooth', block: 'start' }) } else tools?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>修改方案</button>}
           {canEdit && (!annualPilot || !pushedAt) && ((!patientMode && plan) || (patientMode && plansByType[planType])) && (
             <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>删除方案</button>
           )}
@@ -1387,7 +1389,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <div style={{ fontSize: 12, color: '#65776F', marginTop: 8 }}>服务包已有固定周期时，以服务包为准；未配置周期时，以客户确认的本方案安排自动生成待审核评估。</div>
       </details>}
       {/* 方案类型选择 */}
-      <details open={!selectedTemplateId || undefined} style={{ background: '#fff', borderRadius: 12, padding: '12px 20px', marginBottom: 20, border: '1px solid #E0D9CE' }}>
+      {!annualPilot && <details open={!selectedTemplateId || undefined} style={{ background: '#fff', borderRadius: 12, padding: '12px 20px', marginBottom: 20, border: '1px solid #E0D9CE' }}>
         <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 14, color: '#4A6558' }}>方案版本：{activePlanType?.name || '请选择方案类型'}{selectedTemplateId ? ' · 点击更换' : ''}</summary>
         <div style={{ marginTop: 14 }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
@@ -1430,7 +1432,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </div>
           )})}
         </div>
-      </details>
+      </details>}
       </details>
 
       {patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} onDataChange={setExecutionReviewData} />}
