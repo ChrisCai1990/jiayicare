@@ -36,11 +36,11 @@ function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
     || !query || `${product.name} ${product.category || ''}`.toLowerCase().includes(query))
   return <div style={{ border: '1px solid #D9E4DD', borderRadius: 8, padding: 10, marginTop: 8 }}>
     <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr auto', gap: 8 }}>
-      <input className="form-input" value={row.name || ''} placeholder="项目名称可留空，按团队自动命名" onChange={event => onChange({ name: event.target.value })} />
+      <input className="form-input" value={row.name || ''} placeholder={row.businessType === 'product' && !row.childProductId ? '填写套餐内项目名称，如慢性食物过敏检测' : '项目名称可留空，按团队自动命名'} onChange={event => onChange({ name: event.target.value })} />
       <select className="form-input" value={row.businessType || 'service'} onChange={event => {
         const businessType = event.target.value
         const next = { ...row, businessType, teamRole: businessType === 'enterprise' ? 'enterpriseResource' : 'healthManager', childProductId: '' }
-        onChange({ ...next, name: packageAllocationName(next) })
+        onChange({ ...next, name: businessType === 'product' ? '' : packageAllocationName(next) })
       }}>
         <option value="service">服务</option><option value="product">产品</option><option value="enterprise">资源</option>
       </select>
@@ -60,10 +60,11 @@ function PackageAllocationRow({ row, price, products, onChange, onRemove }) {
       <div className="form-input" style={{ background: '#F6F8F7' }}>{Number(row.revenueSharePercent || 0).toFixed(2)}%</div>
     </div>
     {row.businessType === 'product' && <div style={{ marginTop: 8 }}>
-      <input className="form-input" type="search" placeholder="搜索产品名称或分类" value={search} onChange={event => setSearch(event.target.value)} />
+      <div style={{ color: '#6B7280', fontSize: 12, marginBottom: 6 }}>套餐内检测或产品请在上方填写具体项目名称；单独销售的项目可关联产品库。</div>
+      <input className="form-input" type="search" placeholder="搜索产品库（可选）" value={search} onChange={event => setSearch(event.target.value)} />
       <select className="form-input" style={{ marginTop: 6 }} value={row.childProductId || ''}
         onChange={event => onChange({ childProductId: event.target.value })}>
-        <option value="">选择产品库项目</option>
+        <option value="">不关联产品库（套餐内项目）</option>
         {options.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}
       </select>
     </div>}
@@ -133,12 +134,12 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
     const allocations = (configuration.businessAllocations || []).map(row => ({ ...row,
-      name: String(row.name || '').trim() || packageAllocationName(row) }))
+      name: String(row.name || '').trim() || (row.businessType === 'product' && !row.childProductId ? '' : packageAllocationName(row)) }))
     if (withActivation && allocations.length && (!Number(activation.price)
       || allocations.some(row => Number(row.revenueSharePercent) <= 0
-        || (row.businessType === 'product' && !row.childProductId))
+        || (row.businessType === 'product' && !row.childProductId && !row.name))
       || Math.abs(allocations.reduce((sum, row) => sum + Number(row.revenueSharePercent || 0), 0) - 100) > 0.001)) {
-      const message = '请填写售价及每项归属金额；产品项目需关联产品库，金额合计须为售价的100%'
+      const message = '请填写售价及每项归属金额；未关联产品库的项目须填写具体名称，金额合计须为售价的100%'
       setError(message); toast(message); return
     }
     setSaving(true); setError('')
