@@ -7,7 +7,7 @@ const { jiayihuiTenantId } = require('../utils/jiayihuiTenant');
 const LoginSession = require('../models/LoginSession');
 const VerificationCode = require('../models/VerificationCode');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
-const { canAttempt, recordAttempt, validCredentials } = require('../utils/reviewExperience');
+const { canAttempt, recordAttempt, consumeReviewEntry, validCredentials } = require('../utils/reviewExperience');
 const { reviewAccessState } = require('../utils/reviewExperienceAccess');
 const aliyunNumberAuth = require('../utils/aliyunNumberAuth');
 const requireUser = require('../middleware/auth');
@@ -44,6 +44,38 @@ router.post('/review-experience/login', async (req, res) => {
     return res.json({ success: true, data: { token, user: user.toObject(), isNew: false } });
   } catch (error) {
     console.error('[review-login]', error.name || 'unknown');
+    return res.status(500).json({ success: false, message: '审核体验暂不可用' });
+  }
+});
+
+router.post('/review-experience/enter', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  const config = await reviewAccessState();
+  if (!config.enabled) return res.status(403).json({ success: false, message: '审核体验暂未开放' });
+  const code = String(req.body?.code || '').trim();
+  if (!code || code.length > 256) return res.status(400).json({ success: false, message: '微信身份获取失败，请重新进入小程序' });
+  if (!process.env.WECHAT_MP_APPID || !process.env.WECHAT_MP_SECRET) {
+    return res.status(503).json({ success: false, message: '小程序登录暂不可用' });
+  }
+  const limit = consumeReviewEntry(req.ip);
+  if (!limit.allowed) {
+    res.set('Retry-After', String(limit.retryAfterSeconds));
+    return res.status(429).json({ success: false, message: '进入次数较多，请稍后再试' });
+  }
+  try {
+    const sessionData = await httpsGet(`https://api.weixin.qq.com/sns/jscode2session?appid=${encodeURIComponent(process.env.WECHAT_MP_APPID)}&secret=${encodeURIComponent(process.env.WECHAT_MP_SECRET)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`);
+    if (!sessionData?.openid || sessionData.errcode) {
+      return res.status(401).json({ success: false, message: '微信身份验证失败，请重试' });
+    }
+    const user = await User.findOne({ _id: config.accountId, 'reviewExperience.enabled': true, isDeleted: false });
+    if (!user?.tenantId || user.phone || user.wechatMpOpenid || user.wechatOpenid) {
+      return res.status(503).json({ success: false, message: '审核体验账号暂不可用' });
+    }
+    const sessionId = await beginLoginSession(req, user, 'review');
+    const token = jwt.sign({ id: user._id, sessionId, persistent: true }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    return res.json({ success: true, data: { token, user: user.toObject(), isNew: false } });
+  } catch (error) {
+    console.error('[review-enter]', error.name || 'unknown');
     return res.status(500).json({ success: false, message: '审核体验暂不可用' });
   }
 });

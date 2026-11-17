@@ -36,7 +36,7 @@ export default function ReviewExperiencePage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">小程序审核体验</h1>
-          <p className="page-subtitle">控制小程序登录页的审核账号密码入口。</p>
+          <p className="page-subtitle">控制小程序登录页的审核体验入口。</p>
         </div>
       </div>
       <div className="card">
@@ -46,7 +46,7 @@ export default function ReviewExperiencePage() {
               当前状态：{state.enabled ? '已开放' : '未开放'}
             </div>
             <div style={{ fontSize: 13, color: '#8AA89C', lineHeight: 1.7 }}>
-              审核人员需填写审核账号和密码，并勾选协议后登录；正式用户无需使用此入口。
+              开启后，审核人员勾选协议即可进入虚构资料的体验账号；正式用户无需使用此入口。
               {state.requestedEnabled && !state.credentialsValid && <div style={{ color: '#DC3545' }}>管理开关已开启，但审核凭证未生效或已到期，请续期后再提交审核。</div>}
               {state.expiresAt && <div>凭证有效至：{new Date(state.expiresAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（北京时间）</div>}
             </div>

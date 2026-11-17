@@ -1,8 +1,10 @@
 const crypto = require('crypto');
 
 const attempts = new Map();
+const entries = new Map();
 const WINDOW_MS = 15 * 60 * 1000;
 const LIMIT = 5;
+const ENTRY_LIMIT = 20;
 
 function reviewConfig(now = Date.now()) {
   const accountId = String(process.env.REVIEW_LOGIN_USER_ID || '').trim();
@@ -43,6 +45,18 @@ function recordAttempt(ip, now = Date.now()) {
   else entry.count += 1;
 }
 
+function consumeReviewEntry(ip, now = Date.now()) {
+  const key = String(ip || 'unknown');
+  const entry = entries.get(key);
+  if (!entry || now - entry.startedAt >= WINDOW_MS) {
+    entries.set(key, { startedAt: now, count: 1 });
+    return { allowed: true };
+  }
+  if (entry.count >= ENTRY_LIMIT) return { allowed: false, retryAfterSeconds: Math.ceil((entry.startedAt + WINDOW_MS - now) / 1000) };
+  entry.count += 1;
+  return { allowed: true };
+}
+
 function validCredentials(config, username, password) {
   if (!config.enabled || String(username || '') !== config.username || typeof password !== 'string') return false;
   const submitted = crypto.createHash('sha256').update(password).digest();
@@ -50,4 +64,4 @@ function validCredentials(config, username, password) {
   return crypto.timingSafeEqual(submitted, expected);
 }
 
-module.exports = { reviewConfig, combineReviewAccess, canAttempt, recordAttempt, validCredentials };
+module.exports = { reviewConfig, combineReviewAccess, canAttempt, recordAttempt, consumeReviewEntry, validCredentials };

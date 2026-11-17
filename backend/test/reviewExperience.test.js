@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { reviewConfig, combineReviewAccess, canAttempt, recordAttempt, validCredentials } = require('../src/utils/reviewExperience');
+const { reviewConfig, combineReviewAccess, canAttempt, recordAttempt, consumeReviewEntry, validCredentials } = require('../src/utils/reviewExperience');
 
 const envKeys = ['REVIEW_LOGIN_USER_ID', 'REVIEW_LOGIN_USERNAME', 'REVIEW_LOGIN_PASSWORD_SHA256', 'REVIEW_LOGIN_EXPIRES_AT'];
 const savedEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
@@ -48,4 +48,12 @@ test('review password attempts are limited per source address', () => {
   for (let i = 0; i < 5; i += 1) recordAttempt(ip, now);
   assert.equal(canAttempt(ip, now + 1000).allowed, false);
   assert.equal(canAttempt(ip, now + 15 * 60 * 1000).allowed, true);
+});
+
+test('one-tap review entry has an independent request limit', () => {
+  const ip = `review-entry-test-${Date.now()}`;
+  const now = Date.now();
+  for (let i = 0; i < 20; i += 1) assert.equal(consumeReviewEntry(ip, now).allowed, true);
+  assert.equal(consumeReviewEntry(ip, now).allowed, false);
+  assert.equal(consumeReviewEntry(ip, now + 15 * 60 * 1000).allowed, true);
 });

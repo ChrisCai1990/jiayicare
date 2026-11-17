@@ -101,6 +101,10 @@ export const weightProgressPhotosAPI = {
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
   reviewStatus: () => request('/auth/review-experience/status'),
+  reviewEnter: () => Taro.login().then(({ code }) => {
+    if (!code) throw new Error('微信身份获取失败，请重试');
+    return request('/auth/review-experience/enter', { method: 'POST', body: JSON.stringify({ code }) });
+  }),
   reviewLogin: (username, password) => request('/auth/review-experience/login', {
     method: 'POST', body: JSON.stringify({ username, password }),
   }),

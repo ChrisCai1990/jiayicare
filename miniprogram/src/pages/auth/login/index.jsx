@@ -26,9 +26,6 @@ export default function LoginPage() {
   const [notRegistered, setNotRegistered] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [reviewEnabled, setReviewEnabled] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [reviewUsername, setReviewUsername] = useState('');
-  const [reviewPassword, setReviewPassword] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -123,20 +120,19 @@ export default function LoginPage() {
   };
 
   const handleReviewLogin = async () => {
-    if (loading || !reviewUsername.trim() || !reviewPassword) return;
+    if (loading) return;
     if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
     setError('');
     try {
       setLoading(true);
-      const res = await authAPI.reviewLogin(reviewUsername.trim(), reviewPassword);
+      const res = await authAPI.reviewEnter();
       if (res.success) {
-        setReviewPassword('');
         await login(res.data.user, res.data.token);
         await waitForAuthCommit();
         afterLoginSuccess(res.data.user);
       }
     } catch (err) {
-      setError(err.message || '审核账号登录失败，请检查账号和密码');
+      setError(err.message || '审核体验暂时无法进入，请稍后重试');
     } finally { setLoading(false); }
   };
 
@@ -274,17 +270,9 @@ export default function LoginPage() {
 
         {reviewEnabled && (
           <View style={{ marginTop: `${spacing.md}px`, padding: `${spacing.md}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px` }}>
-            <View onClick={() => setReviewOpen(!reviewOpen)} style={{ padding: '4px 0' }}>
-              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>微信审核体验账号登录 {reviewOpen ? '⌃' : '›'}</Text>
-            </View>
-            {reviewOpen && (
-              <View>
-                <Text style={{ display: 'block', margin: '8px 0', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员使用；账号到期后自动失效。</Text>
-                <Input value={reviewUsername} onInput={(e) => setReviewUsername(e.detail.value)} placeholder="审核账号" maxlength={100} style={{ padding: '12px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, marginBottom: '8px' }} />
-                <Input value={reviewPassword} onInput={(e) => setReviewPassword(e.detail.value)} placeholder="审核密码" password maxlength={256} style={{ padding: '12px', border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, marginBottom: '8px' }} />
-                <Button onClick={handleReviewLogin} disabled={loading || !reviewUsername.trim() || !reviewPassword || !agreed} loading={loading} style={{ backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px` }}>登录体验</Button>
-              </View>
-            )}
+            <Text style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: colors.primary }}>微信审核体验</Text>
+            <Text style={{ display: 'block', margin: '8px 0 12px', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员体验虚构资料；勾选下方协议后可直接进入。</Text>
+            <Button onClick={handleReviewLogin} disabled={loading || !agreed} loading={loading} style={{ height: '48px', lineHeight: '48px', backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px`, fontSize: '15px', fontWeight: 700 }}>进入审核体验</Button>
           </View>
         )}
 
