@@ -18,10 +18,10 @@ function taskKey(planId, cycle) { return `nutrition:bodycomp:${planId}:${cycle}`
 
 function isBodyCompTask(task) { return Boolean(task?.bodyCompCycle?.planId && task?.assessmentActionKey === taskKey(task.bodyCompCycle.planId, task.bodyCompCycle.cycle)); }
 
-function taskDocument(plan, patient, cycle, targetDate, previousTaskId = null) {
+function taskDocument(plan, patient, cycle, targetDate, previousTaskId = null, evidenceAfterAt = null, now = new Date()) {
   const targetAt = dateOnly(targetDate);
   if (!targetAt) throw new Error('请填写有效的测量目标日期');
-  const inviteAt = addDays(targetAt, -3);
+  const inviteAt = new Date(Math.max(addDays(targetAt, -3).getTime(), dateOnly(now).getTime()));
   return {
     patientId: plan.patientId, staffId: plan.staffId,
     assignedTo: patient.assignedNutritionist || plan.staffId,
@@ -34,16 +34,16 @@ function taskDocument(plan, patient, cycle, targetDate, previousTaskId = null) {
     plannedContent: `请营养师提前联系客户，安排体成分测量；目标日期 ${targetAt.toISOString().slice(0, 10)}。测量结果入档后确认下一轮日期。`,
     date: inviteAt, remindAt: inviteAt, type: 'phone', status: 'planned',
     aiStatus: 'approved', reviewRole: 'nutritionist',
-    bodyCompCycle: { planId: plan._id, cycle, targetAt, inviteAt, previousTaskId },
+    bodyCompCycle: { planId: plan._id, cycle, targetAt, inviteAt, previousTaskId, evidenceAfterAt },
   };
 }
 
-async function ensureTask(FollowUp, plan, patient, cycle, targetDate, previousTaskId = null) {
+async function ensureTask(FollowUp, plan, patient, cycle, targetDate, previousTaskId = null, evidenceAfterAt = null) {
   const key = taskKey(plan._id, cycle);
   try {
     return await FollowUp.findOneAndUpdate(
       { assessmentActionKey: key },
-      { $setOnInsert: taskDocument(plan, patient, cycle, targetDate, previousTaskId) },
+      { $setOnInsert: taskDocument(plan, patient, cycle, targetDate, previousTaskId, evidenceAfterAt) },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
   } catch (error) {

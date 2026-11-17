@@ -298,6 +298,21 @@ async function buildAnnualPlanFollowUps(plan) {
     });
   }
 
+  // 健康认知属于顾问持续沟通：首次只建一条内部任务；每次沟通在原任务追加进展并重排下次联系。
+  if (moduleData.health_consensus?.enabled !== false) (moduleData.health_consensus?.records || []).forEach((rec, index) => {
+    if (!rec.question || !rec.firstDate) return;
+    const before = created.length;
+    const content = [`待澄清：${rec.question}`, rec.method && `方式：${rec.method}`, rec.frequency && `计划频率：${rec.frequency}`].filter(Boolean).join('\n');
+    push(rec.firstDate, `健康认知与共识 · ${String(rec.question).slice(0, 30)}`, content,
+      patient?.assignedFamilyDoctor || plan.createdBy, `health-consensus:${rec.consensusId || index}`,
+      { sourceIds: rec.sourceIds || [] });
+    if (created.length > before) Object.assign(created.at(-1), {
+      clientVisible: false, plannedContent: content,
+      formData: { healthConsensus: { currentUnderstanding: rec.currentUnderstanding || '', concern: rec.concern || '', question: rec.question,
+        method: rec.method || '', frequency: rec.frequency || '' } },
+    });
+  });
+
   return created;
 }
 
@@ -336,7 +351,7 @@ async function syncAnnualPlanFollowUps(plan) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
       if (require('../../../shared/annualNutrition.cjs').isTask(keep)) continue;
-      assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
+      if (!row.sourceScheduleKey?.startsWith('health-consensus:')) assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
       if (keep.sourceScheduleKey !== row.sourceScheduleKey) keep.sourceScheduleKey = row.sourceScheduleKey;
       if(row.formData?.healthDataPlan && keep.status==='cancelled' && keep.cancelReason==='健康数据周期跟进已从方案关闭') {

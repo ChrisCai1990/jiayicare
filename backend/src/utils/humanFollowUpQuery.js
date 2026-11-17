@@ -1,8 +1,12 @@
 // The personal workbench excludes customer self-service reminders unless a
 // human handoff was explicitly requested. Apply this BEFORE counting/paging.
 const humanFollowUpQuery = {
-  sourceType: { $nin: ['order', 'health_plan'] },
+  sourceType: { $ne: 'order' },
   aiStatus: { $ne: 'pending' },
+  $and: [{ $or: [
+    { sourceType: { $ne: 'health_plan' } },
+    { 'bodyCompCycle.planId': { $exists: true } },
+  ] }],
   $or: [
     { tags: '人工跟进' },
     { $nor: [

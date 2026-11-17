@@ -250,6 +250,17 @@ const MODULE_DEFS = {
       ...SERVICE_MODE_FIELDS,
     ],
   },
+  health_consensus: {
+    name: '健康认知与共识', icon: '💬', multi: true, summaryKey: 'question', summaryLabel: '待澄清问题',
+    fields: [
+      { key: 'currentUnderstanding', label: '客户当前理解', type: 'textarea' },
+      { key: 'concern', label: '客户顾虑', type: 'textarea' },
+      { key: 'question', label: '希望澄清的具体问题', type: 'textarea' },
+      { key: 'method', label: '沟通方式', type: 'text', placeholder: '如：面谈、电话、微信' },
+      { key: 'frequency', label: '沟通频率', type: 'text', placeholder: '如：先沟通一次，后续按反馈约定' },
+      { key: 'firstDate', label: '首次沟通日期', type: 'date' },
+    ],
+  },
 }
 
 // Admin v2年度模板确认的统一事项字段。原模块专属字段继续保留，公共字段用于依据追溯、
@@ -335,15 +346,16 @@ const templateEntries = template => {
     usedBaseKeys.add(key)
   })
   entries.push({ key: 'personalized_followups', def: MODULE_DEFS.personalized_followups, source: { key: 'global_followup_library' } })
+  entries.push({ key: 'health_consensus', def: MODULE_DEFS.health_consensus, source: { key: 'advisor_consensus' } })
   return entries
 }
 
 // ── 各方案类型包含的板块（按顺序）──────────────────────────────────
 const PLAN_TYPE_MODULES = {
-  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  young_state:       ['abnormal_followup', 'vaccine', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  chronic_stable:    ['abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
-  health_prevention: ['abnormal_followup', 'vaccine', 'annual_checkup'],
+  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval', 'health_consensus'],
+  young_state:       ['abnormal_followup', 'vaccine', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval', 'health_consensus'],
+  chronic_stable:    ['abnormal_followup', 'vaccine', 'lifestyle', 'annual_checkup', 'quarterly_eval', 'health_consensus'],
+  health_prevention: ['abnormal_followup', 'vaccine', 'annual_checkup', 'health_consensus'],
 }
 
 
@@ -1024,6 +1036,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next) }}
         onDelete={() => handleModuleChange(action.key, 'records', moduleData[action.key].records.filter((_, index) => index !== action.index))} />
         : <ModulePanel moduleKey={action.key} def={def} data={moduleData[action.key]} onChange={handleModuleChange} showPlanSummary executionReviewChanges={changes} />}
+      {action.key === 'health_consensus' && <label style={{ display: 'block', margin: '8px 0 12px', fontSize: 12, color: '#62776A' }}>关联管理问题
+        <select className="form-input" style={{ display: 'block', width: '100%', marginTop: 4 }} value={action.record.sourceIds?.[0] || ''} disabled={!canEdit || !!pushedAt} onChange={event => handleModuleChange('health_consensus', 'records', moduleData.health_consensus.records.map((row, index) => index === action.index ? { ...row, sourceIds: event.target.value ? [event.target.value] : [] } : row))}>
+          <option value="">一般健康认知，不关联特定问题</option>
+          {managementTargets.map((target, index) => <option key={target.issueId || index} value={target.issueId}>{target.goal || `管理问题 ${index + 1}`}</option>)}
+        </select>
+      </label>}
     </div>
   }
   const activePlanType = selectedAdminTemplate
@@ -1398,7 +1416,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <div style={{ fontSize: 15, fontWeight: 700 }}>其他年度安排 · {sharedActions.length} 项</div>
             {sharedActions.map(renderPlanAction)}
           </section>}
-          {canEdit && <details style={{ marginBottom: 12 }}><summary style={{cursor:'pointer'}}>补充执行安排</summary><div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>{templateModuleEntries.filter(entry => entry.def.multi).map(entry => <button key={entry.key} type="button" className="btn btn-secondary btn-sm" onClick={() => handleModuleChange(entry.key,'records',[...(moduleData[entry.key]?.records || []),{}])}>＋ {entry.def.name}</button>)}</div></details>}
+          {canEdit && <details style={{ marginBottom: 12 }}><summary style={{cursor:'pointer'}}>补充执行安排</summary><div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>{templateModuleEntries.filter(entry => entry.def.multi).map(entry => <button key={entry.key} type="button" className="btn btn-secondary btn-sm" onClick={() => handleModuleChange(entry.key,'records',[...(moduleData[entry.key]?.records || []),entry.key === 'health_consensus' ? { consensusId: crypto.randomUUID() } : {}])}>＋ {entry.def.name}</button>)}</div></details>}
           {patientMode && <AnnualServiceRecommendations patient={patient} staffList={staffList} planId={plansByType[planType]?._id} pushedAt={pushedAt} canEdit={canEdit} toast={toast} />}
           {visibleModuleEntries.length === 0 && (
             <div style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: '30px 20px', textAlign: 'center', color: '#8AA89C' }}>

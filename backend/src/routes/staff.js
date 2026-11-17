@@ -2829,11 +2829,7 @@ router.get('/followups/:id/body-composition-options', staffAuth, async (req, res
     const plan = await HealthPlan.findById(task.sourceHealthPlanId).select('confirmedAt patientId').lean();
     const patient = await User.findById(task.patientId).select('bodyCompHistory').lean();
     if (!plan || !patient || String(plan.patientId) !== String(task.patientId)) return res.status(409).json({ success: false, message: '营养方案或会员资料已变化' });
-    let from = plan.confirmedAt;
-    if (task.bodyCompCycle.previousTaskId) {
-      const previous = await FollowUp.findById(task.bodyCompCycle.previousTaskId).select('bodyCompCycle').lean();
-      from = previous?.bodyCompCycle?.measurement?.measuredAt ? bodyComp.addDays(previous.bodyCompCycle.measurement.measuredAt, 1) : from;
-    }
+    const from = task.bodyCompCycle.evidenceAfterAt ? bodyComp.addDays(task.bodyCompCycle.evidenceAfterAt, 1) : plan.confirmedAt;
     res.json({ success: true, data: bodyComp.measurementOptions(patient, from) });
   } catch (error) { res.status(500).json({ success: false, message: '获取体成分记录失败' }); }
 });
@@ -2873,31 +2869,62 @@ router.post('/followups/:id/body-composition-complete', staffAuth, checkPermissi
       if (!['planned', 'in_progress', 'missed'].includes(task.status)) return res.status(409).json({ success: false, message: '邀约状态已变化' });
       const index = Number(req.body?.measurementIndex);
       const nextTargetAt = bodyComp.dateOnly(req.body?.nextTargetDate);
-      const options = bodyComp.measurementOptions(patient, task.bodyCompCycle.previousTaskId
-        ? bodyComp.addDays((await FollowUp.findById(task.bodyCompCycle.previousTaskId).select('bodyCompCycle').lean())?.bodyCompCycle?.measurement?.measuredAt || plan.confirmedAt, 1)
-        : plan.confirmedAt);
-      const selected = Number.isInteger(index) && options.find(option => option.index === index);
-      if (!selected) return res.status(400).json({ success: false, message: '请先将本次体成分测量结果入档，再选择对应记录' });
-      if (selected.measuredAt !== req.body?.measuredAt || String(selected.sourceReportId || '') !== String(req.body?.sourceReportId || '')) return res.status(409).json({ success: false, message: '测量记录已变化，请重新选择' });
-      const measuredAt = bodyComp.dateOnly(selected.measuredAt);
-      const daysUntilNext = nextTargetAt && (nextTargetAt - measuredAt) / 86400000;
-      if (!Number.isInteger(daysUntilNext) || daysUntilNext < 4 || daysUntilNext > 365) return res.status(400).json({ success: false, message: '请设置本次测量后 4 至 365 天的下一次测量日期' });
+      const outcome = req.body?.outcome === 'not_measured' ? 'not_measured' : 'measured';
+      const options = outcome === 'measured' ? bodyComp.measurementOptions(patient,
+        task.bodyCompCycle.evidenceAfterAt ? bodyComp.addDays(task.bodyCompCycle.evidenceAfterAt, 1) : plan.confirmedAt) : [];
+      const selected = outcome === 'measured' && Number.isInteger(index) && options.find(option => option.index === index);
+      if (outcome === 'measured' && !selected) return res.status(400).json({ success: false, message: '请先将本次体成分测量结果入档，再选择对应记录' });
+      if (selected && (selected.measuredAt !== req.body?.measuredAt || String(selected.sourceReportId || '') !== String(req.body?.sourceReportId || ''))) return res.status(409).json({ success: false, message: '测量记录已变化，请重新选择' });
+      const anchor = new Date(Math.max(selected ? bodyComp.dateOnly(selected.measuredAt).getTime() : 0, bodyComp.dateOnly(new Date()).getTime()));
+      const daysUntilNext = nextTargetAt && (nextTargetAt - anchor) / 86400000;
+      if (!Number.isInteger(daysUntilNext) || daysUntilNext < 1 || daysUntilNext > 365) return res.status(400).json({ success: false, message: '请设置本轮办结后 1 至 365 天的下一次测量日期' });
       const resultNote = String(req.body?.resultNote || '').trim();
       if (!resultNote || resultNote.length > 1000) return res.status(400).json({ success: false, message: '请填写本次测量结果及下轮安排（最多 1000 字）' });
-      const measurement = { ...selected, measuredAt: selected.measuredAt, resultNote, confirmedBy: req.staff._id, confirmedAt: new Date() };
+      const measurement = selected ? { ...selected, measuredAt: selected.measuredAt, resultNote, confirmedBy: req.staff._id, confirmedAt: new Date() } : null;
       completed = await FollowUp.findOneAndUpdate(
         { _id: task._id, status: task.status, 'bodyCompCycle.cycle': task.bodyCompCycle.cycle },
         { $set: { status: 'completed', completedAt: new Date(), executedContent: resultNote, content: resultNote,
-          'bodyCompCycle.measurement': measurement, 'bodyCompCycle.nextTargetAt': nextTargetAt } }, { new: true });
+          'bodyCompCycle.outcome': outcome, 'bodyCompCycle.measurement': measurement, 'bodyCompCycle.nextTargetAt': nextTargetAt } }, { new: true });
       if (!completed) return res.status(409).json({ success: false, message: '邀约已被处理，请刷新后核对' });
     }
     const nextTargetAt = completed.bodyCompCycle?.nextTargetAt;
     if (!nextTargetAt) return res.status(409).json({ success: false, message: '已完成记录缺少下一轮日期，请联系管理员核对' });
-    const next = await bodyComp.ensureTask(FollowUp, plan, patient, Number(completed.bodyCompCycle.cycle) + 1, nextTargetAt, completed._id);
+    const next = await bodyComp.ensureTask(FollowUp, plan, patient, Number(completed.bodyCompCycle.cycle) + 1, nextTargetAt, completed._id,
+      completed.bodyCompCycle.measurement?.measuredAt || completed.completedAt || completed.bodyCompCycle.evidenceAfterAt || null);
     res.json({ success: true, data: { completed, next } });
   } catch (error) {
     res.status(500).json({ success: false, message: '体成分邀约保存失败，请重试；已完成的记录不会重复生成下一轮' });
   }
+});
+
+router.post('/followups/:id/defer-to-next', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    const workflow = require('../utils/deferredMedicalFollowUp');
+    const task = await FollowUp.findById(req.params.id).lean();
+    if (!workflow.eligible(task)) return res.status(409).json({ success: false, message: '此任务不支持未做后续约，请使用原业务流程' });
+    if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅本轮负责人可确认未做并续约' });
+    let completed = task;
+    if (workflow.OPEN.includes(task.status)) {
+      const reason = String(req.body?.reason || '').trim();
+      const date = workflow.nextDate(req.body?.nextDate);
+      if (reason.length < 5 || reason.length > 1000 || !date) return res.status(400).json({ success: false, message: '请填写本轮未做的实际情况（5 至 1000 字），并选择未来一年内的下次跟进日期' });
+      const outcome = { kind: 'not_done_next_round', reason, nextDate: date, recordedAt: new Date(), recordedBy: req.staff._id };
+      completed = await FollowUp.findOneAndUpdate({ _id: task._id, status: task.status, updatedAt: task.updatedAt }, {
+        $set: { status: 'completed', completedAt: outcome.recordedAt, executedContent: reason,
+          'formData.deferredOutcome': outcome },
+      }, { new: true });
+      if (!completed) return res.status(409).json({ success: false, message: '本轮任务已变化，请刷新核对' });
+    } else if (task.status !== 'completed' || task.formData?.deferredOutcome?.kind !== 'not_done_next_round') {
+      return res.status(409).json({ success: false, message: '本轮已结束，不能续约' });
+    }
+    const outcome = completed.formData.deferredOutcome;
+    const successor = workflow.successor(completed, new Date(outcome.nextDate), outcome.reason);
+    let next;
+    try { next = await FollowUp.findOneAndUpdate({ assessmentActionKey: successor.assessmentActionKey },
+      { $setOnInsert: successor }, { upsert: true, new: true, setDefaultsOnInsert: true }); }
+    catch (error) { if (error.code !== 11000) throw error; next = await FollowUp.findOne({ assessmentActionKey: successor.assessmentActionKey }); }
+    res.json({ success: true, data: { completed, next } });
+  } catch (error) { res.status(500).json({ success: false, message: '保存下一轮随访失败，可重试原任务；不会重复生成任务' }); }
 });
 
 router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
@@ -3703,6 +3730,7 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
   const followUp = await FollowUp.findById(req.params.id);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
   if (require('../utils/nutritionBodyCompFollowUp').isBodyCompTask(followUp)) return res.status(409).json({ success: false, message: '体成分连续邀约不可删除，请由营养师完成本轮并安排下一次' });
+  if (followUp.formData?.deferredOutcome?.kind === 'not_done_next_round' || followUp.formData?.deferredFromTaskId) return res.status(409).json({ success: false, message: '连续随访记录已形成上下轮关联，不能删除历史' });
   if (followUp.sourceType === 'order' && followUp.sourceOrderId
     && await Order.exists({ _id: followUp.sourceOrderId, serviceName: '企业家健康决策计划' }))
     return res.status(409).json({ success: false, message: '该服务的岗位任务属于转介闭环，不能删除' });
@@ -10647,7 +10675,7 @@ router.get('/patients/:id/annual-plan/:planId/issue-progress', staffAuth, async 
     if (!plan) return res.status(404).json({ success: false, message: '年度方案不存在' });
     if (!plan.pushedAt) return res.json({ success: true, data: [] });
     const tasks = await FollowUp.find({ patientId: req.params.id, sourceAnnualPlanId: plan._id,
-      sourceType: { $in: ['scheduled', 'annual_service', 'professional_assessment', 'health_plan'] } })
+      sourceType: { $in: ['scheduled', 'annual_service', 'professional_assessment', 'health_plan', 'report_followup'] } })
       .select('_id managementIssueIds formData.serviceRequest.itemSnapshot.sourceIds formData.annualNutritionGoals theme status assignedTo date completedAt progressRecords.content executedContent serviceTracking.status')
       .populate('assignedTo', 'name role').lean();
     const targets = plan.moduleData?.management_targets?.records || [];

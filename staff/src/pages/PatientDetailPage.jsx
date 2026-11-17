@@ -8,6 +8,7 @@ import { currentRecords, screeningAttachments, diseaseHistoryAttachments } from 
 import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
 import BodyCompInvitation, { isBodyCompInvitation } from '../components/BodyCompInvitation'
+import DeferMedicalFollowUp from '../components/DeferMedicalFollowUp'
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
 import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
 import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from '../utils/aiReviewConflictField.mjs'
@@ -12521,6 +12522,7 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', overscrollBehavior: 'contain' }}>
               {!ibdStage(execItem) && <FollowUpDueDateBanner task={execItem} />}
+              <DeferMedicalFollowUp task={execItem} onSaved={() => { setExecItem(null); loadFollowUps(); load(); toast('本轮已办结，下一轮已按新日期安排') }} />
               <ServiceTaskContextBanner task={execItem} />
               {staff?.role === 'healthManager' && medicalProxyStage(execItem) === 'post_visit_audit' && /专家约诊/.test(execItem.sourceOrderId?.serviceName || '') && <ExpertAppointmentRescheduleForm task={execItem} onSaved={() => { setExecItem(null); loadFollowUps(); loadServiceRecords(); toast('已补记预约改期，原服务任务继续等待就诊资料') }} />}
               <OnsiteBookingCard key={`onsite-exec-${execItem._id}`} task={execItem} staff={staff} />

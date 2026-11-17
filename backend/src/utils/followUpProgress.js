@@ -18,6 +18,7 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   const healthDataPlan = task.formData?.healthDataPlan;
   const next = healthDataPlan?.enabled ? require('../../../shared/healthDataPlan.cjs').nextContact(healthDataPlan, now, body.nextContactAt) : body.nextContactAt ? new Date(body.nextContactAt) : null;
   if (next && !Number.isFinite(next.getTime())) throw fail('下次跟进时间无效', 400);
+  if (task.formData?.healthConsensus && (!next || next <= now)) throw fail('未达成共识时请安排下一次沟通时间', 400);
   if (!body.updatedAt || new Date(body.updatedAt).getTime() !== new Date(task.updatedAt).getTime()) throw fail('记录已更新，请刷新后补充，原记录不会覆盖');
   const reminder=require('../../../shared/reminderFollowUp.cjs');
   const outcome=body.outcome||'';
@@ -36,7 +37,7 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
     $push: { progressRecords: { $each: records } }, $inc: { __v: 1 },
     $set: { status: obtained ? 'completed' : 'in_progress', completedAt: obtained ? now : null, completedBy: obtained ? 'staff' : null,
       plannedContent: task.plannedContent || task.content || '', executedContent: content, executedType: type,
-      ...(next && !obtained ? { nextFollowUpDate: next, remindAt: next, ...(healthDataPlan?.enabled ? {date:next} : {}) } : {}) },
+      ...(next && !obtained ? { nextFollowUpDate: next, remindAt: next, ...((healthDataPlan?.enabled || task.formData?.healthConsensus) ? {date:next} : {}) } : {}) },
   }, { new: true, runValidators: true });
   if (!saved) throw fail('记录已更新，请刷新后补充，原记录不会覆盖');
   return saved;

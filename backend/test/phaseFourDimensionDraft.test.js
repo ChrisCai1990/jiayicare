@@ -22,8 +22,24 @@ test('缺本期依据时清除旧报告、虚构生活方式及新增医疗安�
 });
 test('重复取消不认定未就医，真实未闭环事项与规划对应',()=>{
  const input=dimensions.map(labels=>labels.map(()=> 'AI草稿'));
- const output=ground(input,{periodFollowups:[{theme:'医务代办',status:'cancelled',cancelReason:'重复发起已释放预占'},{theme:'眼科复查',status:'planned'}]});
- assert.match(output[2][1],/重复发起/);assert.match(output[2][1],/不能仅凭状态认定逾期/);assert.match(output[3][1],/眼科复查/);
+ const output=ground(input,{capturedAt:'2026-11-17',periodFollowups:[{theme:'医务代办',status:'cancelled',cancelReason:'重复发起已释放预占'},{theme:'眼科复查',status:'planned',date:'2026-11-20'}]});
+ assert.match(output[2][1],/重复发起/);assert.match(output[2][1],/不能视作工作人员逾期/);assert.match(output[3][1],/眼科复查/);
+});
+test('上一轮已办结且本次未检查，新计划未到期时不记工作人员逾期',()=>{
+ const input=dimensions.map(labels=>labels.map(()=> 'AI草稿'));
+ const output=ground(input,{capturedAt:'2026-11-17',periodFollowups:[
+  {theme:'眼科复查提醒',status:'completed',date:'2026-11-01',executedContent:'客户本次未做，已另约11月20日'},
+  {theme:'眼科复查继续跟进',status:'planned',date:'2026-11-20'},
+ ]});
+ assert.match(output[2][1],/已有上一轮办结记录/);
+ assert.match(output[2][1],/不能视作工作人员逾期/);
+ assert.doesNotMatch(output[2][1],/未及时完成的实际原因/);
+});
+test('当前有效任务过了计划日期才记工作人员待办逾期',()=>{
+ const output=ground(dimensions.map(labels=>labels.map(()=> 'AI草稿')),{capturedAt:'2026-11-17',periodFollowups:[
+  {theme:'复查邀约',status:'planned',date:'2026-11-10'},
+ ]});
+ assert.match(output[2][1],/工作人员待办逾期/);
 });
 
 test('饮食记录里的不适原文也归入主诉，不以餐次标记推测饮食',()=>{

@@ -25,7 +25,7 @@ function sections({records=[],reports=[],followups=[]}={}){
  const categories=[['生活方式行为改变',/饮食|营养|运动|睡眠|烟|酒|情绪|生活方式/],['就医或检查完成及时性',/就医|检查|复查|预约|门诊/]];
  const grouped=categories.map(([label,pattern],index)=>followups.filter(r=>!r.isBlocked&&pattern.test([r.theme,r.plannedContent].join(' '))&&(index===1||!categories[1][1].test([r.theme,r.plannedContent].join(' ')))));
  const issues=categories.map(([label],index)=>`${label}：${grouped[index].length?grouped[index].map(r=>`计划：${text(r.plannedContent||r.theme)}；实际：${text(r.executedContent)||({completed:'任务标记完成，实际执行详情待核实',cancelled:'任务已取消',missed:'任务标记未完成',planned:'待执行',in_progress:'进行中'})[r.status]||'待核实'}；${r.cancelReason?'已记录原因：'+text(r.cancelReason):'未落实原因待核实'}。计划日期${day(r.date)}仅为任务日期，不自动认定医疗完成期限或逾期`).join('；'):'本期暂无足够计划与执行记录，无法判断执行情况及原因；没有记录不等于没有执行。'}`);
- const next=categories.map(([label],index)=>`${label}：${grouped[index].some(r=>r.status!=='completed')?'针对上述计划核对实际执行及未落实原因，再由营养健康团队提出相应调整；负责人、完成期限与复评节点待确认。':'本期暂无明确问题需要新增措施，按既有已确认计划继续跟进。'}`);
+ const next=categories.map(([label],index)=>`${label}：${grouped[index].some(r=>['planned','in_progress','missed'].includes(r.status))?'针对当前有效计划核对实际执行及未落实原因，再由营养健康团队提出相应调整；负责人、完成期限与复评节点待确认。':'本期暂无明确逾期待办；已完结或取消的轮次保留记录，后续以新的有效计划为准。'}`);
  return [changes,life,issues,next];
 }
 module.exports={headings,rules,sections};

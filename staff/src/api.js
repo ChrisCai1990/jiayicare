@@ -238,6 +238,7 @@ export const staffAPI = {
   getBodyCompInvitationOptions: id => req(`/staff/followups/${id}/body-composition-options`),
   completeBodyCompInvitation: (id, data) => req(`/staff/followups/${id}/body-composition-complete`, { method: 'POST', body: JSON.stringify(data) }),
   rescheduleBodyCompInvitation: (id, data) => req(`/staff/followups/${id}/body-composition-reschedule`, { method: 'POST', body: JSON.stringify(data) }),
+  deferMedicalFollowUp: (id, data) => req(`/staff/followups/${id}/defer-to-next`, { method: 'POST', body: JSON.stringify(data) }),
   completeMonitoringFollowUp: (id, d) => req(`/staff/followups/${id}/monitoring-result`, { method: 'POST', body: JSON.stringify(d) }),
   getDecisionReferralTask: id => req(`/staff/decision-referral/tasks/${id}`),
   getDecisionReferralCoordinators: () => req('/staff/decision-referral/coordinators'),
