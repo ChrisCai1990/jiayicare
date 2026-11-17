@@ -10626,7 +10626,11 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
     if (require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, year);
-      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved });
+      const unresolvedSymptoms = await HealthRecord.find({ user: req.params.id, type: 'symptom', 'symptomWorkflow.status': 'pending_doctor',
+        recordedAt: { $lt: new Date(`${year + 1}-01-01T00:00:00+08:00`) } })
+        .select('_id value recordedAt').sort({ recordedAt: -1 }).limit(20).lean();
+      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
+        unresolvedSymptoms: unresolvedSymptoms.map(row => ({ id: row._id, value: String(row.value || '').slice(0, 120), recordedAt: row.recordedAt })) });
     }
     const confirmed = await AiCaseReview.find({
       ...require('../utils/annualCaseReviewScope').annualCaseReviewQuery(req.params.id, year),
@@ -10786,7 +10790,8 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (!Array.isArray(records) || records.length > 32 || records.some(row => !String(row?.goal || '').trim() || !String(row?.focus || '').trim()
         || String(row.goal).length > 240 || String(row.focus).length > 500 || (row.rehabRelevant !== undefined && typeof row.rehabRelevant !== 'boolean')
         || (row.goalDimension !== undefined && !['', 'data', 'symptom', 'lifestyle'].includes(row.goalDimension))
-        || (row.baseline !== undefined && (typeof row.baseline !== 'string' || row.baseline.length > 500)))) {
+        || (row.baseline !== undefined && (typeof row.baseline !== 'string' || row.baseline.length > 500))
+        || !require('../utils/managementGoalMetrics').validate(row.goalMetric))) {
         return res.status(400).json({ success: false, message: '请逐条填写管理目标和干预重点（最多 32 条）' });
       }
     } else if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) {
