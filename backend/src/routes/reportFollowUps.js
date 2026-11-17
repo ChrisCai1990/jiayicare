@@ -65,6 +65,20 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
     })).sort((a, b) => Number(b.sameReport) - Number(a.sameReport) || new Date(a.date) - new Date(b.date));
     res.json({ success: true, data: { candidates, totalActive, truncated: totalActive > active.length } });
   }));
+  router.get('/:id/related-followups/:taskId', staffAuth, wrap(async (req, res) => {
+    const row = await load(req);
+    if (!mongoose.isValidObjectId(req.params.taskId)) fail('随访ID无效', 400);
+    const task = await FollowUp.findOne({
+      _id: req.params.taskId, patientId: row.patientId, clientVisible: { $ne: false },
+      taskRole: { $in: ['', null] }, sourceType: { $nin: ['order', 'medication_reminder', 'supply_reminder'] },
+      status: { $in: ['planned', 'in_progress', 'missed', 'completed'] },
+    }).select('theme date status plannedContent content executedContent').lean();
+    if (!task) fail('随访不存在或无法查看', 404);
+    res.json({ success: true, data: {
+      id: String(task._id), theme: task.theme || '未命名随访', date: task.date, status: task.status,
+      plannedContent: task.plannedContent || '', content: task.content || '', executedContent: task.executedContent || '',
+    } });
+  }));
   router.post('/:id/generate', staffAuth, wrap(async (req, res) => {
     const row = await load(req);
     if (req.body.issueMode === true) {

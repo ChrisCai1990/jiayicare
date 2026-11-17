@@ -19,11 +19,11 @@ async function request(t, body) {
   const response = await fetch(`http://127.0.0.1:${server.address().port}/${ids.draft}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() };
 }
-async function relatedRequest(t) {
+async function relatedRequest(t, taskId = '') {
   const app = express(); app.use(router);
   const server = await new Promise(resolve => { const srv = app.listen(0, '127.0.0.1', () => resolve(srv)); });
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const response = await fetch(`http://127.0.0.1:${server.address().port}/${ids.draft}/related-followups`);
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/${ids.draft}/related-followups${taskId ? `/${taskId}` : ''}`);
   return { status: response.status, body: await response.json() };
 }
 
@@ -42,6 +42,24 @@ test('现有随访核对只返回有权限客户的执行任务，并标明同�
   assert.deepEqual(result.body.data.candidates.map(item => [item.theme, item.sameReport]), [['本报告随访', true], ['定期复查', false]]);
   visible = [];
   assert.equal((await relatedRequest(t)).status, 403);
+});
+
+test('点击已有随访读取完整内容时再次校验客户和执行任务范围', async t => {
+  actor = { _id: ids.advisor, role: 'familyDoctor' }; visible = [ids.patient];
+  const taskId = '000000000000000000000005';
+  t.mock.method(Draft, 'findById', async () => row({ reportId: '000000000000000000000004' }));
+  t.mock.method(FollowUp, 'findOne', filter => {
+    assert.equal(String(filter.patientId), ids.patient);
+    assert.equal(filter._id, taskId);
+    assert.deepEqual(filter.taskRole.$in, ['', null]);
+    return { select: () => ({ lean: async () => ({ _id: taskId, theme: '专项筛查', plannedContent: '完整计划内容', content: '', executedContent: '本周已联系' }) }) };
+  });
+  const result = await relatedRequest(t, taskId);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.plannedContent, '完整计划内容');
+  assert.equal(result.body.data.executedContent, '本周已联系');
+  visible = [];
+  assert.equal((await relatedRequest(t, taskId)).status, 403);
 });
 
 test('问题确认仅存年度依据，零执行派单，旧发布入口拒绝', async t => {

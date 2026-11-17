@@ -48,6 +48,29 @@ function ReportSourceSummary({ snapshot = {} }) {
   </details>
 }
 
+function RelatedFollowUpItem({ draftId, item }) {
+  const [detail, setDetail] = useState({ loading: false, data: null, error: '' })
+  const loadDetail = async () => {
+    setDetail({ loading: true, data: null, error: '' })
+    try {
+      const result = await staffAPI.getRelatedReportFollowUpDetail(draftId, item.id)
+      setDetail({ loading: false, data: result.data, error: '' })
+    } catch (error) {
+      setDetail({ loading: false, data: null, error: error.message || '读取失败' })
+    }
+  }
+  const task = detail.data
+  return <li><details onToggle={event => { if (event.currentTarget.open && !detail.loading && !detail.data && !detail.error) loadDetail() }}>
+    <summary><strong>{item.theme}</strong> · {String(item.date || '').slice(0, 10) || '日期未记录'} · {item.status === 'completed' ? '已完成' : item.status === 'missed' ? '已逾期' : item.status === 'in_progress' ? '进行中' : '待执行'} <span>查看内容</span></summary>
+    {detail.loading ? <p role="status">正在读取随访内容…</p> : detail.error ? <p role="alert">读取失败：{detail.error} <button type="button" onClick={loadDetail}>重试</button></p> : task ? <div className="report-followup-related-content">
+      {task.plannedContent && <p><b>计划内容：</b>{task.plannedContent}</p>}
+      {task.content && task.content !== task.plannedContent && <p><b>随访内容：</b>{task.content}</p>}
+      {task.executedContent && <p><b>已记录进展：</b>{task.executedContent}</p>}
+      {!task.plannedContent && !task.content && !task.executedContent && <p>这条随访尚未填写具体内容，请到客户随访记录进一步核对。</p>}
+    </div> : null}
+  </details></li>
+}
+
 function RelatedFollowUps({ draftId }) {
   const [state, setState] = useState({ loading: true, data: null, error: '' })
   const [retry, setRetry] = useState(0)
@@ -64,10 +87,7 @@ function RelatedFollowUps({ draftId }) {
   const rows = state.data?.candidates || []
   const sameReport = rows.filter(item => item.sameReport)
   const otherActive = rows.filter(item => !item.sameReport && ['planned', 'in_progress', 'missed'].includes(item.status))
-  const renderTask = item => <li key={item.id}>
-    <strong>{item.theme}</strong> · {String(item.date || '').slice(0, 10) || '日期未记录'} · {item.status === 'completed' ? '已完成' : item.status === 'missed' ? '已逾期' : item.status === 'in_progress' ? '进行中' : '待执行'}
-    {item.summary && <p>{item.summary}</p>}
-  </li>
+  const renderTask = item => <RelatedFollowUpItem key={`${draftId}:${item.id}`} draftId={draftId} item={item} />
   return <section className="report-followup-related" aria-label="现有随访核对">
     <h5>核对已有随访，避免重复派发</h5>
     <p>下列内容仅供核对；同一客户的其他随访可能涉及本次报告，系统不会仅凭标题自动判定重复。</p>
