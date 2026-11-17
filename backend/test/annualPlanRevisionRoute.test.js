@@ -42,6 +42,9 @@ test('顾问只修订本人客户的一项，保留日期和已发布状态并�
   assert.equal(update.changes.$set.returnReason, '');
   assert.equal(notification.sourceAnnualPlanId, planId);
   assert.match(notification.content, /查看完整方案/);
+  const oldMode = process.env.MANAGEMENT_REVIEW_MODE, oldIds = process.env.MANAGEMENT_REVIEW_PATIENT_IDS;
+  process.env.MANAGEMENT_REVIEW_MODE = 'phase_assessment'; process.env.MANAGEMENT_REVIEW_PATIENT_IDS = patientId;
+  t.after(() => { if (oldMode === undefined) delete process.env.MANAGEMENT_REVIEW_MODE; else process.env.MANAGEMENT_REVIEW_MODE = oldMode; if (oldIds === undefined) delete process.env.MANAGEMENT_REVIEW_PATIENT_IDS; else process.env.MANAGEMENT_REVIEW_PATIENT_IDS = oldIds; });
   const relocated = await call({ item: { ...body.item, date: '2027-02-26', timingReason: '专家建议调整复查时间', location: { hospital: '浙江省人民医院', department: '风湿免疫科' } } });
   assert.equal(relocated.status, 200, JSON.stringify(relocated));
   assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].time, '2027-02-26');

@@ -83,6 +83,7 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const {moduleData,changes}=logic.apply(plan.moduleData,[item],source,catalog);
       const location=req.body.item?.location;
       if(location !== undefined) {
+        if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
         if(!['medical_treatment','checkup_completion','abnormal_followup'].includes(item.key)
           || !location || typeof location!=='object' || Array.isArray(location))
           return res.status(400).json({success:false,message:'此事项不支持修改就医地点'});
