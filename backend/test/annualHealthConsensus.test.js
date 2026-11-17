@@ -1,5 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const pilotId = '6a4ef1980f2291549b4ffd8d';
+process.env.MANAGEMENT_REVIEW_MODE = 'phase_assessment';
+process.env.MANAGEMENT_REVIEW_PATIENT_IDS = pilotId;
 
 test('顾问共识事项需完整沟通安排，并关联存在的管理问题', () => {
   const validate = require('../src/utils/annualPlanPublishValidation').validate;
@@ -21,7 +24,7 @@ test('共识沟通只派顾问一条内部任务，客户只看适宜展示的�
   const row = { consensusId: 'consensus-1', currentUnderstanding: '担心检查有害', concern: '担心费用',
     question: '复查的必要性是什么？', method: '面谈', frequency: '每月一次', firstDate: '2026-12-01', sourceIds: ['management_issue:1'],
     topicPath: ['复查的必要性是什么？', '如何看阶段变化', '下一周期怎么延续'] };
-  const plan = { _id: 'plan-1', patientId: 'patient-1', createdBy: 'advisor', moduleData: { health_consensus: { records: [row] } } };
+  const plan = { _id: 'plan-1', patientId: pilotId, createdBy: 'advisor', moduleData: { health_consensus: { records: [row] } } };
   const tasks = await require('../src/utils/annualPlanFollowUps').buildAnnualPlanFollowUps(plan);
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0].assignedTo, team.assignedFamilyDoctor);
