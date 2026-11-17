@@ -56,6 +56,7 @@ function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
             <View style={styles.modalServiceInfo}>
               <Text style={styles.modalServiceName} numberOfLines={2}>{item.name}</Text>
               {!!item.subtitle && <Text style={styles.serviceSubtitle}>{item.subtitle}</Text>}
+              {item.reviewCount > 0 && <Text style={styles.buyerCount}>{item.reviewCount}人已购</Text>}
             </View>
           </View>
 
@@ -481,6 +482,7 @@ function ServiceCard({ item, onDetail, onBuy, onPay }) {
         <View style={styles.serviceInfo}>
           <Text style={styles.serviceName} numberOfLines={2}>{item.name}</Text>
           {!!item.subtitle && <Text style={styles.serviceSubtitle} numberOfLines={2}>{item.subtitle}</Text>}
+          {item.reviewCount > 0 && <Text style={styles.buyerCount}>{item.reviewCount}人已购</Text>}
         </View>
       </View>
 
@@ -826,6 +828,7 @@ const styles = StyleSheet.create({
   serviceInfo: { flex: 1 },
   serviceName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4, paddingRight: 48 },
   serviceSubtitle: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginBottom: 6 },
+  buyerCount: { fontSize: 11, color: colors.textMuted, marginBottom: 4 },
   featureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
   featureChip: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primary + '10', paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
   featureText: { fontSize: 11, color: colors.primary },

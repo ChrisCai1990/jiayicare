@@ -31,13 +31,8 @@ router.get('/', async (req, res) => {
     ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean(),
   ]);
 
-  // “人已购”按真实已付款客户去重统计；Product.sales 历史字段未随付款维护。
-  const paidBuyers = products.length ? await Order.aggregate([
-    { $match: { serviceId: { $in: products.map(product => String(product._id)) }, paymentStatus: 'paid', paidAmount: { $gt: 0 } } },
-    { $group: { _id: { serviceId: '$serviceId', user: '$user' } } },
-    { $group: { _id: '$_id.serviceId', count: { $sum: 1 } } },
-  ]) : [];
-  const paidBuyerCount = new Map(paidBuyers.map(row => [String(row._id), row.count]));
+  const { paidBuyerCounts, displayedBuyerCount } = require('../utils/productPaidBuyers');
+  const paidBuyerCount = await paidBuyerCounts(products);
 
   const productCountByCategory = products.reduce((counts, product) => {
     const name = String(product.category || '').trim();
@@ -89,7 +84,7 @@ router.get('/', async (req, res) => {
       price: firstPrice ? firstPrice.price : (firstSku?.price ?? p.originalPrice),
       originalPrice: p.originalPrice,
       rating: 5.0,
-      reviewCount: paidBuyerCount.get(String(p._id)) || 0,
+      reviewCount: displayedBuyerCount(p, paidBuyerCount),
       tag: '',
       tagColor: '',
       icon: 'storefront-outline',
