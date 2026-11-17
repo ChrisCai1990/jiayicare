@@ -4,24 +4,24 @@ import { useToast } from '../../App'
 
 export default function ReviewExperiencePage() {
   const toast = useToast()
-  const [enabled, setEnabled] = useState(false)
+  const [state, setState] = useState({ enabled: false, requestedEnabled: false, credentialsValid: false, expiresAt: null })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     adminAPI.getReviewExperienceConfig()
-      .then(res => setEnabled(res.data?.enabled === true))
+      .then(res => setState(res.data))
       .catch(err => toast(err.message))
       .finally(() => setLoading(false))
   }, [])
 
   const toggle = async () => {
-    const next = !enabled
+    const next = !state.requestedEnabled
     setSaving(true)
     try {
-      await adminAPI.updateReviewExperienceConfig(next)
-      setEnabled(next)
-      toast(next ? '已开启审核一键体验' : '已关闭审核一键体验')
+      const res = await adminAPI.updateReviewExperienceConfig(next)
+      setState(res.data)
+      toast(res.message)
     } catch (err) {
       toast(err.message)
     } finally {
@@ -36,21 +36,23 @@ export default function ReviewExperiencePage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">小程序审核体验</h1>
-          <p className="page-subtitle">控制小程序登录页是否向微信审核人员显示“审核一键体验”入口。</p>
+          <p className="page-subtitle">控制小程序登录页的审核账号密码入口。</p>
         </div>
       </div>
       <div className="card">
         <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: 17, color: '#1A2B24', marginBottom: 8 }}>
-              当前状态：{enabled ? '已开放' : '已关闭'}
+              当前状态：{state.enabled ? '已开放' : '未开放'}
             </div>
             <div style={{ fontSize: 13, color: '#8AA89C', lineHeight: 1.7 }}>
-              开启后，审核人员勾选协议即可一键进入审核体验账号；正式用户无需使用此入口。
+              审核人员需填写审核账号和密码，并勾选协议后登录；正式用户无需使用此入口。
+              {state.requestedEnabled && !state.credentialsValid && <div style={{ color: '#DC3545' }}>管理开关已开启，但审核凭证未生效或已到期，请续期后再提交审核。</div>}
+              {state.expiresAt && <div>凭证有效至：{new Date(state.expiresAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（北京时间）</div>}
             </div>
           </div>
-          <button onClick={toggle} disabled={saving} style={{ minWidth: 120, padding: '11px 18px', border: 0, borderRadius: 8, color: '#fff', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', background: enabled ? '#DC3545' : '#1E6B50' }}>
-            {saving ? '保存中...' : enabled ? '关闭体验入口' : '开放体验入口'}
+          <button onClick={toggle} disabled={saving} style={{ minWidth: 120, padding: '11px 18px', border: 0, borderRadius: 8, color: '#fff', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', background: state.requestedEnabled ? '#DC3545' : '#1E6B50' }}>
+            {saving ? '保存中...' : state.requestedEnabled ? '关闭体验入口' : '开放体验入口'}
           </button>
         </div>
       </div>

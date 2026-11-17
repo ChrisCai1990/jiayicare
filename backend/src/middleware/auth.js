@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Tenant = require('../models/Tenant');
 const LoginSession = require('../models/LoginSession');
 const { tenantContext } = require('../utils/tenantScope');
+const { reviewAccessState } = require('../utils/reviewExperienceAccess');
 
 module.exports = async (req, res, next) => {
   try {
@@ -17,12 +18,15 @@ module.exports = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.authSessionId = decoded.sessionId || '';
 
+    let reviewAccess = null;
     if (decoded.sessionId) {
       const activeSession = await LoginSession.findOne({ sessionId: decoded.sessionId, user: decoded.id, logoutAt: null }).select('method').lean();
       if (!activeSession) return res.status(401).json({ success: false, message: '登录已退出，请重新登录' });
-      const reviewConfig = require('../utils/reviewExperience').reviewConfig();
-      if (activeSession.method === 'review' && (!reviewConfig.enabled || String(decoded.id) !== reviewConfig.accountId)) {
-        return res.status(401).json({ success: false, message: '审核体验已结束' });
+      if (activeSession.method === 'review') {
+        reviewAccess = await reviewAccessState();
+        if (!reviewAccess.enabled || String(decoded.id) !== reviewAccess.accountId) {
+          return res.status(401).json({ success: false, message: '审核体验已结束' });
+        }
       }
       // 旧版30天令牌首次正常请求时升级为持久、服务端可撤销的会话。
       if (!decoded.persistent) {
@@ -39,8 +43,11 @@ module.exports = async (req, res, next) => {
     if (!user || user.isDeleted) {
       return res.status(401).json({ success: false, message: '用户不存在' });
     }
-    if (user.reviewExperience?.enabled && (!decoded.sessionId || !require('../utils/reviewExperience').reviewConfig().enabled || String(user._id) !== require('../utils/reviewExperience').reviewConfig().accountId)) {
-      return res.status(401).json({ success: false, message: '审核体验已结束' });
+    if (user.reviewExperience?.enabled) {
+      reviewAccess = reviewAccess || await reviewAccessState();
+      if (!decoded.sessionId || !reviewAccess.enabled || String(user._id) !== reviewAccess.accountId) {
+        return res.status(401).json({ success: false, message: '审核体验已结束' });
+      }
     }
     if (!user.tenantId) return res.status(403).json({ success: false, message: '账号未归属机构' });
     const tenant = await Tenant.findById(user.tenantId).select('status').lean();

@@ -15,6 +15,16 @@ function reviewConfig(now = Date.now()) {
   };
 }
 
+function combineReviewAccess(credentials, requestedEnabled) {
+  return {
+    ...credentials,
+    enabled: requestedEnabled === true && credentials.enabled,
+    requestedEnabled: requestedEnabled === true,
+    credentialsValid: credentials.enabled,
+    expiresAt: Number.isFinite(credentials.expiresAt) ? new Date(credentials.expiresAt).toISOString() : null,
+  };
+}
+
 function canAttempt(ip, now = Date.now()) {
   const key = String(ip || 'unknown');
   const entry = attempts.get(key);
@@ -40,4 +50,4 @@ function validCredentials(config, username, password) {
   return crypto.timingSafeEqual(submitted, expected);
 }
 
-module.exports = { reviewConfig, canAttempt, recordAttempt, validCredentials };
+module.exports = { reviewConfig, combineReviewAccess, canAttempt, recordAttempt, validCredentials };

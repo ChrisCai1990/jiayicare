@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { reviewConfig, canAttempt, recordAttempt, validCredentials } = require('../src/utils/reviewExperience');
+const { reviewConfig, combineReviewAccess, canAttempt, recordAttempt, validCredentials } = require('../src/utils/reviewExperience');
 
 const envKeys = ['REVIEW_LOGIN_USER_ID', 'REVIEW_LOGIN_USERNAME', 'REVIEW_LOGIN_PASSWORD_SHA256', 'REVIEW_LOGIN_EXPIRES_AT'];
 const savedEnv = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
@@ -32,6 +32,14 @@ test('review credentials match only the configured account and password', () => 
   assert.equal(validCredentials(config, 'review-check', 'test-only-secret'), true);
   assert.equal(validCredentials(config, 'review-check', 'wrong'), false);
   assert.equal(validCredentials(config, 'another-user', 'test-only-secret'), false);
+});
+
+test('admin switch and credential expiry both gate the review login', () => {
+  const configured = { enabled: true, accountId: '0123456789abcdef01234567', expiresAt: Date.parse('2099-01-01T00:00:00Z') };
+  assert.equal(combineReviewAccess(configured, true).enabled, true);
+  assert.equal(combineReviewAccess(configured, false).enabled, false);
+  assert.equal(combineReviewAccess({ ...configured, enabled: false }, true).enabled, false);
+  assert.equal(combineReviewAccess(configured, true).expiresAt, '2099-01-01T00:00:00.000Z');
 });
 
 test('review password attempts are limited per source address', () => {

@@ -3198,14 +3198,18 @@ router.put('/system-config/supply-workflow', adminAuth, async (req, res) => {
 });
 
 router.get('/system-config/review-experience', adminAuth, async (_req, res) => {
-  const cfg = await SystemConfig.findOne({ key: 'reviewExperience' });
-  res.json({ success: true, data: cfg ? cfg.value : { enabled: false } });
+  const { reviewAccessState } = require('../utils/reviewExperienceAccess');
+  const { enabled, requestedEnabled, credentialsValid, expiresAt } = await reviewAccessState();
+  res.json({ success: true, data: { enabled, requestedEnabled, credentialsValid, expiresAt } });
 });
 
 router.put('/system-config/review-experience', adminAuth, async (req, res) => {
   const value = { enabled: req.body.enabled === true };
-  await SystemConfig.findOneAndUpdate({ key: 'reviewExperience' }, { key: 'reviewExperience', value, label: '小程序审核一键体验' }, { upsert: true, new: true });
-  res.json({ success: true, data: value, message: value.enabled ? '已开启审核一键体验' : '已关闭审核一键体验' });
+  await SystemConfig.findOneAndUpdate({ key: 'reviewExperience' }, { key: 'reviewExperience', value, label: '小程序审核账号登录' }, { upsert: true, new: true });
+  const { reviewAccessState } = require('../utils/reviewExperienceAccess');
+  const { enabled, requestedEnabled, credentialsValid, expiresAt } = await reviewAccessState();
+  res.json({ success: true, data: { enabled, requestedEnabled, credentialsValid, expiresAt },
+    message: enabled ? '审核账号登录已开放' : value.enabled ? '管理开关已开启，但审核凭证未生效' : '审核账号登录已关闭' });
 });
 
 const DEFAULT_HEALTH_FUND_POLICY = {

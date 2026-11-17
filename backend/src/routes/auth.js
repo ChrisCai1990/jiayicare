@@ -7,7 +7,8 @@ const { jiayihuiTenantId } = require('../utils/jiayihuiTenant');
 const LoginSession = require('../models/LoginSession');
 const VerificationCode = require('../models/VerificationCode');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
-const { reviewConfig, canAttempt, recordAttempt, validCredentials } = require('../utils/reviewExperience');
+const { canAttempt, recordAttempt, validCredentials } = require('../utils/reviewExperience');
+const { reviewAccessState } = require('../utils/reviewExperienceAccess');
 const aliyunNumberAuth = require('../utils/aliyunNumberAuth');
 const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
@@ -18,12 +19,12 @@ const router = express.Router();
 
 router.get('/review-experience/status', async (_req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  res.json({ success: true, data: { enabled: reviewConfig().enabled } });
+  res.json({ success: true, data: { enabled: (await reviewAccessState()).enabled } });
 });
 
 router.post('/review-experience/login', async (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  const config = reviewConfig();
+  const config = await reviewAccessState();
   if (!config.enabled) return res.status(403).json({ success: false, message: '审核体验暂未开放' });
   const limit = canAttempt(req.ip);
   if (!limit.allowed) {
