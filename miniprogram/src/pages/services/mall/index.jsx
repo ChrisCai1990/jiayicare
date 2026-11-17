@@ -19,8 +19,14 @@ function formatCouponLabel(c) {
   return c.title || (c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`);
 }
 
-const descriptionLines = value => String(value || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
-const isDescriptionHeading = value => /^【.+】$/.test(value) || /^(服务内容|服务流程|产品说明|适合人群|服务成果|注意事项|购买须知)$/.test(value);
+function Stars({ rating }) {
+  const r = Math.round(rating || 5);
+  return (
+    <Text style={{ fontSize: '11px', color: '#F39C12', fontWeight: 700 }}>
+      {'★'.repeat(r)}{'☆'.repeat(5 - r)} {rating}
+    </Text>
+  );
+}
 
 function ServiceCard({ item, onDetail, onPay, isAuthenticated }) {
   const windowWidth = Taro.getWindowInfo ? Taro.getWindowInfo().windowWidth : Taro.getSystemInfoSync().windowWidth;
@@ -37,18 +43,23 @@ function ServiceCard({ item, onDetail, onPay, isAuthenticated }) {
       )}
       <View style={{ display: 'flex', flexDirection: 'row', gap: `${spacing.md}px`, alignItems: 'stretch' }}>
         {item.images && item.images.length > 0 && !imageFailed && (
-          <Image src={mediaUrl(item.images[0])} mode="aspectFit" lazyLoad onError={() => setImageFailed(true)} style={{ width: isWide ? '132px' : '108px', height: isWide ? '132px' : '108px', flexShrink: 0, borderRadius: `${radius.md}px`, backgroundColor: '#F6F4EB' }} />
+          <Image src={mediaUrl(item.images[0])} mode="aspectFill" lazyLoad onError={() => setImageFailed(true)} style={{ width: isWide ? '160px' : '88px', height: isWide ? '160px' : '88px', flexShrink: 0, borderRadius: `${radius.md}px`, backgroundColor: colors.background }} />
         )}
         <View style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
       <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
+        <View style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: (item.iconColor || colors.primary) + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Text style={{ fontSize: '22px' }}>🏪</Text>
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }} numberOfLines={2}>{item.name}</Text>
           <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginBottom: '4px' }} numberOfLines={2}>{item.subtitle}</Text>
+          <Stars rating={item.rating} />
+          <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginTop: '2px' }}>{item.reviewCount || 0}人已购</Text>
         </View>
       </View>
       {item.features && item.features.length > 0 && (
         <View style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: `${spacing.sm}px` }}>
-          {item.features.slice(0, 2).map((f, i) => (
+          {item.features.map((f, i) => (
             <Text key={i} style={{ fontSize: '11px', color: colors.primary, backgroundColor: colors.primary10, padding: '3px 8px', borderRadius: `${radius.full}px` }}>✓ {f}</Text>
           ))}
         </View>
@@ -81,31 +92,28 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay, isAuthenticated, 
       <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.lg}px` }}>
+          <View style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Text style={{ fontSize: '26px' }}>🏪</Text>
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }} numberOfLines={2}>{item.name}</Text>
-            {!!item.subtitle && <Text style={{ fontSize: '12px', color: colors.textSecondary, display: 'block' }}>{item.subtitle}</Text>}
+            <Stars rating={item.rating || 5} />
           </View>
         </View>
         <ScrollView scrollY style={{ maxHeight: '340px', marginBottom: `${spacing.md}px` }}>
-          {item.features && item.features.length > 0 && (
+          {item.images && item.images.length > 0 && item.images.map((url, i) => (
+            <Image key={i} src={mediaUrl(url)} mode="widthFix" style={{ width: '100%', borderRadius: `${radius.md}px`, marginBottom: `${spacing.sm}px`, backgroundColor: colors.background }} />
+          ))}
+          {!!item.description && (
+            <Text style={{ fontSize: '14px', color: colors.textSecondary, lineHeight: '22px', display: 'block', marginBottom: `${spacing.md}px` }}>{item.description}</Text>
+          )}
+          {!item.description && item.features && item.features.length > 0 && (
             <View style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: `${spacing.md}px` }}>
-              {item.features.slice(0, 3).map((f, i) => (
+              {item.features.map((f, i) => (
                 <Text key={i} style={{ fontSize: '12px', color: colors.primary, backgroundColor: colors.primary10, padding: '4px 10px', borderRadius: `${radius.full}px` }}>✓ {f}</Text>
               ))}
             </View>
           )}
-          {item.images && item.images.length > 0 && (
-            <View style={{ marginBottom: `${spacing.md}px` }}>
-              <Image src={mediaUrl(item.images[0])} mode="aspectFit" onClick={() => Taro.previewImage({ current: mediaUrl(item.images[0]), urls: item.images.map(mediaUrl) })} style={{ width: '100%', height: '230px', borderRadius: `${radius.md}px`, backgroundColor: '#F6F4EB' }} />
-              {item.images.length > 1 && <Text style={{ display: 'block', fontSize: '12px', color: colors.textMuted, marginTop: '4px' }}>点击图片查看全部 {item.images.length} 张</Text>}
-            </View>
-          )}
-          {!!item.description && <View style={{ marginBottom: `${spacing.md}px` }}>
-            <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, marginBottom: `${spacing.sm}px` }}>服务详情</Text>
-            {descriptionLines(item.description).map((line, i) => (
-              <Text key={i} style={{ fontSize: isDescriptionHeading(line) ? '14px' : '13px', fontWeight: isDescriptionHeading(line) ? 700 : 400, color: isDescriptionHeading(line) ? colors.textPrimary : colors.textSecondary, lineHeight: '21px', display: 'block', marginTop: isDescriptionHeading(line) ? '12px' : '5px' }}>{line}</Text>
-            ))}
-          </View>}
           <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
             <Text style={{ fontSize: '14px', color: colors.textSecondary }}>服务费用</Text>
             {isAuthenticated ? (
@@ -335,6 +343,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', partnerCode = '',
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }} numberOfLines={2}>{item.name}</Text>
+              <Stars rating={item.rating || 5} />
             </View>
           </View>
 
