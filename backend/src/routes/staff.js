@@ -1690,21 +1690,45 @@ router.put('/patients/:id/disease-records/:recordId/course-entries/:entryId', st
     const previous = record.courseEntries[entryIndex];
     const content = mergedHealthChange(req.body);
     if (!content) return res.status(400).json({ success: false, message: '请填写本次健康及症状变化' });
+    // 修订归档副本，不修改原始病历或已审核资料的快照。
+    const outpatientRecord = previous.outpatientRecord
+      ? require('../utils/clinicalDocumentReview').normalizeClinicalReview('outpatient_record', req.body.outpatientRecord || previous.outpatientRecord)
+      : null;
+    if (outpatientRecord) {
+      if (!req.body.outpatientRecord) return res.status(400).json({ success:false, message:'请核对门诊病历完整栏目后再保存' });
+      if (![outpatientRecord.chiefComplaint, outpatientRecord.presentIllness, outpatientRecord.pastHistory,
+        outpatientRecord.allergyHistory, outpatientRecord.familyHistory, outpatientRecord.vitalSigns,
+        outpatientRecord.examination, outpatientRecord.testsAndOrders, outpatientRecord.treatmentPlan,
+        outpatientRecord.medicationInstruction, outpatientRecord.referralAndFollowUp,
+        outpatientRecord.otherRecordContent, ...outpatientRecord.diagnoses].some(Boolean))
+        return res.status(400).json({ success:false, message:'请至少保留一项门诊病历内容' });
+      outpatientRecord.visitDate = String(req.body.occurredAt || previous.outpatientRecord.visitDate || '').slice(0, 10);
+    }
+    const nextFields = {
+      occurredAt: req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : previous.occurredAt,
+      content, symptoms: '',
+      examination: outpatientRecord ? [outpatientRecord.vitalSigns, outpatientRecord.examination, outpatientRecord.testsAndOrders].filter(Boolean).join('\n') : cleanMedicalText(req.body.examination, 5000),
+      diagnosis: outpatientRecord ? outpatientRecord.diagnoses.join('\n') : cleanMedicalText(req.body.diagnosis, 5000),
+      medicationChange: outpatientRecord ? outpatientRecord.medicationInstruction : cleanMedicalText(req.body.medicationChange, 5000),
+      treatmentResponse: outpatientRecord ? outpatientRecord.treatmentPlan : cleanMedicalText(req.body.treatmentResponse, 5000),
+      nextPlan: outpatientRecord ? outpatientRecord.referralAndFollowUp : cleanMedicalText(req.body.nextPlan, 5000),
+      ...cleanHealthInfoProvenance(req.body),
+      ...(outpatientRecord ? { outpatientRecord } : {}),
+    };
+    if (Object.entries(nextFields).every(([key, value]) => JSON.stringify(value) === JSON.stringify(previous[key])))
+      return res.json({ success:true, data:previous, unchanged:true, message:'内容未变化，无需重复保存' });
     const now = new Date();
     const operator = req.staff.name || req.staff.username || '';
     const { revisionHistory: ignoredHistory, ...previousSnapshot } = previous;
     record.courseEntries[entryIndex] = {
       ...previous,
-      occurredAt: req.body.occurredAt && !Number.isNaN(Date.parse(req.body.occurredAt)) ? new Date(req.body.occurredAt) : previous.occurredAt,
-      content, symptoms: '',
-      examination: cleanMedicalText(req.body.examination, 5000), diagnosis: cleanMedicalText(req.body.diagnosis, 5000),
-      medicationChange: cleanMedicalText(req.body.medicationChange, 5000), treatmentResponse: cleanMedicalText(req.body.treatmentResponse, 5000), nextPlan: cleanMedicalText(req.body.nextPlan, 5000),
-      ...cleanHealthInfoProvenance(req.body),
+      ...nextFields,
       recordedAt: previous.recordedAt || now, recordedById: previous.recordedById || req.staff._id, recordedByName: previous.recordedByName || operator,
       updatedAt: now, updatedById: req.staff._id, updatedByName: operator,
       revisionHistory: [...(previous.revisionHistory || []), { ...previousSnapshot, archivedAt: now, archivedById: req.staff._id, archivedByName: operator }].slice(-50),
     };
-    await User.collection.updateOne({ _id: patient._id }, { $set: { diseaseRecords: records } });
+    const saved = await User.collection.updateOne({ _id: patient._id, diseaseRecords:patient.diseaseRecords }, { $set: { diseaseRecords: records } });
+    if (!saved.matchedCount) return res.status(409).json({ success:false, message:'专病档案已更新，请刷新后重新核对' });
     res.json({ success: true, data: record.courseEntries[entryIndex] });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
