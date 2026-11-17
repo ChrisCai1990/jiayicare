@@ -19,7 +19,7 @@ async function loadAnnualPlanPreparationChecklist(patientId, year = new Date().g
   ]);
   if (!patient) return null;
   const reviews = await require('../models/AiCaseReview').find(require('./annualCaseReviewScope').annualCaseReviewQuery(patientId, year)).select('title reviewType annualPlanYear requiresCustomerDiscussion customerDiscussion conclusion.status conclusion.confirmedAt').sort({ _id: 1 }).lean();
-  const recentCheckup = await require('./annualReviewEligibility').check(patientId);
+  const recentCheckup = await require('./annualReviewEligibility').check(patientId, { lookbackMonths: 3 });
   const caseReviews = require('./annualCaseReviewScope').markRequiredCaseReviews(reviews, preparation?.requiredCaseReviewIds || []);
   return { preparation, continuity, caseReviews, checklist: buildAnnualPlanPreparationChecklist({ patient, preparation, year, auditedReportCount, activeMedicationCount, activeSupplementCount, assessments, continuity, caseReviews, recentCheckup }) };
 }

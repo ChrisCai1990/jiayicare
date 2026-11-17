@@ -1,8 +1,10 @@
 const User = require('../models/User');
 const AnnualPlan = require('../models/AnnualPlan');
 const ServicePackage = require('../models/ServicePackage');
+const MedicalReport = require('../models/MedicalReport');
 const { matchesAnnualCustomer } = require('./researchAnnualCustomer');
 const { resolveServiceAccess, chinaDay } = require('./serviceAccess');
+const { eligibility } = require('./annualReviewEligibility');
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -61,7 +63,19 @@ async function loadAnnualPlanCreationTodos(staff, now = new Date(), deps = {}) {
     eligible.push(...batch.filter(Boolean));
   }
   if (!eligible.length) return [];
-  return eligible.map(({ patient, year }) => buildTodo(patient, year, plans, now)).filter(Boolean);
+  const candidates = eligible.map(({ patient, year }) => buildTodo(patient, year, plans, now)).filter(Boolean);
+  if (!candidates.length) return [];
+  const reports = await (deps.MedicalReport || MedicalReport).find({
+    user: { $in: candidates.map(todo => todo.patientId) },
+    audit_status: 'audited', archiveOnly: { $ne: true },
+  }).select('user _id title type documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt').lean();
+  const byPatient = new Map();
+  reports.forEach(report => {
+    const id = String(report.user);
+    if (!byPatient.has(id)) byPatient.set(id, []);
+    byPatient.get(id).push(report);
+  });
+  return candidates.filter(todo => eligibility(byPatient.get(todo.patientId) || [], now, { lookbackMonths: 3 }).allowed);
 }
 
 module.exports = { loadAnnualPlanCreationTodos, buildTodo, planYear };

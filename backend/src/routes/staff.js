@@ -10155,7 +10155,7 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
   const patient = await User.findById(req.params.id).select('_id tenantId aiHealthSummary healthRiskTags').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-  const eligibility = await require('../utils/annualReviewEligibility').check(patient._id);
+  const eligibility = await require('../utils/annualReviewEligibility').check(patient._id, { lookbackMonths: 3 });
   if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
   const existing = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year, status: { $ne: 'archived' } });
   if (existing) return res.json({ success: true, data: { _id: existing._id, title: existing.title, status: existing.conclusion?.status, reused: true } });
@@ -10677,7 +10677,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (issue) return res.status(400).json({ success:false, message:issue });
     }
     const targetYear = year || new Date().getFullYear();
-    const checkup = await require('../utils/annualReviewEligibility').check(req.params.id);
+    const checkup = await require('../utils/annualReviewEligibility').check(req.params.id, { lookbackMonths: 3 });
     if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
     if (moduleData.management_targets?.records !== undefined) {
       const records = moduleData.management_targets.records;
@@ -10955,6 +10955,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       if (!dispatch.warnings?.length) { plan.distributionSyncedAt = new Date(); await plan.save(); }
       return res.json({ success: true, data: plan, dispatch, retried: true });
     }
+    const recentCheckup = await require('../utils/annualReviewEligibility').check(req.params.id, { lookbackMonths: 3 });
+    if (!recentCheckup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: recentCheckup.message });
     const hasLegacyNutritionAssessment = (plan.moduleData?.personalized_followups?.records || []).some(row =>
       require('../../../shared/annualNutrition.cjs').isRow(row) || /营养评估/.test(row.standardPlanName || ''));
     if (!plan.moduleData?.nutrition_assessment && !hasLegacyNutritionAssessment) {
@@ -14444,7 +14446,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权生成该会员的年度方案' });
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
-    const checkup = await require('../utils/annualReviewEligibility').check(user._id);
+    const checkup = await require('../utils/annualReviewEligibility').check(user._id, { lookbackMonths: 3 });
     if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
 
     const targetYear = Number(req.body.year) || new Date().getFullYear();

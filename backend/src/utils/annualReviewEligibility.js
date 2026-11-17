@@ -41,10 +41,14 @@ function examReports(reports) {
     return explicit || (items.length >= 8 && domains >= 4) || (batch.length >= 5 && titles.size >= 5 && domains >= 3) ? batch : [];
   });
 }
-function eligibility(reports, now = new Date()) {
+function eligibility(reports, now = new Date(), options = {}) {
   const today = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0,10);
   const [y,m,d] = today.split('-').map(Number);
-  const cutoff = new Date(Date.UTC(y-1,m-1,Math.min(d,new Date(Date.UTC(y-1,m,0)).getUTCDate()))).toISOString().slice(0,10);
+  const lookbackMonths = options.lookbackMonths === 3 ? 3 : 12;
+  const targetMonth = y * 12 + m - 1 - lookbackMonths;
+  const cutoffYear = Math.floor(targetMonth / 12);
+  const cutoffMonth = targetMonth % 12;
+  const cutoff = new Date(Date.UTC(cutoffYear,cutoffMonth,Math.min(d,new Date(Date.UTC(cutoffYear,cutoffMonth+1,0)).getUTCDate()))).toISOString().slice(0,10);
   const exams = examReports(reports);
   const latest = exams
     .map(r => ({ reportId: String(r._id || ''), date: day(r.checkDate || r.date) }))
@@ -58,13 +62,13 @@ function eligibility(reports, now = new Date()) {
     require('./reportFollowUpSource').needsAdvisorInterpretation(r) && !r.advisorInterpretationConfirmedAt) : [];
   return { allowed: recent && hasCompleteContent && pending.length === 0, latest: latest || null, cutoff,
     pendingInterpretation: pending.map(r => String(r._id || '')),
-    message: !recent ? '近12个月内没有已审核的完整体检资料，请先完成体检并录入审核后，再生成年度方案。'
+    message: !recent ? `近${lookbackMonths}个月内没有已审核的完整体检资料，请先完成体检并录入审核后，再生成年度方案。`
       : !hasCompleteContent ? '本次体检报告缺少可解读的完整检查内容，请补齐解析和审核后再生成年度方案。'
         : '本次体检资料尚未全部完成健康顾问解读，请全部解读确认后再生成年度方案。' };
 }
-async function check(patientId) {
+async function check(patientId, options = {}) {
   const reports = await require('../models/MedicalReport').find({ user: patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
     .select('_id title type documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt').lean();
-  return eligibility(reports);
+  return eligibility(reports, options.now || new Date(), options);
 }
 module.exports = { day, examReports, eligibility, check };

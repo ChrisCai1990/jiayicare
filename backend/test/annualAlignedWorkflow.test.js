@@ -7,7 +7,7 @@ const { buildAnnualCheckupPreparation: build } = require('../src/utils/annualChe
 const { buildAnnualPlanServiceTasks } = require('../src/utils/annualPlanServiceTasks');
 test('annual eligibility uses actual reviewed exam dates and inclusive rolling twelve months', () => {
  const now = new Date('2026-10-07T08:00:00Z');
- const r = {audit_status:'audited',type:'annual',checkDate:'2025-10-07'};
+ const r = {audit_status:'audited',type:'annual',checkDate:'2025-10-07',examConclusion:'体检综合结论',advisorInterpretationConfirmedAt:new Date()};
  assert.equal(eligibility([r],now).allowed,true);
  for(const other of [{...r,checkDate:'2025-10-06'},{...r,checkDate:'2026-10-08'},{...r,checkDate:'2026-02-30'},{...r,documentCategory:'outpatient_record'},{...r,audit_status:'pending'}]) assert.equal(eligibility([other],now).allowed,false);
 });

@@ -26,13 +26,17 @@ test('only the assigned advisor receives active annual members without a publish
   const users = {
     find: filter => {
       userFilter = filter;
-      return { select: () => ({ lean: async () => [patient, { ...patient, _id: 'p2' }, { ...patient, _id: 'p3', membershipTier: 'basic' }] }) };
+      return { select: () => ({ lean: async () => [patient, { ...patient, _id: 'p2' }, { ...patient, _id: 'p3', membershipTier: 'basic' }, { ...patient, _id: 'p4' }] }) };
     },
   };
   const plans = { find: () => ({ select: () => ({ lean: async () => [{ patientId: 'p2', year: 2026, pushedAt: now }] }) }) };
   const packages = { find: () => ({ select: () => ({ lean: async () => [] }) }) };
+  const reports = { find: () => ({ select: () => ({ lean: async () => [
+    { user: 'p1', _id: 'r1', audit_status: 'audited', documentCategory: 'physical_exam', checkDate: '2026-09-10', examConclusion: '完整体检结论', advisorInterpretationConfirmedAt: now },
+    { user: 'p4', _id: 'r4', audit_status: 'audited', documentCategory: 'physical_exam', checkDate: '2026-07-01', examConclusion: '历史体检结论', advisorInterpretationConfirmedAt: now },
+  ] }) }) };
   const deps = {
-    User: users, AnnualPlan: plans, ServicePackage: packages,
+    User: users, AnnualPlan: plans, ServicePackage: packages, MedicalReport: reports,
     resolveServiceAccess: async () => ({ active: true, startDate: '2026-10-29' }),
   };
   assert.deepEqual(await loadAnnualPlanCreationTodos({ role: 'healthManager', _id: 'advisor' }, now, deps), []);
