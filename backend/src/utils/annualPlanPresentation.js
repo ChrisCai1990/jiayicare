@@ -6,6 +6,7 @@ const MODULE_NAME = {
 };
 const SERVICE_MODE = { reminder: '仅提醒', single: '单项服务', managed: '全托管' };
 const SERVICE_TYPE = { proxy_booking: '代约/代办', proxy_visit: '代诊', escort_visit: '陪诊', escort_exam: '陪检', consult_coordination: '会诊协调' };
+const { isInternalNutritionMetric } = require('../../../shared/annualNutritionAdvisorTargets.cjs');
 const first = (...values) => values.find(value => value !== undefined && value !== null && String(value).trim()) || '';
 const internalDaily = record => /^【?日常跟进(?:与动态调整)?】?$/.test(String(record?.standardPlanName || record?.items || '').trim());
 
@@ -27,7 +28,7 @@ function normalizeItem(moduleKey, record, index) {
     problem: first(record.reason, record.current, record.finding),
     evidence: first(record.basisSummary, record.matchReason, record.sourceRule),
     goal: moduleKey === 'nutrition_assessment'
-      ? (record.nutritionComparisonMetrics?.length ? `前后对比：${record.nutritionComparisonMetrics.join('、')}` : '核实膳食与体成分情况')
+      ? (record.nutritionComparisonMetrics?.filter(name => !isInternalNutritionMetric(name)).length ? `前后对比：${record.nutritionComparisonMetrics.filter(name => !isInternalNutritionMetric(name)).join('、')}` : '核实膳食与体成分情况')
       : first(record.goal, record.purpose, record.focus, record.personalization),
     completionStandard: record.completionStandard || '',
     interventionPlan: first(record.personalizedAdvice, record.personalization, record.standardContent, record.plan),
@@ -52,14 +53,20 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items;
 }
 
-const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType']);
+const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
   if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
   return Object.fromEntries(Object.entries(value)
     .filter(([key, child]) => !internalFields.has(key) && !(key === 'nutrition_assessment' && child?.enabled === false))
-    .map(([key, child]) => [key, key === 'health_consensus'
+    .map(([key, child]) => [key, key === 'management_targets'
+      ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
+      : key === 'nutrition_assessment'
+      ? { ...customerModuleData(child),
+          nutritionComparisonMetrics: (child?.nutritionComparisonMetrics || []).filter(name => !isInternalNutritionMetric(name)),
+          advisorTargets: (child?.advisorTargets || []).filter(row => !isInternalNutritionMetric(row.metric) && row.internalOnly !== true).map(row => ({ kind: row.kind, metric: row.metric, baseline: row.baseline, target: row.target })) }
+      : key === 'health_consensus'
       ? { enabled: child?.enabled !== false, records: (child?.records || []).map(row => ({ question: row.question || '', method: row.method || '', frequency: row.frequency || '', firstDate: row.firstDate || '' })) }
       : customerModuleData(child)]));
 }

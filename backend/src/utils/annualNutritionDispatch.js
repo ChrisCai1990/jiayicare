@@ -23,7 +23,8 @@ function contentForPlan(plan) {
   const focus = plan?.moduleData?.nutrition_assessment?.records || [];
   const summary = require('../../../shared/nutritionComparisonMetrics.cjs').nutritionSummary(plan);
   const advisorTargets = plan?.moduleData?.nutrition_assessment?.advisorTargets || [];
-  const advisorGoalText = advisorTargets.length ? `顾问纳入的异常指标与期望目标：${advisorTargets.map(row => `${row.metric}（当前${row.baseline}，期望${row.target}）`).join('；')}。请核对后制定营养干预方案。` : '';
+  const catalog = require('../../../shared/annualNutritionAdvisorTargets.cjs');
+  const advisorGoalText = advisorTargets.length ? `顾问纳入的异常指标与症状：${advisorTargets.map(row => `${(row.kind || catalog.kindFor(row.metric)) === 'symptom' ? '症状' : '指标'}${row.metric}${catalog.isInternalNutritionMetric(row.metric) ? '（仅内部监测）' : ''}（当前${row.baseline || '待核对'}，期望${row.target}）`).join('；')}。请核对后制定营养干预方案。` : '';
   return `营养师评估膳食、生活方式及体成分，形成营养方案。${advisorGoalText}营养相关管理目标：${goals.map(row => row.goal).join('；') || '待确认'}。相关问题：${summary.problems.join('、') || '研判中的营养相关问题'}。对比指标：${metrics.join('、') || '基础体成分指标'}。研判参考目标：${summary.references.join('；') || '未给出明确数值，由营养师结合原报告参考范围及实际情况制定'}。基线依据已有资料核实，阶段目标由营养师调整。${focus.length ? `专项重点：${focus.map(r=>[r.items, r.personalizedAdvice].filter(Boolean).join('：')).join('；')}。` : ''}医疗背景仅供参考，就医、检查及用药评估由对应医疗安排执行。`;
 
 }

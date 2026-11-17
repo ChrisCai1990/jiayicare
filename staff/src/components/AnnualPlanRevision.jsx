@@ -145,7 +145,10 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
         {inlineItem && selected.key !== 'annual_checkup' && <button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B73D3D' }} disabled={saving} onClick={() => deleting ? remove() : setDeleting(true)}>{deleting ? '确认删除本项' : '删除本项'}</button>}</div>
     </div>}
   </>
-  if (inlineItem) return <div className="annual-plan-revision annual-plan-revision--inline">{fields}</div>
+  if (inlineItem) return <div className="annual-plan-revision annual-plan-revision--inline" onFocusCapture={event => {
+    document.querySelectorAll('[data-annual-save-active]').forEach(node => node.removeAttribute('data-annual-save-active'))
+    event.currentTarget.setAttribute('data-annual-save-active', 'true')
+  }}>{fields}</div>
   return <details ref={editorRef} id="annual-plan-revision" className="annual-plan-revision" style={{ marginBottom: 16, padding: 14, border: '1px solid #C7D8CB', borderRadius: 10, background: '#fff' }}>
     <summary style={{ cursor: 'pointer', fontWeight: 700 }}>修改方案事项</summary>
     {fields}

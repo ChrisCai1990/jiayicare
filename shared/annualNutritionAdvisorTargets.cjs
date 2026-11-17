@@ -1,26 +1,51 @@
-const VITAL_NAMES = { weight: '体重', bloodSugar: '血糖', systolic: '收缩压', diastolic: '舒张压', heartRate: '心率' };
+const INDICATORS = [
+  '血压', '空腹血糖', '糖化血红蛋白', '总胆固醇', '高密度脂蛋白', '低密度脂蛋白', '甘油三酯',
+  '尿酸', '脂蛋白磷脂酶A2', '同型半胱氨酸', '脂肪肝（超声）',
+];
+const SYMPTOMS = ['便秘', '腹泻', '脑雾', '睡眠'];
+const INTERNAL_METRICS = new Set(['脂蛋白磷脂酶A2', '同型半胱氨酸']);
+const MAX_ADVISOR_TARGETS = 24;
+const VITAL_NAMES = { weight: '体重', bloodSugar: '空腹血糖', systolic: '血压', diastolic: '血压', heartRate: '心率' };
 const OPERATORS = { lte: '≤', gte: '≥', lt: '<', gt: '>', eq: '=' };
+const MATCHERS = [
+  ['血压', /血压|收缩压|舒张压/], ['空腹血糖', /空腹血糖/], ['糖化血红蛋白', /糖化血红蛋白|HbA1c/i],
+  ['总胆固醇', /总胆固醇|血脂|TC\b/i], ['高密度脂蛋白', /高密度脂蛋白|血脂|HDL[-－]?C/i],
+  ['低密度脂蛋白', /低密度脂蛋白|血脂|LDL[-－]?C/i], ['甘油三酯', /甘油三酯|血脂|TG\b/i],
+  ['尿酸', /尿酸/], ['脂蛋白磷脂酶A2', /脂蛋白磷脂酶A2|Lp[-－]?PLA2/i],
+  ['同型半胱氨酸', /同型半胱氨酸|Hcy\b/i], ['脂肪肝（超声）', /脂肪肝/],
+  ['便秘', /便秘/], ['腹泻', /腹泻/], ['脑雾', /脑雾/], ['睡眠', /睡眠|失眠/],
+];
+const isInternalNutritionMetric = name => INTERNAL_METRICS.has(String(name || '').trim()) || /脂蛋白磷脂酶A2|同型半胱氨酸|Lp[-－]?PLA2|Hcy\b/i.test(String(name || ''));
+const kindFor = name => SYMPTOMS.includes(String(name || '').trim()) ? 'symptom' : 'metric';
+const clauseFor = (text, matcher) => String(text || '').split(/[；;。\n]/).map(value => value.trim()).find(value => matcher.test(value)) || '';
 
 function fromManagementTargets(records = []) {
-  return records.filter(row => row.nutritionRelevant === true).slice(0, 10).map(row => {
+  return records.filter(row => row.nutritionRelevant === true).flatMap(row => {
     const goalMetric = row.goalMetric || {};
-    const metric = String(goalMetric.name || VITAL_NAMES[goalMetric.key] || row.goalDimension === 'data' && row.goal || row.goal || '').split(/[·：:；;]/)[0].trim().slice(0, 100);
-    const baseline = String(row.baseline || '').trim().slice(0, 200);
-    const structuredTarget = goalMetric.targetValue !== undefined && goalMetric.targetValue !== ''
-      ? `${OPERATORS[goalMetric.operator] || ''}${goalMetric.targetValue}${goalMetric.unit || ''}` : '';
-    const target = String(structuredTarget || row.goal || '').trim().slice(0, 200);
-    return { metric, baseline, target, sourceIssueId: String(row.issueId || '') };
-  }).filter(row => row.metric && row.target);
+    const text = [row.goal, row.focus, row.baseline, goalMetric.name, VITAL_NAMES[goalMetric.key]].filter(Boolean).join('；');
+    const matches = MATCHERS.filter(([, pattern]) => pattern.test(text));
+    const candidates = matches.length ? matches : [[String(goalMetric.name || VITAL_NAMES[goalMetric.key] || row.goal || '').split(/[·：:；;]/)[0].trim(), /.*/]];
+    return candidates.map(([name, pattern]) => {
+      const metric = String(name).slice(0, 100);
+      const baseline = clauseFor(row.baseline, pattern) || (candidates.length === 1 ? String(row.baseline || '') : '');
+      const structured = goalMetric.targetValue !== undefined && goalMetric.targetValue !== ''
+        && (candidates.length === 1 || String(goalMetric.name || VITAL_NAMES[goalMetric.key] || '').includes(name))
+        ? `${OPERATORS[goalMetric.operator] || ''}${goalMetric.targetValue}${goalMetric.unit || ''}` : '';
+      const target = structured || clauseFor(row.goal, pattern) || String(row.goal || '');
+      return { kind: kindFor(metric), metric, baseline: baseline.trim().slice(0, 200), target: target.trim().slice(0, 200),
+        internalOnly: isInternalNutritionMetric(metric), sourceIssueId: String(row.issueId || '') };
+    }).filter(item => item.metric && item.target);
+  }).slice(0, MAX_ADVISOR_TARGETS);
 }
 
 function mergeAdvisorTargets(existing = [], records = []) {
-  const result = existing.map(row => ({ ...row }));
+  const result = existing.map(row => ({ ...row, kind: row.kind || kindFor(row.metric), internalOnly: isInternalNutritionMetric(row.metric) }));
   for (const candidate of fromManagementTargets(records)) {
-    if (result.length >= 10) break;
-    if (result.some(row => candidate.sourceIssueId && row.sourceIssueId === candidate.sourceIssueId || row.metric === candidate.metric)) continue;
+    if (result.length >= MAX_ADVISOR_TARGETS) break;
+    if (result.some(row => row.metric === candidate.metric)) continue;
     result.push(candidate);
   }
   return result;
 }
 
-module.exports = { fromManagementTargets, mergeAdvisorTargets };
+module.exports = { INDICATORS, SYMPTOMS, MAX_ADVISOR_TARGETS, isInternalNutritionMetric, kindFor, fromManagementTargets, mergeAdvisorTargets };

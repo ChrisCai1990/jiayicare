@@ -11245,14 +11245,16 @@ router.patch('/patients/:id/annual-nutrition-metrics', staffAuth, async (req, re
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权修改该会员的年度方案' });
     if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
     const { normalizeMetrics } = require('../../../shared/nutritionComparisonMetrics.cjs');
+    const nutritionAdvisorCatalog = require('../../../shared/annualNutritionAdvisorTargets.cjs');
     const metrics = normalizeMetrics(req.body.metrics);
     const hasAdvisorTargets = Object.hasOwn(req.body, 'advisorTargets');
     let advisorTargets;
     if (hasAdvisorTargets) {
       if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
-      if (!Array.isArray(req.body.advisorTargets) || req.body.advisorTargets.length > 10) return res.status(400).json({ success: false, message: '异常指标最多填写10项' });
+      if (!Array.isArray(req.body.advisorTargets) || req.body.advisorTargets.length > nutritionAdvisorCatalog.MAX_ADVISOR_TARGETS) return res.status(400).json({ success: false, message: '营养指标与症状最多填写24项' });
       advisorTargets = req.body.advisorTargets.map(row => ({
-        metric: String(row?.metric || '').trim(), baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(), sourceIssueId: String(row?.sourceIssueId || '').trim(),
+        kind: row?.kind === 'symptom' ? 'symptom' : 'metric', metric: String(row?.metric || '').trim(), baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(), sourceIssueId: String(row?.sourceIssueId || '').trim(),
+        internalOnly: nutritionAdvisorCatalog.isInternalNutritionMetric(row?.metric),
       }));
       if (advisorTargets.some(row => !row.metric || !row.target || row.metric.length > 100 || row.baseline.length > 200 || row.target.length > 200 || row.sourceIssueId.length > 100))
         return res.status(400).json({ success: false, message: '请逐项核对异常指标和顾问期望目标' });
@@ -11316,10 +11318,16 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       }
       if (moduleData?.nutrition_assessment?.advisorTargets !== undefined) {
         const rows = moduleData.nutrition_assessment.advisorTargets;
-        if (!require('../utils/annualFlowPilot').enabled(req.params.id) || !Array.isArray(rows) || rows.length > 10
+        if (!require('../utils/annualFlowPilot').enabled(req.params.id) || !Array.isArray(rows) || rows.length > require('../../../shared/annualNutritionAdvisorTargets.cjs').MAX_ADVISOR_TARGETS
           || rows.some(row => !String(row?.metric || '').trim() || !String(row?.target || '').trim()
             || String(row.metric).length > 100 || String(row.baseline).length > 200 || String(row.target).length > 200))
-          throw new Error('请逐项填写异常指标、当前数据和顾问期望目标（最多10项）');
+          throw new Error('请逐项填写营养指标或症状及顾问目标（最多24项）');
+        const catalog = require('../../../shared/annualNutritionAdvisorTargets.cjs');
+        moduleData.nutrition_assessment.advisorTargets = rows.map(row => ({
+          kind: row.kind === 'symptom' ? 'symptom' : catalog.kindFor(row.metric), metric: String(row.metric).trim(),
+          baseline: String(row.baseline || '').trim(), target: String(row.target).trim(),
+          sourceIssueId: String(row.sourceIssueId || '').trim(), internalOnly: catalog.isInternalNutritionMetric(row.metric),
+        }));
       }
       for (const row of moduleData?.personalized_followups?.records || []) {
         if (row.nutritionComparisonMetrics !== undefined) {

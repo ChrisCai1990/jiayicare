@@ -1167,6 +1167,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     : PLAN_TYPES.find(pt => pt.key === strategyOf(planType))
   const backPath = patientMode ? '/plans?tab=annual_health_mgmt' : '/plans?type=annual_mgmt'
   const goBack = () => nav(annualPlanReturnTarget(window.history.state?.idx, backPath))
+  const saveCurrentPublishedItem = () => {
+    const selected = document.querySelector('[data-annual-save-active="true"]')
+    const validSelected = selected && (selected.classList.contains('annual-nutrition-advisor-editor') || selected.closest('details')?.open)
+    const editor = validSelected ? selected : document.querySelector('.annual-nutrition-advisor-editor, details[open] .annual-plan-revision--inline')
+    const button = editor?.querySelector('.btn-primary')
+    if (!button || button.disabled) { toast('请先展开要修改的事项，填写后再保存本项'); return }
+    button.click()
+  }
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
 
@@ -1249,6 +1257,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           >
             {saving ? '保存中...' : '暂存草稿'}
           </button>}
+          {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={saveCurrentPublishedItem}>保存当前项</button>}
         </div>
       </div>
 
@@ -1569,6 +1578,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
       <div className="annual-plan-footer">
         {canEdit && !pushedAt && planType && <button type="button" className="btn btn-primary" disabled={saving} onClick={() => handleSave()}>{saving ? '保存中…' : '保存方案草稿'}</button>}
+        {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary" onClick={saveCurrentPublishedItem}>保存当前项</button>}
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
     </div>

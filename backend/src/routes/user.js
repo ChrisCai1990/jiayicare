@@ -907,7 +907,7 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
       }
       byPlan.set(key, [...(byPlan.get(key) || []), display]);
     });
-    res.json({ success: true, data: plans.map(plan => ({ ...plan, moduleData: customerModuleData(plan.moduleData), displayItems: buildAnnualPlanDisplayItems(plan.moduleData), serviceRecommendations: byPlan.get(String(plan._id)) || [] })) });
+    res.json({ success: true, data: plans.map(plan => { const customerData = customerModuleData(plan.moduleData); return { ...plan, moduleData: customerData, displayItems: buildAnnualPlanDisplayItems(customerData), serviceRecommendations: byPlan.get(String(plan._id)) || [] }; }) });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取年度管理方案失败', error: err.message });
   }

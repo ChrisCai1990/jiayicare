@@ -1,4 +1,5 @@
 import React from 'react'
+import nutritionCatalog from '../../../shared/annualNutritionAdvisorTargets.cjs'
 
 const medical = [
   ['专家就医与进一步检查', ['medical_treatment', 'specialist_collab']],
@@ -29,7 +30,10 @@ export default function AnnualPlanTrackView({ actions, renderAction, nutritionEn
     return <div key={title} style={{ borderTop: title === '年度体检' ? 0 : '1px solid #E1EAE4', padding: '15px 0' }}>
       {title !== '年度体检' && <><strong style={{ fontSize: 16, color: '#183E30' }}>{title}</strong><span style={{ marginLeft: 8, fontSize: 12, color: '#71877B' }}>{itemCount ? `${itemCount} 项` : '待安排'}</span></>}
       {nutrition && <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.7 }}>
-        {nutritionAdvisorTargets.length ? <div className="annual-nutrition-advisor-summary">{nutritionAdvisorTargets.map((row, index) => <div key={index}><strong>{row.metric}</strong><span>当前：{row.baseline || '待核对'}</span><span>顾问目标：{row.target}</span></div>)}</div> : <div style={{ color: '#62776A' }}>待顾问明确异常指标、当前数据和期望目标</div>}
+        {nutritionAdvisorTargets.length ? <div className="annual-nutrition-advisor-summary">{[['metric', '异常指标'], ['symptom', '症状']].map(([kind, label]) => {
+          const rows = nutritionAdvisorTargets.filter(row => (row.kind || nutritionCatalog.kindFor(row.metric)) === kind)
+          return rows.length ? <div key={kind}><strong className="annual-nutrition-group-title">{label}</strong>{rows.map((row, index) => <div className="annual-nutrition-summary-row" key={`${row.metric}:${index}`}><strong>{row.metric}{nutritionCatalog.isInternalNutritionMetric(row.metric) && <small> · 仅内部</small>}</strong><span>当前：{row.baseline || '待核对'}</span><span>目标：{row.target}</span></div>)}</div> : null
+        })}</div> : <div style={{ color: '#62776A' }}>待顾问明确异常指标、症状和期望目标</div>}
         <div style={{ color: '#52675D' }}>计划日期：{nutritionExecutionDate || '待确定'} · 执行营养师：{nutritionExecutorName || '待匹配'}</div>
         {nutritionAdvisorEditor}
       </div>}
