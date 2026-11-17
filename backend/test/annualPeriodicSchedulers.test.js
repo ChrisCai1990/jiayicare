@@ -155,6 +155,7 @@ test('评估资格优先可信窗口且仍要求结束日期，旧期未开始�
   assert.equal(eligibleForAutomaticAssessment(user, new Date(), { active: true, endDate: '2099-01-01' }), true);
   for (const access of [{ active: false, endDate: '2099-01-01' }, { active: true, endDate: '' }]) assert.equal(eligibleForAutomaticAssessment(user, new Date(), access), false);
   assert.equal(eligibleForAutomaticAssessment({ ...user, serviceStartDate: '2098-01-01', serviceExpiry: '2099-01-01' }), false);
+  assert.equal(eligibleForAutomaticAssessment({ ...user, phaseAssessmentPausedAt: new Date() }, new Date(), { active: true, endDate: '2099-01-01' }), false);
 });
 function supply(id, workflowStatus = 'idle', aiStatus = null) {
   return { _id: id, sourceAnnualPlanId: 'p', patientId: user, planType: 'medication', itemName: id, nextDueDate: new Date(), workflowStatus, aiStatus, saves: 0, async save() { this.saves++; } };

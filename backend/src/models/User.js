@@ -23,6 +23,7 @@ const userSchema = new mongoose.Schema({
     index: true,
   },
   serviceExpiry:  { type: String, default: '' },
+  phaseAssessmentPausedAt: { type: Date, default: null }, // 暂停该客户常规阶段性复盘；保留历史记录
   doctor:  {
     name:  { type: String, default: '' },
     title: { type: String, default: '' },

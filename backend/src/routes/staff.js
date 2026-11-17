@@ -16123,13 +16123,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}),
       }).select('patientId year templateName pushedAt returnedAt returnReason updatedAt')
         .populate('patientId', 'name').sort({ updatedAt: -1 }).lean();
+      const releasedPlanIds = waitingPlans.filter(plan => !plan.returnedAt).map(plan => plan._id);
+      const plansWithFollowUps = new Set((releasedPlanIds.length ? await FollowUp.distinct('sourceAnnualPlanId', {
+        sourceAnnualPlanId: { $in: releasedPlanIds }, status: { $ne: 'cancelled' },
+      }) : []).map(String));
       waitingPlans.forEach(plan => {
         const returned = Boolean(plan.returnedAt);
+        // 用户端尚未启用确认流程；已有内部随访计划的方案不再形成等待客户确认待办。
+        if (!returned && plansWithFollowUps.has(String(plan._id))) return;
         const createdAt = plan.returnedAt || plan.pushedAt;
         todos.push({ id: `annual_customer_${plan._id}`, type: 'annual_plan_customer_response',
-          label: returned ? '年度方案客户提出修改' : '年度方案待客户确认', priority: returned ? 1 : 2,
+          label: returned ? '年度方案客户提出修改' : '年度随访计划待生成', priority: returned ? 1 : 2,
           patientName: plan.patientId?.name || '未知', patientId: String(plan.patientId?._id || ''),
-          summary: returned ? `客户修改意见：${plan.returnReason || '请核对意见并修订'}` : `${plan.year}年度方案已推送，等待客户确认`,
+          summary: returned ? `客户修改意见：${plan.returnReason || '请核对意见并修订'}` : `${plan.year}年度方案已推送，请核对并生成随访计划`,
           createdAt, overdue: !returned && (now - new Date(createdAt)) > 3 * DAY,
           link: `/patients/${plan.patientId?._id}?tab=annual-plan`,
         });
@@ -16694,9 +16700,10 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 阶段性评估按领域进入对应岗位；综合/升级评估归健康顾问，旧营养记录保留原路径。
     if (isSuper || PHASE_ROLE_FIELDS[role]) {
       const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
-      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
+      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier phaseAssessmentPausedAt ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
       assessments.filter(item => {
         if (!item.patientId || !item.patientId.assignedFamilyDoctor) return false;
+        if (item.assessmentMode === 'routine' && item.patientId.phaseAssessmentPausedAt) return false;
         if (item.assessmentMode !== 'intensive_nutrition' && require('../utils/managementReviewPolicy').enabled(item.patientId._id)) return false;
         if (item.status === 'team_review') {
           const targetRole = isSuper ? phaseReviewer(item) : role;
