@@ -98,11 +98,19 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: 10px;
+  padding: 10px 14px;
   border-bottom: 1px solid #e3eae5;
 }
-.sg-chat-header h2 { margin: 0 0 4px; }
+.sg-chat-heading { flex: 1; min-width: 0; }
+.sg-chat-header h2 { margin: 0 0 3px; font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
+.sg-chat-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.sg-chat-meta small { margin: 0; line-height: 1.5; }
+.sg-chat-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex-shrink: 0; max-width: 45%; }
+.service-assistant .sg-chat-actions button { padding: 6px 10px; min-height: 36px; margin: 0; }
+.sg-assistant-status { display: flex; align-items: center; gap: 7px; padding: 5px 14px; background: #eef9f9; }
+.sg-assistant-status img { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
+.sg-assistant-status small { margin: 0; line-height: 1.5; }
 .sg-chat-header small { overflow-wrap: anywhere; }
 .sg-messages {
   flex: 1;

@@ -246,15 +246,17 @@ export default function InAppServiceGroupsPage() {
         {selected ? <>
           {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} initialMessageId={historyAnchor} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
           <div className="sg-chat-header">
-            <div><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
-              <small>客户：{selected.patientName}</small>
-              <small>团队成员：{selected.staff.map(memberLabel).join('、')}</small></div>
+            <div className="sg-chat-heading"><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
+              <div className="sg-chat-meta"><small>客户：{selected.patientName}</small>
+              <small>团队：{selected.staff.map(memberLabel).join('、')}</small></div></div>
+            <div className="sg-chat-actions">
             <button type="button" aria-label="群聊更多" onClick={()=>setHistoryOpen(true)}>…</button>
             {selected.canConfigure && selected.status !== 'closed' && <button type="button" onClick={() => editMembers(selected.patientId, selected.serviceType)}>调整群成员</button>}
+            </div>
           </div>
-          {selected.assistant && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 20px', background: '#eef9f9' }}>
-            <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} style={{ width: 40, height: 40, borderRadius: '50%' }} />
-            <small>小嘉｜嘉医汇AI健康管家 · {selected.supervised ? '仅监管查看不影响AI接待' : '您正在接待此群，小嘉暂停自动回复，可@小嘉单次协助；离开后恢复自动接待'}</small>
+          {selected.assistant && <div className="sg-assistant-status">
+            <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} />
+            <small>{selected.supervised ? '小嘉 · AI接待不受监管查看影响' : '人工接待中 · 小嘉暂停自动回复，@小嘉可单次协助；离开后恢复自动接待'}</small>
           </div>}
           <div className="sg-messages" ref={messagePane} onScroll={event => { const pane = event.currentTarget; followLatest.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 48; }}>
             {older&&<button onClick={()=>{followLatest.current=false;loadMessages(selected.id,messages[0]?.id);}}>查看更早消息</button>}
