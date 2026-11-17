@@ -1,6 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, isActivePageParse, mergeSupplementItems, resolveImageParseCompletion, supplementMatches } = require('../src/utils/reportPageSupplement');
+const { describeExistingReportItems, filterMissingReportItems, hasBroadLocalLabScan, hasReportItemEvidence, inferMissingUltrasoundOrgans, isActivePageParse, mergeSupplementItems, resolveImageParseCompletion, supplementMatches } = require('../src/utils/reportPageSupplement');
+
+test('双栏本地 OCR 已覆盖密集检验页时可免除视觉模型调用', () => {
+  const scan = { source: 'local_ocr', items: Array(41).fill({}), diagnostics: { leftValues: 19, rightValues: 17 } };
+  assert.equal(hasBroadLocalLabScan(scan), true);
+  assert.equal(hasBroadLocalLabScan({ ...scan, source: 'pdf_text' }), false);
+  assert.equal(hasBroadLocalLabScan({ ...scan, diagnostics: { leftValues: 19, rightValues: 2 } }), false);
+  assert.equal(hasBroadLocalLabScan({ ...scan, items: Array(15).fill({}) }), false);
+});
 
 test('只拦截近期同页补提，进程中断留下的陈旧状态允许重试', () => {
   const now = new Date('2026-09-11T05:30:00.000Z');

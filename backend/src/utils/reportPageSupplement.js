@@ -3,6 +3,12 @@ function cleanPart(value) {
 }
 const { extendsNarrative } = require('./reportAuditMerge');
 
+function hasBroadLocalLabScan(scan) {
+  return scan?.source === 'local_ocr' && scan.items?.length >= 30
+    && Number(scan.diagnostics?.leftValues || 0) >= 8
+    && Number(scan.diagnostics?.rightValues || 0) >= 8;
+}
+
 function reportItemIdentityKey(item) {
   return [item?.itemType || '', cleanPart(item?.name), cleanPart(item?.orderName || item?.sourceSection), cleanPart(item?.bodyPart), cleanPart(item?.specimen), cleanPart(item?.modality), cleanPart(item?.examDate), cleanPart(item?.unit)].join('|');
 }
@@ -234,6 +240,7 @@ module.exports = {
   describeExistingReportItems,
   filterMissingReportItems,
   hasReportItemEvidence,
+  hasBroadLocalLabScan,
   inferMissingUltrasoundOrgans,
   isActivePageParse,
   mergeSupplementItems,
