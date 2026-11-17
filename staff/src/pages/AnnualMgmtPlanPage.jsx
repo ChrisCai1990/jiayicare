@@ -417,6 +417,24 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
   const [year, setYear]             = useState(() => Number(searchParams.get('year')) || new Date().getFullYear())
   const [loading, setLoading]       = useState(true)
+  useEffect(() => {
+    if (!patientMode || loading || !window.location.hash) return
+    const targetId = decodeURIComponent(window.location.hash.slice(1))
+    let done = false
+    const go = () => {
+      const target = document.getElementById(targetId)
+      if (!target || done) return
+      done = true
+      if (target?.tagName === 'DETAILS') target.open = true
+      requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }))
+      observer.disconnect()
+    }
+    const observer = new MutationObserver(go)
+    observer.observe(document.body, { childList: true, subtree: true })
+    go()
+    const timeout = setTimeout(() => observer.disconnect(), 15000)
+    return () => { observer.disconnect(); clearTimeout(timeout) }
+  }, [patientMode, loading, year, planType, annualPilot])
   const [saving, setSaving]         = useState(false)
   const [pushing, setPushing]       = useState(false)
   const [internalTaskStarting, setInternalTaskStarting] = useState(false)
@@ -1211,7 +1229,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {patientMode && pushedAt && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
       {patientMode && plansByType[planType]?.returnedAt && pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户修改意见：{plansByType[planType].returnReason || '请核对客户反馈'}。</div>}
       {patientMode && canEdit && pushedAt && plansByType[planType] && <AnnualPlanRevision patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
-      {annualPilot && patientMode && canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualGoals key={plansByType[planType]._id} patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
+      {annualPilot && patientMode && canEdit && pushedAt && confirmedAt && plansByType[planType] && <div id="annual-management-goals"><PublishedAnnualGoals key={plansByType[planType]._id} patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} /></div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}
       {patientMode && plansByType[planType]?.updatedAt && <div style={{color:'#65776F',marginBottom:12}}>方案最后更新：{new Date(plansByType[planType].updatedAt).toLocaleString('zh-CN')}</div>}
@@ -1388,7 +1406,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
       {/* 板块列表 */}
       {planType ? (
-        <div id="annual-plan-content" style={{ marginBottom: 20 }}>
+        <div id={annualPilot && pushedAt && confirmedAt ? 'annual-plan-content' : 'annual-management-goals'} style={{ marginBottom: 20 }}>
           <div style={{ marginBottom: 14 }}>
             <h2 style={{ margin: 0, fontSize: 20, color: '#1A2B24' }}>本年度管理方案</h2>
             <div style={{ marginTop: 5, fontSize: 13, color: '#62776A' }}>

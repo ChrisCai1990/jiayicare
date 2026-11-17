@@ -2217,6 +2217,22 @@ export default function PatientDetailPage() {
     }
   }, [location.search, requestedTab])
   const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
+  useEffect(() => {
+    if (!location.hash || loading) return
+    const targetId = decodeURIComponent(location.hash.slice(1))
+    let done = false
+    const go = () => {
+      const target = document.getElementById(targetId)
+      if (!target || done) return
+      done = true; requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }))
+      observer.disconnect()
+    }
+    const observer = new MutationObserver(go)
+    observer.observe(document.body, { childList: true, subtree: true })
+    go()
+    const timeout = setTimeout(() => observer.disconnect(), 15000)
+    return () => { observer.disconnect(); clearTimeout(timeout) }
+  }, [location.hash, loading, tab, screeningWorkspaceView])
   const [lifestyleDetailsOpen, setLifestyleDetailsOpen] = useState(false)
   const archiveSectionsRef = useRef(null)
   const focusedMonitoringEntry = useRef(null)
@@ -5458,9 +5474,9 @@ export default function PatientDetailPage() {
       </div>}
       {['records','symptoms','medications'].includes(tab) && <InitialArchiveReview user={user} onSaved={load} canEdit={['healthManager','familyDoctor','medicalAssistant','superadmin','platformSuper'].includes(staff?.role)} onNavigate={(target,section) => { setTab(target); if(target==='records') setHealthBaseView('profile'); requestAnimationFrame(() => document.getElementById(section === 'routine' ? 'basic-profile' : `core-${section}`)?.scrollIntoView({behavior:'smooth',block:'start'})) }} />}
 
-      {tab === 'aiReview' && (user.phaseAssessmentEnabled === true
+      {tab === 'aiReview' && <div id="annual-workflow-assessment">{user.phaseAssessmentEnabled === true
         ? <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="assessment" onNavigate={setTab} />
-        : <div className="card" style={{ padding: 20 }}>阶段性评估与复盘须有有效服务权益及已分配的健康顾问。</div>)}
+        : <div className="card" style={{ padding: 20 }}>阶段性评估与复盘须有有效服务权益及已分配的健康顾问。</div>}</div>}
       {tab === 'aiCase' && <AiCaseReviewPanel patientId={id} staff={staff} toast={toast} mode="specialty" onNavigate={target => { if (target === 'screening') { setTab('ai'); setScreeningWorkspaceView('screening'); requestAnimationFrame(() => document.getElementById('annual-review-communication')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) } else setTab(target) }} />}
       {tab === 'mdt' && <MdtPacketPanel patientId={id} user={user} reports={reports} medications={medications} staff={staff} toast={toast} />}
 
@@ -10640,6 +10656,7 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <>
+        <div id="annual-workflow-execution" />
         {staff?.role === 'healthManager' && <CheckupProgressPanel taskMode patientId={id} />}
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -11289,6 +11306,7 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Reports Tab ── */}
+      {tab === 'reports' && <div id="annual-workflow-preparation" />}
       {tab === 'reports' && (() => {
         const pendingInterpretations = reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly
           && !report.advisorInterpretationConfirmedAt && report.advisorCorrection?.status !== 'returned'
@@ -11422,7 +11440,7 @@ export default function PatientDetailPage() {
         const paginatedReportRows = tableRows.slice((currentReportPage - 1) * REPORT_PAGE_SIZE, currentReportPage * REPORT_PAGE_SIZE)
 
         return (
-          <div>
+          <div id="annual-report-interpretation">
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingInterpretations.length > 0 && <div className="card" style={{ padding: 16, marginBottom: 16, border: '1px solid #CFE5D8' }}>
               <strong>健康顾问报告解读 · 待确认 {pendingInterpretations.length} 份</strong>
               <p style={{ margin: '8px 0', fontSize: 13, color: '#4A6558' }}>可跨年份一起解读。核对原件后勾选本次已完成解读的报告，确认后进入对应的问题建议审核。</p>
