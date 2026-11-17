@@ -30,6 +30,13 @@ function currentSourceItem(report, decision) {
 function sourceChanged(report, decision) {
   if (!report) return true;
   const snapshot = decision.sourceSnapshot || {};
+  if (decision.sourceKey === `report_item:${decision.reportId}:${decision.itemId}`) {
+    if (!report.advisorInterpretationConfirmedAt || report.archiveOnly || report.duplicateOf
+      || ['outpatient_record', 'prescription_order'].includes(report.documentCategory)) return true;
+    const matches = (report.reportItems || []).filter(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])]
+      .some(value => String(value || '') === String(decision.itemId)));
+    if (matches.length !== 1 || matches[0].screeningKey || matches[0].screeningKeys?.length) return true;
+  }
   if (decision.sourceKey === `screening_report:${decision.reportId}`) {
     return String(report.updatedAt) !== String(snapshot.reportUpdatedAt);
   }
@@ -67,7 +74,7 @@ async function load(patientId, year, dependencies = {}) {
       continue;
     }
     const report = await Report.findOne({ _id: decision.reportId, user: patientId, audit_status: 'audited' })
-      .select('_id title checkDate updatedAt reportItems').lean();
+      .select('_id title checkDate updatedAt reportItems advisorInterpretationConfirmedAt archiveOnly duplicateOf documentCategory').lean();
     const changed = sourceChanged(report, decision);
     if (changed) { stale.push(decision.title); staleDecisionIds.push(String(decision._id)); continue; }
     if (decision.sourceKey === `screening_report:${report._id}`) {

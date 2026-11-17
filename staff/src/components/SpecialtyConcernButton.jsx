@@ -27,7 +27,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const suggestions = specialtyIssueSuggestions(sourceText)
   const key = annualManagementSourceKey(source)
   const symptomSource = source?.kind === 'symptom' && !!source?.recordId
-  const reportSource = !!source?.reportId && ['screening', 'screening_report'].includes(source.kind)
+  const reportSource = !!source?.reportId && ['screening', 'screening_report', 'report_item'].includes(source.kind)
   useEffect(() => {
     if (!patientId || !year || (!reportSource && !symptomSource)) return
     let active = true

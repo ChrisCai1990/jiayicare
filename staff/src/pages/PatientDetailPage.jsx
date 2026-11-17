@@ -13198,6 +13198,25 @@ export default function PatientDetailPage() {
                 )
               })()}
 
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && showReportDetail.audit_status === 'audited'
+                && showReportDetail.advisorInterpretationConfirmedAt && !showReportDetail.archiveOnly && !showReportDetail.duplicateOf
+                && !['outpatient_record', 'prescription_order'].includes(inferDocumentCategory(showReportDetail)) && (() => {
+                  const items = (showReportDetail.reportItems || []).filter(item => !item.screeningKey && !item.screeningKeys?.length)
+                    .filter(item => {
+                      const itemId = String(item.itemId || item.name || '').trim()
+                      return itemId && (showReportDetail.reportItems || []).filter(row => [row.itemId, row.name, row.screeningKey, ...(row.screeningKeys || [])]
+                        .some(value => String(value || '') === itemId)).length === 1
+                    })
+                  return items.length ? <div style={{ marginTop: 12, padding: 12, background: '#F2F8F5', borderRadius: 8 }}>
+                    <b style={{ fontSize: 13 }}>其他已解读检查项目 · 纳入年度管理</b>
+                    <div style={{ fontSize: 12, color: '#60756B', margin: '5px 0 8px' }}>逐项核对原报告，再确定目标、行动和时间；已归入专项筛查的项目沿专项筛查入口处理。</div>
+                    {items.map(item => <div key={item.itemId || item.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid #DCEBE3' }}>
+                      <span style={{ flex: 1, fontSize: 12 }}>{item.name || '检查项目'}：{String(item.findings || item.value || item.conclusion || item.diagnosis || '结果待核对').slice(0, 100)}</span>
+                      <SpecialtyConcernButton patientId={id} year={new Date().getFullYear()} source={{ kind: 'report_item', reportId: showReportDetail._id, itemId: item.itemId || item.name }} sourceLabel="已解读检查报告项目" sourceText={[item.name, item.value, item.findings, item.conclusion].filter(Boolean).join(' ')} suggestedIssue={String(item.name || '').slice(0, 80)} staff={staff} toast={toast} />
+                    </div>)}
+                  </div> : null
+                })()}
+
               {/* 专项筛查详情 */}
               {reportScreeningData.length > 0 && (
                 <div style={{ marginTop: 16 }}>

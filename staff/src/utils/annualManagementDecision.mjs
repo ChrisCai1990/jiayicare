@@ -1,6 +1,6 @@
 export function annualManagementSourceKey(source) {
   if (source?.kind === 'symptom') return `symptom:${source.recordId}`
-  const itemId = source?.kind === 'screening' ? String(source.itemId || source.itemName || '').trim() : ''
+  const itemId = ['screening', 'report_item'].includes(source?.kind) ? String(source.itemId || source.itemName || '').trim() : ''
   return `${source?.kind}:${source?.reportId}${itemId ? `:${itemId}` : ''}`
 }
 
