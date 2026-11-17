@@ -227,6 +227,7 @@ router.post('/patients/:patientId/phase-assessments/generate', staffAuth, async 
     const closedLoop = require('../utils/healthManagementRollout').enabledForPatient(user._id);
     if (!closedLoop && !['nutritionist', 'familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师或健康顾问可发起阶段性评估' });
     const assessmentMode = req.body.mode === 'intensive_nutrition' ? 'intensive_nutrition' : 'routine';
+    if (assessmentMode === 'routine' && user.phaseAssessmentPausedAt) return res.status(409).json({ success: false, message: '该客户的常规阶段性评估已暂停' });
     if(assessmentMode==='routine' && require('../utils/managementReviewPolicy').enabled(user._id))return res.status(409).json({success:false,message:'请进入新的月度、季度、年度复盘入口'});
     const isAnnualReview = closedLoop && assessmentMode === 'routine' && req.body.frequency === 'yearly';
     const plan = isAnnualReview || assessmentMode === 'intensive_nutrition'

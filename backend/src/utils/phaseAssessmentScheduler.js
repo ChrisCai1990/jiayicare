@@ -59,6 +59,7 @@ function completedCalendarPeriod(frequency, now = new Date(), anchor = null) {
 }
 
 async function createAssessment({ plan = null, user, template, periodOverride = null, assessmentMode = 'routine', assessmentDomain, sourceNutritionPlanId = null, interventionWeek = null, assessmentAnchor = null, frequencyOverride = '', contextWindow = null }) {
+  if (assessmentMode === 'routine' && user.phaseAssessmentPausedAt) return null;
   if (assessmentMode === 'routine' && require('./managementReviewPolicy').enabled(user._id)) return null;
   if (!user.assignedFamilyDoctor) throw new Error('阶段性评估与复盘须先分配健康顾问');
   const frequency = ['biweekly', 'monthly', 'quarterly', 'yearly'].includes(frequencyOverride)
@@ -149,7 +150,7 @@ async function scanAndCreatePhaseAssessments() {
   const templates = await PlanTemplate.find({ type: 'phase_assessment', status: 'active', 'content.frequency': 'monthly' }).lean();
   if (!templates.length) return 0;
   const userFilter = { $and: [require('./healthManagementRollout').patientFilter('_id'), { isDeleted: { $ne: true } }, ...(!allEligible ? [{ _id: { $in: ids } }] : [])] };
-  const users = await User.find(userFilter).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand tenantId servicePackage membershipTier enterpriseId aiPilotFeatures serviceStartDate serviceExpiry isDeleted assignedFamilyDoctor assignedHealthManager assignedNutritionist assignedRehabSpecialist assignedTcmDoctor').limit(5000);
+  const users = await User.find(userFilter).select('name age gender chronicDiseases healthProfile lifestyle aiHealthSummary clientBrand tenantId servicePackage membershipTier enterpriseId aiPilotFeatures serviceStartDate serviceExpiry phaseAssessmentPausedAt isDeleted assignedFamilyDoctor assignedHealthManager assignedNutritionist assignedRehabSpecialist assignedTcmDoctor').limit(5000);
   let created = 0;
   for (const user of users) {
     let access;
@@ -189,7 +190,7 @@ function startPhaseAssessmentScheduler() {
 }
 
 function eligibleForAutomaticAssessment(user, now = new Date(), access = null) {
-  if (!user || user.isDeleted || !user.assignedFamilyDoctor) return false;
+  if (!user || user.isDeleted || user.phaseAssessmentPausedAt || !user.assignedFamilyDoctor) return false;
   const { legacyAccess, dayOf } = require('./serviceAccess');
   const effective = access || legacyAccess(user, now);
   // 自动AI评估比普通访问更严格：必须有可核验的结束日期。

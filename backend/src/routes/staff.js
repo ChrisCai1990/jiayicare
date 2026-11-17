@@ -16689,9 +16689,10 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // 阶段性评估按领域进入对应岗位；综合/升级评估归健康顾问，旧营养记录保留原路径。
     if (isSuper || PHASE_ROLE_FIELDS[role]) {
       const assessmentFilter = { ...reviewQueueFilter(isSuper ? 'superadmin' : role), ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
-      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
+      const assessments = await PhaseAssessment.find(assessmentFilter).populate('patientId', `name membershipTier phaseAssessmentPausedAt ${Object.values(PHASE_ROLE_FIELDS).join(' ')}`).sort({ createdAt: -1 }).lean();
       assessments.filter(item => {
         if (!item.patientId || !item.patientId.assignedFamilyDoctor) return false;
+        if (item.assessmentMode === 'routine' && item.patientId.phaseAssessmentPausedAt) return false;
         if (item.assessmentMode !== 'intensive_nutrition' && require('../utils/managementReviewPolicy').enabled(item.patientId._id)) return false;
         if (item.status === 'team_review') {
           const targetRole = isSuper ? phaseReviewer(item) : role;
