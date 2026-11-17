@@ -1,9 +1,9 @@
 const { createHash } = require('node:crypto');
 const mongoose = require('mongoose');
 
-function monitoringRecordId(followUpId) {
+function monitoringRecordId(followUpId, item = '') {
   return new mongoose.Types.ObjectId(createHash('sha256')
-    .update(`staff-monitoring-follow-up:v1:${String(followUpId)}`).digest().subarray(0, 12));
+    .update(`staff-monitoring-follow-up:v1:${String(followUpId)}${item ? `:${item}` : ''}`).digest().subarray(0, 12));
 }
 
 function monitoringMeasurement(body, expectedType, now = new Date()) {

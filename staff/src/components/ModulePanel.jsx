@@ -155,6 +155,7 @@ export function FieldInput({ field, value, onChange }) {
   if (field.type === 'select') {
     return (
       <select value={value || field.defaultValue || ''} onChange={e => onChange(e.target.value)} style={{ ...inputStyle, background: '#fff' }}>
+        {value && !(field.options || []).some(option => option.value === value) && <option value={value}>{value}（原有方式）</option>}
         {(field.options || []).map(option => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}

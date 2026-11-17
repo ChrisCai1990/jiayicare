@@ -37,7 +37,7 @@ export default function AnnualPlanRevision({ patientId, plan, onSaved, toast }) 
     finally { setSaving(false) }
   }
   if (!options.length) return null
-  return <details style={{ marginBottom: 16, padding: 14, border: '1px solid #C7D8CB', borderRadius: 10, background: '#fff' }}>
+  return <details id="annual-plan-revision" style={{ marginBottom: 16, padding: 14, border: '1px solid #C7D8CB', borderRadius: 10, background: '#fff' }}>
     <summary style={{ cursor: 'pointer', fontWeight: 700 }}>局部修订并通知客户</summary>
     <p style={{ fontSize: 13, color: '#52675D' }}>选择原方案中的一项修改正文。执行日期及已有任务需要另行核对。</p>
     <label>方案事项<select className="form-input" value={selection} onChange={event => choose(event.target.value)} style={{ display: 'block', width: '100%', marginTop: 5 }}><option value="">请选择</option>{options.map(option => <option key={`${option.key}:${option.target}`} value={`${option.key}:${option.target}`}>{option.label} · {titleOf(option.row)}</option>)}</select></label>

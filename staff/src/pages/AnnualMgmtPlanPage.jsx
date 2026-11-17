@@ -288,7 +288,7 @@ const MODULE_DEFS = {
       { key: 'currentUnderstanding', label: '客户当前理解', type: 'textarea' },
       { key: 'concern', label: '客户顾虑', type: 'textarea' },
       { key: 'question', label: '希望澄清的具体问题', type: 'textarea' },
-      { key: 'method', label: '沟通方式', type: 'text', placeholder: '如：面谈、电话、微信' },
+      { key: 'method', label: '沟通方式', type: 'select', defaultValue: '电话', options: [{ value: '电话', label: '电话' }, { value: '到店', label: '到店' }, { value: '上门', label: '上门' }] },
       { key: 'frequency', label: '沟通频率', type: 'text', placeholder: '如：先沟通一次，后续按反馈约定' },
       { key: 'firstDate', label: '首次沟通日期', type: 'date' },
     ],
@@ -1108,6 +1108,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return <div key={`${action.key}:${action.index}`} style={{ marginTop: 8 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 4 }}>{action.date || '时间待确认'}{action.record.hospital ? ` · ${action.record.hospital}` : ''}{action.record.department ? ` · ${action.record.department}` : ''}</div>
       {!!action.record.reviewItems?.length && <div style={{ fontSize: 13, color: '#254C3B', marginBottom: 5 }}>本次复查项目：{action.record.reviewItems.join('、')}</div>}
+      {pushedAt && canEdit && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 8 }} onClick={() => { const editor = document.getElementById('annual-plan-revision'); const tools = document.getElementById('annual-plan-tools'); if (tools?.tagName === 'DETAILS') tools.open = true; if (editor) { editor.open = true; editor.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }}>修改本项并保存</button>}
+      <fieldset disabled={!!pushedAt} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
       {entry.def.multi ? <RecordEditor def={{ ...def, summaryKey: '__displayTitle' }} record={{ ...action.record, __displayTitle: action.title }} index={action.index} total={Math.max(2, planActions.length)} executionReviewChanges={changes}
         visitCandidates={visitCandidates} onShareVisit={() => {
           if (visitCandidates.length === 1) { selectVisitLeader(visitCandidates[0].key); return }
@@ -1117,6 +1119,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next) }}
         onDelete={() => handleModuleChange(action.key, 'records', moduleData[action.key].records.filter((_, index) => index !== action.index))} />
         : <ModulePanel moduleKey={action.key} def={def} data={moduleData[action.key]} onChange={handleModuleChange} showPlanSummary executionReviewChanges={changes} />}
+      </fieldset>
       {action.key === 'health_consensus' && <label style={{ display: 'block', margin: '8px 0 12px', fontSize: 12, color: '#62776A' }}>关联管理问题
         <select className="form-input" style={{ display: 'block', width: '100%', marginTop: 4 }} value={action.record.sourceIds?.[0] || ''} disabled={!canEdit || !!pushedAt} onChange={event => handleModuleChange('health_consensus', 'records', moduleData.health_consensus.records.map((row, index) => index === action.index ? { ...row, sourceIds: event.target.value ? [event.target.value] : [] } : row))}>
           <option value="">一般健康认知，不关联特定问题</option>
@@ -1544,6 +1547,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </SecondaryPlanSection>
 
       <div className="annual-plan-footer">
+        {canEdit && !pushedAt && planType && <button type="button" className="btn btn-primary" disabled={saving} onClick={() => handleSave()}>{saving ? '保存中…' : '保存方案草稿'}</button>}
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
     </div>

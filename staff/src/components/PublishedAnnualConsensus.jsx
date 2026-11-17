@@ -37,11 +37,11 @@ export default function PublishedAnnualConsensus({ patientId, plan, topics, onSa
   }
   return <details style={{ marginTop: 10 }}><summary style={{ cursor: 'pointer', fontWeight: 600 }}>＋ 试用健康认知与共识</summary>
     <div style={{ display: 'grid', gap: 9, marginTop: 10 }}>
-      <div style={{ fontSize: 12, color: '#62776A' }}>按顺序预排主题，实际服务中可调整。首次只生成一条健康顾问内部沟通任务。</div>
+      <div style={{ fontSize: 12, color: '#62776A' }}>全部主题保存在同一沟通计划中，首次只生成一条任务；每次沟通后选择继续当前主题、进入下一主题或结束。</div>
       <label>客户当前理解<textarea className="form-input" rows={2} maxLength={1000} value={draft.currentUnderstanding} onChange={event => setDraft({ ...draft, currentUnderstanding: event.target.value })} /></label>
       <label>客户顾虑<textarea className="form-input" rows={2} maxLength={1000} value={draft.concern} onChange={event => setDraft({ ...draft, concern: event.target.value })} /></label>
       <label>主题顺序（每行一个，最多 10 个；第一项为当前主题）<textarea className="form-input" rows={10} maxLength={1300} value={draft.topics} onChange={event => setDraft({ ...draft, topics: event.target.value })} /></label>
-      <label>沟通方式<input className="form-input" maxLength={100} value={draft.method} onChange={event => setDraft({ ...draft, method: event.target.value })} /></label>
+      <label>沟通方式<select className="form-input" value={draft.method} onChange={event => setDraft({ ...draft, method: event.target.value })}><option value="电话">电话</option><option value="到店">到店</option><option value="上门">上门</option></select></label>
       <label>沟通频率<input className="form-input" maxLength={100} value={draft.frequency} onChange={event => setDraft({ ...draft, frequency: event.target.value })} /></label>
       <label>首次沟通日期<input className="form-input" type="date" min={new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date())} value={draft.firstDate} onChange={event => setDraft({ ...draft, firstDate: event.target.value })} /></label>
       {error && <div role="alert" style={{ color: '#B42318' }}>{error}</div>}
