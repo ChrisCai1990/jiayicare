@@ -72,7 +72,7 @@ export default function PublishedAnnualConsensus({ patientId, plan, topics, onSa
     } catch (cause) { setError(cause.message || '安排失败，请刷新后核对') }
     finally { setBusy(false) }
   }
-  return <details open style={{ marginTop: 10 }}><summary style={{ cursor: 'pointer', fontWeight: 600 }}>健康认知与共识 · {draftSavedAt ? '草稿已保存，可继续修改' : '选择主题并保存'}</summary>
+  return <details style={{ marginTop: 10 }}><summary style={{ cursor: 'pointer', fontWeight: 600 }}>健康认知与共识 · {draftSavedAt ? '草稿已保存，可继续修改' : '选择主题并保存'}</summary>
     <div style={{ display: 'grid', gap: 9, marginTop: 10 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={saveDraft}>{busy ? '保存中…' : draftSavedAt ? '保存修改' : '保存草稿'}</button><span style={{ fontSize: 12, color: '#62776A' }}>{draftSavedAt ? `上次保存：${new Date(draftSavedAt).toLocaleString('zh-CN')}` : '保存草稿不会安排任务或通知客户'}</span></div>
       <div style={{ fontSize: 12, color: '#62776A' }}>全部主题保存在同一沟通计划中，首次只生成一条任务；每次沟通后选择继续当前主题、进入下一主题或结束。</div>
