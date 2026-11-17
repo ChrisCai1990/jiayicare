@@ -53,7 +53,11 @@ async function scan(now=new Date()) {
      const roles=['nutritionist'];
      const rehab=await require('../models/HealthPlan').exists({patientId:user._id,type:'rehab',status:{$in:['active','completed']},pushedAt:{$ne:null,$lt:new Date(period.end+'T23:59:59+08:00')},$or:[{endDate:null},{endDate:{$gte:new Date(period.start+'T00:00:00+08:00')}}]});
      if(rehab){if(!user.assignedRehabSpecialist)continue;roles.push('rehabSpecialist');}
-     try{row=(await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus:'待AI整理本期重点',roles,audit:[{action:'auto_created',at:now,note:'到期自动建立各岗位复盘'}]})).toObject();}
+     try{
+      const origin=await require('../routes/managementReviews').sources(user,period);
+      const goalReviews=require('./managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services);
+      row=(await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus:'待AI整理本期重点',roles,goalReviews,audit:[{action:'auto_created',at:now,note:'到期自动建立各岗位复盘'}]})).toObject();
+     }
      catch(e){if(e.code!==11000)throw e;row=await Review.findOne({patientId:user._id,periodKey:period.key}).lean();}
     }
     const needed=missingDraftRoles(row);if(!needed.length||!canRetry(row,now))continue;

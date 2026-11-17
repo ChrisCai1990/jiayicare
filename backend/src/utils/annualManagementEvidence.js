@@ -95,10 +95,12 @@ const DIRECTION_LABELS = {
 };
 function managementTargets(evidence = []) {
   return evidence.slice(0, 32).map(item => {
-    const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming } = item.content;
+    const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming, source } = item.content;
     const directionLabel = DIRECTION_LABELS[direction] || '持续管理';
     return { issueId: item.id, goal: goal || `${problem} · ${directionLabel}`,
       focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
+      goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)
+        ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
       ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
       nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });

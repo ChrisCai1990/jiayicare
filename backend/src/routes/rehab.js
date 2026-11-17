@@ -8,6 +8,7 @@ const User = require('../models/User');
 const Admin = require('../models/Admin');
 const PushRecord = require('../models/PushRecord');
 const FollowUp = require('../models/FollowUp');
+const AnnualPlan = require('../models/AnnualPlan');
 const {idFor,fail,normalizeEntry,reportText,assertUsableOrder,KINDS,expiryOf} = require('../utils/rehabService');
 const writers = ['superadmin','rehabSpecialist'];
 
@@ -25,7 +26,7 @@ async function pushScreening(order, staffId) {
 module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPatientIds,checkPermission}) {
   async function access(req) {
     if (!mongoose.isValidObjectId(req.params.patientId)) fail('客户编号无效');
-    const patient=await User.findById(req.params.patientId).select('tenantId assignedHealthPlanner assignedHealthManager assignedRehabSpecialist');
+    const patient=await User.findById(req.params.patientId).select('tenantId assignedFamilyDoctor assignedHealthPlanner assignedHealthManager assignedRehabSpecialist');
     if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')) fail('客户不存在',404);
     const ids=await getVisiblePlanPatientIds(req.staff);
     if(ids && !ids.some(id=>String(id)===String(patient._id)) && !await FollowUp.exists({patientId:patient._id,assignedTo:req.staff._id,workflowKey:/^rehab:/})) fail('无权访问该客户',403);
@@ -36,7 +37,7 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
   router.get(base,staffAuth,checkPermission('service_records','view'),wrap(async(req,p)=>{
     const [records,orders,templates,questions,plans]=await Promise.all([
       ServiceRecord.find({patientId:p._id,type:'rehab'}).populate('staffId','name role').sort({date:-1}).lean(),
-      Order.find({user:p._id,'serviceWorkflowSnapshot.key':'rehab'}).select('serviceName orderNo skuCode paidAt paymentStatus status tradeStatus refundStatus totalUnits usedUnits redemptions scheduledAt currentStage serviceWorkflowSnapshot rehabBooking').sort({createdAt:-1}).lean(),
+      Order.find({user:p._id,'serviceWorkflowSnapshot.key':'rehab'}).select('serviceName orderNo skuCode paidAt paymentStatus status tradeStatus refundStatus totalUnits usedUnits redemptions scheduledAt currentStage serviceWorkflowSnapshot rehabBooking rehabAnnualLink').sort({createdAt:-1}).lean(),
       PlanTemplate.find({type:'rehab',status:'active'}).lean(),
       DynamicQuestionnaire.find({standardTemplateKey:'rehab_screening_v1',deletedAt:null}).select('title questions').lean(),
       HealthPlan.find({patientId:p._id,type:'rehab'}).sort({createdAt:-1}).lean(),
@@ -44,6 +45,23 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
     const responses=await QuestionnaireResponse.find({user:p._id,questionnaire:{$in:questions.map(q=>q._id)}}).sort({submittedAt:-1}).lean();
     const pushes=await PushRecord.find({patientId:p._id,type:'questionnaire',questionnaireId:{$in:questions.map(q=>q._id)}}).select('sourceOrderId questionnaireId createdAt').lean();
     return {records,orders:orders.map(o=>({...o,expiresAt:expiryOf(o)})),templates,questions,responses,pushes,plans};
+  }));
+  router.post(base+'/link-annual-issue',staffAuth,checkPermission('plans','edit'),wrap(async(req,p)=>{
+    if(!['superadmin','familyDoctor'].includes(req.staff.role) || req.staff.role==='familyDoctor' && String(p.assignedFamilyDoctor)!==String(req.staff._id)) fail('仅该客户健康顾问可关联年度问题',403);
+    if(!mongoose.isValidObjectId(req.body.planId)||!mongoose.isValidObjectId(req.body.orderId)) fail('请选择年度方案和运动服务订单');
+    const plan=await AnnualPlan.findOne({_id:req.body.planId,patientId:p._id,pushedAt:{$ne:null}}).lean();
+    if(!plan) fail('请先发布该客户的年度方案',409);
+    const issueId=String(req.body.issueId||'');
+    if(!plan.moduleData?.management_targets?.records?.some(row=>row.issueId===issueId&&row.rehabRelevant===true)) fail('该年度问题尚未标记运动复健评估',409);
+    const order=await Order.findOne({_id:req.body.orderId,user:p._id,'serviceWorkflowSnapshot.key':'rehab'});
+    assertUsableOrder(order);
+    if(order.rehabAnnualLink?.annualPlanId && String(order.rehabAnnualLink.annualPlanId)!==String(plan._id)) fail('该订单已关联其他年度方案',409);
+    const issueIds=[...new Set([...(order.rehabAnnualLink?.issueIds||[]),issueId])];
+    const link={annualPlanId:plan._id,issueIds,linkedBy:req.staff._id,linkedAt:new Date()};
+    const changed=await Order.updateOne({_id:order._id,updatedAt:order.updatedAt},{$set:{rehabAnnualLink:link}});
+    if(changed.modifiedCount!==1) fail('订单已变化，请刷新后重试',409);
+    await FollowUp.updateMany({patientId:p._id,sourceType:'order',sourceOrderId:order._id,workflowKey:/^rehab:/},{$set:{sourceAnnualPlanId:plan._id},$addToSet:{managementIssueIds:{$each:issueIds}}});
+    return {orderId:order._id,...link};
   }));
   router.post(base+'/screening',staffAuth,checkPermission('questionnaires','send'),wrap(async(req,p)=>{
     if(!['superadmin','healthPlanner','healthManager','rehabSpecialist'].includes(req.staff.role)) fail('当前岗位不能发送运动筛查表',403);
@@ -55,7 +73,7 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
     if(!['superadmin','healthPlanner'].includes(req.staff.role)) fail('由健康规划师确认接单',403);
     const order=await Order.findOne({_id:req.body.orderId,user:p._id}); assertUsableOrder(order);
     if(!p.assignedHealthManager) fail('请先分配健管专员');
-    await FollowUp.updateOne({_id:idFor(`rehab-booking:${order._id}`)},{$setOnInsert:{tenantId:p.tenantId,patientId:p._id,staffId:p.assignedHealthManager,assignedTo:p.assignedHealthManager,sourceType:'order',sourceOrderId:order._id,workflowKey:'rehab:booking',status:'planned',type:'other',theme:'运动服务预约安排',content:'请在客户服务管理的运动管理中安排线上或线下服务并指定运动复健师。'}},{upsert:true});
+    await FollowUp.updateOne({_id:idFor(`rehab-booking:${order._id}`)},{$setOnInsert:{tenantId:p.tenantId,patientId:p._id,staffId:p.assignedHealthManager,assignedTo:p.assignedHealthManager,sourceType:'order',sourceOrderId:order._id,sourceAnnualPlanId:order.rehabAnnualLink?.annualPlanId||null,managementIssueIds:order.rehabAnnualLink?.issueIds||[],workflowKey:'rehab:booking',status:'planned',type:'other',theme:'运动服务预约安排',content:'请在客户服务管理的运动管理中安排线上或线下服务并指定运动复健师。'}},{upsert:true});
     await Order.updateOne({_id:order._id,currentStage:{$in:['','intake','pending_intake',null]}},{$set:{currentStage:'rehab_booking',currentAssignee:p.assignedHealthManager}});
     await FollowUp.updateMany({sourceType:'order',sourceOrderId:order._id,$or:[{workflowKey:''},{workflowKey:null}],status:{$in:['planned','in_progress']}},{$set:{status:'completed',completedAt:new Date(),executedContent:'规划师已接单并交健管专员预约'}});
     await pushScreening(order,req.staff._id);
@@ -74,7 +92,7 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
     const taskId=idFor(`rehab-session:${order._id}:${sequence}`);
     const booked=await Order.updateOne({_id:order._id,updatedAt:order.updatedAt,usedUnits:order.usedUnits},{$set:{scheduledAt:at,status:'scheduled',currentStage:'rehab_session',currentAssignee:specialist._id,rehabBooking:{at,mode:req.body.mode,specialistId:specialist._id,specialistName:specialist.name,sequence,taskId}}});
     if(booked.modifiedCount!==1) fail('订单已变化，请刷新后重新预约',409);
-    await FollowUp.updateOne({_id:taskId,status:{$ne:'completed'}},{$set:{patientId:p._id,staffId:specialist._id,assignedTo:specialist._id,sourceType:'order',sourceOrderId:order._id,workflowKey:`rehab:session:${sequence}`,status:'planned',type:req.body.mode==='online'?'video':'visit',date:at,theme:`运动服务第${sequence}次`,content:'在客户基础档案的运动筛查与能力评估中完成评估；在运动服务档案中登记指导与训练。'}},{upsert:true});
+    await FollowUp.updateOne({_id:taskId,status:{$ne:'completed'}},{$set:{patientId:p._id,staffId:specialist._id,assignedTo:specialist._id,sourceType:'order',sourceOrderId:order._id,sourceAnnualPlanId:order.rehabAnnualLink?.annualPlanId||null,managementIssueIds:order.rehabAnnualLink?.issueIds||[],workflowKey:`rehab:session:${sequence}`,status:'planned',type:req.body.mode==='online'?'video':'visit',date:at,theme:`运动服务第${sequence}次`,content:'在客户基础档案的运动筛查与能力评估中完成评估；在运动服务档案中登记指导与训练。'}},{upsert:true});
     await FollowUp.updateOne({_id:idFor(`rehab-booking:${order._id}`)},{$set:{status:'completed',completedAt:new Date(),executedContent:'已安排运动服务预约'}});
     return {message:'预约已安排'};
   }));
@@ -83,10 +101,12 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
     const publish=req.body.publish===true;
     const entry=normalizeEntry(req.body,publish);
     if(!/^[a-zA-Z0-9-]{8,80}$/.test(req.body.requestId || '')) fail('缺少保存标识，请重新打开表单');
+    let linkedOrder=null;
     if(entry.orderId) {
       const order=await Order.findOne({_id:entry.orderId,user:p._id});
       if(!order || order.serviceWorkflowSnapshot?.key!=='rehab') fail('请选择该客户的运动服务订单');
       if(publish && order.status !== 'completed') assertUsableOrder(order);
+      linkedOrder=order;
     }
     if(entry.planId && !await HealthPlan.exists({_id:entry.planId,patientId:p._id,type:'rehab'})) fail('方案不属于该客户');
     if(entry.screeningResponseId && !await QuestionnaireResponse.exists({_id:entry.screeningResponseId,user:p._id})) fail('筛查答卷不属于该客户');
@@ -101,7 +121,7 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
       if(JSON.stringify(normalizeEntry(existing.structuredContent.rehab,true))!==JSON.stringify(entry)) fail('已发布记录不能覆盖，请新增复评或补充记录',409);
       text=existing.content;
     } else {
-      const data={tenantId:p.tenantId,staffId:req.staff._id,patientId:p._id,type:'rehab',date:entry.date,title:KINDS[entry.kind],content:text,result:entry.fields.findings || entry.fields.response,structuredContent:{rehab:{...entry,status:publish?'published':'draft',publishedAt:publish?new Date():null,templateId:template?._id || null}}};
+      const data={tenantId:p.tenantId,staffId:req.staff._id,patientId:p._id,type:'rehab',date:entry.date,title:KINDS[entry.kind],content:text,result:entry.fields.findings || entry.fields.response,structuredContent:{rehab:{...entry,annualPlanId:linkedOrder?.rehabAnnualLink?.annualPlanId||null,managementIssueIds:linkedOrder?.rehabAnnualLink?.issueIds||[],status:publish?'published':'draft',publishedAt:publish?new Date():null,templateId:template?._id || null}}};
       if(existing) {
         const updated=await ServiceRecord.updateOne({_id,'structuredContent.rehab.status':'draft'},{$set:data});
         if(updated.modifiedCount!==1) fail('记录已变化，请刷新核对',409);
@@ -137,7 +157,7 @@ module.exports = function registerRehabRoutes(router,{staffAuth,getVisiblePlanPa
     if(req.body.orderId){order=await Order.findOne({_id:req.body.orderId,user:p._id});assertUsableOrder(order);}
     if(!/^[a-zA-Z0-9-]{8,80}$/.test(req.body.requestId || '')) fail('缺少保存标识');
     const _id=idFor(`rehab-plan:${p._id}:${req.body.requestId}`);
-    const content={goal,exercises,weeklyFreq,precautions,progression:progression||'',duration:duration||'',serviceMode:'线上或线下',rehabPlanVersion:1};
+    const content={goal,exercises,weeklyFreq,precautions,progression:progression||'',duration:duration||'',serviceMode:'线上或线下',rehabPlanVersion:1,annualPlanId:order?.rehabAnnualLink?.annualPlanId||null,managementIssueIds:order?.rehabAnnualLink?.issueIds||[]};
     const previous=await HealthPlan.findById(_id).lean();
     if(previous && (String(previous.staffId)!==String(req.staff._id) || JSON.stringify(previous.content)!==JSON.stringify(content))) fail('该方案已发布，请刷新后新建调整方案',409);
     const items=Object.entries({目标:goal,训练安排:exercises,频次:weeklyFreq,每次时长:duration||'预约时确认',注意事项:precautions,进阶与复评:progression||''}).filter(([,v])=>v).map(([name,v])=>({name:name+'：'+v,category:'运动复健'}));

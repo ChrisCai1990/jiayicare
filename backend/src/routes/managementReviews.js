@@ -14,19 +14,20 @@ async function userFor(req) {
 }
 async function sources(user,period) {
  const range={$gte:new Date(period.start+'T00:00:00+08:00'),$lt:new Date(Date.parse(period.end+'T00:00:00+08:00')+86400000)};
- const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews]=await Promise.all([
+ const [phase,monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans]=await Promise.all([
  Phase.find({patientId:user._id}).select('periodKey periodLabel status content createdAt finalizedAt').sort({createdAt:1}).lean(),
  Monthly.find({patientId:user._id,month:{$gte:period.start.slice(0,7),$lte:period.end.slice(0,7)}}).lean(),
  require('../models/HealthPlan').find({patientId:user._id,createdAt:{$lt:range.$lt}}).select('type title items content createdAt startDate endDate status pushedAt confirmedAt').sort({createdAt:-1}).limit(40).lean(),
- require('../models/FollowUp').find({patientId:user._id,date:range}).select('date theme status plannedContent executedContent content completedAt cancelReason progressRecords isBlocked').sort({date:1}).limit(200).lean(),
+ require('../models/FollowUp').find({patientId:user._id,date:range}).select('date theme status plannedContent executedContent content completedAt cancelReason progressRecords isBlocked managementIssueIds sourceAnnualPlanId').sort({date:1}).limit(500).lean(),
  require('../models/MedicalReport').find({user:user._id,audit_status:'audited',checkDate:{$gte:period.start,$lte:period.end}}).select('title checkDate reportItems type documentCategory screeningItemId screeningL1 screeningCategory').sort({checkDate:1}).limit(100).lean(),
  require('../models/ServiceRecord').find({patientId:user._id,date:range}).select('date title type content result structuredContent aiStatus').sort({date:1}).limit(100).lean(),
  require('../models/HealthRecord').find({user:user._id,recordedAt:range}).select('type label value unit extra note recordedAt').sort({recordedAt:1}).limit(500).lean(),
  require('../models/Feedback').find({user:user._id,createdAt:range}).select('type content status reply handlingResult createdAt repliedAt resultAt').sort({createdAt:1}).limit(100).lean(),
  require('../models/NutritionInterventionDraft').find({patientId:user._id,status:'published',publishedAt:{$lt:range.$lt}}).select('actions reviewDate approvedAt publishedAt').sort({publishedAt:-1}).limit(10).lean(),
- Review.find({patientId:user._id,kind:'monthly',start:{$gte:period.start},end:{$lte:period.end}}).select('periodKey label start end status focus contributions summary actions finalizedAt').sort({start:1}).lean()
+ Review.find({patientId:user._id,kind:'monthly',start:{$gte:period.start},end:{$lte:period.end}}).select('periodKey label start end status focus contributions summary actions finalizedAt').sort({start:1}).lean(),
+ require('../models/AnnualPlan').find({patientId:user._id,confirmedAt:{$ne:null,$lt:range.$lt}}).select('year confirmedAt moduleData.management_targets').sort({confirmedAt:-1}).limit(3).lean()
  ]);
- return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
+ return {phase:phase.filter(x=>period.kind!=='monthly'||String(x.periodKey).startsWith(period.start.slice(0,7))),monthly,plans,followups,reports,services,healthRecords,feedback,nutritionPlans,cycleReviews,annualPlans,note:'来源供人工核对；方案和服务状态不自动等同目标达成。列表有上限，请结合客户完整档案核对。'};
 }
 router.get('/patients/:id/management-reviews',wrap(async(req,res)=>{
  if(!policy.enabled(req.params.id))return res.json({success:true,enabled:false,restored:policy.restored(req.params.id)});
@@ -60,7 +61,8 @@ router.post('/patients/:id/management-reviews',wrap(async(req,res)=>{
  const focus=text(req.body.focus||(period.kind==='monthly'?'待AI整理本期重点':''),200);if(!focus)fail('请填写本周期重点');
  const questions={};for(const role of roles){questions[role]=text(req.body.questions?.[role]||'',3000);if(period.kind!=='monthly'&&!questions[role])fail('请明确分发给'+policy.labels[role]+'的问题');}
  const origin=await sources(user,period);
- const row=await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus,roles,questions,sources:{phase:origin.phase.map(x=>x._id),monthly:origin.monthly.map(x=>x._id)},audit:[{action:'created',by:req.staff._id,at:new Date(),note:req.body.includeRehab?req.body.rehabBasis:''}]});
+ const goalReviews=require('../utils/managementReviewGoals').goalReviews(origin.annualPlans,origin.followups,period,origin.services);
+ const row=await Review.create({patientId:user._id,periodKey:period.key,kind:period.kind,label:period.label,start:period.start,end:period.end,focus,roles,questions,goalReviews,sources:{phase:origin.phase.map(x=>x._id),monthly:origin.monthly.map(x=>x._id)},audit:[{action:'created',by:req.staff._id,at:new Date(),note:req.body.includeRehab?req.body.rehabBasis:''}]});
  try {const draft=await require('../utils/managementReviewAI').generate({Review,user,row:row.toObject(),staff:req.staff,source:origin,roles});res.status(201).json({success:true,data:draft});}
  catch(e){res.status(201).json({success:true,data:await Review.findById(row._id),warning:'周期已建立，AI草稿生成未完成：'+e.message});}
 }));
@@ -106,6 +108,7 @@ router.post('/patients/:id/management-reviews/:reviewId/:action',wrap(async(req,
   if(row.status!=='advisor_review'||!row.roles.every(r=>row.contributions?.[r]?.status==='submitted'))fail('各岗位尚未完成提交',409);
   if(!policy.periods(user).some(x=>x.key===row.periodKey&&x.due))fail('该周期尚未到期');
   set.summary=text(req.body.summary||'');if(!set.summary)fail('请填写审核结论');set.nextPlan=text(req.body.nextPlan||'',4000);if(row.kind==='annual'&&!set.nextPlan)fail('年度总评须形成下一年度目标、行动和评估节点');
+  if(row.goalReviews?.length){try{set.goalReviews=require('../utils/managementReviewGoals').reviewedGoals(row.goalReviews,req.body.goalReviews)}catch(error){fail(error.message)}}
   if(!Array.isArray(req.body.actions)||req.body.actions.length>15)fail('行动清单最多15项');
   set.actions=req.body.actions.map(a=>({title:text(a.title,200),role:a.role,dueAt:a.dueAt,status:'pending'}));
   if(set.actions.some(a=>!a.title||!policy.fields[a.role]||!user[policy.fields[a.role]]||!/^\d{4}-\d{2}-\d{2}$/.test(a.dueAt)||a.dueAt<policy.day(now)))fail('行动须有有效责任岗位和今天或之后的期限');

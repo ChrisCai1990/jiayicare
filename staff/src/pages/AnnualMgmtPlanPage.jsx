@@ -4,7 +4,7 @@ import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { staffAPI } from '../api'
+import { staffAPI, rehabAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, MedicalResourcesContext, ModulePanel, RecordEditor, NutritionComparisonMetricPicker } from '../components/ModulePanel'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
@@ -397,6 +397,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [nutritionTask, setNutritionTask] = useState(null)
   const [issueProgress, setIssueProgress] = useState([])
   const [issueProgressError, setIssueProgressError] = useState('')
+  const [rehabOrders, setRehabOrders] = useState([])
+  const [rehabOrderSelections, setRehabOrderSelections] = useState({})
+  const [rehabLinkBusy, setRehabLinkBusy] = useState(false)
   const [nutritionTaskLoading, setNutritionTaskLoading] = useState(false)
   const [nutritionDispatching, setNutritionDispatching] = useState(false)
   const [remotePlanChanged, setRemotePlanChanged] = useState(false)
@@ -404,6 +407,23 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const currentPlanVersion = plansByType[planType]?.updatedAt
   const currentPlanId = plansByType[planType]?._id
   const progressEligible = Boolean(patientMode && currentPlanId && plansByType[planType]?.pushedAt)
+  const refreshRehabOrders = async () => {
+    if (!patientMode) return
+    try { const response = await rehabAPI.get(id); setRehabOrders(response.data?.orders || []) }
+    catch { setRehabOrders([]) }
+  }
+  useEffect(() => { if (progressEligible) refreshRehabOrders(); else setRehabOrders([]) }, [progressEligible, id, currentPlanId])
+  const linkRehabIssue = async issueId => {
+    const orderId = rehabOrderSelections[issueId]
+    if (!orderId) { toast('请先选择已支付的运动服务订单'); return }
+    setRehabLinkBusy(true)
+    try {
+      await rehabAPI.send(id, 'link-annual-issue', { planId: currentPlanId, orderId, issueId })
+      await Promise.all([refreshRehabOrders(), refreshIssueProgress()])
+      toast('运动服务已关联年度管理问题')
+    } catch (error) { toast(error.message || '关联失败') }
+    finally { setRehabLinkBusy(false) }
+  }
   const refreshIssueProgress = async () => {
     if (!progressEligible) return
     try {
@@ -1357,10 +1377,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
                 <label style={{ fontSize: 12, color: '#62776A' }}>管理目标<textarea className="form-input" aria-label={`管理目标 ${index + 1}`} rows={2} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.goal || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, goal: e.target.value } : item))} /></label>
                 <label style={{ fontSize: 12, color: '#62776A' }}>干预重点<textarea className="form-input" aria-label={`干预重点 ${index + 1}`} rows={2} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.focus || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, focus: e.target.value } : item))} /></label>
+                <label style={{ fontSize: 12, color: '#62776A' }}>目标维度<select className="form-input" aria-label={`目标维度 ${index + 1}`} style={{ display: 'block', width: '100%' }} value={row.goalDimension || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, goalDimension: e.target.value } : item))}><option value="">待确定</option><option value="data">数据</option><option value="symptom">症状</option><option value="lifestyle">生活方式</option></select></label>
+                <label style={{ fontSize: 12, color: '#62776A' }}>当前基线<textarea className="form-input" aria-label={`当前基线 ${index + 1}`} rows={2} maxLength={500} style={{ display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} value={row.baseline || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, baseline: e.target.value } : item))} /></label>
               </div>
               <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养师参与此项目</label>
+              <label style={{ fontSize: 13, display: 'inline-block', marginLeft: 14, marginTop: 7 }}><input type="checkbox" checked={row.rehabRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, rehabRelevant: e.target.checked } : item))} /> 建议运动复健评估</label>
               </details>
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
+              {row.rehabRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>运动复健评估建议 · 具体服务由客户选择后进入现有运动服务流程{progressEligible && <div style={{ marginTop: 7 }}>{rehabOrders.filter(order => order.rehabAnnualLink?.issueIds?.includes(row.issueId)).map(order => <span key={order._id} style={{ marginRight: 8 }}>已关联 {order.serviceName || order.orderNo}</span>)}{canEdit && <><select className="form-input" aria-label={`运动服务订单 ${index + 1}`} value={rehabOrderSelections[row.issueId] || ''} onChange={event => setRehabOrderSelections(previous => ({ ...previous, [row.issueId]: event.target.value }))}><option value="">选择已支付的运动服务订单</option>{rehabOrders.filter(order => order.paymentStatus === 'paid' && !['cancelled', 'completed'].includes(order.status) && !['closed', 'refund_pending', 'refunded'].includes(order.tradeStatus) && (!order.rehabAnnualLink?.annualPlanId || String(order.rehabAnnualLink.annualPlanId) === String(currentPlanId))).map(order => <option key={order._id} value={order._id}>{order.serviceName || '运动服务'} · {order.orderNo || order._id}</option>)}</select> <button type="button" className="btn btn-secondary btn-sm" disabled={rehabLinkBusy} onClick={() => linkRehabIssue(row.issueId)}>关联服务</button></>}</div>}</div>}
               </div>)}
               {groupActions(group).map(renderPlanAction)}
               {progressEligible && <details style={{ marginTop: 10, borderTop: '1px solid #E4ECE7', paddingTop: 9 }}>

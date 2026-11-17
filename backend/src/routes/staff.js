@@ -10784,7 +10784,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     if (moduleData.management_targets?.records !== undefined) {
       const records = moduleData.management_targets.records;
       if (!Array.isArray(records) || records.length > 32 || records.some(row => !String(row?.goal || '').trim() || !String(row?.focus || '').trim()
-        || String(row.goal).length > 240 || String(row.focus).length > 500)) {
+        || String(row.goal).length > 240 || String(row.focus).length > 500 || (row.rehabRelevant !== undefined && typeof row.rehabRelevant !== 'boolean')
+        || (row.goalDimension !== undefined && !['', 'data', 'symptom', 'lifestyle'].includes(row.goalDimension))
+        || (row.baseline !== undefined && (typeof row.baseline !== 'string' || row.baseline.length > 500)))) {
         return res.status(400).json({ success: false, message: '请逐条填写管理目标和干预重点（最多 32 条）' });
       }
     } else if (!require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) {

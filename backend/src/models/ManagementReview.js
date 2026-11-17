@@ -8,6 +8,7 @@ const schema=new mongoose.Schema({
  contributions:{type:mongoose.Schema.Types.Mixed,default:{}},
  generation:{type:mongoose.Schema.Types.Mixed,default:null},summaryDraft:{type:mongoose.Schema.Types.Mixed,default:null},
  summary:{type:String,default:''},nextPlan:{type:String,default:''},
+ goalReviews:{type:[mongoose.Schema.Types.Mixed],default:[]},
  actions:[{title:String,role:String,dueAt:String,status:{type:String,default:'pending'},completedAt:Date,completedBy:{type:mongoose.Schema.Types.ObjectId,ref:'Admin'}}],
  sources:{type:mongoose.Schema.Types.Mixed,default:{}},
  finalizedAt:Date,finalizedBy:{type:mongoose.Schema.Types.ObjectId,ref:'Admin'},
