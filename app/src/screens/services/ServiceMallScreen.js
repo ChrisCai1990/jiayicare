@@ -56,7 +56,7 @@ function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
             <View style={styles.modalServiceInfo}>
               <Text style={styles.modalServiceName} numberOfLines={2}>{item.name}</Text>
               {!!item.subtitle && <Text style={styles.serviceSubtitle}>{item.subtitle}</Text>}
-              {item.reviewCount > 0 && <Text style={styles.buyerCount}>已购{item.reviewCount}笔</Text>}
+              {item.paidOrderCount > 0 && <Text style={styles.buyerCount}>已购{item.paidOrderCount}笔</Text>}
             </View>
           </View>
 
@@ -482,7 +482,7 @@ function ServiceCard({ item, onDetail, onBuy, onPay }) {
         <View style={styles.serviceInfo}>
           <Text style={styles.serviceName} numberOfLines={2}>{item.name}</Text>
           {!!item.subtitle && <Text style={styles.serviceSubtitle} numberOfLines={2}>{item.subtitle}</Text>}
-          {item.reviewCount > 0 && <Text style={styles.buyerCount}>已购{item.reviewCount}笔</Text>}
+          {item.paidOrderCount > 0 && <Text style={styles.buyerCount}>已购{item.paidOrderCount}笔</Text>}
         </View>
       </View>
 

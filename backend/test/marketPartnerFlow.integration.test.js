@@ -419,7 +419,9 @@ test('online and offline partner payments, renewals, refunds and team incentives
     await Order.create({ tenantId, user: patientId, serviceId: String(sharedCatalogProductId),
       serviceName: '现有商城服务线下成交', orderType: 'product', paymentStatus: 'paid', paidAmount: 120 });
     const paidCatalog = await (await fetch(`${base}/api/services`)).json();
-    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).reviewCount, 2,
+    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).reviewCount, 1,
+      '旧客户端的人已购字段仍按客户去重');
+    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).paidOrderCount, 2,
       '已购笔数按有效付款订单统计，同一客户重复购买分别计入');
     const sharedCatalogOrder = await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, {
       productId: String(sharedCatalogProductId), contractReference: 'STAFF-CATALOG-001', priceCents: 12000 });
