@@ -400,6 +400,7 @@ export const staffAPI = {
   reviewPhaseAssessment: (patientId, assessmentId, data) => req(`/staff/patients/${patientId}/phase-assessments/${assessmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAiCaseReviews: (patientId) => req(`/staff/patients/${patientId}/ai-case-reviews`),
   getAnnualManagementDecisions: (patientId, year) => req(`/staff/patients/${patientId}/annual-management-decisions?year=${year}`),
+  draftAnnualManagementDecision: (patientId, data) => req(`/staff/patients/${patientId}/annual-management-decision-draft`, { method: 'POST', body: JSON.stringify(data) }),
   saveAnnualManagementDecision: (patientId, data) => req(`/staff/patients/${patientId}/annual-management-decisions`, { method: 'PUT', body: JSON.stringify(data) }),
   withdrawLegacyAnnualManagementDecision: (patientId, decisionId, reason) => req(`/staff/patients/${patientId}/annual-management-decisions/${decisionId}/withdraw`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getAICheckupReviews: (patientId, year) => req(`/staff/patients/${patientId}/ai-checkup-reviews?year=${year}`),

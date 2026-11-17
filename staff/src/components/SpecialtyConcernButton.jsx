@@ -16,8 +16,10 @@ function load(patientId, year) {
   return pending.get(key)
 }
 export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast }) {
-  const [open, setOpen] = useState(false), [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [drafting, setDrafting] = useState(false)
   const [title, setTitle] = useState(''), [direction, setDirection] = useState(''), [note, setNote] = useState('')
+  const [goal, setGoal] = useState(''), [action, setAction] = useState('')
+  const [timingMode, setTimingMode] = useState('pending'), [firstDueDate, setFirstDueDate] = useState(''), [frequency, setFrequency] = useState('')
   const [reviewKind, setReviewKind] = useState('none'), [reviewMonths, setReviewMonths] = useState('3'), [reviewItems, setReviewItems] = useState('')
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
   const [reviewDepartment, setReviewDepartment] = useState('')
@@ -38,10 +40,11 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   }, [patientId, year, key])
   if (!['familyDoctor', 'superadmin'].includes(staff?.role) || !source?.reportId || !['screening', 'screening_report'].includes(source.kind)) return null
   const submit = async () => {
-    if (title.trim().length < 2 || !direction) { setError('请填写具体问题并选择管理方向'); return }
+    if (title.trim().length < 2 || !direction || !goal.trim() || !action.trim()) { setError('请填写具体问题、管理方向、目标和下一步行动'); return }
     setBusy(true); setError('')
     try {
       const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, note: note.trim(),
+        goal: goal.trim(), action: action.trim(), actionTiming: { mode: timingMode, firstDueDate, frequency: frequency.trim() },
         reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
         ...(adoptLegacy && legacy?._id ? { legacyDecisionId: legacy._id } : {}) })
       setSaved(result.data); if (adoptLegacy) setLegacy(null); setOpen(false)
@@ -49,10 +52,24 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     } catch (e) { setError(e.message || '保存失败，请重试') }
     finally { setBusy(false) }
   }
+  const draft = async () => {
+    if (title.trim().length < 2 || !direction) { setError('请先填写具体问题并选择管理方向'); return }
+    setDrafting(true); setError('')
+    try {
+      const result = await staffAPI.draftAnnualManagementDecision(patientId, { source, title: title.trim(), direction })
+      setGoal(current => current.trim() || result.data.goal)
+      setAction(current => current.trim() || result.data.action)
+    } catch (e) { setError(e.message || 'AI草稿暂不可用，请手动填写') }
+    finally { setDrafting(false) }
+  }
   return <>
     <button type="button" className="btn btn-secondary btn-sm" onClick={event => {
       event.stopPropagation(); setTitle(saved?.title || suggestedIssue || suggestions[0] || '');
-      setDirection(saved?.direction || ''); setNote(saved?.note || ''); setAdoptLegacy(false); setError(''); setOpen(true)
+      setDirection(saved?.direction || ''); setNote(saved?.note || ''); setGoal(saved?.goal || ''); setAction(saved?.action || '')
+      setTimingMode(saved?.actionTiming?.mode === 'rolling' && saved?.reviewPlan?.kind === 'recheck' ? 'pending' : saved?.actionTiming?.mode || 'pending')
+      setFirstDueDate(saved?.reviewPlan?.kind === 'recheck' ? '' : saved?.actionTiming?.firstDueDate || '')
+      setFrequency(saved?.reviewPlan?.kind === 'recheck' ? '' : saved?.actionTiming?.frequency || '')
+      setAdoptLegacy(false); setError(''); setOpen(true)
       setReviewKind(saved?.reviewPlan?.kind === 'recheck' ? 'recheck' : 'none')
       setReviewMonths(String(saved?.reviewPlan?.intervalMonths || 3))
       setReviewItems((saved?.reviewPlan?.items || []).join('、'))
@@ -63,9 +80,17 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       <div className="modal-header"><div className="modal-title">纳入年度管理</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
       <div className="modal-body">
         <div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核专项筛查'}。请选择对应现有方案的管理方向。</div>
-        <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
+        <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
-        <select className="form-input" value={direction} onChange={e => { setDirection(e.target.value); if (!['ongoing_management', 'abnormal_followup'].includes(e.target.value)) setReviewKind('none') }}><option value="">请选择</option>{DIRECTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <select className="form-input" value={direction} disabled={drafting} onChange={e => { setDirection(e.target.value); if (!['ongoing_management', 'abnormal_followup'].includes(e.target.value)) setReviewKind('none') }}><option value="">请选择</option>{DIRECTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
+        <textarea className="form-input" rows={2} maxLength={240} value={goal} onChange={e => setGoal(e.target.value)} placeholder="写出本年度要达到或明确的可核对结果；缺少基线时先以建立基线为目标" />
+        <label className="form-label" style={{ marginTop: 12 }}>下一步行动</label>
+        <textarea className="form-input" rows={2} maxLength={400} value={action} onChange={e => setAction(e.target.value)} placeholder="写明需要安排的就医、检查、资料核对或专业评估" />
+        <button type="button" className="btn btn-secondary btn-sm" disabled={drafting || busy || !direction || !title.trim()} onClick={draft} style={{ marginTop: 8 }}>
+          {drafting ? 'AI 起草中…' : 'AI 起草空白目标和行动'}
+        </button>
+        <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>只填入空白字段；顾问核对原始资料后修改确认。</div>
         <label className="form-label" style={{ marginTop: 12 }}>顾问补充说明（可选）</label>
         <textarea className="form-input" rows={2} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="如已确认的复查时限、就医意向或待核实事项" />
         {['ongoing_management', 'abnormal_followup'].includes(direction) && <><label className="form-label" style={{ marginTop: 12 }}>是否需要定期复查</label>
@@ -83,6 +108,16 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <input className="form-input" maxLength={100} value={reviewDepartment} onChange={e => setReviewDepartment(e.target.value)} placeholder="例如：消化内科；不同专科请分别归属" />
           <div style={{ fontSize: 12, color: '#65776F' }}>同一月份、同一专科的项目归为一次就诊复查；先由专科医生评估并开单，再完成检查及结果回顾。</div>
         </div>}</>}
+        {reviewKind !== 'recheck' && <div style={{ marginTop: 10, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
+          <label className="form-label">执行安排</label>
+          <select className="form-input" value={timingMode} onChange={e => { setTimingMode(e.target.value); setFirstDueDate(''); setFrequency('') }}>
+            <option value="pending">时间待确认</option><option value="single">单次行动</option><option value="rolling">持续跟进，完成本轮后安排下一轮</option>
+          </select>
+          {timingMode !== 'pending' && <><label className="form-label" style={{ marginTop: 8 }}>首次执行日期</label>
+            <DateField type="date" className="form-input" value={firstDueDate} onChange={e => setFirstDueDate(e.target.value)} /></>}
+          {timingMode === 'rolling' && <><label className="form-label" style={{ marginTop: 8 }}>下一轮如何确定</label>
+            <input className="form-input" maxLength={100} value={frequency} onChange={e => setFrequency(e.target.value)} placeholder="例如：根据本轮结果由负责人确定" /></>}
+        </div>}
         {!saved && legacy && <label style={{ display: 'block', marginTop: 12, padding: 10, background: '#FFF9ED', borderRadius: 6, fontSize: 13 }}>
           <input type="checkbox" checked={adoptLegacy} onChange={e => {
             setAdoptLegacy(e.target.checked)
@@ -92,7 +127,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         {error && <div role="alert" style={{ marginTop: 8, color: '#B42318' }}>{error}</div>}
         <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>团队专项研判可另行开展，不影响本项进入年度方案。</div>
       </div>
-      <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy} onClick={submit}>{busy ? '保存中…' : '确认纳入管理'}</button></div>
+      <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy || drafting} onClick={submit}>{busy ? '保存中…' : '确认纳入管理'}</button></div>
     </div></div>}
   </>
 }

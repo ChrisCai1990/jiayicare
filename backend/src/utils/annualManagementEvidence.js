@@ -61,6 +61,7 @@ async function load(patientId, year, dependencies = {}) {
     evidence.push({ id: `management_issue:${decision._id}`, content: {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
       problem: decision.title, direction: decision.direction, advisorNote: decision.note,
+      goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
       reviewPlan, legacyReviewNote: reviewPlan?.kind !== 'recheck' && reviewRules.legacyReviewNote(decision.note),
       source: decision.sourceSnapshot?.item || null, reviewedAt: decision.reviewedAt,
     } });
@@ -94,10 +95,11 @@ const DIRECTION_LABELS = {
 };
 function managementTargets(evidence = []) {
   return evidence.slice(0, 32).map(item => {
-    const { problem, direction, reportTitle, advisorNote } = item.content;
+    const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming } = item.content;
     const directionLabel = DIRECTION_LABELS[direction] || '持续管理';
-    return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
-      focus: [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
+    return { issueId: item.id, goal: goal || `${problem} · ${directionLabel}`,
+      focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
+      ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
       nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });
 }

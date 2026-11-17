@@ -13,6 +13,8 @@ function normalizeItem(moduleKey, record, index) {
   if (moduleKey === 'management_targets') return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: record.goal || `管理目标 ${index + 1}`,
     goal: record.goal || '', interventionFocus: record.focus || '',
+    schedule: record.actionTiming?.firstDueDate || '',
+    frequency: record.actionTiming?.mode === 'rolling' ? record.actionTiming.frequency || '本轮完成后再确定下一轮' : '',
   };
   const title = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
   const schedule = first(record.visit_time, record.plan_time, record.executionDate, record.date, record.time);
@@ -46,7 +48,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items;
 }
 
-const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant']);
+const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant', 'actionTiming']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
