@@ -52,6 +52,6 @@ export default function FollowUpProgressFields({ item, form, setForm }) {
     {form.status!=='completed'&&(!item.formData?.healthConsensus || form.topicOutcome !== 'complete')&&!['visited','obtained'].includes(form.outcome)&&<label style={{ fontSize: 12 }}>{item.formData?.healthConsensus ? '下次沟通时间（继续跟进时必填）' : item.formData?.healthDataPlan?.enabled ? `下次跟进时间（留空按${item.formData.healthDataPlan.followUpDays}天周期安排）` : '下次跟进时间（选填，留空保留原安排）'}
       <DateField className="form-control" type="datetime-local" value={form.nextContactAt || ''} onChange={e => setForm(f => ({ ...f, nextContactAt: e.target.value }))} />
     </label>}
-    <p role="status" style={{fontSize:12,color:'#1E6B50'}}>{form.outcome==='obtained'?'保存后：本次配药提醒结束，过程记录保留。':form.outcome==='visited'&&reminder.eligible(item)?'保存后：转入资料收集与审核，本事项尚未结束。':form.status==='completed'&&!requiresOutcomeReview(item)?'保存后：本次随访结束，已有过程记录保留。':'保存后：保留同一任务继续跟进，不重复生成提醒任务。'}</p>
+    <p role="status" style={{fontSize:12,color:'#1E6B50'}}>{item.formData?.healthConsensus && form.topicOutcome === 'complete' ? '保存后：共识沟通计划结束，已有过程记录保留。' : item.formData?.healthConsensus && form.topicOutcome === 'next' ? '保存后：同一任务转入下一主题，按填写的时间继续沟通。' : form.outcome==='obtained'?'保存后：本次配药提醒结束，过程记录保留。':form.outcome==='visited'&&reminder.eligible(item)?'保存后：转入资料收集与审核，本事项尚未结束。':form.status==='completed'&&!requiresOutcomeReview(item)?'保存后：本次随访结束，已有过程记录保留。':'保存后：保留同一任务继续跟进，不重复生成提醒任务。'}</p>
   </>
 }
