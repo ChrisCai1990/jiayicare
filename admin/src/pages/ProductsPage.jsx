@@ -1298,15 +1298,56 @@ function CategoryModal({ categories, onClose, onChanged }) {
   )
 }
 
+function HistoricalBuyersModal({ product, onClose, onSaved }) {
+  const toast = useToast()
+  const [count, setCount] = useState(String(product.historicalPaidBuyers || 0))
+  const [note, setNote] = useState(product.historicalPaidBuyersNote || '')
+  const [saving, setSaving] = useState(false)
+  const online = Number(product.onlinePaidBuyers) || 0
+  const parsed = Number(count)
+  const valid = count.trim() !== '' && Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 1000000 && (parsed === 0 || note.trim())
+  const save = async () => {
+    if (!valid) return
+    setSaving(true)
+    try {
+      await adminAPI.updateProductHistoricalPaidBuyers(product._id, {
+        count: parsed, note: note.trim(), expectedUpdatedAt: product.updatedAt,
+      })
+      toast('✅ 历史成交人数已更新')
+      onSaved()
+      onClose()
+    } catch (error) { toast('❌ ' + (error.message || '保存失败')) }
+    finally { setSaving(false) }
+  }
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal" style={{ maxWidth: 480, width: '96%' }} onClick={event => event.stopPropagation()}>
+      <div className="modal-header"><div className="modal-title">设置历史成交人数</div><button className="modal-close" onClick={onClose}>×</button></div>
+      <div className="modal-body">
+        <strong>{product.name}</strong>
+        <p style={{ color: '#667a6d', fontSize: 13 }}>线上已付款客户 {online} 人，由订单自动统计；同一客户重复付款只计 1 人，退款后不再计入。</p>
+        <div className="form-group"><label className="form-label">已核实的历史线下成交人数</label>
+          <input className="form-input" type="number" min="0" max="1000000" step="1" value={count} onChange={event => setCount(event.target.value)} /></div>
+        <div className="form-group"><label className="form-label">记录来源{parsed > 0 ? ' *' : ''}</label>
+          <textarea className="form-input" rows={3} maxLength={500} value={note} onChange={event => setNote(event.target.value)} placeholder="例如：已核对的线下订单台账及截止日期" /></div>
+        <p style={{ color: '#1E6B50', fontSize: 13 }}>商城将显示：{valid ? parsed + online : '—'} 人已购；合计为 0 时不显示数字。</p>
+      </div>
+      <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>取消</button>
+        <button className="btn btn-primary" onClick={save} disabled={!valid || saving}>{saving ? '保存中...' : '保存'}</button></div>
+    </div>
+  </div>
+}
+
 // ── 主页面 ──────────────────────────────────────────────────────
 export default function ProductsPage({ commissionMode = false }) {
   const toast = useToast()
+  const { admin } = useAdmin()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [showCatModal, setShowCatModal] = useState(false)
+  const [editingHistoricalBuyers, setEditingHistoricalBuyers] = useState(null)
   const [selected, setSelected] = useState([])
   const [filters, setFilters] = useState({ name: '', category: '', status: '' })
   const [commissionPage, setCommissionPage] = useState(1)
@@ -1496,6 +1537,7 @@ export default function ProductsPage({ commissionMode = false }) {
                 <th>分类</th>
                 <th>市场价</th>
                 <th>收费项目</th>
+                <th>已购人数</th>
                 <th>库存</th>
                 <th>状态</th>
                 <th>排序</th>
@@ -1504,7 +1546,7 @@ export default function ProductsPage({ commissionMode = false }) {
             </thead>
             <tbody>
               {products.length === 0 && (
-                <tr><td colSpan={10} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无产品，点击「新增产品」添加</td></tr>
+                <tr><td colSpan={11} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无产品，点击「新增产品」添加</td></tr>
               )}
               {products.map(p => (
                 <tr key={p._id}>
@@ -1533,6 +1575,11 @@ export default function ProductsPage({ commissionMode = false }) {
                   <td>{categoryPath.get(p.category) || p.category}</td>
                   <td style={{ color: '#888', textDecoration: p.originalPrice == null ? 'none' : 'line-through' }}>{p.originalPrice == null ? '待定价' : `¥${p.originalPrice}`}</td>
                   <td>{pricePreview(p)}</td>
+                  <td>
+                    <div>{p.displayedBuyerCount || '—'}</div>
+                    <small style={{ color: '#8a9891' }}>线上 {p.onlinePaidBuyers || 0} · 历史 {p.historicalPaidBuyers || 0}</small>
+                    {['superadmin', 'manager'].includes(admin?.role) && <div><button className="btn btn-sm btn-ghost" onClick={() => setEditingHistoricalBuyers(p)}>设置历史数</button></div>}
+                  </td>
                   <td style={{ color: p.stock === 0 && !p.stockLimited ? '#aaa' : '#333' }}>
                     {p.usesSharedInventory || p.inventoryTracking?.enabled ? '见物资台账' : p.stock === 0 && !p.stockLimited ? '不限' : p.stock}
                   </td>
@@ -1574,6 +1621,8 @@ export default function ProductsPage({ commissionMode = false }) {
           onChanged={loadCategories}
         />
       )}
+      {editingHistoricalBuyers && <HistoricalBuyersModal product={editingHistoricalBuyers}
+        onClose={() => setEditingHistoricalBuyers(null)} onSaved={load} />}
     </div>
   )
 }

@@ -79,6 +79,11 @@ const productSchema = new mongoose.Schema({
     _id: false,
   }],
   sales:         { type: Number, default: 0 },
+  // Verified historical buyers outside the online payment system. Online buyers are counted from paid orders.
+  historicalPaidBuyers: { type: Number, default: 0, min: 0 },
+  historicalPaidBuyersNote: { type: String, default: '', maxlength: 500 },
+  historicalPaidBuyersUpdatedAt: { type: Date, default: null },
+  historicalPaidBuyersUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   status:        { type: String, enum: ['on', 'off'], default: 'off' },
   fulfillmentType: {
     type: String,
