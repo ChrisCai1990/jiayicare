@@ -2092,16 +2092,16 @@ router.get('/products', adminAuth, async (req, res) => {
   if (category) filter.category = category;
   if (status) filter.status = status;
   const products = await Product.find(filter).select('-costPlanVersions').sort({ sortOrder: 1, createdAt: -1 }).lean();
-  const { paidBuyerCounts, displayedBuyerCount } = require('../utils/productPaidBuyers');
-  const paidCounts = await paidBuyerCounts(products);
+  const { paidOrderCounts, displayedPaidOrderCount } = require('../utils/productPaidBuyers');
+  const paidCounts = await paidOrderCounts(products);
   const materials = await require('../models/InventoryMaterial').find({ tenantId: req.admin.tenantId, linkedProductIds: { $in: products.map(p => p._id) } }).select('linkedProductIds').lean();
   const linkedIds = new Set(materials.flatMap(m => m.linkedProductIds.map(String)));
   res.json({ success: true, data: products.map(p => ({ ...p, usesSharedInventory: linkedIds.has(String(p._id)),
-    onlinePaidBuyers: paidCounts.get(String(p._id)) || 0, displayedBuyerCount: displayedBuyerCount(p, paidCounts) })) });
+    onlinePaidOrders: paidCounts.get(String(p._id)) || 0, displayedPaidOrderCount: displayedPaidOrderCount(p, paidCounts) })) });
 });
 
-// Historical completed purchases can be entered from verified offline records; online paid buyers are always counted from orders.
-router.patch('/products/:id/historical-paid-buyers', adminAuth, async (req, res) => {
+// Historical completed purchases can be entered from verified offline records; online purchases are counted from orders.
+router.patch('/products/:id/historical-paid-orders', adminAuth, async (req, res) => {
   if (!['superadmin', 'manager'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '无权限维护历史成交数' });
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '商品 ID 无效' });
   const body = req.body || {};
@@ -2109,16 +2109,16 @@ router.patch('/products/:id/historical-paid-buyers', adminAuth, async (req, res)
   const note = String(body.note || '').trim();
   const expectedUpdatedAt = new Date(body.expectedUpdatedAt);
   if (body.count === '' || body.count === null || body.count === undefined || !Number.isSafeInteger(count) || count < 0 || count > 1000000)
-    return res.status(400).json({ success: false, message: '历史成交人数须为 0 至 1000000 的整数' });
+    return res.status(400).json({ success: false, message: '历史成交笔数须为 0 至 1000000 的整数' });
   if (count > 0 && !note) return res.status(400).json({ success: false, message: '请填写历史成交记录来源' });
   if (note.length > 500 || Number.isNaN(expectedUpdatedAt.getTime()))
     return res.status(400).json({ success: false, message: '来源说明或商品版本无效' });
   const product = await Product.findOneAndUpdate({ _id: req.params.id, tenantId: req.admin.tenantId,
-    updatedAt: expectedUpdatedAt }, { $set: { historicalPaidBuyers: count,
-      historicalPaidBuyersNote: note, historicalPaidBuyersUpdatedAt: new Date(),
-      historicalPaidBuyersUpdatedBy: req.admin._id } }, { new: true, runValidators: true });
+    updatedAt: expectedUpdatedAt }, { $set: { historicalPaidOrders: count,
+      historicalPaidOrdersNote: note, historicalPaidOrdersUpdatedAt: new Date(),
+      historicalPaidOrdersUpdatedBy: req.admin._id } }, { new: true, runValidators: true });
   if (!product) return res.status(409).json({ success: false, message: '商品已更新，请刷新后重试' });
-  res.json({ success: true, data: { historicalPaidBuyers: product.historicalPaidBuyers }, message: '历史成交人数已更新' });
+  res.json({ success: true, data: { historicalPaidOrders: product.historicalPaidOrders }, message: '历史成交笔数已更新' });
 });
 
 // 产品标准成本按版本配置；它是预算，不代替订单实际成本凭据。
