@@ -287,13 +287,12 @@ export default function InAppServiceGroupsPage() {
               {messageTimeSeparator(message.createdAt, messages[index - 1]?.createdAt) && <div className="sg-time-separator"><time dateTime={message.createdAt}>{messageTimeSeparator(message.createdAt, messages[index - 1]?.createdAt)}</time></div>}
               <article title={stamp(message.createdAt)} onContextMenu={e=>{if(selected.status!=='closed'&&!selected.supervised){e.preventDefault();setQuoteMenu(message);}}} id={'sg-msg-'+message.id} key={message.id}
               className={`sg-message${message.senderType === 'staff' ? ' is-staff' : ''}`}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                {message.senderAvatar && <img alt="" src={message.senderAvatar.startsWith('/') ? API_ORIGIN + message.senderAvatar : message.senderAvatar} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />}
-                <small>{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'}</small>
-              </div>
+              {message.senderAvatar ? <img className="sg-sender-avatar" alt={message.senderName || '发送人'} src={message.senderAvatar.startsWith('/') ? API_ORIGIN + message.senderAvatar : message.senderAvatar} /> : <span className="sg-sender-avatar sg-avatar-fallback" aria-label={message.senderName || '发送人'}>{(message.senderName || '群').slice(0,1)}</span>}
+              <div className="sg-message-body">
+                <small className="sg-sender-name">{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'}</small>
+                <div className="sg-bubble">
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
               {quoteMenu?.id===message.id&&<div><button onClick={()=>{setQuote(message);setQuoteMenu(null);}}>引用</button><button onClick={()=>setQuoteMenu(null)}>取消</button></div>}
-              {message.quote&&<button style={{display:'block',textAlign:'left',background:'#eef1ef',marginBottom:6}} onClick={()=>{if(message.quote.id){setHistoryAnchor(message.quote.id);setHistoryOpen(true);}}}>{message.quote.senderName}：{message.quote.content}</button>}
               {message.audioUrl?<GroupVoiceMessage groupId={selected.id} message={message}/>:<div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>}
               {message.material && <div style={{marginTop:8}}>
                 <small>{message.material.status}</small>
@@ -301,6 +300,9 @@ export default function InAppServiceGroupsPage() {
                 <a href={`/patients/${selected.patientId}?tab=reports&reportId=${message.material.id}`}>查看原始资料 / 核对</a>
               </div>}
               {!!message.mentions?.length&&<div className="sg-mention-links">{message.mentions.map(p=><button key={p.id} onClick={()=>window.alert(`${p.name} · ${p.role || '服务成员'}`)}> @{p.name} · {p.role}</button>)}</div>}
+                </div>
+              {message.quote&&<button className="sg-quoted-message" onClick={()=>{if(message.quote.id){setHistoryAnchor(message.quote.id);setHistoryOpen(true);}}}>{message.quote.senderName}：{message.quote.content}</button>}
+              </div>
             </article></React.Fragment>)}
           </div>
           {selected.status==='closed' ? <p className="sg-readonly">本次服务已结束，历史记录仅供查看。</p> : selected.supervised ? <p className="sg-readonly">仅监管查看，未入群不能回复。</p>
