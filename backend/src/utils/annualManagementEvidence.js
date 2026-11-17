@@ -119,6 +119,14 @@ const DIRECTION_LABELS = {
   medical_treatment: '安排就医', checkup_completion: '完善检查', abnormal_followup: '定期复查',
   vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察',
 };
+const DEFAULT_MANAGEMENT_GOALS = {
+  medical_treatment: '及时完成就医，明确诊治方案',
+  checkup_completion: '完成所需检查，明确结果与后续处理方向',
+  abnormal_followup: '按计划完成复查，明确变化与后续管理措施',
+  vaccine: '核实接种适宜性，按确认的方案完成接种',
+  monitoring: '按计划监测，及时识别异常变化',
+  ongoing_management: '持续跟进变化，按评估结果调整管理措施',
+};
 function managementTargets(evidence = [], pilot = true) {
   return evidence.slice(0, 32).map(item => {
     const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming, source } = item.content;
@@ -126,13 +134,13 @@ function managementTargets(evidence = [], pilot = true) {
     if (!pilot) return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
       focus: [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
       nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
-    return { issueId: item.id, goal: goal || `${problem} · ${directionLabel}`,
+    return { issueId: item.id, goal: goal || DEFAULT_MANAGEMENT_GOALS[direction] || `${problem} · ${directionLabel}`,
       focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
       goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)
         ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
       sourceStatus: source?.status || '',
       ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
-      nutritionRelevant: direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+      nutritionRelevant: direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });
 }
 

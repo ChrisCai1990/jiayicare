@@ -1080,6 +1080,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       date: record.executionDate || record.visit_time || record.plan_time || record.time || record.date || '',
     }))
   })
+  const defaultActionGoals = { medical_treatment: '及时完成就医，明确诊治方案', checkup_completion: '完成检查，明确结果与后续处理方向', abnormal_followup: '按计划完成复查，明确变化与后续管理措施', vaccine: '核实接种适宜性，按确认的方案完成接种', annual_checkup: '按计划完成年度体检，核对重点项目结果' }
+  const displayedGoals = managementTargets.length ? managementTargets.map((row, index) => ({ id: targetIssueId(row, index), title: row.sourceTitle || `问题 ${index + 1}`, goal: row.goal || '目标待健康顾问确认' }))
+    : planActions.filter(action => defaultActionGoals[action.key]).map(action => ({ id: `${action.key}:${action.index}`, title: action.title, goal: action.record.goal || defaultActionGoals[action.key] }))
   const integratedActions = planActions.map(action => ({ ...action, issueId: patientMode ? displayIssueId(action.record, managementTargets) : '' }))
   const managementTargetGroups = groupTargetsBySharedActions(managementTargets, integratedActions)
   const groupActions = group => integratedActions.filter(action => actionTargetIds(action, managementTargets).some(id => group.ids.includes(id)))
@@ -1483,6 +1486,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {pendingExecutionChanges.length > 0 && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; document.getElementById('annual-execution-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>{pendingExecutionChanges.length} 项执行待核对 · 处理</button>}
             </div>
           </div>
+          {annualPilot && <section style={{ marginBottom: 16, padding: '14px 16px', background: '#F5FAF7', border: '1px solid #CFE3D7', borderRadius: 12 }} aria-label="年度管理目标">
+            <strong style={{ color: '#1E6B50' }}>本年度管理目标</strong>
+            {displayedGoals.length ? displayedGoals.map(row => <div key={row.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 220px) 1fr', gap: 10, paddingTop: 9, marginTop: 9, borderTop: '1px solid #E2EDE6', fontSize: 13 }}>
+              <b>{row.title}</b><span>{row.goal}</span>
+            </div>) : <p style={{ margin: '8px 0 0', fontSize: 13, color: '#9A5B13' }}>尚无管理目标，请先确认需要纳入的年度事项。</p>}
+          </section>}
           {patientMode && <details open={!annualPilot || window.location.hash === '#annual-management-goals'} style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
             <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>{annualPilot ? '管理问题、目标与来源 · 展开核对' : '按问题查看年度管理方案'}</summary>
             <section>
@@ -1494,7 +1503,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
               {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>{groupHeading(group)}</div>}
               {group.entries.map(({ row, index }) => <div key={targetIssueId(row, index)} style={group.entries.length > 1 ? { paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid #E4ECE7' } : undefined}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', marginBottom: 5 }}>{index + 1}. {(row.goal || row.sourceTitle || '管理问题').replace(/：按.+安排完成本年度可核对的管理行动$/, '')}{row.sourceGoal && !(row.goal || '').includes(` · ${row.sourceGoal}`) ? ` · ${row.sourceGoal}` : ''}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', marginBottom: 5 }}>{index + 1}. {row.sourceTitle || '管理问题'}</div>
+              <div style={{ fontSize: 13, color: '#1E6B50', marginBottom: 7 }}>目标：{row.goal || '待健康顾问确认'}</div>
               <details><summary style={{ cursor: 'pointer', fontSize: 12, color: '#62776A' }}>查看来源依据、调整目标与干预重点</summary>
               <div style={{ fontSize: 12, color: '#62776A', marginBottom: 10 }}>来源：{row.sourceTitle || '年度方案补充'}{row.sourceConfirmedAt ? ` · ${new Date(row.sourceConfirmedAt).toLocaleDateString('zh-CN')}` : ''}{row.sourceGoal && (row.goal !== row.sourceGoal || row.focus !== row.sourceFocus) ? ' · 年度草稿已调整' : ''}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>

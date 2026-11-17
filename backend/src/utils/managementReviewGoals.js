@@ -9,7 +9,8 @@ function activePlan(plans, period) {
 function goalReviews(plans, followups, period, services = [], healthRecords = [], reports = [], metricSourcesIncomplete = false, observationRecords = [], observationSourcesIncomplete = false, linkedRehabOrders = [], priorGoalReviews = []) {
   const plan = activePlan(plans, period);
   if (!plan) return [];
-  const rows = plan.moduleData?.management_targets?.records || [];
+  const rows = plan.moduleData?.management_targets?.records?.length
+    ? plan.moduleData.management_targets.records : require('./annualStandardGoals').fromPlan(plan);
   const periodEnd = new Date(`${period.end}T23:59:59+08:00`);
   const planStart = new Date(plan.confirmedAt);
   const rehabIssuesByOrder = new Map(linkedRehabOrders.filter(order => id(order.rehabAnnualLink?.annualPlanId) === id(plan))

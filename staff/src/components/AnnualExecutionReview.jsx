@@ -3,7 +3,7 @@ import { staffAPI } from '../api'
 
 const statusName = { planned: '待执行', pending: '待处理', in_progress: '进行中', completed: '已完成', cancelled: '已取消', missed: '逾期' }
 const dateText = value => {
-  if (!value) return '日期未定'
+  if (!value) return '日期待确认'
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value)
   const date = new Date(value)
   return Number.isFinite(date.getTime()) ? date.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : String(value)
@@ -41,23 +41,23 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
   if (!data && !error) return null
   if (!data?.reviews?.length && !error) return null
   if (!pending.length && !error) return <details ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16 }}>
-    <summary style={{ cursor: 'pointer', color: '#52675D' }}>历史执行核对记录（{done.length}）</summary>
+    <summary style={{ cursor: 'pointer', color: '#52675D' }}>已核对记录（{done.length}）</summary>
     <p style={{ color: '#62776A', fontSize: 13 }}>方案修改后核对原有执行任务是否需要同步调整；以下事项已经完成核对。</p>
     {done.map(r => <p key={r.id}>{dateText(r.reviewedAt)} · {r.reviewedByName || '健康顾问'} · {r.outcome === 'arranged' ? '已衔接原流程' : '无需调整'}<br />{r.note}</p>)}
   </details>
   return <section ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16, border: pending.length ? '1px solid #E4BE75' : undefined }}>
-    <h3 style={{ margin: '0 0 8px' }}>执行安排核对{pending.length ? ` · ${pending.length}次方案修订` : ''}</h3>
+    <h3 style={{ margin: '0 0 8px' }}>方案修订与原执行任务核对{pending.length ? ` · ${pending.length}次修订` : ''}</h3>
     {error && <div role="alert">{error} <button className="btn btn-secondary btn-sm" disabled={busy} onClick={reload}>刷新核对</button></div>}
     {message && <p role="status">{message}</p>}
     {pending.length > 0 && <>
-      <p>这是方案修改后的人工衔接核对：方案已更新并通知客户，原随访和服务任务不会自动改期、删除或重新派发。同内容但日期不同的安排也不会自动合并。请逐项比较下列变更，再到<a href={`/patients/${patientId}?tab=followups`}>原执行流程</a>处理需要调整的任务，最后记录核对结论。</p>
-      <div style={{ display: 'grid', gap: 8, margin: '12px 0' }}>{pending.flatMap(review => review.changes.map((change, index) =>
+      <p style={{ fontSize: 13, color: '#52675D' }}>这里比对的是修订前的已发布方案与新方案，以及原随访和服务任务；不是与 AI 建议核对。同一问题若只是日期调整，请在<a href={`/patients/${patientId}?tab=followups`}>原执行流程</a>续办原事项并核对新日期，避免重复建一条随访。已完成记录保留为历史。</p>
+      <details style={{ margin: '12px 0' }}><summary style={{ cursor: 'pointer', fontWeight: 600 }}>查看方案变更明细（{pending.reduce((count, review) => count + review.changes.length, 0)}项）</summary><div style={{ display: 'grid', gap: 8, margin: '12px 0' }}>{pending.flatMap(review => review.changes.map((change, index) =>
         <div key={`${review.id}:${index}`} style={{ padding: '9px 12px', border: '1px solid #E8E3D7', borderRadius: 8, background: '#FFFCF6', fontSize: 13 }}>
           <strong>{change.module} · {change.title} · {change.action}</strong>
           <div style={{ color: '#52675D', marginTop: 4 }}>原安排：{change.before ? `${change.before.title} · ${dateText(change.before.date)}` : '无'}</div>
           <div style={{ color: '#52675D' }}>新方案：{change.after ? `${change.after.title} · ${dateText(change.after.date)}` : '已移除'}</div>
           {change.deletionReason && <div style={{ color: '#8B5E28' }}>删除原因：{change.deletionReason}</div>}
-        </div>))}</div>
+        </div>))}</div></details>
       <details style={{ margin: '12px 0' }}>
         <summary>本方案直接关联的执行安排：{data.totals.followUps}条医护事项、{data.totals.tasks}条会员任务</summary>
         <p>以下为核对时的参考。就医、订单等其他关联服务请在会员原流程核对。</p>

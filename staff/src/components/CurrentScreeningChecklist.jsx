@@ -5,6 +5,19 @@ import AICheckupReview from './AICheckupReview'
 
 const directionLabel = { medical_treatment: '安排就医', checkup_completion: '完善检查', abnormal_followup: '定期复查', vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察' }
 const actionable = new Set(['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine'])
+const hepatitisMarkers = [
+  /乙型肝炎病毒?表面抗原|乙肝表面抗原|HBsAg/i,
+  /乙型肝炎病毒?表面抗体|乙肝表面抗体|HBsAb|anti-?HBs/i,
+  /乙型肝炎病毒?[eE]抗原|乙肝[eE]抗原|HBeAg/i,
+  /乙型肝炎病毒?[eE]抗体|乙肝[eE]抗体|HBeAb|anti-?HBe/i,
+  /乙型肝炎病毒?核心抗体|乙肝核心抗体|HBcAb|anti-?HBc/i,
+]
+const hepatitisAllNegative = reports => hepatitisMarkers.every(pattern => {
+  const matches = reports.flatMap(report => (report.reportItems || []).filter(item => pattern.test(String(item.name || '')))
+    .map(item => ({ value: item.value, date: String(report.checkDate || report.date || '') })))
+  const latest = matches.sort((a, b) => b.date.localeCompare(a.date))[0]
+  return latest && /阴性|negative|未检出|^\s*[-－]\s*$/i.test(String(latest.value || ''))
+})
 
 export default function CurrentScreeningChecklist({ patientId, year, reports = [], staff, toast, onOpenReport }) {
   const [state, setState] = useState({ loading: true, error: '', decisions: [], checkup: null, plan: null })
@@ -28,6 +41,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
   useEffect(() => { refresh() }, [patientId, year])
   const reviewed = state.checkup?.reviews || []
   const currentReports = useMemo(() => reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly), [reports])
+  const hepatitisVaccinePrompt = useMemo(() => hepatitisAllNegative(currentReports), [currentReports])
   const covered = useMemo(() => {
     const latest = new Map()
     for (const report of currentReports) for (const item of report.reportItems || []) {
@@ -67,11 +81,30 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
     finally { setSaving(false) }
   }
   return <section style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><div><strong style={{ color: '#1E6B50' }}>资料与管理去向</strong><div style={{ fontSize: 12, color: '#52675D', marginTop: 4 }}>逐项核实报告、异常线索和 AI 建议，决定是否补入当前年度方案；此处不形成年度综合判断。</div></div><button type="button" className="btn btn-secondary btn-sm" onClick={refresh} disabled={state.loading}>刷新核对</button></div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><div><strong style={{ color: '#1E6B50' }}>筛查事项去向</strong><div style={{ fontSize: 12, color: '#52675D', marginTop: 4 }}>顾问核对异常与遗漏，决定是否纳入年度方案。</div></div><button type="button" className="btn btn-secondary btn-sm" onClick={refresh} disabled={state.loading}>刷新</button></div>
     {state.error && <div role="alert" style={{ color: '#B42318', marginTop: 8 }}>{state.error}</div>}
     {state.loading ? <p>正在核对来源…</p> : <>
-      <p style={{ fontSize: 13 }}>已审核报告 {currentReports.length} 份 · 有检查记录的专项 {covered.length} 项 · 异常或需关注的结构化线索 {findings.length} 项 · AI 待完善检查 {state.checkup?.items?.length || 0} 项 · 待补入当前方案 {pendingSources.length} 项</p>
-      <div style={{ fontSize: 12, color: '#7A5B24' }}>“有检查记录”不等于该项目仍在有效期内；影像和检验异常仅为核对线索，须结合原报告、后续检查和顾问解读判断。无结构化结果的报告请在原始资料中核对。</div>
+      <p style={{ fontSize: 13, margin: '10px 0' }}>需确认去向 {pendingSources.length} 项 · AI 待完善检查 {state.checkup?.items?.length || 0} 项</p>
+      <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>需确认方案去向</b>
+        {!state.plan && <p style={{ fontSize: 12 }}>未找到已确认的本年度方案；请先核对年度方案。</p>}
+        {!pendingSources.length && <p style={{ fontSize: 12 }}>目前没有待补入事项。</p>}
+        {pendingSources.map(source => <div key={`${source.kind}:${source.id}`} style={{ borderTop: '1px solid #E4ECE7', marginTop: 8, paddingTop: 8, fontSize: 13 }}>
+          <b>{source.title}</b> · {directionLabel[source.direction] || '待确认去向'}
+          {state.plan && possibleExisting(source) && <span style={{ color: '#925F20' }}> · 方案已有同名事项，请核对关联来源</span>}
+          {state.plan && !possibleExisting(source) && actionable.has(source.direction) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => openAmendment(source)}>补入方案</button>}
+          {state.plan && !actionable.has(source.direction) && <span style={{ color: '#925F20' }}> · 请在方案中安排对应服务</span>}
+        </div>)}
+        {state.plan && !!pendingSources.length && <div style={{ fontSize: 12, marginTop: 10 }}><a href={`/patients/${patientId}/annual-health?year=${year}`}>查看现有年度方案</a></div>}
+      </div>
+      <details style={{ marginTop: 12 }}><summary style={{ cursor: 'pointer' }}>常规接种建议 · 顾问核对</summary>
+        <div style={{ padding: '8px 4px', fontSize: 13, lineHeight: 1.7 }}>
+          {hepatitisVaccinePrompt && <p style={{ margin: '4px 0' }}><b>乙肝疫苗：</b>已审核结果提示乙肝五项均阴；请核对既往接种史、免疫状态与接种适宜性。</p>}
+          <p style={{ margin: '4px 0' }}>流感、肺炎球菌、带状疱疹、HPV 疫苗：按年龄、基础疾病、既往接种史及禁忌逐项判断是否适合。</p>
+          <p style={{ margin: '4px 0', color: '#52675D' }}>顾问确认后在<a href={`/patients/${patientId}/annual-health?year=${year}`}>年度方案的“疫苗接种”</a>填写疫苗、时间和执行人；此处仅供核对，不自动派发。</p>
+        </div>
+      </details>
+      <details style={{ marginTop: 12 }}><summary style={{ cursor: 'pointer' }}>查看报告与 AI 核对线索</summary>
+      <div style={{ fontSize: 12, color: '#7A5B24', marginTop: 8 }}>检查记录不等于仍在有效期内；异常线索须结合原报告、后续检查和顾问解读判断。</div>
       <details style={{ marginTop: 10 }}><summary>已有检查记录的专项（{covered.length}，时效待核对）</summary>
         {covered.map(({ report, item }, index) => <div key={`${item.screeningKey || item.screeningKeys?.[0]}:${index}`} style={{ padding: 8, background: '#fff', marginTop: 6, borderRadius: 7, fontSize: 13 }}>
           {item.screeningParent || item.name || '专项检查'} · 最近记录 {report.checkDate || report.date || '日期待核对'} · {report.title || '报告'}
@@ -89,20 +122,10 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
         </div>)}
         {findingsOpen && findingPages > 1 && <div className="report-table-pager" style={{ marginTop: 8 }}><button type="button" disabled={currentFindingPage <= 1} onClick={() => setFindingPage(currentFindingPage - 1)}>上一页</button><span>第 {currentFindingPage} / {findingPages} 页</span><button type="button" disabled={currentFindingPage >= findingPages} onClick={() => setFindingPage(currentFindingPage + 1)}>下一页</button></div>}
       </details>
-      <details style={{ marginTop: 10 }} open><summary>AI 健康信息整理提出的待完善检查（{state.checkup?.items?.length || 0}）</summary>
+      <details style={{ marginTop: 10 }}><summary>AI 提示的待完善检查（{state.checkup?.items?.length || 0}）</summary>
         <AICheckupReview patientId={patientId} year={year} versionKey={state.checkup?.version || ''} staff={staff} toast={toast} onSaved={refresh} />
       </details>
-      <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>已核对、待补入方案的事项</b>
-        {!state.plan && <p style={{ fontSize: 12 }}>未找到已确认的本年度方案；请先核对年度方案。</p>}
-        {!pendingSources.length && <p style={{ fontSize: 12 }}>目前没有已确认但尚未进入方案的事项。仍须核对上方未处理线索。</p>}
-        {pendingSources.map(source => <div key={`${source.kind}:${source.id}`} style={{ borderTop: '1px solid #E4ECE7', marginTop: 8, paddingTop: 8, fontSize: 13 }}>
-          <b>{source.title}</b> · {directionLabel[source.direction] || '待确认去向'}
-          {state.plan && possibleExisting(source) && <span style={{ color: '#925F20' }}> · 原方案有同名事项，请先核对，避免重复</span>}
-          {state.plan && !possibleExisting(source) && actionable.has(source.direction) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => openAmendment(source)}>补入已发布方案</button>}
-          {state.plan && !actionable.has(source.direction) && <span style={{ color: '#925F20' }}> · 请在方案修订与专业服务入口核对安排</span>}
-        </div>)}
-        {state.plan && <div style={{ fontSize: 12, marginTop: 10 }}>补入后还需由顾问确认管理目标与执行安排。<a href={`/patients/${patientId}/annual-health?year=${year}`}>查看现有年度方案</a></div>}
-      </div>
+      </details>
     </>}
     {editing && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 560 }}><div className="modal-header"><h3>补入已确认年度方案</h3><button type="button" className="modal-close" onClick={() => setEditing(null)}>×</button></div><div className="modal-body" style={{ display: 'grid', gap: 8 }}>
       <div>{editing.title} · {directionLabel[editing.direction]}</div>
