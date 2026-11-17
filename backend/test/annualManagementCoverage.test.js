@@ -84,7 +84,7 @@ test('顾问已处理主诉可作为独立来源，来源修改后阻止旧目�
     symptomWorkflow: { status: 'manager_followup', decidedAt, decisionNote: '继续随访' } };
   const decision = { _id: 'decision-1', patientId: 'patient', year: 2026, symptomRecordId: record._id,
     sourceKey: `symptom:${record._id}`, title: '腹痛原因待核实', direction: 'ongoing_management', goal: '明确症状变化', action: '安排随访',
-    sourceSnapshot: { value: record.value, note: record.note, recordedAt: at, decidedAt } };
+    sourceSnapshot: { value: record.value, note: record.note, recordedAt: at, decidedAt, decisionNote: record.symptomWorkflow.decisionNote } };
   const dependencies = {
     Decision: { find: () => ({ sort: () => ({ lean: async () => [decision] }) }) },
     Report: { findOne: () => { throw new Error('symptom must not query reports') } },

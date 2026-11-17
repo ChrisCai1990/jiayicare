@@ -29,3 +29,24 @@ test('later task completion is not counted in an earlier period; linked rehab ev
   assert.equal(row.taskEvidence[0].summary, '10月预约');
   assert.equal(row.serviceEvidence[0].title, '首次运动能力评估');
 });
+
+test('symptom and lifestyle observations summarize recorded days without deciding outcomes', () => {
+  const period = { start: '2026-10-01', end: '2026-10-31' };
+  const plans = [{ _id: 'plan-1', confirmedAt: '2026-09-01', moduleData: { management_targets: { records: [
+    { issueId: 'symptom-1', goal: '缓解便秘', goalDimension: 'symptom', symptomTerm: '便秘' },
+    { issueId: 'lifestyle-1', goal: '改善睡眠规律', goalDimension: 'lifestyle', lifestyleType: 'sleep' },
+  ] } } }];
+  const observations = [
+    { type: 'symptom', value: '便秘', recordedAt: '2026-10-01T02:00:00Z' },
+    { type: 'symptom', value: '便秘', recordedAt: '2026-10-01T09:00:00Z' },
+    { type: 'symptom', value: '腹泻', recordedAt: '2026-10-02T02:00:00Z' },
+    { type: 'sleep', value: '7.0', unit: '小时', recordedAt: '2026-10-01T02:00:00Z' },
+    { type: 'sleep', value: '8.0', unit: '小时', recordedAt: '2026-10-02T02:00:00Z' },
+  ];
+  const rows = goalReviews(plans, [], period, [], [], [], false, observations);
+  assert.deepEqual([rows[0].observationEvidence.days, rows[0].observationEvidence.count], [1, 2]);
+  assert.equal(rows[0].observationEvidence.periodDays, 31);
+  assert.deepEqual([rows[1].observationEvidence.days, rows[1].observationEvidence.count], [2, 2]);
+  assert.equal(rows[0].outcome, 'unverified');
+  assert.equal(rows[1].outcome, 'unverified');
+});

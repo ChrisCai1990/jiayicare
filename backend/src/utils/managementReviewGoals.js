@@ -6,12 +6,13 @@ function activePlan(plans, period) {
     .sort((a, b) => new Date(b.confirmedAt) - new Date(a.confirmedAt))[0] || null;
 }
 
-function goalReviews(plans, followups, period, services = [], healthRecords = [], reports = [], metricSourcesIncomplete = false) {
+function goalReviews(plans, followups, period, services = [], healthRecords = [], reports = [], metricSourcesIncomplete = false, observationRecords = [], observationSourcesIncomplete = false) {
   const plan = activePlan(plans, period);
   if (!plan) return [];
   const rows = plan.moduleData?.management_targets?.records || [];
   const periodEnd = new Date(`${period.end}T23:59:59+08:00`);
   const planStart = new Date(plan.confirmedAt);
+  const activeObservations = observationRecords.filter(record => new Date(record.recordedAt) >= planStart);
   return rows.filter(row => row.issueId && row.goal).slice(0, 32).map(row => {
     const tasks = (followups || []).filter(task => new Date(task.date) >= planStart && (task.managementIssueIds || []).includes(row.issueId));
     const linkedServices = (services || []).filter(service => new Date(service.date) >= planStart && (service.structuredContent?.rehab?.managementIssueIds || []).includes(row.issueId));
@@ -19,9 +20,14 @@ function goalReviews(plans, followups, period, services = [], healthRecords = []
       issueId: row.issueId, annualPlanId: id(plan), goal: String(row.goal).slice(0, 240),
       goalDimension: ['data', 'symptom', 'lifestyle'].includes(row.goalDimension) ? row.goalDimension : '',
       baseline: String(row.baseline || '').slice(0, 500), sourceTitle: String(row.sourceTitle || '').slice(0, 240), focus: String(row.focus || '').slice(0, 500),
+      symptomTerm: String(row.symptomTerm || '').slice(0, 80), lifestyleType: String(row.lifestyleType || '').slice(0, 30),
       goalMetric: row.goalMetric || null,
       metricEvidence: row.goalDimension === 'data' && row.goalMetric
         ? { ...require('./managementGoalMetrics').metricEvidence(row.goalMetric, healthRecords, reports, period), incomplete: metricSourcesIncomplete } : null,
+      observationEvidence: row.goalDimension === 'symptom'
+        ? require('./managementObservationEvidence').summarize(activeObservations, 'symptom', row.symptomTerm, observationSourcesIncomplete, period)
+        : row.goalDimension === 'lifestyle' && row.lifestyleType
+          ? require('./managementObservationEvidence').summarize(activeObservations, row.lifestyleType, '', observationSourcesIncomplete, period) : null,
       taskEvidence: tasks.slice(0, 20).map(task => ({
         followUpId: id(task), date: task.date,
         status: task.completedAt && new Date(task.completedAt) > periodEnd ? 'period_end_pending' : task.status,
