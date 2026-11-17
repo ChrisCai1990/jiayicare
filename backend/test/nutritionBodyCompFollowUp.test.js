@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const { addDays, dateOnly, taskKey, taskDocument, ensureTask, measurementOptions } = require('../src/utils/nutritionBodyCompFollowUp');
 
 test('first body composition invitation is three days before day 28 and retries reuse the same cycle', async () => {
-  const plan = { _id: 'plan-1', patientId: 'patient-1', staffId: 'nutritionist-1' };
+  const plan = { _id: 'plan-1', patientId: 'patient-1', staffId: 'nutritionist-1', sourceAnnualPlanId: 'annual-1', content: {
+    annualManagementIssues: [{ issueId: 'management_issue:glucose', goal: '稳定血糖' }],
+  } };
   const patient = { assignedNutritionist: 'nutritionist-1' };
   const target = addDays(new Date('2026-11-17T02:00:00Z'), 28);
   assert.equal(target.toISOString().slice(0, 10), '2026-12-15');
@@ -11,6 +13,8 @@ test('first body composition invitation is three days before day 28 and retries 
   assert.equal(first.date.toISOString().slice(0, 10), '2026-12-12');
   assert.equal(first.bodyCompCycle.targetAt.toISOString().slice(0, 10), '2026-12-15');
   assert.equal(first.assessmentActionKey, taskKey(plan._id, 1));
+  assert.equal(first.sourceAnnualPlanId, 'annual-1');
+  assert.deepEqual(first.managementIssueIds, ['management_issue:glucose']);
   const saved = new Map();
   const FollowUp = { findOneAndUpdate: async (filter, update) => {
     if (!saved.has(filter.assessmentActionKey)) saved.set(filter.assessmentActionKey, update.$setOnInsert);

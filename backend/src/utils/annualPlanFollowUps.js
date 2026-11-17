@@ -132,6 +132,7 @@ async function buildAnnualPlanFollowUps(plan) {
   if (standardNutrition && standardNutrition.enabled !== false) {
     const metrics = require('../../../shared/nutritionComparisonMetrics.cjs').selectedFromAnnualPlan(plan);
     const nutritionDispatch = require('./annualNutritionDispatch');
+    const goals = nutritionDispatch.nutritionGoalsForPlan(plan);
     const date = standardNutrition.executionDate || plan.confirmedAt || plan.followUpReleasedAt || new Date();
     const before = created.length;
     const dateKey = Number.isFinite(new Date(date).getTime()) ? new Date(date).toISOString().slice(0, 10) : 'invalid';
@@ -139,7 +140,7 @@ async function buildAnnualPlanFollowUps(plan) {
       `nutrition-assessment:${dateKey}`, standardNutrition);
     if (created.length > before) Object.assign(created.at(-1), { workflowKey: 'annual_nutrition_assessment', reviewAssignedTo: null, reviewRole: null,
       managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))],
-      formData: { annualNutritionMetrics: metrics, annualNutritionGoals: nutritionDispatch.nutritionGoalsForPlan(plan) } });
+      formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals } });
   }
 
   // ① 有具体日期的多条记录模块：每条各生成一条，content拼该条记录的关键字段

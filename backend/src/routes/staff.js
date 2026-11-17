@@ -10643,11 +10643,11 @@ router.get('/patients/:id/annual-plan/:planId/issue-progress', staffAuth, async 
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
     if (!mongoose.isValidObjectId(req.params.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
     const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id })
-      .select('_id moduleData.management_targets pushedAt').lean();
+      .select('_id moduleData pushedAt').lean();
     if (!plan) return res.status(404).json({ success: false, message: '年度方案不存在' });
     if (!plan.pushedAt) return res.json({ success: true, data: [] });
     const tasks = await FollowUp.find({ patientId: req.params.id, sourceAnnualPlanId: plan._id,
-      sourceType: { $in: ['scheduled', 'annual_service', 'professional_assessment'] } })
+      sourceType: { $in: ['scheduled', 'annual_service', 'professional_assessment', 'health_plan'] } })
       .select('_id managementIssueIds formData.serviceRequest.itemSnapshot.sourceIds formData.annualNutritionGoals theme status assignedTo date completedAt progressRecords.content executedContent serviceTracking.status')
       .populate('assignedTo', 'name role').lean();
     const targets = plan.moduleData?.management_targets?.records || [];
@@ -19887,9 +19887,16 @@ ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
       if (!result.matchedCount) return res.status(409).json({ success: false, message: '生活方式档案已变化，请刷新并重新核对主观感受' });
     }
 
+    const annualSource = await AnnualPlan.findOne({ patientId: user._id, pushedAt: { $ne: null },
+      'moduleData.nutrition_assessment': { $exists: true }, 'moduleData.nutrition_assessment.enabled': { $ne: false } })
+      .sort({ pushedAt: -1 }).select('_id moduleData').lean();
+    const annualManagementIssues = (annualSource?.moduleData?.management_targets?.records || [])
+      .filter(row => row.nutritionRelevant === true && row.issueId && String(row.goal || '').trim())
+      .map(row => ({ issueId: String(row.issueId), goal: String(row.goal).trim(), focus: String(row.focus || '').trim() }));
     const plan = await HealthPlan.create({
       patientId: user._id,
       staffId: req.staff._id,
+      sourceAnnualPlanId: annualManagementIssues.length ? annualSource._id : null,
       type: 'nutrition',
       title: `${new Date().getFullYear()}年${user.name}营养干预方案`,
       description: raw.description || tc.description || '',
@@ -19898,6 +19905,7 @@ ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
         nutritionTaskVersion: 1,
+        annualManagementIssues,
         templateId: template._id, templateName: template.name || '',
         goal: assessment.goal,
         nutritionTargets: assessment.nutritionTargets,

@@ -27,6 +27,8 @@ function taskDocument(plan, patient, cycle, targetDate, previousTaskId = null) {
     assignedTo: patient.assignedNutritionist || plan.staffId,
     tenantId: patient.tenantId || null,
     sourceType: 'health_plan', sourceHealthPlanId: plan._id,
+    sourceAnnualPlanId: plan.sourceAnnualPlanId || null,
+    managementIssueIds: [...new Set((plan.content?.annualManagementIssues || []).map(row => String(row.issueId || '')).filter(Boolean))],
     assessmentActionKey: taskKey(plan._id, cycle),
     theme: `体成分测量邀约 · 第${cycle}次`,
     plannedContent: `请营养师提前联系客户，安排体成分测量；目标日期 ${targetAt.toISOString().slice(0, 10)}。测量结果入档后确认下一轮日期。`,
