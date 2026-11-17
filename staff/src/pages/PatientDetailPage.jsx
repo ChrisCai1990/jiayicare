@@ -7,6 +7,7 @@ import ReferralScreeningList, { ScreeningResult } from '../components/ReferralSc
 import { currentRecords, screeningAttachments, diseaseHistoryAttachments } from '../utils/referralAttachments.mjs'
 import checkupKeyMetrics from '../../../shared/checkupKeyMetrics.cjs'
 import AnnualNutritionAssessmentForm from '../components/AnnualNutritionAssessmentForm'
+import BodyCompInvitation, { isBodyCompInvitation } from '../components/BodyCompInvitation'
 import LiverMarkerTrends from '../components/LiverMarkerTrends'
 import { liverMarkerTrends, liverKeyChanges } from '../utils/liverMarkerTrends.mjs'
 import { reviewConflictField, changedReviewConflictSection, removedReviewConflictClaim } from '../utils/aiReviewConflictField.mjs'
@@ -2990,6 +2991,7 @@ export default function PatientDetailPage() {
 
   // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
   const openExec = (f) => {
+    if (isBodyCompInvitation(f)) { setExecItem(f); return }
     if (annualNutrition.isTask(f) && ['nutritionist', 'superadmin'].includes(staff?.role)) {
       setTab('records'); setHealthBaseView('lifestyle')
       nav(`/patients/${id}?tab=records&recordView=lifestyle&interviewTaskId=${f._id}`)
@@ -12509,7 +12511,8 @@ export default function PatientDetailPage() {
       )}
 
       {/* 执行任务弹窗：随访、监测、复查与就医等任务共用执行结果表单。 */}
-      {execItem && (
+      {execItem && isBodyCompInvitation(execItem) && <BodyCompInvitation task={execItem} onClose={() => setExecItem(null)} onSaved={action => { setExecItem(null); loadFollowUps(); load(); toast(action === 'rescheduled' ? '邀约日期已更新' : '本轮已完成，下一轮邀约已生成') }} />}
+      {execItem && !isBodyCompInvitation(execItem) && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (isCheckupAppointmentBookingTask(execItem) || medicalProxyStage(execItem) || medicationProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
             <div className="modal-header">
