@@ -54,7 +54,7 @@ import { lifestyleHistoryLabel } from '../utils/lifestyleHistoryLabels.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { staffAPI, psychologyAPI, API_ORIGIN } from '../api'
+import { staffAPI, psychologyAPI, managementReviewAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import { useAiWorkbench } from '../components/AiWorkbenchProvider'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
@@ -80,6 +80,7 @@ import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
 import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
 import { screeningItemIssueTitle } from '../utils/specialtyIssueSuggestion.mjs'
 import AICheckupReview from '../components/AICheckupReview'
+import CurrentScreeningChecklist from '../components/CurrentScreeningChecklist'
 import AnnualReviewCommunicationPanel from '../components/AnnualReviewCommunicationPanel'
 import MedicalAssistRequirementsCard from '../components/MedicalAssistRequirementsCard'
 import ServiceTaskChecklist, { normalizeServiceChecklist, summarizeServiceChecklist } from '../components/ServiceTaskChecklist'
@@ -2483,6 +2484,8 @@ export default function PatientDetailPage() {
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [screeningYearSummaries, setScreeningYearSummaries] = useState([])
+  const [currentScreeningPilot, setCurrentScreeningPilot] = useState(null)
+  useEffect(() => { let active = true; setCurrentScreeningPilot(null); managementReviewAPI.get(id).then(result => { if (active) setCurrentScreeningPilot(result.restored === true) }).catch(() => { if (active) setCurrentScreeningPilot(false) }); return () => { active = false } }, [id])
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
   const [screeningSummaryExpanded, setScreeningSummaryExpanded] = useState(true)
   const [screeningSectionExpanded, setScreeningSectionExpanded] = useState({})
@@ -7251,7 +7254,8 @@ export default function PatientDetailPage() {
                   ...screeningYearSummaries.map(item => Number(item.year)),
                   ...screeningReports.map(item => Number(item.reportYear || String(item.checkDate || '').slice(0, 4))).filter(Boolean),
                 ])].sort((a, b) => b - a)
-                return (
+                return currentScreeningPilot === null ? <div style={{ margin: '0 16px 14px', padding: 14 }}>正在读取筛查核对方式…</div> : currentScreeningPilot ? <><CurrentScreeningChecklist patientId={id} year={Number(screeningSummaryYear)} reports={screeningReports} staff={staff} toast={toast} onOpenReport={openReportDetail} />
+                  {!!screeningYearSummaries.length && <details style={{ margin: '0 16px 14px', fontSize: 12, color: '#65776F' }}><summary>旧版年度筛查小结草稿（历史留存，不参与当前核对）</summary><p>原草稿保留供追溯；当前筛查事项请以上方已审核报告、AI 整理和顾问决定为准。</p></details>}</> : (
                   <div style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                       <strong style={{ color: '#1E6B50' }}>年度专项筛查小结</strong>

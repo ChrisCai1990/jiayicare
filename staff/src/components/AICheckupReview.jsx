@@ -3,7 +3,7 @@ import { staffAPI } from '../api'
 
 const LABELS = { needs_exam: '已纳入完善检查', request_records: '仅需补传资料', already_managed: '已有事项覆盖', not_needed: '无需安排' }
 
-export default function AICheckupReview({ patientId, year, versionKey, staff, toast }) {
+export default function AICheckupReview({ patientId, year, versionKey, staff, toast, onSaved }) {
   const [data, setData] = useState(null), [decisions, setDecisions] = useState([]), [error, setError] = useState('')
   const [editing, setEditing] = useState(null), [form, setForm] = useState({}), [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function AICheckupReview({ patientId, year, versionKey, staff, to
       const result = await staffAPI.saveAICheckupReview(patientId, { year: Number(year), sourceKey: editing.sourceKey,
         disposition: form.disposition, title: form.title.trim(), note: form.note.trim(), linkedDecisionId: form.linkedDecisionId })
       setData(prev => ({ ...prev, reviews: [...(prev.reviews || []).filter(row => row.sourceKey !== editing.sourceKey), result.data] }))
-      setEditing(null); toast?.('待完善检查已核对', 4000)
+      setEditing(null); toast?.('待完善检查已核对', 4000); onSaved?.()
     } catch (e) { setError(e.message || '保存失败，请重试') }
     finally { setBusy(false) }
   }
