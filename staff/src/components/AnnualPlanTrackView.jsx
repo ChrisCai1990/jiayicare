@@ -18,7 +18,7 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, nutritionTask, nutritionEnabled, nutritionMetrics = [], onNutrition, onConsensus, consensusTopics, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
+export default function AnnualPlanTrackView({ actions, renderAction, nutritionTask, nutritionEnabled, nutritionAdvisorTargets = [], nutritionAdvisorEditor, onNutrition, onConsensus, consensusTopics, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -29,8 +29,8 @@ export default function AnnualPlanTrackView({ actions, renderAction, nutritionTa
     return <div key={title} style={{ borderTop: title === '年度体检' ? 0 : '1px solid #E1EAE4', padding: '15px 0' }}>
       {title !== '年度体检' && <><strong style={{ fontSize: 16, color: '#183E30' }}>{title}</strong><span style={{ marginLeft: 8, fontSize: 12, color: '#71877B' }}>{itemCount ? `${itemCount} 项` : '待安排'}</span></>}
       {nutrition && <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.7 }}>
-        <div>纳入数据：{nutritionMetrics.join('、') || '体重、骨骼肌、体脂率、内脏脂肪'}</div>
-        <div>目标：由营养师评估后确定</div>
+        {nutritionAdvisorTargets.length ? <div className="annual-nutrition-advisor-summary">{nutritionAdvisorTargets.map((row, index) => <div key={index}><strong>{row.metric}</strong><span>当前：{row.baseline}</span><span>顾问目标：{row.target}</span></div>)}</div> : <div style={{ color: '#62776A' }}>待顾问明确异常指标、当前数据和期望目标</div>}
+        {nutritionAdvisorEditor}
         <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={onNutrition}>{nutritionTask ? '查看营养师任务' : '安排营养师评估'}</button>
       </div>}
       {items.map(action => <details key={`${action.key}:${action.index}`} style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC' }}>

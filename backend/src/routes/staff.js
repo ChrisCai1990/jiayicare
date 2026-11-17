@@ -11246,16 +11246,30 @@ router.patch('/patients/:id/annual-nutrition-metrics', staffAuth, async (req, re
     if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
     const { normalizeMetrics } = require('../../../shared/nutritionComparisonMetrics.cjs');
     const metrics = normalizeMetrics(req.body.metrics);
+    const hasAdvisorTargets = Object.hasOwn(req.body, 'advisorTargets');
+    let advisorTargets;
+    if (hasAdvisorTargets) {
+      if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
+      if (!Array.isArray(req.body.advisorTargets) || req.body.advisorTargets.length > 10) return res.status(400).json({ success: false, message: '异常指标最多填写10项' });
+      advisorTargets = req.body.advisorTargets.map(row => ({
+        metric: String(row?.metric || '').trim(), baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(),
+      }));
+      if (advisorTargets.some(row => !row.metric || !row.baseline || !row.target || row.metric.length > 100 || row.baseline.length > 200 || row.target.length > 200))
+        return res.status(400).json({ success: false, message: '请逐项填写异常指标、当前数据和顾问期望目标' });
+    }
     const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: req.params.id }).select('+nutritionMetricHistory').lean();
     if (!plan) return res.status(404).json({ success: false, message: '年度方案不存在' });
     if (!plan.pushedAt) return res.status(409).json({ success: false, message: '尚未推送的方案请使用保存草稿' });
     if (String(plan.updatedAt?.toISOString()) !== req.body.baseUpdatedAt) return res.status(409).json({ success: false, message: '年度方案已变化，请刷新后重新选择指标' });
     const before = require('../../../shared/nutritionComparisonMetrics.cjs').selectedFromAnnualPlan(plan);
-    if (JSON.stringify(before) === JSON.stringify(metrics)) return res.json({ success: true, data: plan });
+    const beforeTargets = plan.moduleData?.nutrition_assessment?.advisorTargets || [];
+    if (JSON.stringify(before) === JSON.stringify(metrics) && (!hasAdvisorTargets || JSON.stringify(beforeTargets) === JSON.stringify(advisorTargets))) return res.json({ success: true, data: plan });
     const saved = await AnnualPlan.findOneAndUpdate(
       { _id: plan._id, patientId: req.params.id, updatedAt: plan.updatedAt, pushedAt: { $ne: null } },
-      { $set: { 'moduleData.nutrition_assessment': { ...(plan.moduleData?.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: metrics, metricsManuallyAdjusted: true } },
-        $push: { nutritionMetricHistory: { before, after: metrics, changedAt: new Date(), changedBy: req.staff._id, changedByName: req.staff.name || req.staff.username || '' } } },
+      { $set: { 'moduleData.nutrition_assessment': { ...(plan.moduleData?.nutrition_assessment || {}), enabled: true, nutritionComparisonMetrics: metrics, metricsManuallyAdjusted: true,
+          ...(hasAdvisorTargets ? { advisorTargets } : {}) } },
+        $push: { nutritionMetricHistory: { before, after: metrics, beforeTargets, afterTargets: hasAdvisorTargets ? advisorTargets : beforeTargets,
+          changedAt: new Date(), changedBy: req.staff._id, changedByName: req.staff.name || req.staff.username || '' } } },
       { new: true }).select('+nutritionMetricHistory');
     if (!saved) return res.status(409).json({ success: false, message: '年度方案已变化，请刷新后重试' });
     res.json({ success: true, data: saved });
@@ -11277,6 +11291,13 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       const { normalizeMetrics } = require('../../../shared/nutritionComparisonMetrics.cjs');
       if (moduleData?.nutrition_assessment?.nutritionComparisonMetrics !== undefined) {
         moduleData.nutrition_assessment.nutritionComparisonMetrics = normalizeMetrics(moduleData.nutrition_assessment.nutritionComparisonMetrics);
+      }
+      if (moduleData?.nutrition_assessment?.advisorTargets !== undefined) {
+        const rows = moduleData.nutrition_assessment.advisorTargets;
+        if (!require('../utils/annualFlowPilot').enabled(req.params.id) || !Array.isArray(rows) || rows.length > 10
+          || rows.some(row => !String(row?.metric || '').trim() || !String(row?.baseline || '').trim() || !String(row?.target || '').trim()
+            || String(row.metric).length > 100 || String(row.baseline).length > 200 || String(row.target).length > 200))
+          throw new Error('请逐项填写异常指标、当前数据和顾问期望目标（最多10项）');
       }
       for (const row of moduleData?.personalized_followups?.records || []) {
         if (row.nutritionComparisonMetrics !== undefined) {

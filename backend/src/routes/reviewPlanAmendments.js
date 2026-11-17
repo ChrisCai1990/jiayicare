@@ -75,12 +75,31 @@ module.exports=({getVisiblePlanPatientIds})=>{
       if(String(plan.updatedAt?.toISOString())!==baseUpdatedAt) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
       const reason=String(req.body.reason||'').trim();
       if(reason.length<2 || reason.length>500) return res.status(400).json({success:false,message:'请填写2至500字的修订原因'});
-      const item=logic.clean([req.body.item])[0];
-      if(item.target<0 || !plan.moduleData?.[item.key]?.records?.[item.target]) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
-      if(item.operation==='remove' || item.moveFrom) return res.status(400).json({success:false,message:'此入口仅修改原事项内容'});
       const source={kind:'advisor_revision',reason,customerFeedback:plan.returnReason||'',customerFeedbackAt:plan.returnedAt||null};
-      const catalog=item.key==='personalized_followups'?await logic.templateCatalog():[];
-      const {moduleData,changes}=logic.apply(plan.moduleData,[item],source,catalog);
+      const checkupEdit=req.body.item?.key==='annual_checkup';
+      let item,moduleData,changes;
+      if(checkupEdit) {
+        if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
+        const before=plan.moduleData?.annual_checkup;
+        if(!before || before.enabled===false) return res.status(400).json({success:false,message:'年度体检不在当前方案中'});
+        const input=req.body.item;
+        const date=String(input.date||'').trim();
+        const institution=String(input.institution||'').trim();
+        const focus=String(input.focus||'').trim();
+        if(date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)) return res.status(400).json({success:false,message:'体检日期格式无效'});
+        if(institution.length>200 || focus.length>2000) return res.status(400).json({success:false,message:'体检机构或重点关注内容过长'});
+        const after={...before,date,institution,focus};
+        if(JSON.stringify([before.date||'',before.institution||'',before.focus||''])===JSON.stringify([date,institution,focus])) return res.status(400).json({success:false,message:'年度体检内容没有变化'});
+        item={key:'annual_checkup',target:0,title:'年度体检',date,institution,focus};
+        moduleData={...plan.moduleData,annual_checkup:after};
+        changes=[{key:'annual_checkup',index:0,before,after}];
+      } else {
+        item=logic.clean([req.body.item])[0];
+        if(item.target<0 || !plan.moduleData?.[item.key]?.records?.[item.target]) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
+        if(item.operation==='remove' || item.moveFrom) return res.status(400).json({success:false,message:'此入口仅修改原事项内容'});
+        const catalog=item.key==='personalized_followups'?await logic.templateCatalog():[];
+        ({moduleData,changes}=logic.apply(plan.moduleData,[item],source,catalog));
+      }
       const location=req.body.item?.location;
       if(location !== undefined) {
         if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});

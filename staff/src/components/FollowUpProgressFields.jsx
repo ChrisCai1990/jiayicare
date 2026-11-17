@@ -2,6 +2,7 @@ import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect } from 'react'
 import { canRecordProgress, requiresOutcomeReview } from '../utils/followUpContinuity'
 import reminder from '../../../shared/reminderFollowUp.cjs'
+import { CONSENSUS_TOPICS } from '../utils/annualConsensusTopics.mjs'
 
 export function followUpSaveLabel(item, form) {
   if (item?.formData?.healthConsensus && form.topicOutcome === 'complete') return '结束共识沟通计划'
@@ -29,19 +30,20 @@ export function FollowUpProgressHistory({ item }) {
 export default function FollowUpProgressFields({ item, form, setForm }) {
   const eligible = canRecordProgress(item)
   useEffect(() => {
-    if (eligible) setForm(f => ({ ...f, status: 'in_progress', requestId: crypto.randomUUID(), nextContactAt: '',outcome:reminder.eligible(item)?'reminded':'',visitDate:'',visitConfirmed:false,topicOutcome:'continue' }))
+    if (eligible) setForm(f => ({ ...f, status: 'in_progress', requestId: crypto.randomUUID(), nextContactAt: '',outcome:reminder.eligible(item)?'reminded':'',visitDate:'',visitConfirmed:false,topicOutcome:'continue',nextTopic:'' }))
   }, [item._id, eligible, setForm])
   if (!eligible) return null
   return <>
     <FollowUpProgressHistory item={item} />
     {item.formData?.healthConsensus && <div style={{ padding: 10, background: '#F0F8F4', borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
       <strong>当前主题：{item.formData.healthConsensus.topicPath?.[item.formData.healthConsensus.currentTopicIndex || 0] || item.formData.healthConsensus.question}</strong>
-      <div style={{ marginTop: 7 }}>建议主题 {(item.formData.healthConsensus.currentTopicIndex || 0) + 1}／{item.formData.healthConsensus.topicPath?.length || 1} · 由健康顾问按实际沟通调整</div>
+      <div style={{ marginTop: 7 }}>本次只处理当前主题；完成后再决定下一主题。</div>
       <label style={{ display: 'block', marginTop: 8 }}>本次主题结果<select className="form-control" value={form.topicOutcome || 'continue'} onChange={event => setForm(f => ({ ...f, topicOutcome: event.target.value }))}>
         <option value="continue">继续沟通当前主题</option>
-        {(item.formData.healthConsensus.currentTopicIndex || 0) < (item.formData.healthConsensus.topicPath?.length || 1) - 1 && <option value="next">本主题已沟通，安排下一主题</option>}
+        <option value="next">本主题已沟通，安排下一主题</option>
         <option value="complete">本次计划已完成，结束沟通任务</option>
       </select></label>
+      {form.topicOutcome === 'next' && (item.formData.healthConsensus.currentTopicIndex || 0) >= (item.formData.healthConsensus.topicPath?.length || 1) - 1 && <label style={{ display: 'block', marginTop: 8 }}>下一主题<input className="form-control" list="annual-consensus-next-topics" maxLength={120} value={form.nextTopic || ''} onChange={event => setForm(f => ({ ...f, nextTopic: event.target.value }))} placeholder="选择一个建议主题或填写客户专属主题" /><datalist id="annual-consensus-next-topics">{CONSENSUS_TOPICS.map(topic => <option key={topic} value={topic} />)}</datalist></label>}
     </div>}
     <p style={{ fontSize: 12, color: '#1E6B50' }}>{reminder.kindOf(item)==='medication'&&item.formData?.adHocMedicalReminder?'仅记录配药进展；取得药品不等于已服用，不能代替用药核对。':requiresOutcomeReview(item) ? '联系客户不等于完成就医或检查；完成后仍需资料与随访审核。' : '按本次事项是否达成选择：需要再联系则继续跟进，普通沟通目标已达成可完成本次随访。'}</p>
     {!item.formData?.healthConsensus&&!requiresOutcomeReview(item)&&!(reminder.kindOf(item)==='medication'&&item.formData?.adHocMedicalReminder)&&<label>本次处理结果<select className="form-control" value={form.status||'in_progress'} onChange={e=>setForm(f=>({...f,status:e.target.value}))}><option value="in_progress">尚未完成，继续跟进</option><option value="completed">本次随访目标已达成，结束本次随访</option></select></label>}
