@@ -413,16 +413,17 @@ test('online and offline partner payments, renewals, refunds and team incentives
     const sharedCatalogProductId = oid();
     await mongoose.connection.db.collection('products').insertOne({ _id: sharedCatalogProductId, tenantId,
       name: '现有商城服务线下成交', category: 'health', status: 'on', paymentChannel: 'wechat_pay',
-      originalPrice: 120, fulfillmentType: 'offline_service', stockLimited: false });
+      originalPrice: 120, fulfillmentType: 'offline_service', stockLimited: false,
+      historicalPaidOrders: 568 });
     await Order.create({ tenantId, user: patientId, serviceId: String(sharedCatalogProductId),
       serviceName: '现有商城服务线下成交', orderType: 'product', paymentStatus: 'paid', paidAmount: 120 });
     await Order.create({ tenantId, user: patientId, serviceId: String(sharedCatalogProductId),
       serviceName: '现有商城服务线下成交', orderType: 'product', paymentStatus: 'paid', paidAmount: 120 });
     const paidCatalog = await (await fetch(`${base}/api/services`)).json();
-    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).reviewCount, 1,
-      '旧客户端的人已购字段仍按客户去重');
-    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).paidOrderCount, 2,
-      '已购笔数按有效付款订单统计，同一客户重复购买分别计入');
+    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).reviewCount, 570,
+      '展示已购数为设置基数加有效付款订单，重复购买分别计入');
+    assert.equal(paidCatalog.data.services.find(item => item.id === String(sharedCatalogProductId)).paidOrderCount, 570,
+      '内部兼容字段维持相同合计');
     const sharedCatalogOrder = await call(plannerId, 'POST', `/api/staff/patients/${staffPatientId}/offline-orders`, {
       productId: String(sharedCatalogProductId), contractReference: 'STAFF-CATALOG-001', priceCents: 12000 });
     assert.equal(sharedCatalogOrder.status, 201, JSON.stringify(sharedCatalogOrder.body));

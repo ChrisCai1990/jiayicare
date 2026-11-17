@@ -156,7 +156,7 @@ function ServiceCard({ item, onBuy }) {
           <Text style={styles.serviceName} numberOfLines={2}>{item.name}</Text>
           <Text style={styles.serviceSubtitle} numberOfLines={2}>{item.subtitle}</Text>
           <StarRow rating={item.rating} />
-          {item.paidOrderCount > 0 && <Text style={styles.reviewCount}>已购{item.paidOrderCount}笔</Text>}
+          {item.reviewCount > 0 && <Text style={styles.reviewCount}>{item.reviewCount}人已购</Text>}
         </View>
       </View>
 
