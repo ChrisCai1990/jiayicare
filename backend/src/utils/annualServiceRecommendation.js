@@ -67,7 +67,7 @@ function selectCatalogOptions(input = [], catalog = []) {
 async function recommendationOptions(plan, refs) { return selectCatalogOptions(refs, await serviceCatalog(plan)); }
 function customerRecommendation(row) {
   const choices = (row.selectedOptions || []).map(item => `${item.type === 'institution' ? '可选机构' : '可选套餐'}：${item.name}${item.address ? `（${item.address}）` : ''}${item.includedService ? `；包含：${item.includedService}` : ''}${typeof item.price === 'number' ? `；目录标价¥${item.price}，实际价格以确认时为准` : ''}`);
-  const {plannedFollowUpDate,followUpReminderEnabled,...publicRow}=row;
+  const {plannedFollowUpDate,followUpReminderEnabled,evidence,...publicRow}=row;
   return { ...publicRow, timeframe:[row.timeframe,row.appointmentDate?`预约服务日期：${row.appointmentDate}`:''].filter(Boolean).join('；'), nextStep: [row.nextStep, ...choices].filter(Boolean).join('\n') };
 }
 module.exports = { dentalProductQuery, dentalProductDetail, normalizeRecommendationInput, dentalDrafts, serviceCatalog, selectCatalogOptions, recommendationOptions, customerRecommendation };

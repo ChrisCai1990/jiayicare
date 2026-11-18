@@ -45,15 +45,15 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   const items = [];
   Object.entries(moduleData).forEach(([moduleKey, module]) => {
     if (!module || module.enabled === false) return;
-    const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records)
-      ? [{...module, records: undefined}, ...module.records]
+    const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records) && module.records.length
+      ? module.records
       : Array.isArray(module) ? module : Array.isArray(module.records) ? module.records : [module];
     records.forEach((record, index) => { if (record && Object.keys(record).length && !(moduleKey === 'personalized_followups' && internalDaily(record))) items.push(normalizeItem(moduleKey, record, index)); });
   });
   return items;
 }
 
-const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType']);
+const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);

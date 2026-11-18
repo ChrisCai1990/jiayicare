@@ -19,6 +19,22 @@ test('内部备注不会进入客户展示结构', () => {
   assert.equal(Object.values(item).includes('内部沟通记录'), false);
 });
 
+test('客户方案不返回内部研判依据和编号，仍保留行动目标', () => {
+  const source = { nutrition_assessment: { records: [{
+    items: '营养师专项评估', reason: '内部研判 (topicId:secret)',
+    basisSummary: '设置依据 (topicId:secret)', personalizedAdvice: '营养师内部处置建议',
+    goal: '核实膳食和体成分情况', time: '2026-12-01',
+  }] } };
+  const publicData = customerModuleData(source);
+  const displayItems = buildAnnualPlanDisplayItems(publicData);
+  assert.equal(displayItems.length, 1);
+  const item = displayItems[0];
+  assert.equal(JSON.stringify({ publicData, item }).includes('topicId'), false);
+  assert.equal(JSON.stringify({ publicData, item }).includes('内部处置建议'), false);
+  assert.equal(item.goal, '核实膳食与体成分情况');
+  assert.equal(item.schedule, '2026-12-01');
+});
+
 test('已移除的年度营养评估不进入客户完整方案', () => {
   const moduleData = { nutrition_assessment: { enabled: false, records: [{ items: '不再重复评估' }] } };
   assert.deepEqual(buildAnnualPlanDisplayItems(moduleData), []);

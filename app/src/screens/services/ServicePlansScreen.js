@@ -398,7 +398,7 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
                     size={16}
                     color={item.status === 'completed' ? colors.success : meta.color}
                   />
-                  <Text style={[s.planItemText, item.status === 'completed' && s.planItemDone, { flex: 1 }]}>
+                  <Text style={[s.planItemText, plan.type === 'annual_mgmt' && { fontWeight: '700', color: colors.textPrimary }, item.status === 'completed' && s.planItemDone, { flex: 1 }]}>
                     {item.name}
                   </Text>
                   {item.isAddon && (
@@ -408,10 +408,13 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
                   )}
                   <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                 </View>
-                {!!item.notes && (
-                  <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 17, marginTop: 4, marginLeft: 24, paddingRight: 20 }} numberOfLines={full || plan.type === 'nutrition' ? undefined : 3}>
-                    {item.notes}
-                  </Text>
+                {plan.type === 'annual_mgmt' && (item.goal || item.schedule) ? (
+                  <View style={{ marginTop: 5, marginLeft: 24, paddingRight: 20 }}>
+                    {!!item.goal && <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 19 }} numberOfLines={2}><Text style={{ fontWeight: '700', color: colors.textPrimary }}>目标  </Text>{item.goal}</Text>}
+                    {!!item.schedule && <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 19 }}><Text style={{ fontWeight: '700', color: colors.textPrimary }}>时间  </Text>{item.schedule}</Text>}
+                  </View>
+                ) : !!item.notes && (
+                  <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 17, marginTop: 4, marginLeft: 24, paddingRight: 20 }} numberOfLines={full || plan.type === 'nutrition' ? undefined : 3}>{item.notes}</Text>
                 )}
               </TouchableOpacity>
             ))
@@ -445,7 +448,7 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
               <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 9 }}>以下是可选择的建议，不是已安排的服务或待完成任务。</Text>
               {plan.serviceRecommendations.map(row => <View key={row._id} style={{ backgroundColor: '#F1F8F4', borderRadius: 10, padding: 12, marginBottom: 9 }}>
                 <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary }}>{row.recommendation}</Text>
-                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 5 }}>发现：{row.finding}{'\n'}依据：{row.evidence}</Text>
+                {!!row.finding && <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 5 }}>关注：{row.finding}</Text>}
                 {!!row.timeframe && <Text style={{ fontSize: 11, color: colors.textSecondary }}>建议时机：{row.timeframe}</Text>}
                 {!!row.nextStep && <Text style={{ fontSize: 11, color: colors.textSecondary }}>下一步：{row.nextStep}</Text>}
                 <Text style={{ fontSize: 11, color: colors.primary, marginTop: 6 }}>{row.response === 'interested' ? '已选择需要协助，工作人员会核对安排' : row.response === 'declined' ? '已选择暂不安排' : '您可以选择是否需要协助'}</Text>
@@ -622,20 +625,21 @@ export default function ServicePlansScreen({ navigation, route }) {
         health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
         chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
       };
-      const displayItemNotes = item => [
-        item.problem && `当前问题：${item.problem}`, item.evidence && `设置依据：${item.evidence}`,
-        item.goal && `管理目标：${item.goal}`, item.completionStandard && `完成标准：${item.completionStandard}`, item.schedule && `建议时间：${item.schedule}`,
-        item.interventionFocus && `干预重点：${item.interventionFocus}`,
-        item.interventionPlan && `具体方案：${item.interventionPlan}`,
-        item.reviewItems?.length && `复查项目：${item.reviewItems.join('、')}`,
-        item.frequency && `执行频率：${item.frequency}`,
-        item.careTarget?.hospital && `建议机构：${item.careTarget.hospital}`,
-        item.careTarget?.department && `建议科室：${item.careTarget.department}`,
-        item.careTarget?.expert && `建议专家：${item.careTarget.expert}`,
-        item.customerAction && `需要您完成：${item.customerAction}`,
-        item.precautions && `注意事项：${item.precautions}`,
-        item.moduleKey !== 'management_targets' && `服务方式：${item.service?.modeLabel || '仅提醒'}${item.service?.typeLabel ? ` · ${item.service.typeLabel}` : ''}`,
-      ].filter(Boolean).join('\n');
+      const displayItemRows = item => [
+        ['管理目标', item.goal],
+        ['完成标准', item.completionStandard],
+        ['建议时间', item.schedule],
+        ['执行频率', item.frequency],
+        ['需要您完成', item.customerAction],
+        ['医院／机构', item.careTarget?.hospital],
+        ['科室', item.careTarget?.department],
+        ['专家', item.careTarget?.expert],
+        ['服务安排', item.moduleKey !== 'management_targets' && item.service?.mode !== 'reminder'
+          ? [item.service?.modeLabel, item.service?.typeLabel].filter(Boolean).join(' · ') : ''],
+        ['注意事项', item.precautions],
+      ].filter(([, value]) => value && String(value).trim());
+      const displayItemName = item => item.title === item.category || item.title?.startsWith(`${item.category} · `)
+        ? item.title : `${item.category} · ${item.title}`;
       const annualMgmtPlans = (annualRes.success && annualRes.data?.length > 0)
         ? annualRes.data.map(ap => ({
             _id: ap._id,
@@ -651,7 +655,9 @@ export default function ServicePlansScreen({ navigation, route }) {
             serviceRecommendations: ap.serviceRecommendations || [],
             pushedAt: ap.pushedAt || null,
             items: Array.isArray(ap.displayItems) ? ap.displayItems.map(item => ({
-              _id: item.id, name: `${item.category} · ${item.title}`, notes: displayItemNotes(item), status: 'pending',
+              _id: item.id, name: displayItemName(item),
+              goal: item.goal, schedule: item.schedule,
+              detailRows: displayItemRows(item), status: 'pending',
             })) : Object.entries(ap.moduleData || {})
               .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : v.enabled !== false))
               .map(([key, v]) => ({
@@ -849,10 +855,15 @@ export default function ServicePlansScreen({ navigation, route }) {
                   </View>
                 </View>
                 <ScrollView style={s.modalBody} showsVerticalScrollIndicator={false}>
-                  <Text style={s.modalSectionLabel}>任务说明</Text>
-                  {item.notes
+                  <Text style={s.modalSectionLabel}>{detailModal.plan.type === 'annual_mgmt' ? '方案安排' : '任务说明'}</Text>
+                  {item.detailRows?.length ? item.detailRows.map(([label, value]) => (
+                    <View key={label} style={{ paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary, marginBottom: 3 }}>{label}</Text>
+                      <Text style={{ fontSize: 13, lineHeight: 20, color: colors.textSecondary }}>{value}</Text>
+                    </View>
+                  )) : item.notes
                     ? <Text style={s.modalNotes}>{item.notes}</Text>
-                    : <Text style={s.modalNoNotes}>暂无说明，请联系健康管理师了解详情。</Text>
+                    : <Text style={s.modalNoNotes}>暂无具体安排，请联系健康管理师了解详情。</Text>
                   }
                   {item.completedAt && (
                     <>
