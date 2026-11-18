@@ -268,6 +268,10 @@ router.post('/', auth, async (req, res) => {
       try { await require('../utils/wecomMessageAlerts').enqueue(msg._id); }
       catch (error) { console.error('[wecom-message-alert] enqueue failed', error.message); }
     }
+    if (process.env.STAFF_PUSH_ENABLED === 'true') {
+      try { await require('../utils/staffPush').enqueue(msg._id); }
+      catch { console.error('[staff-push] enqueue failed'); }
+    }
 
     const responseMessage = withSignedMessageMedia(msg);
     ssePublish(conversationId, { type: 'message', data: responseMessage });

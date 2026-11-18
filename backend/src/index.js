@@ -70,6 +70,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth',    require('./routes/auth'));
 app.use('/api/account-deletion', require('./routes/accountDeletion'));
 app.use('/api/push-devices', require('./routes/pushDevices'));
+app.use('/api/staff/push-devices', require('./routes/staffPushDevices'));
 app.use('/api/metabolic-pilot', require('./routes/metabolicPilot'));
 app.use('/api/payments', require('./routes/payments'));
 
@@ -177,6 +178,7 @@ app.listen(PORT, () => {
   require('./utils/clinicalStandardMonitor').startClinicalStandardMonitor();
   require('./utils/wecomEmployeeReminders').start();
   require('./utils/wecomMessageAlerts').start();
+  require('./utils/staffPush').start();
   require('./utils/groupMessageAlerts').start();
   require('./utils/wecomOrderAlerts').start();
   console.log(`🚀 服务启动成功，端口：${PORT}`);

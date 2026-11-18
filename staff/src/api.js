@@ -12,6 +12,15 @@ export const getToken   = ()  => localStorage.getItem('jy_staff_token')
 export const getSpecialtyLibrary = () => req('/staff/specialty-library')
 export const setToken   = (t) => localStorage.setItem('jy_staff_token', t)
 export const clearToken = ()  => {
+  const token = getToken()
+  const pushToken = localStorage.getItem('jy_staff_push_token')
+  if (token && pushToken) {
+    fetch(`${BASE}/staff/push-devices`, { method: 'DELETE', keepalive: true,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ token: pushToken }) }).catch(() => {})
+  }
+  localStorage.removeItem('jy_staff_push_token')
+  localStorage.removeItem('jy_staff_push_marker')
   localStorage.removeItem('jy_staff_token')
   localStorage.removeItem('jy_staff_info')
 }

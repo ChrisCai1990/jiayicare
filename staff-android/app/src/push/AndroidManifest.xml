@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="com.huawei.android.launcher.permission.CHANGE_BADGE" />
+    <application>
+        <meta-data android:name="push_kit_auto_init_enabled" android:value="false" />
+    </application>
+</manifest>

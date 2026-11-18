@@ -1,0 +1,40 @@
+apply plugin: 'com.android.application'
+if (file('agconnect-services.json').exists()) apply plugin: 'com.huawei.agconnect'
+
+android {
+    namespace 'com.jiayicare.staff.pilot'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.jiayicare.staff'
+        minSdk 26
+        targetSdk 35
+        versionCode 2
+        versionName '0.1.1'
+    }
+
+    flavorDimensions 'push'
+    productFlavors {
+        demo { dimension 'push'; applicationId 'com.jiayicare.staff.pilot.debug' }
+        push {
+            dimension 'push'
+            def appId = String.valueOf(project.findProperty('staffHuaweiAppId') ?: System.getenv('STAFF_HUAWEI_APP_ID') ?: '119869889')
+            resValue 'string', 'huawei_app_id', appId
+            resValue 'bool', 'push_configured', (appId ==~ /\d+/ && file('agconnect-services.json').exists()) ? 'true' : 'false'
+        }
+    }
+
+    buildTypes {
+        debug { }
+        release { minifyEnabled false }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    pushImplementation 'com.huawei.hms:push:6.13.0.300'
+}

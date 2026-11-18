@@ -30,6 +30,7 @@ const messageSchema = new mongoose.Schema({
   readAt:      { type: Date },
   staffReadAt: { type: Date },  // 医护端已读时间（null = 医护未读）
   wecomAlertQueuedAt: { type: Date }, // 企业微信新留言提醒已入队；用于恢复入队中断
+  staffPushQueuedAt: { type: Date }, // 医护安卓推送已入队；用于恢复入队中断
   recipient: { type: String },  // 用户留言的目标角色：doctor/nutritionist/manager/medicalAssistant
   conversationId: { type: String, index: true, default: null }, // {userId}_{role} 会话线程标识
   isAI: { type: Boolean, default: false }, // 医护未及时回复时AI代为兜底回复的消息（不涉及诊断/建议），医护人工回复后仍可正常追加
@@ -48,6 +49,7 @@ const messageSchema = new mongoose.Schema({
 messageSchema.index({ user: 1, unread: 1 });
 messageSchema.index({ conversationId: 1, createdAt: 1 });
 messageSchema.index({ type: 1, wecomAlertQueuedAt: 1, createdAt: 1 });
+messageSchema.index({ type: 1, staffPushQueuedAt: 1, createdAt: 1 });
 messageSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true });
 
 // Only newly created, eligible messages enter the external notification queue.
