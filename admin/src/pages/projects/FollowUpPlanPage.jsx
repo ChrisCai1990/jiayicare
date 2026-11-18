@@ -1,5 +1,5 @@
 import DateField from '../../../../shared/DateField.jsx'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
@@ -30,6 +30,43 @@ const btnStyle = (color, disabled) => ({
   flexShrink: 0, padding: 0,
 })
 
+function FollowupFormSelect({ forms, value, onChange }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef(null)
+  const selected = forms.find(item => item._id === value)
+  const options = forms.filter(item => item.status === 'active' || item._id === value)
+  const matches = options.filter(item => item.name?.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const choose = id => { onChange(id); setQuery(''); setOpen(false) }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        ref={inputRef} className="form-input" type="text" autoComplete="off"
+        role="combobox" aria-label="搜索关联随访表单" aria-autocomplete="list"
+        aria-expanded={open} aria-controls="followup-form-options"
+        placeholder="输入表单名称搜索"
+        value={open ? query : selected?.name || ''}
+        onFocus={() => { setQuery(''); setOpen(true) }}
+        onChange={e => { setQuery(e.target.value); setOpen(true) }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { setOpen(false); setQuery(''); inputRef.current?.blur() }
+          if (e.key === 'Enter' && open && matches.length === 1) { e.preventDefault(); choose(matches[0]._id) }
+        }}
+        onBlur={() => { setOpen(false); setQuery('') }}
+      />
+      {selected && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 5 }}>当前关联：{selected.name}{selected.status !== 'active' ? '（已停用）' : ''}</div>}
+      {open && (
+        <div id="followup-form-options" role="listbox" style={{ position: 'absolute', zIndex: 30, left: 0, right: 0, top: 'calc(100% + 4px)', maxHeight: 240, overflowY: 'auto', background: '#fff', border: '1px solid #D8E2DC', borderRadius: 8, boxShadow: '0 8px 24px rgba(26,43,36,.16)' }}>
+          <div role="option" aria-selected={!value} onMouseDown={e => { e.preventDefault(); choose('') }} style={{ padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #EEF2EF' }}>不关联</div>
+          {matches.map(item => <div key={item._id} role="option" aria-selected={item._id === value} onMouseDown={e => { e.preventDefault(); choose(item._id) }} style={{ padding: '10px 12px', cursor: 'pointer', background: item._id === value ? '#EEF7F2' : '#fff' }}>{item.name}{item.status !== 'active' ? '（已停用）' : ''}</div>)}
+          {!matches.length && <div style={{ padding: '10px 12px', color: '#6B7280' }}>没有匹配的随访表单</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function FollowUpPlanPage() {
   const toast = useToast()
   const [list, setList] = useState([])
@@ -51,7 +88,7 @@ export default function FollowUpPlanPage() {
       adminAPI.followupForms(),
     ]).then(([planRes, formRes]) => {
       setList(planRes.data)
-      setForms(formRes.data.filter(f => f.status === 'active'))
+      setForms(formRes.data || [])
     }).catch(e => toast(e.message)).finally(() => setLoading(false))
   }
 
@@ -261,11 +298,8 @@ export default function FollowUpPlanPage() {
               {/* 关联随访表单 */}
               <div className="form-group">
                 <label className="form-label">关联随访表单</label>
-                <select className="form-input" value={form.formId}
-                  onChange={e => setForm(f => ({ ...f, formId: e.target.value, default_content: {} }))}>
-                  <option value="">不关联</option>
-                  {forms.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
-                </select>
+                <FollowupFormSelect forms={forms} value={form.formId}
+                  onChange={id => setForm(f => id === f.formId ? f : { ...f, formId: id, default_content: {} })} />
               </div>
 
               {/* 预设内容（基于关联表单的字段动态生成） */}
