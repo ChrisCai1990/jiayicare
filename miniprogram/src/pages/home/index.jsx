@@ -4,6 +4,7 @@ import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { userAPI, tasksAPI, followupTasksAPI, systemAPI, servicesAPI } from '../../services/api';
+const { customerAnnualFollowUp } = require('../../utils/customerAnnualFollowUp');
 import TrendChart from '../../components/TrendChart';
 import Icon from '../../components/Icon';
 import useNavBar from '../../hooks/useNavBar';
@@ -274,11 +275,13 @@ export default function HomePage() {
 
   const todayReminders = dashData?.todayReminders || [];
   // 合并待办：Task表任务 + 随访计划（对齐app端allPendingTaskItems，同一口径过滤已完成/取消）
-  const followupTaskItems = followups.map((plan) => ({
+  const followupTaskItems = followups.map((plan) => {
+    const annual = customerAnnualFollowUp(plan);
+    return ({
       _id: plan._id,
       type: 'followup',
-      title: plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划'),
-      description: plan.taskRequirements || plan.plannedContent || plan.content,
+      title: annual?.title || (plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划')),
+      description: annual ? annual.details.join('\n') : (plan.taskRequirements || plan.plannedContent || plan.content),
       assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: formatChineseDate(plan.date),
       dueTime: '',
@@ -288,7 +291,8 @@ export default function HomePage() {
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],
       formData: plan.formData || {},
-    }));
+    });
+  });
   const allPendingTaskItems = [
     ...followupTaskItems.filter((item) => item.sourceType === 'symptom'),
     ...tasks,

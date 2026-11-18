@@ -336,7 +336,15 @@ async function syncAnnualPlanFollowUps(plan) {
     sourceScheduleKey: /^monitoring:/,
     status: { $ne: 'completed' },
   });
-  const toCreate = await withoutSeparatelyDispatchedNutrition(await buildAnnualPlanFollowUps(plan), plan._id);
+  const proposed = await withoutSeparatelyDispatchedNutrition(await buildAnnualPlanFollowUps(plan), plan._id);
+  const deletedKeys = proposed.length ? await require('../models/FollowUpDeletionLog').find({
+    patientId: plan.patientId,
+    'snapshot.sourceAnnualPlanId': plan._id,
+    'snapshot.sourceScheduleKey': { $in: proposed.map(row => row.sourceScheduleKey) },
+    suppressRegeneration: true,
+  }).distinct('snapshot.sourceScheduleKey') : [];
+  const suppressed = new Set(deletedKeys);
+  const toCreate = proposed.filter(row => !suppressed.has(row.sourceScheduleKey));
   const issueIds = [...new Set(toCreate.flatMap(row => row.managementIssueIds || []).filter(id => String(id).startsWith('management_issue:')))];
   const priorActive = issueIds.length ? await FollowUp.find({ patientId: plan.patientId, sourceAnnualPlanId: { $ne: plan._id },
     sourceType: 'scheduled', status: { $in: ['planned', 'in_progress', 'missed'] }, managementIssueIds: { $in: issueIds } })

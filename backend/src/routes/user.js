@@ -1185,10 +1185,17 @@ router.get('/followup-tasks', auth, async (req, res) => {
     const carePlans=await require('../utils/careFlowClientPlans').clientPlans(req.user);
     const arrangedFlows=new Set(carePlans.map(t=>t.careFlowId));
     const data = followups.filter(f=>(!f.careFlowId||!arrangedFlows.has(String(f.careFlowId)))
-      && !require('../utils/staffOnlyFollowUp').isStaffOnlyFollowUp(f)).map(followUp => ({
-      ...followUp.toObject(),
-      taskRequirements: followUpTaskRequirements(followUp),
-    })).sort((a, b) => {
+      && !require('../utils/staffOnlyFollowUp').isStaffOnlyFollowUp(f)).map(followUp => {
+      const row = followUp.toObject();
+      const annual = require('../../../shared/customerAnnualFollowUp.cjs').customerAnnualFollowUp(row);
+      if (annual) {
+        const customerDetails = annual.details.join('\n');
+        return { ...row, theme: annual.title, content: customerDetails,
+          plannedContent: customerDetails, taskRequirements: customerDetails,
+          description: '' };
+      }
+      return { ...row, taskRequirements: followUpTaskRequirements(followUp) };
+    }).sort((a, b) => {
       const aActiveSymptom = a.sourceType === 'symptom' && !['completed', 'cancelled'].includes(a.status);
       const bActiveSymptom = b.sourceType === 'symptom' && !['completed', 'cancelled'].includes(b.status);
       if (aActiveSymptom !== bActiveSymptom) return Number(bActiveSymptom) - Number(aActiveSymptom);

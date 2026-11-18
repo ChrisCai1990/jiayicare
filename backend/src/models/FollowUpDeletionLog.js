@@ -7,6 +7,7 @@ const followUpDeletionLogSchema = new mongoose.Schema({
   deletedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   reason:     { type: String, required: true },
   snapshot:   { type: mongoose.Schema.Types.Mixed, required: true },
+  suppressRegeneration: { type: Boolean, default: false }, // 人工删除的年度排期不由定时同步再次生成
 }, { timestamps: true });
 
 module.exports = mongoose.model('FollowUpDeletionLog', followUpDeletionLogSchema);

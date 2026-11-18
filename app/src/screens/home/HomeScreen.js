@@ -10,6 +10,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
+const { customerAnnualFollowUp } = require('../../utils/customerAnnualFollowUp');
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
 // 会比本地日期整整慢一天，导致"今天/昨天/前天"记录归属日算错（2026-07-13 排查昨日记录问题时发现）
@@ -105,6 +106,7 @@ function TaskItem({ task, isLast, onPress }) {
       </View>
       <View style={styles.taskBody}>
         <Text style={styles.taskTitle} numberOfLines={2}>{String(task.title||'健康安排').split(/[（(]/)[0].trim()}</Text>
+        {!!task.arrangementContent && <Text style={styles.taskMeta} numberOfLines={2}>{task.arrangementContent}</Text>}
         <Text style={styles.taskMeta} numberOfLines={1}>
           {task.assignee} · {task.dueDate} {task.dueTime}
         </Text>
@@ -352,11 +354,13 @@ export default function HomeScreen({ navigation }) {
   // ── 合并待办：Task 表任务 + 随访计划（作为任务展示）─────────────
   // 已完成/已取消的随访（不管是用户自己标记完成，还是医护端执行随访后置为completed）都不再展示为待办，
   // 首页与"全部待办"页面（TasksScreen.js）保持同一口径，避免此前"医护端已完成但首页仍显示待办"的不一致。
-  const activeFollowupTaskItems = followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => ({
+  const activeFollowupTaskItems = followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => {
+    const annual = customerAnnualFollowUp(plan);
+    return ({
       _id: plan._id,
       type: 'followup',
-      title: plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划'),
-      description: plan.taskRequirements || plan.plannedContent || plan.content,
+      title: annual?.title || (plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划')),
+      description: annual ? annual.details.join('\n') : (plan.taskRequirements || plan.plannedContent || plan.content),
       assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: plan.date
         ? new Date(plan.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
@@ -364,16 +368,27 @@ export default function HomeScreen({ navigation }) {
       dueTime: '',
       priority: plan.sourceType === 'symptom' ? 'high' : urgencyByDate(plan.date),
       sourceType: plan.sourceType,
+      sourceAnnualPlanId: plan.sourceAnnualPlanId,
+      sourceScheduleKey: plan.sourceScheduleKey,
+      sortDate: plan.date ? new Date(plan.date).getTime() : Number.MAX_SAFE_INTEGER,
+      arrangementContent: annual?.summary || '',
       followupType: plan.type,
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],
       formData: plan.formData || {},
-    }));
+    });
+  });
   const allPendingTaskItems = [
     ...activeFollowupTaskItems.filter(item => item.sourceType === 'symptom'),
     ...allTasks,
     ...activeFollowupTaskItems.filter(item => item.sourceType !== 'symptom'),
   ];
+  // 服务执行中的同一条年度随访就是首页的一条近期安排；按执行日期排列，完成/取消后由接口自动移除。
+  const annualFollowupItems = activeFollowupTaskItems.filter(item => item.sourceAnnualPlanId)
+    .sort((a, b) => a.sortDate - b.sortDate)
+    .filter((item, index, rows) => !item.sourceScheduleKey || rows.findIndex(row => row.sourceAnnualPlanId === item.sourceAnnualPlanId
+      && row.sourceScheduleKey === item.sourceScheduleKey) === index);
+  const otherPendingTaskItems = allPendingTaskItems.filter(item => !item.sourceAnnualPlanId);
 
   if (loading) {
     return <SafeAreaView style={styles.container}><HomeScreenSkeleton /></SafeAreaView>;
@@ -453,7 +468,10 @@ export default function HomeScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <View style={styles.taskCard}>
-              {allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
+              {annualFollowupItems.length ? annualFollowupItems.slice(0, 5).map((t, i, rows) => (
+                <TaskItem key={t._id} task={t} isLast={i === rows.length - 1}
+                  onPress={() => setTaskDetailModal(t)} />
+              )) : allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
                 <View style={styles.emptyTask}>
                   <Ionicons name="checkmark-circle-outline" size={32} color={colors.success} />
                   <Text style={styles.emptyTaskText}>暂无待办任务</Text>
@@ -474,14 +492,21 @@ export default function HomeScreen({ navigation }) {
                 </>
               )}
             </View>
-            {allPendingTaskItems.length > 3 && (
+            {annualFollowupItems.length > 0 && otherPendingTaskItems.length > 0 && (
+              <TouchableOpacity style={styles.reminderHint} onPress={() => goProtected('Tasks')} activeOpacity={0.7}>
+                <Ionicons name="checkbox-outline" size={12} color={colors.primary} />
+                <Text style={styles.reminderHintText}>其他待办 {otherPendingTaskItems.length} 项 · 查看全部</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+            {(annualFollowupItems.length > 5 || (!annualFollowupItems.length && allPendingTaskItems.length > 3)) && (
               <TouchableOpacity
                 style={styles.reminderHint}
                 onPress={() => goProtected('Tasks')}
                 activeOpacity={0.7}
               >
                 <Ionicons name="ellipsis-horizontal-circle-outline" size={12} color={colors.primary} />
-                <Text style={styles.reminderHintText}>还有 {allPendingTaskItems.length - 3} 项待办 · 查看全部</Text>
+                <Text style={styles.reminderHintText}>还有 {annualFollowupItems.length ? annualFollowupItems.length - 5 : allPendingTaskItems.length - 3} 项待办 · 查看全部</Text>
                 <Ionicons name="chevron-forward" size={12} color={colors.primary} />
               </TouchableOpacity>
             )}
