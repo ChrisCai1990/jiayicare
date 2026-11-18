@@ -47,6 +47,12 @@ test('已有确认方案保留原件；新报告先解读，之后进入目标�
   assert.equal(execution.overdue, false);
   assert.equal(execution.planId, 'plan1');
 });
+
+test('已分析但未获顾问确认的报告仍在解读步骤，退回修改的报告暂不重复待确认', () => {
+  const analyzed = { ...report, status: 'analyzed' };
+  assert.equal(project(patient, 2026, [], [analyzed], now).step, 'interpretation');
+  assert.equal(project(patient, 2026, [], [{ ...analyzed, advisorCorrection: { status: 'returned' } }], now).step, 'preparation');
+});
 test('确认方案已有标准事项目标时不再提示年度目标待确认', t => {
   t.mock.method(pilot, 'enabled', () => true);
   const plan = { _id: 'plan1', patientId: 'p1', year: 2026, confirmedAt: now, pushedAt: now,
@@ -80,6 +86,7 @@ test('只给所属顾问的有效年度客户投影一张流程卡', async () =>
     moduleData: { abnormal_followup: { records: [{ items: '肌酐复查' }] } } }];
   reportRows = [{ ...report, advisorInterpretationConfirmedAt: now }];
   assert.deepEqual(await load({ _id: 'advisor', role: 'familyDoctor' }, now, deps), []);
+  assert.equal((await load({ _id: 'advisor', role: 'familyDoctor' }, now, deps, 'p1', true))[0].step, 'execution');
 });
 
 test('筛查核对完成必须由顾问留结论，其他阶段不得重复确认', async t => {

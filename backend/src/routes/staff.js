@@ -10786,7 +10786,7 @@ router.get('/patients/:id/annual-workflow', staffAuth, async (req, res) => {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可办理年度管理流程' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
-    const rows = await require('../utils/annualManagementWorkflow').load(req.staff, new Date(), {}, req.params.id);
+    const rows = await require('../utils/annualManagementWorkflow').load(req.staff, new Date(), {}, req.params.id, true);
     const row = rows[0];
     if (!row) return res.status(404).json({ success: false, message: '当前没有有效年度管理服务周期' });
     res.json({ success: true, data: row });

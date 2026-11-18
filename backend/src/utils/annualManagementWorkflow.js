@@ -30,7 +30,8 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))[0];
   const currentReports = reports.filter(row => String(row.user) === id && row.audit_status === 'audited' && !row.archiveOnly
     && !['prescription_order', 'outpatient_record'].includes(row.documentCategory));
-  const pending = currentReports.filter(row => !row.advisorInterpretationConfirmedAt && row.status === 'pending');
+  const pending = currentReports.filter(row => !row.advisorInterpretationConfirmedAt
+    && row.advisorCorrection?.status !== 'returned');
   const hasCurrentExam = require('./annualReviewEligibility').eligibility(currentReports, now, { lookbackMonths: 12 }).allowed;
   const planConfirmed = Boolean(plan?.confirmedAt);
   const preparation = preparations.find(row => String(row.patientId) === id && Number(row.year) === Number(year));
@@ -68,7 +69,7 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     link: `/patients/${id}/annual-workflow?year=${year}` };
 }
 
-async function load(staff, now = new Date(), deps = {}, onlyPatientId = '') {
+async function load(staff, now = new Date(), deps = {}, onlyPatientId = '', includeExecution = false) {
   if (!['familyDoctor', 'superadmin'].includes(staff.role)) return [];
   const filter = { isDeleted: { $ne: true }, ...(onlyPatientId ? { _id: onlyPatientId } : {}),
     ...(staff.role === 'familyDoctor' ? { assignedFamilyDoctor: staff._id } : {}),
@@ -96,10 +97,10 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '') {
   if (!eligible.length) return [];
   const reports = await (deps.MedicalReport || MedicalReport).find({ user: { $in: eligible.map(item => item.user._id) },
     audit_status: 'audited', archiveOnly: { $ne: true } })
-    .select('user _id title type status documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt audited_at updatedAt createdAt').lean();
+    .select('user _id title type status documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt advisorCorrection.status audited_at updatedAt createdAt').lean();
   // A confirmed plan is already past the advisor's plan-building task. Execution has its own tasks.
   return eligible.map(({ user, year }) => project(user, year, plans, reports, now, preparations))
-    .filter(flow => flow.step !== 'execution');
+    .filter(flow => includeExecution || flow.step !== 'execution');
 }
 
 module.exports = { load, project, stepLink, steps };
