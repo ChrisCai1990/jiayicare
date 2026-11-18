@@ -2494,7 +2494,11 @@ export default function PatientDetailPage() {
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [currentScreeningPilot, setCurrentScreeningPilot] = useState(null)
   useEffect(() => { let active = true; setCurrentScreeningPilot(null); managementReviewAPI.get(id).then(result => { if (active) setCurrentScreeningPilot(result.restored === true) }).catch(() => { if (active) setCurrentScreeningPilot(false) }); return () => { active = false } }, [id])
-  const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
+  const [screeningSummaryYear, setScreeningSummaryYear] = useState(() => annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')
+    ? Number(annualWorkflowYear) : new Date().getFullYear())
+  useEffect(() => {
+    if (annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')) setScreeningSummaryYear(Number(annualWorkflowYear))
+  }, [annualWorkflowStep, annualWorkflowYear, id])
   const [screeningFiles, setScreeningFiles] = useState([])
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')

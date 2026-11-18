@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { load, project, stepLink, steps } = require('../src/utils/annualManagementWorkflow');
+const { load, project, stepLink, steps, workflowYear } = require('../src/utils/annualManagementWorkflow');
 const pilot = require('../src/utils/annualFlowPilot');
 const router = require('../src/routes/staff');
 const workflow = require('../src/utils/annualManagementWorkflow');
@@ -32,6 +32,14 @@ test('工作台一张主卡指向准确步骤，七个步骤都有可直达的�
     screeningConfirmedAt: new Date('2026-11-17T05:00:00Z') }]).step, 'goals');
   assert.equal(project(patient, 2026, [], [{ ...interpreted, updatedAt: new Date('2026-11-17T06:00:00Z') }], now,
     [{ patientId: 'p1', year: 2026, screeningConfirmedAt: new Date('2026-11-17T05:00:00Z') }]).step, 'screening');
+});
+
+test('服务起始年与当年已发布方案不同，流程使用正式方案年度', () => {
+  const access = { startDate: '2025-12-01' };
+  const at = new Date('2026-11-18T04:00:00Z');
+  assert.equal(workflowYear('p1', access, at, []), 2025);
+  assert.equal(workflowYear('p1', access, at, [{ patientId: 'p1', year: 2026, pushedAt: at }]), 2026);
+  assert.equal(workflowYear('p1', access, at, [{ patientId: 'p1', year: 2026 }]), 2025);
 });
 
 test('已有确认方案保留原件；新报告先解读，之后进入目标或执行', t => {

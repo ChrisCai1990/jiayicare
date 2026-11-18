@@ -4,7 +4,7 @@ const ServicePackage = require('../models/ServicePackage');
 const MedicalReport = require('../models/MedicalReport');
 const AnnualPlanPreparation = require('../models/AnnualPlanPreparation');
 const { matchesAnnualCustomer } = require('./researchAnnualCustomer');
-const { resolveServiceAccess } = require('./serviceAccess');
+const { resolveServiceAccess, chinaDay } = require('./serviceAccess');
 const { planYear } = require('./annualPlanCreationTodos');
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -22,6 +22,13 @@ function stepLink(patientId, year, step) {
   const [key, , target, hash] = step;
   if (target === 'annual-health') return `/patients/${patientId}/annual-health?year=${year}${hash}`;
   return `/patients/${patientId}?tab=${target}&workflowStep=${key}&annualWorkflowYear=${year}${hash}`;
+}
+
+function workflowYear(patientId, access, now, plans) {
+  const currentYear = Number(chinaDay(now).slice(0, 4));
+  if (plans.some(plan => String(plan.patientId) === String(patientId) && Number(plan.year) === currentYear
+    && (plan.pushedAt || plan.confirmedAt || plan.formalizedAt))) return currentYear;
+  return planYear(access, now);
 }
 
 function project(patient, year, plans, reports, now = new Date(), preparations = []) {
@@ -90,7 +97,7 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '', incl
     const batch = await Promise.all(users.slice(index, index + 20).map(async user => {
       if (!matchesAnnualCustomer(user, withPlan.has(String(user._id)), packages)) return null;
       const access = await (deps.resolveServiceAccess || resolveServiceAccess)(user, now);
-      return access.active ? { user, year: planYear(access, now) } : null;
+      return access.active ? { user, year: workflowYear(user._id, access, now, plans) } : null;
     }));
     eligible.push(...batch.filter(Boolean));
   }
@@ -103,4 +110,4 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '', incl
     .filter(flow => includeExecution || flow.step !== 'execution');
 }
 
-module.exports = { load, project, stepLink, steps };
+module.exports = { load, project, stepLink, steps, workflowYear };

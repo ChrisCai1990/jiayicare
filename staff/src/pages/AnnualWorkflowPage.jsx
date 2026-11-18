@@ -43,7 +43,7 @@ export default function AnnualWorkflowPage() {
         </section>)}
       </div>
       {flow.step === 'screening' && <section style={{ padding: 14, marginTop: 14, border: '1px solid #D9E9E1', borderRadius: 10 }}>
-        <strong>完成当前筛查核对</strong><p style={{ fontSize: 13 }}>先进入上方“当前筛查核对”，核对原始报告、AI 提示和需要纳入管理的问题；回来记录本次结论后进入目标与方案。</p>
+        <strong>完成当前筛查核对</strong><p style={{ fontSize: 13 }}>核对本年度已审核报告、AI 提示和管理去向后，记录本次结论。若无新增需处理事项，写明“已核对，暂无新增事项”即可，无需建立空白问题。</p>
         <textarea className="form-input" rows={2} maxLength={500} style={{ width: '100%' }} placeholder="记录已核对的重点、需要补充的资料或暂不纳入的原因" value={screeningNote} onChange={event => setScreeningNote(event.target.value)} />
         <button className="btn btn-primary btn-sm" disabled={saving || screeningNote.trim().length < 4} onClick={confirmScreening}>{saving ? '保存中…' : '确认筛查核对并继续'}</button>
       </section>}
