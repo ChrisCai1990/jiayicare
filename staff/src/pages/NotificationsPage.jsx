@@ -169,7 +169,7 @@ export default function NotificationsPage() {
   const unreadUserMessageGroups = userMessageGroups.filter(m => m.hasUnread)
 
   return (
-    <div className="page">
+    <div className="page notifications-page">
       <div className="page-header">
         <h1 className="page-title">消息通知</h1>
         {tab === 'pushes' && unreadPushes.length > 0 && (
@@ -183,18 +183,18 @@ export default function NotificationsPage() {
       {groupReminders.total > 0 && <button className="btn btn-secondary" style={{ color: '#B42318', borderColor: '#DC3545', marginBottom: 16 }} onClick={() => nav('/in-app-service-groups?scope=pending')}>● 服务群待人工回复 {groupReminders.total} 个（我的服务 {groupReminders.pending} · 团队监管 {groupReminders.supervised}） · 查看</button>}
       {groupReminders.error && <p role="alert">服务群提醒更新失败，保留上次结果</p>}
       {/* 汇总徽章 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+      <div className="notification-stats">
         {[
           { key: 'referrals', icon: '🔀', label: '待处理转介', value: summary.pendingReferralCount || 0, color: '#D97706', urgent: (summary.pendingReferralCount || 0) > 0 },
           { key: 'pushes',    icon: '📤', label: '推送记录',   value: summary.pushCount || 0,           color: '#1E6B50', urgent: false },
           { key: 'expiring',  icon: '⏰', label: '即将到期',   value: summary.expiringCount || 0,       color: '#DC3545', urgent: (summary.expiringCount || 0) > 0 },
         ].map(c => (
-          <div key={c.key} className="card" style={{ padding: 20, cursor: 'pointer', border: tab === c.key ? `2px solid ${c.color}` : '1px solid #E0D9CE', position: 'relative' }}
+          <div key={c.key} className="card notification-stat" style={{ border: tab === c.key ? `2px solid ${c.color}` : '1px solid #E0D9CE' }}
             onClick={() => setTab(c.key)}>
             {c.urgent && c.value > 0 && (
               <div style={{ position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: '50%', background: '#DC3545' }} />
             )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="notification-stat-content">
               <span style={{ fontSize: 22 }}>{c.icon}</span>
               <div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: c.color }}>{c.value}</div>
@@ -206,7 +206,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* Tab 标签 */}
-      <div className="tabs" style={{ marginBottom: 20 }}>
+      <div className="tabs notification-tabs" role="group" aria-label="消息类型">
         <button className={`tab-btn ${tab === 'referrals' ? 'active' : ''}`} onClick={() => setTab('referrals')}>
           🔀 收到的转介
           {summary.pendingReferralCount > 0 && (

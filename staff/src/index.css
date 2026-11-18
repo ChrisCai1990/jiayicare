@@ -317,6 +317,21 @@ textarea.form-control { resize: vertical; }
 .tab-btn:hover { color: var(--text-primary); opacity: 1; }
 .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 
+.notification-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.notification-stat { min-width: 0; padding: 20px; cursor: pointer; position: relative; }
+.notification-stat-content { display: flex; align-items: center; gap: 12px; min-width: 0; }
+@media (max-width: 600px) {
+  .notification-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .notification-stat { padding: 12px; }
+  .notification-stat:last-child { grid-column: 1 / -1; }
+  .notification-stat-content { gap: 8px; }
+  .notifications-page .notification-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; overflow: visible; border-bottom: 0; margin-bottom: 16px !important; padding-bottom: 0; }
+  .notifications-page .notification-tabs .tab-btn { min-width: 0; min-height: 44px; margin: 0; padding: 8px 6px; white-space: normal; overflow-wrap: anywhere; text-align: center; border: 1px solid var(--border); border-radius: 8px; line-height: 1.4; }
+  .notifications-page .notification-tabs .tab-btn.active { border-color: var(--primary); background: #EFF7F3; }
+  .notifications-page details > summary { flex-wrap: wrap; }
+  .notifications-page details > summary > span { min-width: 0; overflow-wrap: anywhere; }
+}
+
 /* ── Modal ─────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45);

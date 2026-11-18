@@ -49,6 +49,11 @@ export default function HomePage() {
   const notification = useNotificationSummary()
   const workbenchReminder = useWorkbenchReminder()
   const unreadMsgCount = notification.count ?? '—'
+  const notificationSummary = notification.data?.summary || {}
+  const notificationLandingTab = notificationSummary.metabolicHelpCount > 0 ? 'pilotHelp'
+    : notificationSummary.unreadMessageCount > 0 ? 'userMsgs'
+      : notificationSummary.pendingReferralCount > 0 ? 'referrals'
+        : notificationSummary.unreadRepliedCount > 0 ? 'sent' : 'referrals'
   const [checkinRecords, setCheckinRecords] = useState([])
   const expiringPatients = notification.data?.expiringPatients || []
   const ordersResource = useWorkbenchResource(async () => {
@@ -145,7 +150,7 @@ export default function HomePage() {
         <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month} /> : '-'} color="#22A06B" compact />
         <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
-        <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: notification.data?.summary?.metabolicHelpCount > 0 ? 'pilotHelp' : 'referrals' } })} />
+        <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: notificationLandingTab } })} />
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
 
