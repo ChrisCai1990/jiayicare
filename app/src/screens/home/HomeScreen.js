@@ -10,6 +10,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
+const { customerAnnualFollowUp } = require('../../utils/customerAnnualFollowUp');
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
 // 会比本地日期整整慢一天，导致"今天/昨天/前天"记录归属日算错（2026-07-13 排查昨日记录问题时发现）
@@ -353,11 +354,13 @@ export default function HomeScreen({ navigation }) {
   // ── 合并待办：Task 表任务 + 随访计划（作为任务展示）─────────────
   // 已完成/已取消的随访（不管是用户自己标记完成，还是医护端执行随访后置为completed）都不再展示为待办，
   // 首页与"全部待办"页面（TasksScreen.js）保持同一口径，避免此前"医护端已完成但首页仍显示待办"的不一致。
-  const activeFollowupTaskItems = followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => ({
+  const activeFollowupTaskItems = followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => {
+    const annual = customerAnnualFollowUp(plan);
+    return ({
       _id: plan._id,
       type: 'followup',
-      title: plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划'),
-      description: plan.taskRequirements || plan.plannedContent || plan.content,
+      title: annual?.title || (plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划')),
+      description: annual ? annual.details.join('\n') : (plan.taskRequirements || plan.plannedContent || plan.content),
       assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: plan.date
         ? new Date(plan.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
@@ -368,15 +371,13 @@ export default function HomeScreen({ navigation }) {
       sourceAnnualPlanId: plan.sourceAnnualPlanId,
       sourceScheduleKey: plan.sourceScheduleKey,
       sortDate: plan.date ? new Date(plan.date).getTime() : Number.MAX_SAFE_INTEGER,
-      arrangementContent: plan.sourceAnnualPlanId ? String(plan.plannedContent || plan.content || '')
-        .split(/\r?\n/).map(line => line.trim())
-        .filter(line => line && !/^(?:原因|设置依据|管理目标|完成标准|来源)[:：]/.test(line))
-        .slice(0, 2).join(' · ') : '',
+      arrangementContent: annual?.summary || '',
       followupType: plan.type,
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],
       formData: plan.formData || {},
-    }));
+    });
+  });
   const allPendingTaskItems = [
     ...activeFollowupTaskItems.filter(item => item.sourceType === 'symptom'),
     ...allTasks,

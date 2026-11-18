@@ -6,6 +6,7 @@ import { tasksAPI, followupTasksAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { useLanguage } from '../../i18n';
+const { customerAnnualFollowUp } = require('../../utils/customerAnnualFollowUp');
 
 const TIME_TABS = ['全部', '今日', '本周', '本月'];
 
@@ -77,18 +78,22 @@ export default function TasksPage() {
         <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
           {TIME_TABS.map(tab => <View key={tab} onClick={() => setTimeFilter(tab)} style={{ padding: '6px 14px', borderRadius: `${radius.full}px`, backgroundColor: timeFilter === tab ? colors.primary10 : '#fff', border: `1px solid ${timeFilter === tab ? colors.primary : colors.border}` }}><Text style={{ fontSize: '12px', color: timeFilter === tab ? colors.primary : colors.textSecondary }}>{t(tab)}</Text></View>)}
         </View></ScrollView>
-        {loading ? <Text style={{ color: colors.textMuted }}>{t('加载中...')}</Text> : visible.length === 0 ? <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}><Text style={{ color: colors.textMuted }}>{t('暂无待办任务')}</Text></View> : visible.map(item => (
+        {loading ? <Text style={{ color: colors.textMuted }}>{t('加载中...')}</Text> : visible.length === 0 ? <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}><Text style={{ color: colors.textMuted }}>{t('暂无待办任务')}</Text></View> : visible.map(item => {
+          const annual = item._kind === 'followup' ? customerAnnualFollowUp(item) : null;
+          return (
           <View key={`${item._kind}-${item._id}`} onClick={() => item.canUploadReports && Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+item.careFlowId})} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: '14px', fontWeight: 700, color: item.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{item.sourceType === 'symptom' ? t('不适主诉待健康顾问处理') : t(item.title || item.theme || '随访计划')}</Text>
-                <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.staffId?.name || item.assignee || '健康管理团队'} · {dateKey(item)||item.scheduleLabel} {item.dueTime||''}</Text>
-                {!!item.description && <Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',fontSize:'13px',marginTop:'8px'}}>{item.description}</Text>}{!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}
+                <Text style={{ fontSize: '14px', fontWeight: 700, color: item.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{annual?.title || (item.sourceType === 'symptom' ? t('不适主诉待健康顾问处理') : t(item.title || item.theme || '随访计划'))}</Text>
+                <Text style={{ fontSize: '12px', color: colors.textMuted }}>{annual ? `${item.sourceScheduleKey?.startsWith('medical_treatment:') ? '预约跟进' : '计划日期'} ${dateKey(item) || item.scheduleLabel || '待确定'}` : `${item.staffId?.name || item.assignee || '健康管理团队'} · ${dateKey(item)||item.scheduleLabel} ${item.dueTime||''}`}</Text>
+                {annual ? !!annual.summary && <Text style={{display:'block',lineHeight:'20px',fontSize:'12px',color:colors.textSecondary,marginTop:'6px'}}>{annual.summary}</Text>
+                  : <>{!!item.description && <Text style={{display:'block',whiteSpace:'pre-wrap',lineHeight:'24px',fontSize:'13px',marginTop:'8px'}}>{item.description}</Text>}{!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}</>}
               </View>
               <View onClick={e => {e.stopPropagation();item.canUploadReports ? Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+item.careFlowId}) : item.customerReadOnly ? Taro.showModal({title:item.title,content:item.description,showCancel:false}) : item.workflowKey === 'medical_reminder:documents' ? Taro.navigateTo({ url: '/pages/records/upload/index' }) : item._kind === 'followup' ? doneFollowup(item) : completeTask(item._id)}} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>{t(item.documentDeclaration ? '查看反馈' : item.canUploadReports ? '直接上传' : item.customerReadOnly ? '查看安排' : item.workflowKey === 'medical_reminder:documents' ? '上传资料' : '完成')}</Text></View>
             </View>
           </View>
-        ))}
+          );
+        })}
       </View>
     </View>
   );

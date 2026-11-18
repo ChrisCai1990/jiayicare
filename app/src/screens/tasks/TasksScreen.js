@@ -7,6 +7,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { tasksAPI, remindersAPI, followupTasksAPI } from '../../services/api';
+const { customerAnnualFollowUp } = require('../../utils/customerAnnualFollowUp');
 import { mockTasks } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import EmptyState from '../../components/EmptyState';
@@ -499,12 +500,14 @@ export default function TasksScreen({ navigation }) {
     status: 'pending', assignee: '', isReminder: true,
   });
 
-  const followupToItem = (f) => ({
+  const followupToItem = (f) => {
+    const annual = customerAnnualFollowUp(f);
+    return ({
     _id: f._id,
-    title: f.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (f.theme || '随访计划'),
+    title: annual?.title || (f.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (f.theme || '随访计划')),
     type: 'followup',
-    description: f.taskRequirements || f.plannedContent || f.content || '',
-    taskRequirements: f.taskRequirements || f.plannedContent || '',
+    description: annual ? annual.details.join('\n') : (f.taskRequirements || f.plannedContent || f.content || ''),
+    taskRequirements: annual ? annual.details.join('\n') : (f.taskRequirements || f.plannedContent || ''),
     followupType: f.type || '',
     checkInItems: f.checkInItems || [],
     tags: f.tags || [],
@@ -524,7 +527,8 @@ export default function TasksScreen({ navigation }) {
     taskRole: f.taskRole || '',
     assignee: f.assignedTo?.name || f.staffId?.name || '',
     isFollowup: true,
-  });
+    });
+  };
 
   // 服务预约类待办（下单商城服务生成，sourceType='order'）一旦医护端安排了负责人，
   // 用户就不用再关注了——不像"每日血压监测"这类持续性随访要留在待办里提醒用户配合，
