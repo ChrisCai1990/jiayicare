@@ -41,7 +41,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       if (!active) return
       const plans = Array.isArray(result.data) ? result.data : [result.data].filter(Boolean)
       const formal = plans.some(plan => plan.pushedAt || plan.confirmedAt)
-      const plan = plans.find(row => row.pushedAt && row.reviewStatus === 'approved') || null
+      const plan = plans.find(row => row.pushedAt && (row.reviewStatus === 'approved' || row.reviewStatus == null)) || null
       setPlanCheck({ loading: false, formal, plan, error: '' })
     }).catch(error => { if (active) setPlanCheck({ loading: false, formal: false, plan: null, error: error.message || '无法核对年度方案状态' }) })
     return () => { active = false }
@@ -168,7 +168,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         {error && <div role="alert" style={{ marginTop: 8, color: '#B42318' }}>{error}</div>}
         {!pilot && planCheck.loading && <div role="status">正在核对本年度方案状态…</div>}
         {!pilot && planCheck.error && <div role="alert" style={{ color: '#B42318' }}>{planCheck.error}</div>}
-        {!pilot && planCheck.formal && !planCheck.plan && <div role="alert" style={{ color: '#B42318' }}>本年度方案尚未完成审核推送，暂不能局部修订。请先核对方案状态。</div>}
+        {!pilot && planCheck.formal && !planCheck.plan && <div role="alert" style={{ color: '#B42318' }}>本年度方案状态暂不允许局部修订，请先核对审核与推送状态。</div>}
         {!pilot && planCheck.plan && <div style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
           <strong>补入已推送年度方案</strong>
           <div style={{ fontSize: 12, color: '#65776F' }}>保存管理方向后，将把此项作为局部修订补入方案，并通知客户；已有相同事项时会阻止重复补入。</div>

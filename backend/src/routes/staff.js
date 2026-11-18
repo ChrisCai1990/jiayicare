@@ -10296,8 +10296,9 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
         return res.status(409).json({ success: false, message: '该检查项已进入已发布方案，请走局部修订' });
     }
     if (formal && !annualPilot) {
-      const amendable = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year), pushedAt: { $ne: null }, reviewStatus: 'approved' });
-      if (!amendable) return res.status(409).json({ success: false, message: '本年度方案尚未完成审核推送，暂不能补入；请先核对方案状态' });
+      const amendable = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year), pushedAt: { $ne: null },
+        $or: [{ reviewStatus: 'approved' }, { reviewStatus: null }] });
+      if (!amendable) return res.status(409).json({ success: false, message: '本年度方案状态暂不允许局部修订，请先核对审核与推送状态' });
     }
     if (source.kind === 'screening_report' && await Decision.exists({ patientId: req.params.id, year: Number(year), sourceKey, status: 'withdrawn' })) {
       return res.status(409).json({ success: false, message: '旧版整份报告归属已撤销，请在具体检查项重新纳入管理' });
@@ -10822,8 +10823,10 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const exposeVersion = plan => {
       if (!plan) return null;
       const value = plan.toObject ? plan.toObject() : plan;
+      // 旧版已推送方案未写 reviewStatus；Mongoose 读取时会把缺失字段补成 pending。
+      const reviewStatus = value.pushedAt && plan.$isDefault?.('reviewStatus') ? null : value.reviewStatus;
       const inferred = inferServiceVersion({ code: value.servicePlanCode, planType: value.planType, name: value.templateName || value.templateSnapshot?.name, clientBrand: value.clientBrand || patient?.clientBrand });
-      return { ...value, servicePlanCode: value.servicePlanCode || inferred?.code || value.planType, strategyType: value.strategyType || inferred?.strategyType || value.planType,
+      return { ...value, reviewStatus, servicePlanCode: value.servicePlanCode || inferred?.code || value.planType, strategyType: value.strategyType || inferred?.strategyType || value.planType,
         internalTaskReleaseEligible: require('../utils/annualInternalTaskException').eligible(value) };
     };
     const query = { patientId: req.params.id };
@@ -11037,7 +11040,8 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可补入方案' });
     const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
-    if (!plan?.pushedAt || annualPilot && !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: annualPilot ? '请先选择已审核、已发布且客户已确认的方案' : '请先选择已审核并推送的方案' });
+    const approved = plan?.reviewStatus === 'approved' || !annualPilot && plan?.reviewStatus == null;
+    if (!plan?.pushedAt || annualPilot && !plan.confirmedAt || !approved) return res.status(409).json({ success: false, message: annualPilot ? '请先选择已审核、已发布且客户已确认的方案' : '请先选择已推送且未驳回的方案' });
     const kind = String(req.body.sourceKind || ''), sourceObjectId = String(req.body.sourceId || '');
     if (!mongoose.isValidObjectId(sourceObjectId) || !['decision', 'ai_checkup'].includes(kind)) return res.status(400).json({ success: false, message: '请选择已核对来源' });
     if (!annualPilot) {

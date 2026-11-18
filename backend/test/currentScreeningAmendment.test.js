@@ -12,8 +12,23 @@ const Decision = require('../src/models/AnnualManagementDecision');
 const evidenceService = require('../src/utils/annualManagementEvidence');
 
 const handler = router.stack.find(layer => layer.route?.path === '/patients/:id/annual-plan/:planId/append-screening-action')?.route.stack.at(-1).handle;
+const getPlanHandler = router.stack.find(layer => layer.route?.path === '/patients/:id/annual-plan' && layer.route.methods.get)?.route.stack.at(-1).handle;
 const id = () => new mongoose.Types.ObjectId().toString();
 const chain = value => ({ lean: async () => value, select: () => ({ lean: async () => value }) });
+
+test('旧版已推送方案读取时不把缺失审核状态误报为待审核', async t => {
+  const patientId = id();
+  const plan = AnnualPlan.hydrate({ _id: id(), patientId, year: 2026, pushedAt: new Date('2026-06-03T00:00:00Z') });
+  assert.equal(plan.reviewStatus, 'pending');
+  assert.equal(plan.$isDefault('reviewStatus'), true);
+  t.mock.method(User, 'findById', () => chain({ clientBrand: 'jiayiguanjia' }));
+  t.mock.method(AnnualPlan, 'find', () => ({ select: () => ({ sort: async () => [plan] }) }));
+  const req = { params: { id: patientId }, query: { year: '2026' }, staff: { role: 'superadmin' } };
+  let response;
+  await getPlanHandler(req, { json(value) { response = value; return this; }, status() { return this; } });
+  assert.equal(response.success, true);
+  assert.equal(response.data[0].reviewStatus, null);
+});
 
 test('金娟试点只把已核对缺项补入已发布方案，并留下执行复核和客户通知', async t => {
   assert.equal(typeof handler, 'function');
@@ -81,7 +96,7 @@ test('同次定期复查作为一条完整就诊安排补入，带齐项目、�
 test('非试点客户可将专项筛查新决定补入已推送但未确认方案', async t => {
   const patientId = id(), planId = id(), decisionId = id(), staffId = id(), at = new Date('2026-11-18T00:00:00Z');
   const plan = { _id: planId, patientId, year: 2026, updatedAt: at, pushedAt: at, confirmedAt: null,
-    reviewStatus: 'approved', moduleData: { medical_treatment: { records: [] } } };
+    moduleData: { medical_treatment: { records: [] } } };
   let saved;
   let sourceKey = `screening:${id()}:lung`;
   t.mock.method(pilot, 'enabled', () => false);
@@ -101,6 +116,10 @@ test('非试点客户可将专项筛查新决定补入已推送但未确认方�
   sourceKey = `report_item:${id()}:lung`;
   await handler(req, res);
   assert.equal(result.code, 404);
+  sourceKey = `screening:${id()}:lung`;
+  plan.reviewStatus = 'rejected';
+  await handler(req, res);
+  assert.equal(result.code, 409);
 });
 
 test('通知失败后重试只补发通知，不重复补入方案', async t => {
