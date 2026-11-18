@@ -337,6 +337,12 @@ async function syncAnnualPlanFollowUps(plan) {
     status: { $ne: 'completed' },
   });
   const toCreate = await withoutSeparatelyDispatchedNutrition(await buildAnnualPlanFollowUps(plan), plan._id);
+  const issueIds = [...new Set(toCreate.flatMap(row => row.managementIssueIds || []).filter(id => String(id).startsWith('management_issue:')))];
+  const priorActive = issueIds.length ? await FollowUp.find({ patientId: plan.patientId, sourceAnnualPlanId: { $ne: plan._id },
+    sourceType: 'scheduled', status: { $in: ['planned', 'in_progress', 'missed'] }, managementIssueIds: { $in: issueIds } })
+    .select('_id sourceScheduleKey managementIssueIds status').lean() : [];
+  const carryovers = require('./annualFollowUpCarryover').findCarryovers(toCreate, priorActive);
+  const carriedKeys = new Set(carryovers.map(match => match.desired.sourceScheduleKey));
   if (!require('./annualInternalTaskException').serviceReleased(plan)) await require('./annualHealthDataReminders').sync(plan);
   const existing = await FollowUp.find({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled' }).sort({ createdAt: 1 });
   const desiredKeys = new Set(toCreate.map(row => row.sourceScheduleKey));
@@ -345,6 +351,11 @@ async function syncAnnualPlanFollowUps(plan) {
     {$set:{status:'cancelled',cancelReason:'健康数据周期跟进已从方案关闭'}});
 
   for (const row of toCreate) {
+    // A new template can create a new plan for an unfinished problem. Keep its
+    // existing follow-up as the single active plan; the advisor reconciles any
+    // changed date in that original workflow. Ambiguous or completed items are
+    // never merged by title or date alone.
+    if (carriedKeys.has(row.sourceScheduleKey)) continue;
     // sourceScheduleKey 旧版含数组下标，方案编辑后会变化；始终以业务内容匹配，兼容并清理旧键。
     const matches = existing.filter(item => (
       (item.sourceScheduleKey && item.sourceScheduleKey === row.sourceScheduleKey)

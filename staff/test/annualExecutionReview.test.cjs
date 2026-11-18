@@ -23,6 +23,14 @@ test('no empty panel; non-advisors can inspect but cannot acknowledge', async ()
   let h = await mount({ ...pending, reviews: [] }); try { assert.equal(h.el.textContent, ''); } finally { await h.close(); }
   h = await mount(pending, false); try { assert.match(h.el.textContent, /日期待确认/); assert.match(h.el.textContent, /待健康顾问核对/); assert.equal(h.el.querySelector('textarea'), null); } finally { await h.close(); }
 });
+test('unfinished follow-up from the previous template is shown without a new review record', async () => {
+  const h = await mount({ ...pending, reviews: [], carryovers: [{ _id: 'old', theme: '眼科就医', status: 'planned', date: '2026-11-01', assignedTo: { name: '健管专员' } }] });
+  try {
+    assert.match(h.el.textContent, /既往随访沿用/);
+    assert.match(h.el.textContent, /沿用未完成的原随访/);
+    assert.equal(h.el.querySelector('a[href*="followUpId=old"]')?.textContent, '眼科就医');
+  } finally { await h.close(); }
+});
 test('actual note and displayed versions are submitted; record becomes folded history', async () => {
   const h = await mount(); try {
     let button = [...h.el.querySelectorAll('button')].find(b => b.textContent === '记录核对结果'); assert.equal(button.disabled, true);

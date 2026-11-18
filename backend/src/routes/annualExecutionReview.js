@@ -8,13 +8,23 @@ const Task = require('../models/Task');
 const logic = require('../utils/annualExecutionReview');
 
 async function arrangements(plan) {
-  const [followUps, tasks] = await Promise.all([
-    FollowUp.find({ sourceAnnualPlanId: plan._id, patientId: plan.patientId }).select('_id theme status date updatedAt assignedTo').populate('assignedTo', 'name').sort({ date: 1, _id: 1 }).lean(),
+  const candidates = require('../utils/annualFollowUpCarryover').planCandidates(plan);
+  const issueIds = [...new Set(candidates.flatMap(row => row.managementIssueIds || []).map(String).filter(id => id.startsWith('management_issue:')))];
+  const [followUps, tasks, priorActive] = await Promise.all([
+    FollowUp.find({ sourceAnnualPlanId: plan._id, patientId: plan.patientId }).select('_id theme status date updatedAt assignedTo sourceScheduleKey managementIssueIds').populate('assignedTo', 'name').sort({ date: 1, _id: 1 }).lean(),
     Task.find({ sourceAnnualPlanId: plan._id, user: plan.patientId }).select('_id title status dueDate updatedAt').sort({ dueDate: 1, _id: 1 }).lean(),
+    issueIds.length ? FollowUp.find({ patientId: plan.patientId, sourceAnnualPlanId: { $ne: plan._id }, sourceType: 'scheduled',
+      status: { $in: ['planned', 'in_progress', 'missed'] }, managementIssueIds: { $in: issueIds } })
+      .select('_id sourceAnnualPlanId sourceScheduleKey managementIssueIds theme status date updatedAt assignedTo')
+      .populate('assignedTo', 'name').lean() : [],
   ]);
+  const carryoverLogic = require('../utils/annualFollowUpCarryover');
+  const carryovers = carryoverLogic.findCarryovers(candidates, priorActive).map(match => ({ ...match.prior,
+    duplicateCurrent: followUps.some(row => ['planned', 'in_progress', 'missed'].includes(row.status)
+      && carryoverLogic.identity(row) === carryoverLogic.identity(match.prior)) }));
   const closed = row => ['completed', 'cancelled'].includes(row.status) ? 1 : 0;
   followUps.sort((a,b) => closed(a) - closed(b)); tasks.sort((a,b) => closed(a) - closed(b));
-  return { followUps, tasks, version: logic.taskVersion(followUps, tasks) };
+  return { followUps, tasks, carryovers, version: logic.taskVersion([...followUps, ...carryovers], tasks) };
 }
 module.exports = ({ getVisiblePlanPatientIds }) => {
   const router = express.Router();
@@ -34,10 +44,10 @@ module.exports = ({ getVisiblePlanPatientIds }) => {
   router.get('/:patientId/annual-plan-execution-review/:planId', async (req, res) => {
     try {
       const plan = req.executionPlan, revisions = logic.reviews(plan);
-      const current = revisions.length ? await arrangements(plan) : { followUps: [], tasks: [], version: '' };
+      const current = await arrangements(plan);
       res.json({ success: true, data: { planId: plan._id, baseUpdatedAt: plan.updatedAt, taskVersion: current.version,
         reviews: revisions.map(r => ({ id: r.id, createdAt: r.createdAt, changes: logic.changesForExecution(r.changes).map(logic.summary), ...r.executionReview })),
-        followUps: current.followUps.slice(0, 100), tasks: current.tasks.slice(0, 100),
+        followUps: current.followUps.slice(0, 100), tasks: current.tasks.slice(0, 100), carryovers: current.carryovers.slice(0, 100),
         totals: { followUps: current.followUps.length, tasks: current.tasks.length },
       } });
     } catch (e) { res.status(500).json({ success: false, message: '读取执行安排失败，请重试' }); }

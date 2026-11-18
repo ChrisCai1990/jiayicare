@@ -26,6 +26,12 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
   useEffect(() => { reload(); return () => { seq.current++ } }, [patientId, planId, planVersion])
   const pending = (data?.reviews || []).filter(r => r.status === 'pending')
   const done = (data?.reviews || []).filter(r => r.status === 'reviewed')
+  const carryovers = data?.carryovers || []
+  const carriedList = carryovers.length > 0 && <div style={{ margin: '10px 0', padding: '10px 12px', background: '#F5FAF7', borderRadius: 8, fontSize: 13 }}>
+    <strong>沿用既往方案的未完成随访（{carryovers.length}）</strong>
+    <p style={{ margin: '5px 0' }}>这些事项与本方案有相同的已确认问题来源。新增派发会沿用未完成的原随访；若日期变化，请在原任务中续办并核对后续时间，既有进度仍保留。</p>
+    {carryovers.map(row => <div key={row._id} style={{ marginTop: 5 }}><a href={`/patients/${patientId}?tab=followups&followUpId=${row._id}`}>{row.theme || '原随访事项'}</a> · {statusName[row.status] || '待核对'} · {dateText(row.date)} · {row.assignedTo?.name || '未指定执行人'}{row.duplicateCurrent && <strong style={{ color: '#9A5B13' }}> · 当前方案也有同问题随访，请核对既有重复项</strong>}</div>)}
+  </div>
   useEffect(() => {
     if (data && window.location.hash === '#annual-execution-review') section.current?.scrollIntoView?.({ block: 'start' })
   }, [data])
@@ -39,11 +45,12 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
     finally { setBusy(false) }
   }
   if (!data && !error) return null
-  if (!data?.reviews?.length && !error) return null
-  if (!pending.length && !error) return <details ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16 }}>
-    <summary style={{ cursor: 'pointer', color: '#52675D' }}>已核对记录（{done.length}）</summary>
-    <p style={{ color: '#62776A', fontSize: 13 }}>方案修改后核对原有执行任务是否需要同步调整；以下事项已经完成核对。</p>
-    {done.map(r => <p key={r.id}>{dateText(r.reviewedAt)} · {r.reviewedByName || '健康顾问'} · {r.outcome === 'arranged' ? '已衔接原流程' : '无需调整'}<br />{r.note}</p>)}
+  if (!data?.reviews?.length && !carryovers.length && !error) return null
+  if (!pending.length && !error) return <details ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16 }} open={carryovers.length > 0}>
+    <summary style={{ cursor: 'pointer', color: '#52675D' }}>{carryovers.length ? `既往随访沿用（${carryovers.length}）` : `已核对记录（${done.length}）`}</summary>
+    {carriedList}
+    {done.length > 0 && <><p style={{ color: '#62776A', fontSize: 13 }}>已完成的执行核对：</p>
+    {done.map(r => <p key={r.id}>{dateText(r.reviewedAt)} · {r.reviewedByName || '健康顾问'} · {r.outcome === 'arranged' ? '已衔接原流程' : '无需调整'}<br />{r.note}</p>)}</>}
   </details>
   return <section ref={section} id="annual-execution-review" className="card" style={{ marginBottom: 16, padding: 16, border: pending.length ? '1px solid #E4BE75' : undefined }}>
     <h3 style={{ margin: '0 0 8px' }}>方案修订与原执行任务核对{pending.length ? ` · ${pending.length}次修订` : ''}</h3>
@@ -51,6 +58,7 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
     {message && <p role="status">{message}</p>}
     {pending.length > 0 && <>
       <p style={{ fontSize: 13, color: '#52675D' }}>这里比对的是修订前的已发布方案与新方案，以及原随访和服务任务；不是与 AI 建议核对。同一问题若只是日期调整，请在<a href={`/patients/${patientId}?tab=followups`}>原执行流程</a>续办原事项并核对新日期，避免重复建一条随访。已完成记录保留为历史。</p>
+      {carriedList}
       <details style={{ margin: '12px 0' }}><summary style={{ cursor: 'pointer', fontWeight: 600 }}>查看方案变更明细（{pending.reduce((count, review) => count + review.changes.length, 0)}项）</summary><div style={{ display: 'grid', gap: 8, margin: '12px 0' }}>{pending.flatMap(review => review.changes.map((change, index) =>
         <div key={`${review.id}:${index}`} style={{ padding: '9px 12px', border: '1px solid #E8E3D7', borderRadius: 8, background: '#FFFCF6', fontSize: 13 }}>
           <strong>{change.module} · {change.title} · {change.action}</strong>
