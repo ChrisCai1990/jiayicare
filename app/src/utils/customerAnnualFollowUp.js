@@ -17,9 +17,9 @@ function customerAnnualFollowUp(followUp) {
   const hospital = field(raw, '就医/会诊医院') || field(raw, '计划体检机构') || field(raw, '机构');
   const department = field(raw, '科室');
   const item = field(raw, '项目');
-  const visitDate = dateField(raw, '建议就医/检查日期');
-  const checkupDate = dateField(raw, '建议体检日期');
-  const title = key === 'medical_treatment' ? (department ? `${short(department)}就医` : '就医安排')
+  const visitDate = dateField(raw, '建议就医/检查日期') || dateField(raw, '建议就医');
+  const checkupDate = dateField(raw, '建议体检日期') || dateField(raw, '计划体检');
+  const title = key === 'medical_treatment' ? (department ? `${short(department)}就医` : (/^.{1,12}就医$/.test(followUp.theme || '') ? followUp.theme : '就医安排'))
     : key === 'annual_checkup' ? '年度体检'
     : key === 'abnormal_followup' ? (item ? `${short(item)}复查` : '复查安排')
     : key === 'nutrition-assessment' ? '营养评估'
