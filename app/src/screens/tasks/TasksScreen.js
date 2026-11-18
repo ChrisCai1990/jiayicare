@@ -269,7 +269,7 @@ function TaskCard({ task, onToggle, onPress }) {
           )}
         </View>
         {!!task.description && (
-          <Text style={styles.taskDesc} numberOfLines={1}>{task.description}</Text>
+          <Text style={styles.taskDesc} numberOfLines={task.isAnnualFollowup ? 4 : 1}>{task.description}</Text>
         )}
         <View style={styles.taskMeta}>
           {!!task.dueDate && (
@@ -505,6 +505,7 @@ export default function TasksScreen({ navigation }) {
     return ({
     _id: f._id,
     title: annual?.title || (f.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (f.theme || '随访计划')),
+    isAnnualFollowup: !!annual,
     type: 'followup',
     description: annual ? annual.details.join('\n') : (f.taskRequirements || f.plannedContent || f.content || ''),
     taskRequirements: annual ? annual.details.join('\n') : (f.taskRequirements || f.plannedContent || ''),
