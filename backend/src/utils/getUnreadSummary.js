@@ -2,12 +2,13 @@ const Message = require('../models/Message');
 const PushRecord = require('../models/PushRecord');
 const Order = require('../models/Order');
 const { QuestionnaireResponse, DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
-const { visibleMessageQuery, isInboxMessage, legacyAnnualItemNoticeFilter } = require('./messageInbox');
+const { visibleMessageQuery, unreadServiceGroupQuery, isInboxMessage, legacyAnnualItemNoticeFilter } = require('./messageInbox');
 async function getUnreadSummary(userId) {
-  const [unreadMessages, unreadPushes] = await Promise.all([
+  const [unreadMessages, unreadPushes, groupUnread] = await Promise.all([
     Message.find(visibleMessageQuery(userId, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
     PushRecord.find({ patientId: userId, readAt: null, ...legacyAnnualItemNoticeFilter })
       .select('type questionnaireId sourceOrderId').lean(),
+    Message.countDocuments(unreadServiceGroupQuery(userId)),
   ]);
   const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);
   const activeQuestionnaireIds = new Set(questionnairePushes.length ? (await DynamicQuestionnaire.find({
@@ -35,6 +36,6 @@ async function getUnreadSummary(userId) {
     .map(item => String(item.questionnaireId)));
   const visibleUnread = unreadMessages.filter(item => isInboxMessage(item, userId)
     && (item.type !== 'questionnaire' || pendingQuestionnaireIds.has(String(item.questionnaireId))));
-  return { success: true, count: visibleUnread.length + pushCount, latestMessage: visibleUnread[0] || null };
+  return { success: true, count: visibleUnread.length + pushCount + groupUnread, latestMessage: visibleUnread[0] || null };
 }
 module.exports = { getUnreadSummary };

@@ -250,7 +250,7 @@ export default function InAppServiceGroupsPage() {
         待回复（{groups.filter(group => group.waitingForStaff).length}）
       </button>
     </div>
-    <div className="sg-workspace">
+    <div className={`sg-workspace${selected ? ' sg-has-selection' : ''}`}>
       <section aria-label="服务群列表" className="sg-group-list">
         {visibleGroups.length === 0 && <p>{groupQuery ? '未找到匹配的服务群，请检查关键词或切换服务类型、服务状态。' : '此范围暂无已配置的服务群。健管专员可查找客户并配置成员。'}</p>}
         {visibleGroups.map(group => <button key={group.id} type="button" onClick={() => open(group)}
@@ -269,6 +269,7 @@ export default function InAppServiceGroupsPage() {
         {selected ? <>
           {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} initialMessageId={historyAnchor} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
           <div className="sg-chat-header">
+            <button type="button" className="sg-back-to-list" onClick={() => { setSelected(null); currentId.current = ''; }} aria-label="返回服务群列表">‹ 返回群列表</button>
             <div className="sg-chat-heading"><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
               {selected.assistant && <div className="sg-assistant-status">
                 <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} />

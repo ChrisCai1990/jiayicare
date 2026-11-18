@@ -11,7 +11,7 @@ const record = (id, extra = {}) => ({ _id: id, user, type: 'planner', unread: tr
 
 function routeHarness({ messages = [], pushes = [], questionnaires = [], responses = [], orders = [] } = {}) {
   const routes = new Map();
-  const model = rows => ({ find(query) {
+  const model = rows => ({ countDocuments(query) { return Promise.resolve(rows.filter(sift(query)).length); }, find(query) {
     let result = rows.filter(sift(query));
     const chain = {
       select() { return chain; }, lean() { return chain; },
@@ -58,13 +58,13 @@ test('old unread remains reachable even after more than 50 new read messages', a
   assert.equal((await call('/unread-count')).count, 1);
 });
 
-test('service group conversation stays in the group and out of system notifications and badge', async () => {
+test('service group conversation stays out of system notifications but counts toward the badge', async () => {
   const call = routeHarness({ messages: [
     record('group', { type: 'system', sender: '健康服务团队', action: { type: 'service_group', groupId: 'group-1' } }),
     record('system', { type: 'system', sender: '系统通知' }),
   ] });
   assert.deepEqual(Array.from((await call('/')).data, row => row._id), ['system']);
-  assert.equal((await call('/unread-count')).count, 1);
+  assert.equal((await call('/unread-count')).count, 2);
 });
 
 test('missing, inactive, deleted, answered and cancelled-order questionnaires cannot create phantom badges', async () => {

@@ -7,7 +7,7 @@ const { isHumanPresent } = require('../utils/chatPresence');
 const PushRecord = require('../models/PushRecord');
 const Order = require('../models/Order');
 const { QuestionnaireResponse, DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
-const { visibleMessageQuery, isInboxMessage, mergeInboxRecords, legacyAnnualItemNoticeFilter } = require('../utils/messageInbox');
+const { visibleMessageQuery, unreadServiceGroupQuery, isInboxMessage, mergeInboxRecords, legacyAnnualItemNoticeFilter } = require('../utils/messageInbox');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { conversationRoleKeys, getConversationRole } = require('../utils/conversationRoles');
 const router = express.Router();
@@ -26,10 +26,11 @@ router.post('/:id/transcribe', auth, (req, res) => require('../utils/messageTran
 
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
-  const [unreadMessages, unreadPushes] = await Promise.all([
+  const [unreadMessages, unreadPushes, groupUnread] = await Promise.all([
     Message.find(visibleMessageQuery(req.user._id, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
     PushRecord.find({ patientId: req.user._id, readAt: null, ...legacyAnnualItemNoticeFilter })
       .select('type questionnaireId sourceOrderId').lean(),
+    Message.countDocuments(unreadServiceGroupQuery(req.user._id)),
   ]);
   const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);
   const activeQuestionnaireIds = new Set(questionnairePushes.length ? (await DynamicQuestionnaire.find({
@@ -57,7 +58,7 @@ router.get('/unread-count', auth, async (req, res) => {
     .map(item => String(item.questionnaireId)));
   const visibleUnread = unreadMessages.filter(item => isInboxMessage(item, req.user._id)
     && (item.type !== 'questionnaire' || pendingQuestionnaireIds.has(String(item.questionnaireId))));
-  res.json({ success: true, count: visibleUnread.length + pushCount, latestMessage: visibleUnread[0] || null });
+  res.json({ success: true, count: visibleUnread.length + pushCount + groupUnread, latestMessage: visibleUnread[0] || null });
 });
 
 // 获取消息列表

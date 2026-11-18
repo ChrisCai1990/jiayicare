@@ -16,6 +16,10 @@ function visibleMessageQuery(user, unreadOnly = false) {
   };
 }
 
+function unreadServiceGroupQuery(user) {
+  return { user, unread: true, recalled: { $ne: true }, 'action.type': 'service_group' };
+}
+
 function isInboxMessage(message, userId) {
   if (message.type === 'user') return false;
   if (['system', 'questionnaire', 'knowledge', 'plan', 'supplement', 'product', 'notice'].includes(message.type)) return true;
@@ -29,4 +33,4 @@ function mergeInboxRecords(recent, unread) {
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
-module.exports = { visibleMessageQuery, isInboxMessage, mergeInboxRecords, legacyAnnualItemNoticeFilter };
+module.exports = { visibleMessageQuery, unreadServiceGroupQuery, isInboxMessage, mergeInboxRecords, legacyAnnualItemNoticeFilter };
