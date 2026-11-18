@@ -37,7 +37,6 @@ function ListLines({ items, color }) {
 
 function HealthSummaryView({ sections }) {
   const s = sections || {};
-  const lifestyle = s.lifestyle_assessment || {};
   const medPriority = s.medical_priority || {};
   const tumor = s.tumor_risk || {};
   const cardio = s.cardiovascular_risk || {};
@@ -110,17 +109,6 @@ function HealthSummaryView({ sections }) {
       </SectionCard>
 
       <SourceReports reportIds={medPriority.sourceReportIds || []} />
-      <SectionCard icon="🌿" title="生活方式评估">
-        {(lifestyle.items || []).map((it, i) => (
-          <View key={i} style={{ marginBottom: `${spacing.sm}px`, paddingBottom: `${spacing.sm}px`, borderBottom: `1px solid ${colors.border}` }}>
-            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '2px' }}>{it.dimension}</Text>
-            {!!it.finding && <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block' }}>{it.finding}</Text>}
-            {!!it.risk && <Text style={{ fontSize: '13px', color: colors.warning, display: 'block' }}>风险：{it.risk}</Text>}
-            {!!it.suggestion && <Text style={{ fontSize: '13px', color: colors.primary, display: 'block' }}>建议：{it.suggestion}</Text>}
-          </View>
-        ))}
-        {!!lifestyle.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{lifestyle.summary}</Text>}
-      </SectionCard>
     </View>
   );
 }
@@ -131,7 +119,7 @@ export default function AiHealthPage() {
   const [generating, setGenerating] = useState(false);
   const [hasDoctor, setHasDoctor] = useState(false);
   const [summaryData, setSummaryData] = useState(null);
-  const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, nutritionApproved: false, hasLifestyle: false, isSelfService: false });
+  const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, isSelfService: false });
   const [message, setMessage] = useState('');
 
   const loadAll = useCallback(async () => {
@@ -167,7 +155,7 @@ export default function AiHealthPage() {
   };
 
   const summaryHasData = !!(summaryData?.sections?.medical_priority || summaryData?.sections?.tumor_risk || summaryData?.sections?.chronic_disease);
-  const summaryLocked = hasDoctor && !reviewStatus.isSelfService && (reviewStatus.doctorApproved || reviewStatus.nutritionApproved);
+  const summaryLocked = hasDoctor && !reviewStatus.isSelfService && reviewStatus.doctorApproved;
 
   const handleConsult = () => {
     Taro.switchTab({ url: '/pages/chat/index' });
@@ -207,11 +195,6 @@ export default function AiHealthPage() {
               <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '6px' }}>
                 <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>健康信息分析（5维度）：{reviewStatus.doctorApproved ? '已由专业人员复核' : '草稿待专业人员复核，结果可能调整'}</Text>
               </View>
-              {reviewStatus.hasLifestyle && (
-                <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
-                  <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>生活方式评估：{reviewStatus.nutritionApproved ? '已由营养师审核确认' : '草稿待营养师审核，结果可能调整'}</Text>
-                </View>
-              )}
             </View>
           )}
 

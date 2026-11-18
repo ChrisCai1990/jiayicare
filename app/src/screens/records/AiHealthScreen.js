@@ -15,7 +15,6 @@ const TABS = ['健康信息整理', '健康关注提示'];
 function buildSummarySpeech(sections) {
   const s = sections || {};
   const parts = [];
-  if (s.lifestyle_assessment?.summary) parts.push(`生活方式评估：${s.lifestyle_assessment.summary}`);
   if (s.medical_priority?.items?.length) {
     parts.push('重点关注医疗问题：' + s.medical_priority.items.map(i => `${i.name}，${i.action || ''}`).join('；'));
   }
@@ -78,7 +77,6 @@ function ListLines({ items, color }) {
 
 function HealthSummaryView({ sections, navigation }) {
   const s = sections || {};
-  const lifestyle = s.lifestyle_assessment || {};
   const medPriority = s.medical_priority || {};
   const tumor = s.tumor_risk || {};
   const cardio = s.cardiovascular_risk || {};
@@ -163,17 +161,6 @@ function HealthSummaryView({ sections, navigation }) {
         })}
       </SectionCard>
 
-      <SectionCard icon="🌿" title="生活方式评估">
-        {(lifestyle.items || []).map((it, i) => (
-          <View key={i} style={styles.lifestyleItem}>
-            <Text style={styles.lifestyleDim}>{it.dimension}</Text>
-            {!!it.finding && <Text style={styles.lineText}>{it.finding}</Text>}
-            {!!it.risk && <Text style={[styles.lineText, { color: colors.warning }]}>风险：{it.risk}</Text>}
-            {!!it.suggestion && <Text style={[styles.lineText, { color: colors.primary }]}>建议：{it.suggestion}</Text>}
-          </View>
-        ))}
-        {!!lifestyle.summary && <Text style={styles.summaryBox}>{lifestyle.summary}</Text>}
-      </SectionCard>
     </View>
   );
 }
@@ -222,13 +209,9 @@ export default function AiHealthScreen({ navigation }) {
   const [summaryPending, setSummaryPending] = useState(false);
   const [riskPending, setRiskPending] = useState(false);
   // 健康分析两部分各自的审核状态：5维度(医疗,家医审)/生活方式(营养师审)
-  const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, nutritionApproved: false, hasLifestyle: false, isSelfService: false });
+  const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, isSelfService: false });
   const [message, setMessage] = useState('');
   const [speaking, setSpeaking] = useState(false);
-  // 专项筛查年度小结：核查AI健康分析结论时的对照面板，默认收起，展开才拉取（不阻塞主流程加载）
-  const [yearlySummaryOpen, setYearlySummaryOpen] = useState(false);
-  const [yearlySummary, setYearlySummary] = useState(null);
-  const [yearlySummaryLoading, setYearlySummaryLoading] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -277,8 +260,8 @@ export default function AiHealthScreen({ navigation }) {
   const riskHasData = Array.isArray(riskData?.dimensions) && riskData.dimensions.length > 0;
   const curHasData = tab === TABS[0] ? summaryHasData : riskHasData;
   const curPending = tab === TABS[0] ? summaryPending : riskPending;
-  // 健康分析：只要任一部分（5维度/生活方式）已被审核，就锁定生成（客户端生成是整份覆盖，会毁掉已审部分）
-  const summaryLocked = hasDoctor && !reviewStatus.isSelfService && (reviewStatus.doctorApproved || reviewStatus.nutritionApproved);
+  // 五维分析已审核后不允许客户重新生成覆盖。
+  const summaryLocked = hasDoctor && !reviewStatus.isSelfService && reviewStatus.doctorApproved;
   const riskLocked = hasDoctor && riskHasData && !riskPending; // 风险评估单一审核，已审即锁
   const curLocked = tab === TABS[0] ? summaryLocked : riskLocked;
 
@@ -291,20 +274,6 @@ export default function AiHealthScreen({ navigation }) {
       setMessage(err.message || '播放失败');
     } finally {
       setSpeaking(false);
-    }
-  };
-
-  const toggleYearlySummary = async () => {
-    const next = !yearlySummaryOpen;
-    setYearlySummaryOpen(next);
-    if (next && !yearlySummary) {
-      setYearlySummaryLoading(true);
-      try {
-        const year = summaryData?.latestYear || new Date().getFullYear();
-        const res = await userAPI.getScreeningYearlySummary(year);
-        if (res.success) setYearlySummary(res.data);
-      } catch {}
-      finally { setYearlySummaryLoading(false); }
     }
   };
 
@@ -371,14 +340,6 @@ export default function AiHealthScreen({ navigation }) {
                   健康信息分析（5维度）：{reviewStatus.doctorApproved ? '已由专业人员复核' : '草稿待专业人员复核，结果可能调整'}
                 </Text>
               </View>
-              {reviewStatus.hasLifestyle && (
-                <View style={styles.doctorNotice}>
-                  <Ionicons name={reviewStatus.nutritionApproved ? 'nutrition-outline' : 'time-outline'} size={18} color={reviewStatus.nutritionApproved ? colors.success : colors.info} />
-                  <Text style={styles.doctorNoticeText}>
-                    生活方式评估：{reviewStatus.nutritionApproved ? '已由营养师审核确认' : '草稿待营养师审核，结果可能调整'}
-                  </Text>
-                </View>
-              )}
             </View>
           )}
 
@@ -437,37 +398,6 @@ export default function AiHealthScreen({ navigation }) {
             </View>
           )}
 
-          {curHasData && tab === TABS[0] && (
-            <View style={styles.yearlySummaryCard}>
-              <TouchableOpacity style={styles.yearlySummaryHeader} onPress={toggleYearlySummary} activeOpacity={0.8}>
-                <Ionicons name="stats-chart-outline" size={16} color={colors.primary} />
-                <Text style={styles.yearlySummaryTitle}>专项筛查年度小结（核查对照）</Text>
-                <Ionicons name={yearlySummaryOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
-              </TouchableOpacity>
-              {yearlySummaryOpen && (
-                yearlySummaryLoading ? (
-                  <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.sm }} />
-                ) : (
-                  <View style={{ marginTop: spacing.xs }}>
-                    {(yearlySummary || []).map(cat => (
-                      <View key={cat.key} style={styles.yearlySummaryRow}>
-                        <Text style={styles.yearlySummaryLabel}>{cat.label}</Text>
-                        {cat.available ? (
-                          <Text style={styles.yearlySummaryValue}>
-                            已检查 {cat.checkedCount} 项{cat.abnormalCount > 0 ? `，异常 ${cat.abnormalCount} 项：${cat.abnormalItems.join('、')}` : ''}
-                          </Text>
-                        ) : (
-                          <Text style={[styles.yearlySummaryValue, { color: colors.textMuted }]}>暂无该类目数据</Text>
-                        )}
-                      </View>
-                    ))}
-                    {!yearlySummary?.length && <Text style={styles.mutedText}>暂无年度数据</Text>}
-                  </View>
-                )
-              )}
-            </View>
-          )}
-
           {curHasData && tab === TABS[0] && <HealthSummaryView sections={summaryData.sections} navigation={navigation} />}
           {curHasData && tab === TABS[1] && <RiskAssessmentView data={riskData} />}
         </ScrollView>
@@ -478,15 +408,6 @@ export default function AiHealthScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  yearlySummaryCard: {
-    backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.sm,
-    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, ...shadow.xs,
-  },
-  yearlySummaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  yearlySummaryTitle: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.textPrimary },
-  yearlySummaryRow: { paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
-  yearlySummaryLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 2 },
-  yearlySummaryValue: { fontSize: 12, color: colors.textPrimary, lineHeight: 17 },
   topBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
