@@ -10,6 +10,7 @@ function visibleMessageQuery(user, unreadOnly = false) {
   return {
     user,
     recalled: { $ne: true },
+    'action.type': { $ne: 'service_group' },
     ...(unreadOnly ? { unread: true, type: { $ne: 'user' } } : {}),
     $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }],
   };

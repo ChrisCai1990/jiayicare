@@ -53,6 +53,12 @@ test('个性化随访模板只在执行流程展示', () => {
   assert.equal(customerModuleData(source).personalized_followups, undefined);
 });
 
+test('健康认知与共识仅留在内部沟通流程', () => {
+  const source = { health_consensus: { enabled: true, records: [{ question: '客户希望了解治疗目标', method: '电话沟通', firstDate: '2026-11-20' }] } };
+  assert.deepEqual(buildAnnualPlanDisplayItems(source), []);
+  assert.equal(customerModuleData(source).health_consensus, undefined);
+});
+
 test('已移除的年度营养评估不进入客户完整方案', () => {
   const moduleData = { nutrition_assessment: { enabled: false, records: [{ items: '不再重复评估' }] } };
   assert.deepEqual(buildAnnualPlanDisplayItems(moduleData), []);

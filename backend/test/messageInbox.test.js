@@ -58,6 +58,15 @@ test('old unread remains reachable even after more than 50 new read messages', a
   assert.equal((await call('/unread-count')).count, 1);
 });
 
+test('service group conversation stays in the group and out of system notifications and badge', async () => {
+  const call = routeHarness({ messages: [
+    record('group', { type: 'system', sender: '健康服务团队', action: { type: 'service_group', groupId: 'group-1' } }),
+    record('system', { type: 'system', sender: '系统通知' }),
+  ] });
+  assert.deepEqual(Array.from((await call('/')).data, row => row._id), ['system']);
+  assert.equal((await call('/unread-count')).count, 1);
+});
+
 test('missing, inactive, deleted, answered and cancelled-order questionnaires cannot create phantom badges', async () => {
   const ids = ['active', 'inactive', 'deleted', 'missing', 'answered', 'cancelled'];
   const pushes = ids.map(id => ({ _id: `push-${id}`, patientId: user, readAt: null, type: 'questionnaire', questionnaireId: id,

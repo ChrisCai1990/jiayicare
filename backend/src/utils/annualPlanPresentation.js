@@ -52,7 +52,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   const items = [];
   Object.entries(moduleData).forEach(([moduleKey, module]) => {
     // 营养师的评估重点及标准随访模板在各自执行流程中呈现，不作为客户年度方案事项。
-    if (moduleKey === 'nutrition_assessment' || moduleKey === 'personalized_followups') return;
+    if (moduleKey === 'nutrition_assessment' || moduleKey === 'personalized_followups' || moduleKey === 'health_consensus') return;
     if (!module || module.enabled === false) return;
     const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records) && module.records.length
       ? module.records
@@ -68,7 +68,7 @@ function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
   if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
   return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !internalFields.has(key) && key !== 'nutrition_assessment' && key !== 'personalized_followups')
+    .filter(([key]) => !internalFields.has(key) && key !== 'nutrition_assessment' && key !== 'personalized_followups' && key !== 'health_consensus')
     .map(([key, child]) => [key, key === 'management_targets'
       ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
       : key === 'annual_checkup'
