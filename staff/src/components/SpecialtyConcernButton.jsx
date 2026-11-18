@@ -74,7 +74,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     finally { setDrafting(false) }
   }
   return <>
-    <button type="button" className="btn btn-secondary btn-sm" onClick={event => {
+    <button type="button" className={`btn ${saved ? 'btn-primary' : 'btn-secondary'} btn-sm`} title={saved ? `已纳入年度管理：${DIRECTIONS.find(([value]) => value === saved.direction)?.[1] || '管理方向待核对'}；点击可查看或调整` : '点击确认是否纳入年度管理'} onClick={event => {
       event.stopPropagation(); setTitle(saved?.title || suggestedIssue || suggestions[0] || '');
       setDirection(saved?.direction || ''); setNote(saved?.note || ''); setGoal(saved?.goal || ''); setAction(saved?.action || '')
       setTimingMode(saved?.actionTiming?.mode === 'rolling' && saved?.reviewPlan?.kind === 'recheck' ? 'pending' : saved?.actionTiming?.mode || 'pending')
@@ -86,7 +86,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setReviewItems((saved?.reviewPlan?.items || []).join('、'))
       setReviewAnchorDate(saved?.reviewPlan?.anchorDate || new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))
       setReviewDepartment(saved?.reviewPlan?.department || '')
-    }}>{saved ? pilot ? '✓ 已确认方向' : '✓ 已纳入管理' : '＋ 纳入管理'}</button>
+    }}>{saved ? `✓ 已纳入管理 · ${DIRECTIONS.find(([value]) => value === saved.direction)?.[1] || '待核对'}` : '＋ 纳入管理'}</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 520 }}>
       <div className="modal-header"><div className="modal-title">纳入年度管理</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
       <div className="modal-body">
