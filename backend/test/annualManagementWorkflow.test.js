@@ -18,13 +18,13 @@ test('工作台一张主卡指向准确步骤，七个步骤都有可直达的�
   assert.equal(flow.step, 'interpretation');
   assert.equal(flow.steps.length, 7);
   assert.equal(flow.steps.find(row => row.key === 'interpretation').link,
-    '/patients/p1?tab=reports&workflowStep=interpretation#annual-report-interpretation');
+    '/patients/p1?tab=reports&workflowStep=interpretation&annualWorkflowYear=2026#annual-report-interpretation');
   assert.equal(flow.steps.find(row => row.key === 'screening').link,
-    '/patients/p1?tab=ai&workflowStep=screening#screening-results');
+    '/patients/p1?tab=ai&workflowStep=screening&annualWorkflowYear=2026#screening-results');
   assert.equal(flow.steps.find(row => row.key === 'goals').link,
     '/patients/p1/annual-health?year=2026#annual-management-goals');
   assert.equal(flow.steps.find(row => row.key === 'assessment').link,
-    '/patients/p1?tab=aiReview&workflowStep=assessment#annual-workflow-assessment');
+    '/patients/p1?tab=aiReview&workflowStep=assessment&annualWorkflowYear=2026#annual-workflow-assessment');
   for (const step of steps) assert.ok(stepLink('p1', 2026, step).startsWith('/patients/p1'));
   const interpreted = { ...report, advisorInterpretationConfirmedAt: now };
   assert.equal(project(patient, 2026, [], [interpreted], now).step, 'screening');

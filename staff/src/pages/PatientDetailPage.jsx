@@ -2204,6 +2204,12 @@ export default function PatientDetailPage() {
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
   const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
+  const workflowSearch = new URLSearchParams(location.search)
+  const annualWorkflowYear = workflowSearch.get('annualWorkflowYear')
+  const annualWorkflowStep = workflowSearch.get('workflowStep')
+  const annualWorkflowBack = /^\d{4}$/.test(annualWorkflowYear || '')
+    && ['preparation', 'interpretation', 'screening', 'execution', 'assessment'].includes(annualWorkflowStep)
+    ? `/patients/${id}/annual-workflow?year=${annualWorkflowYear}` : ''
   const [medicalServiceOnly, setMedicalServiceOnly] = useState(new URLSearchParams(location.search).get('serviceFilter') === 'medical')
   const requestedServiceView = new URLSearchParams(location.search).get('serviceView') || 'overview'
   const initialTab = new URLSearchParams(location.search).has('healthRecordId') && requestedTab === 'portrait' ? 'symptoms' : ['monitoring', 'archive'].includes(requestedTab) ? 'records' : requestedTab
@@ -5223,7 +5229,7 @@ export default function PatientDetailPage() {
     <div className="page" style={{ overflowX: 'hidden', maxWidth: '100%' }}>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => nav('/patients')}>← 返回</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => nav(annualWorkflowBack || '/patients')}>{annualWorkflowBack ? '← 返回年度流程' : '← 返回'}</button>
           <div>
             <h1 className="page-title" style={{ marginBottom: 2 }}>
               {user.name}
@@ -11441,6 +11447,11 @@ export default function PatientDetailPage() {
 
         return (
           <div id="annual-report-interpretation">
+            {annualWorkflowBack && annualWorkflowStep === 'interpretation' && pendingInterpretations.length === 0 && <div role="status" className="card" style={{ padding: 16, marginBottom: 16, border: '1px solid #CFE5D8' }}>
+              <strong>报告解读已完成</strong>
+              <p style={{ margin: '8px 0', fontSize: 13, color: '#4A6558' }}>返回年度管理流程，查看更新后的下一步。</p>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => nav(annualWorkflowBack)}>返回年度流程</button>
+            </div>}
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingInterpretations.length > 0 && <div className="card" style={{ padding: 16, marginBottom: 16, border: '1px solid #CFE5D8' }}>
               <strong>健康顾问报告解读 · 待确认 {pendingInterpretations.length} 份</strong>
               <p style={{ margin: '8px 0', fontSize: 13, color: '#4A6558' }}>可跨年份一起解读。核对原件后勾选本次已完成解读的报告，确认后进入对应的问题建议审核。</p>

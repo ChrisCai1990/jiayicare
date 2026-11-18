@@ -21,7 +21,7 @@ const steps = [
 function stepLink(patientId, year, step) {
   const [key, , target, hash] = step;
   if (target === 'annual-health') return `/patients/${patientId}/annual-health?year=${year}${hash}`;
-  return `/patients/${patientId}?tab=${target}&workflowStep=${key}${hash}`;
+  return `/patients/${patientId}?tab=${target}&workflowStep=${key}&annualWorkflowYear=${year}${hash}`;
 }
 
 function project(patient, year, plans, reports, now = new Date(), preparations = []) {
