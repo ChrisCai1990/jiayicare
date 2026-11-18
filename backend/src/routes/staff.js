@@ -3833,6 +3833,7 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
     deletedBy: req.staff._id,
     reason,
     snapshot: followUp.toObject(),
+    suppressRegeneration: followUp.sourceType === 'scheduled' && !!followUp.sourceAnnualPlanId && !!followUp.sourceScheduleKey,
   });
   await FollowUp.deleteOne({ _id: followUp._id });
   res.json({ success: true, message: '已删除' });
