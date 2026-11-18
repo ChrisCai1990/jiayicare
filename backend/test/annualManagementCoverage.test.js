@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { load, validatePlanCoverage, effectiveDecisions } = require('../src/utils/annualManagementEvidence');
+const { load, validatePlanCoverage, effectiveDecisions, reportSourceItems } = require('../src/utils/annualManagementEvidence');
 const { buildAnnualPlanDisplayItems, customerModuleData } = require('../src/utils/annualPlanPresentation');
 
 test('顾问选择完善检查后，不能以复查事项代替并推送', () => {
@@ -75,6 +75,33 @@ test('报告其他内容更新后，已纳入的检查项内容未变仍可生�
   assert.deepEqual(changed.staleDecisionIds, ['decision']);
   report.reportItems.shift();
   assert.deepEqual((await load('patient', 2026, dependencies)).stale, ['肺结节']);
+});
+
+test('组合专项筛查按归类键引用全部子项，并在其中一项变化时失效', async () => {
+  const key = '消化|胃部|胃功能3项';
+  const items = [
+    { itemId: 'pg1', name: '胃蛋白酶原I', value: '低', screeningKey: key },
+    { itemId: 'pg2', name: '胃蛋白酶原II', value: '正常', screeningKey: key },
+    { itemId: 'ratio', name: '比值', value: '低', screeningKey: key },
+  ];
+  const report = { _id: 'report', title: '胃功能检查', checkDate: '2026-03-20', reportItems: items.map(row => ({ ...row })) };
+  assert.deepEqual(reportSourceItems(report, 'screening', key), report.reportItems);
+  assert.deepEqual(reportSourceItems(report, 'report_item', key), []);
+  assert.deepEqual(reportSourceItems(report, 'screening', '不存在'), []);
+  const decision = { _id: 'decision', title: '胃功能异常', direction: 'abnormal_followup', reportId: 'report', itemId: key,
+    sourceKey: `screening:report:${key}`, sourceSnapshot: { checkDate: report.checkDate, item: items[0], items } };
+  const dependencies = {
+    Decision: { find: () => ({ sort: () => ({ lean: async () => [decision] }) }) },
+    Report: { findOne: () => ({ select: () => ({ lean: async () => report }) }) },
+    User: { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) },
+    CheckupReview: { find: () => ({ lean: async () => [] }) },
+  };
+  assert.equal((await load('patient', 2026, dependencies)).evidence[0].content.sourceItems.length, 3);
+  report.reportItems[1].value = '异常';
+  assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, ['decision']);
+  report.reportItems[1].value = '正常';
+  report.reportItems[2].screeningKey = '其他项目';
+  assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, ['decision']);
 });
 
 test('顾问已处理主诉可作为独立来源，来源修改后阻止旧目标继续带入', async () => {

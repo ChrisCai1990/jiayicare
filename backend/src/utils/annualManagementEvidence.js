@@ -19,6 +19,20 @@ const CLINICAL_ITEM_FIELDS = [
 function clinicalItem(item) {
   return CLINICAL_ITEM_FIELDS.map(key => item?.[key] ?? null);
 }
+function reportSourceItems(report, kind, sourceId) {
+  const id = String(sourceId || '').trim();
+  if (!id || !['screening', 'report_item'].includes(kind)) return [];
+  const rows = report?.reportItems || [];
+  if (kind === 'screening') {
+    const group = rows.filter(row => row.screeningKey === id || row.screeningKeys?.includes(id));
+    if (group.length) return group;
+    if (id.includes('|')) return [];
+  }
+  const byId = rows.filter(row => String(row.itemId || '') === id);
+  if (byId.length) return kind === 'screening' && byId.length !== 1 ? [] : byId;
+  const byName = rows.filter(row => String(row.name || '') === id);
+  return kind === 'screening' && byName.length !== 1 ? [] : byName;
+}
 function currentSourceItem(report, decision) {
   const snapshot = decision.sourceSnapshot?.item;
   const items = report.reportItems || [];
@@ -30,11 +44,19 @@ function currentSourceItem(report, decision) {
 function sourceChanged(report, decision) {
   if (!report) return true;
   const snapshot = decision.sourceSnapshot || {};
+  if (Array.isArray(snapshot.items)) {
+    const current = reportSourceItems(report, 'screening', decision.itemId);
+    return !current.length || current.length !== snapshot.items.length
+      || String(report.checkDate || '') !== String(snapshot.checkDate || '')
+      || current.some((item, index) => String(item.itemId || '') !== String(snapshot.items[index].itemId || '')
+        || item.screeningKey !== snapshot.items[index].screeningKey
+        || JSON.stringify(item.screeningKeys || []) !== JSON.stringify(snapshot.items[index].screeningKeys || [])
+        || JSON.stringify(clinicalItem(item)) !== JSON.stringify(clinicalItem(snapshot.items[index])));
+  }
   if (decision.sourceKey === `report_item:${decision.reportId}:${decision.itemId}`) {
     if (!report.advisorInterpretationConfirmedAt || report.archiveOnly || report.duplicateOf
       || ['outpatient_record', 'prescription_order'].includes(report.documentCategory)) return true;
-    const matches = (report.reportItems || []).filter(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])]
-      .some(value => String(value || '') === String(decision.itemId)));
+    const matches = reportSourceItems(report, 'report_item', decision.itemId);
     if (matches.length !== 1 || matches[0].screeningKey || matches[0].screeningKeys?.length) return true;
   }
   if (decision.sourceKey === `screening_report:${decision.reportId}`) {
@@ -89,7 +111,8 @@ async function load(patientId, year, dependencies = {}) {
       problem: decision.title, direction: decision.direction, advisorNote: decision.note,
       goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
       reviewPlan, legacyReviewNote: reviewPlan?.kind !== 'recheck' && reviewRules.legacyReviewNote(decision.note),
-      source: decision.sourceSnapshot?.item || null, reviewedAt: decision.reviewedAt,
+      source: decision.sourceSnapshot?.item || null,
+      sourceItems: decision.sourceSnapshot?.items || null, reviewedAt: decision.reviewedAt,
     } });
   }
   const patient = await User.findById(patientId).select('aiHealthSummary').lean();
@@ -180,4 +203,4 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
   return '';
 }
 
-module.exports = { load, managementTargets, validatePlanCoverage, effectiveDecisions };
+module.exports = { load, managementTargets, validatePlanCoverage, effectiveDecisions, reportSourceItems };
