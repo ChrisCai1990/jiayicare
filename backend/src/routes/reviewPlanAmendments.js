@@ -73,7 +73,7 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const {planId,baseUpdatedAt}=req.body;
       if(!mongoose.isValidObjectId(planId)) return res.status(400).json({success:false,message:'年度方案标识无效'});
       let plan=await Plan.findOne({_id:planId,patientId:req.amendmentPatientId}).select('+supplementRevisions +revisionDraft').lean();
-      if(!plan || !plan.pushedAt || plan.reviewStatus!=='approved') return res.status(409).json({success:false,message:'请先打开已发布的年度方案'});
+      if(!plan || !plan.pushedAt || !['approved',null,undefined].includes(plan.reviewStatus)) return res.status(409).json({success:false,message:'请先打开已发布的年度方案'});
       if(String(plan.updatedAt?.toISOString())!==baseUpdatedAt) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
       if(req.body.action==='publish') {
         const draft=plan.revisionDraft;

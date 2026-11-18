@@ -405,7 +405,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   useEffect(() => {
     setAnnualPilot(false)
     if (!patientMode || !id) return
-    managementReviewAPI.get(id).then(result => setAnnualPilot(result.restored === true)).catch(() => {})
+    managementReviewAPI.get(id).then(result => setAnnualPilot(result.annualFlowEnabled === true)).catch(() => {})
   }, [patientMode, id])
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')

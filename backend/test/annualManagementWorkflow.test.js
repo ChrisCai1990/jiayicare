@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { load, project, stepLink, steps, workflowYear } = require('../src/utils/annualManagementWorkflow');
 const pilot = require('../src/utils/annualFlowPilot');
+const reviewPolicy = require('../src/utils/managementReviewPolicy');
 const router = require('../src/routes/staff');
 const workflow = require('../src/utils/annualManagementWorkflow');
 const AnnualPlanPreparation = require('../src/models/AnnualPlanPreparation');
@@ -53,7 +54,7 @@ test('方案已推送并生成随访时进入执行，客户确认仍单独显�
 });
 
 test('已有确认方案保留原件；新报告先解读，之后进入目标或执行', t => {
-  t.mock.method(pilot, 'enabled', () => true);
+  t.mock.method(reviewPolicy, 'restored', () => true);
   const plan = { _id: 'plan1', patientId: 'p1', year: 2026, confirmedAt: now, pushedAt: now,
     moduleData: { management_targets: { records: [] } } };
   assert.equal(project(patient, 2026, [plan], [report], now).step, 'interpretation');
@@ -64,6 +65,15 @@ test('已有确认方案保留原件；新报告先解读，之后进入目标�
   assert.equal(execution.step, 'execution');
   assert.equal(execution.overdue, false);
   assert.equal(execution.planId, 'plan1');
+});
+
+test('全员开放新版页面后，旧版无结构化目标的确认方案仍进入执行', t => {
+  t.mock.method(pilot, 'enabled', () => true);
+  t.mock.method(reviewPolicy, 'restored', () => false);
+  const plan = { _id: 'legacy', patientId: 'p1', year: 2026, confirmedAt: now, pushedAt: now,
+    moduleData: { management_targets: { records: [] } } };
+  const flow = project(patient, 2026, [plan], [{ ...report, advisorInterpretationConfirmedAt: now }], now);
+  assert.equal(flow.step, 'execution');
 });
 
 test('已分析但未获顾问确认的报告仍在解读步骤，退回修改的报告暂不重复待确认', () => {

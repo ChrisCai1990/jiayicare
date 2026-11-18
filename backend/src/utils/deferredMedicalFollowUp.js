@@ -30,7 +30,8 @@ function successor(task, date, reason) {
     theme: `继续跟进 · ${String(task.theme || '检查或就医').replace(/^继续跟进 · /, '').slice(0, 90)}`,
     plannedContent: task.plannedContent || task.content || task.theme || '',
     content: task.plannedContent || task.content || task.theme || '',
-    formData: { category: categoryOf(task), deferredFromTaskId: task._id, priorOutcome: reason },
+    formData: { category: categoryOf(task), deferredFromTaskId: task._id, priorOutcome: reason,
+      ...(task.formData?.annualFlowVersion === 2 ? { annualFlowVersion: 2 } : {}) },
     type: task.type || 'phone', status: 'planned', aiStatus: 'approved', reviewRole: null,
     continuityRequired: true, clientVisible: task.clientVisible !== false,
   };

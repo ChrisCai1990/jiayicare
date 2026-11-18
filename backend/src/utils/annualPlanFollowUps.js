@@ -316,6 +316,9 @@ async function buildAnnualPlanFollowUps(plan) {
     });
   });
 
+  if (require('./annualFlowPilot').enabled(plan.patientId)) {
+    for (const task of created) task.formData = { ...(task.formData || {}), annualFlowVersion: 2 };
+  }
   return created;
 }
 
@@ -373,7 +376,7 @@ async function syncAnnualPlanFollowUps(plan) {
       // 优先保留已执行，其次保留已审核记录；相同排期的待审副本直接清理。
       const keep = matches.find(item => item.status === 'completed') || matches.find(item => item.aiStatus === 'approved') || matches[0];
       if (require('../../../shared/annualNutrition.cjs').isTask(keep)) continue;
-      const continuedInPlace = require('./annualFlowPilot').enabled(plan.patientId) && keep.status === 'in_progress' && keep.progressRecords?.length
+      const continuedInPlace = require('./annualFlowPilot').enabledForTask(keep) && keep.status === 'in_progress' && keep.progressRecords?.length
         && keep.nextFollowUpDate && +new Date(keep.date) === +new Date(keep.nextFollowUpDate);
       if (!row.sourceScheduleKey?.startsWith('health-consensus:') && !continuedInPlace) assertAmendedRowUnchanged(plan, row.sourceScheduleKey, keep.date, row.date);
       if (plan.continuitySource?.previousPlanId && ['completed', 'cancelled'].includes(keep.status)) continue;
@@ -394,7 +397,7 @@ async function syncAnnualPlanFollowUps(plan) {
         && !(keep.formData?.healthConsensus && (keep.progressRecords || []).length)) {
         keep.theme = row.theme;
         keep.content = row.content;
-        if (require('./annualFlowPilot').enabled(plan.patientId)) keep.managementIssueIds = row.managementIssueIds || [];
+        if (require('./annualFlowPilot').enabledForTask(keep)) keep.managementIssueIds = row.managementIssueIds || [];
         keep.deliveryMode = row.deliveryMode;
         keep.deliveryType = row.deliveryType;
         keep.clientVisible = row.clientVisible !== false;

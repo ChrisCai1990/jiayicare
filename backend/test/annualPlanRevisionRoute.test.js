@@ -43,8 +43,10 @@ test('顾问逐项暂存不改客户方案，确认发布后只通知一次', as
   role = 'nutritionist'; assert.equal((await call()).status, 403);
   role = 'familyDoctor'; visible = []; assert.equal((await call()).status, 403);
   visible = [patientId]; assert.equal((await call({ baseUpdatedAt: 'old' })).status, 409);
+  plan.reviewStatus = null;
   const result = await call();
   assert.equal(result.status, 200, JSON.stringify(result));
+  plan.reviewStatus = 'approved';
   assert.equal(update.changes.$set.revisionDraft.moduleData.abnormal_followup.records[0].notes, '客户希望提前电话联系');
   assert.equal(plan.moduleData.abnormal_followup.records[0].notes, undefined);
   assert.equal(plan.returnReason, '请修改复查说明');

@@ -47,7 +47,7 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     new Date(row.updatedAt || row.audited_at || row.createdAt || 0) <= new Date(preparation.screeningConfirmedAt));
   const hasGoals = Boolean((plan?.moduleData?.management_targets?.records || []).length
     || require('./annualStandardGoals').fromPlan(plan).length);
-  const missingPilotGoals = planConfirmed && require('./annualFlowPilot').enabled(id) && !hasGoals;
+  const missingPilotGoals = planConfirmed && require('./managementReviewPolicy').restored(id) && !hasGoals;
   const draftWithoutGoals = plan && !plan.pushedAt && !hasGoals;
   const step = pending.length ? 'interpretation' : !hasCurrentExam && !planReleased ? 'preparation'
     : missingPilotGoals ? 'goals' : planReleased ? 'execution' : plan ? (draftWithoutGoals ? 'goals' : 'plan')

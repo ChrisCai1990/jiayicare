@@ -12,7 +12,7 @@ const DIRECTIONS = [
 const pending = new Map()
 const pilotPending = new Map()
 function loadPilot(patientId) {
-  if (!pilotPending.has(patientId)) pilotPending.set(patientId, managementReviewAPI.get(patientId).then(result => result.restored === true).catch(() => false))
+  if (!pilotPending.has(patientId)) pilotPending.set(patientId, managementReviewAPI.get(patientId).then(result => result.annualFlowEnabled === true).catch(() => false))
   return pilotPending.get(patientId)
 }
 function load(patientId, year) {

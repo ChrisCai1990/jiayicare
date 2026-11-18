@@ -64,6 +64,20 @@ test('outside the pilot, ordinary medical progress keeps its original due date',
   const row = await saveProgress(s.args);
   assert.equal(+row.date, +original);
 });
+test('all-customer rollout leaves existing follow-ups unchanged and advances marked annual tasks', async () => {
+  const priorMode = process.env.ANNUAL_FLOW_MODE;
+  process.env.ANNUAL_FLOW_MODE = 'all';
+  try {
+    const oldTask = setup({ ...medical, patientId: '6a4ef1980f2291549b4ffd8e', date: new Date('2026-11-10T00:00:00Z') });
+    const oldDate = oldTask.get().date;
+    assert.equal(+((await saveProgress(oldTask.args)).date), +oldDate);
+    const newTask = setup({ ...medical, patientId: '6a4ef1980f2291549b4ffd8e', date: oldDate, formData: { annualFlowVersion: 2 } });
+    assert.equal(+((await saveProgress(newTask.args)).date), +new Date(newTask.args.body.nextContactAt));
+  } finally {
+    if (priorMode === undefined) delete process.env.ANNUAL_FLOW_MODE;
+    else process.env.ANNUAL_FLOW_MODE = priorMode;
+  }
+});
 test('response retry is idempotent', async () => { const s = setup(); await saveProgress(s.args); await saveProgress(s.args); assert.equal(s.get().progressRecords.length, 1); });
 test('parallel contacts cannot overwrite each other', async () => {
   const s = setup(); const results = await Promise.allSettled([saveProgress(s.args), saveProgress({ ...s.args, body: { ...s.args.body, requestId: 'request-0002' } })]);

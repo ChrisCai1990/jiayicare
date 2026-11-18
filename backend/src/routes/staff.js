@@ -2971,7 +2971,7 @@ router.post('/followups/:id/defer-to-next', staffAuth, checkPermission('followup
   try {
     const workflow = require('../utils/deferredMedicalFollowUp');
     const task = await FollowUp.findById(req.params.id).lean();
-    if (!require('../utils/annualFlowPilot').enabled(task?.patientId)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!require('../utils/annualFlowPilot').enabledForTask(task)) return res.status(404).json({ success: false, message: '该任务未进入新版年度流程' });
     if (!workflow.eligible(task)) return res.status(409).json({ success: false, message: '此任务不支持未做后续约，请使用原业务流程' });
     if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅本轮负责人可确认未做并续约' });
     let completed = task;
@@ -11040,8 +11040,8 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可补入方案' });
     const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
-    const approved = plan?.reviewStatus === 'approved' || !annualPilot && plan?.reviewStatus == null;
-    if (!plan?.pushedAt || annualPilot && !plan.confirmedAt || !approved) return res.status(409).json({ success: false, message: annualPilot ? '请先选择已审核、已发布且客户已确认的方案' : '请先选择已推送且未驳回的方案' });
+    const approved = plan?.reviewStatus === 'approved' || plan?.reviewStatus == null;
+    if (!plan?.pushedAt || !approved) return res.status(409).json({ success: false, message: '请先选择已推送且未驳回的方案' });
     const kind = String(req.body.sourceKind || ''), sourceObjectId = String(req.body.sourceId || '');
     if (!mongoose.isValidObjectId(sourceObjectId) || !['decision', 'ai_checkup'].includes(kind)) return res.status(400).json({ success: false, message: '请选择已核对来源' });
     if (!annualPilot) {

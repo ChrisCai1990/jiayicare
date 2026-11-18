@@ -99,7 +99,8 @@ test('非试点客户可将专项筛查新决定补入已推送但未确认方�
     moduleData: { medical_treatment: { records: [] } } };
   let saved;
   let sourceKey = `screening:${id()}:lung`;
-  t.mock.method(pilot, 'enabled', () => false);
+  let annualFlowEnabled = false;
+  t.mock.method(pilot, 'enabled', () => annualFlowEnabled);
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(Decision, 'findOne', () => chain({ _id: decisionId, sourceKey, title: '肺结节', direction: 'medical_treatment' }));
@@ -113,6 +114,10 @@ test('非试点客户可将专项筛查新决定补入已推送但未确认方�
   await handler(req, res);
   assert.equal(result.code, 200, JSON.stringify(result));
   assert.deepEqual(saved.medical_treatment.records[0].sourceIds, [`management_issue:${decisionId}`]);
+  annualFlowEnabled = true;
+  await handler(req, res);
+  assert.equal(result.code, 200, '已推送未确认的旧方案开放新版后仍可补入');
+  annualFlowEnabled = false;
   sourceKey = `report_item:${id()}:lung`;
   await handler(req, res);
   assert.equal(result.code, 404);

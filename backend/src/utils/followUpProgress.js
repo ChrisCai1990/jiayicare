@@ -16,7 +16,9 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   const type = body.type || task.type;
   if (!['phone', 'wechat', 'visit', 'video', 'other'].includes(type)) throw fail('沟通方式无效', 400);
   const healthDataPlan = task.formData?.healthDataPlan;
-  const annualPilot = require('./annualFlowPilot').enabled(task.patientId);
+  // Existing follow-ups keep their original date semantics when annual-flow
+  // access expands; newly generated annual tasks carry an explicit marker.
+  const annualPilot = require('./annualFlowPilot').enabledForTask(task);
   const medicalContinuation = annualPilot && require('./deferredMedicalFollowUp').eligible(task);
   const consensus = annualPilot ? task.formData?.healthConsensus : null;
   const topicOutcome = consensus ? String(body.topicOutcome || 'continue') : '';
