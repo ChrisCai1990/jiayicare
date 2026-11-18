@@ -156,7 +156,7 @@ module.exports=({getVisiblePlanPatientIds})=>{
         if(item.moveFrom) return res.status(400).json({success:false,message:'此入口仅修改或删除原事项'});
         if(removeItem && !require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
         const catalog=item.key==='personalized_followups'?await logic.templateCatalog():[];
-        ({moduleData,changes}=logic.apply(plan.moduleData,[item],source,catalog));
+        ({moduleData,changes}=logic.apply(plan.moduleData,[item],{kind:'advisor_revision',reason},catalog));
       }
       if(delivery !== undefined) {
         if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});

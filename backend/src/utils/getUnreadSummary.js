@@ -2,11 +2,11 @@ const Message = require('../models/Message');
 const PushRecord = require('../models/PushRecord');
 const Order = require('../models/Order');
 const { QuestionnaireResponse, DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
-const { visibleMessageQuery, isInboxMessage } = require('./messageInbox');
+const { visibleMessageQuery, isInboxMessage, legacyAnnualItemNoticeFilter } = require('./messageInbox');
 async function getUnreadSummary(userId) {
   const [unreadMessages, unreadPushes] = await Promise.all([
     Message.find(visibleMessageQuery(userId, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
-    PushRecord.find({ patientId: userId, readAt: null })
+    PushRecord.find({ patientId: userId, readAt: null, ...legacyAnnualItemNoticeFilter })
       .select('type questionnaireId sourceOrderId').lean(),
   ]);
   const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);

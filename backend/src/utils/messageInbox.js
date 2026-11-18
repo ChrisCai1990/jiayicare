@@ -1,5 +1,10 @@
 const { conversationRoleKeys } = require('./conversationRoles');
 
+// 旧版年度方案逐项保存产生的通知仅供后台留痕，不再占用客户收件箱和未读角标。
+const legacyAnnualItemNoticeFilter = {
+  content: { $not: /^您的年度方案中“.+”已(?:取消|修订)，点击通知查看完整方案。$/ },
+};
+
 // Inbox, unread badge and conversation threads must expose the same reviewed messages.
 function visibleMessageQuery(user, unreadOnly = false) {
   return {
@@ -23,4 +28,4 @@ function mergeInboxRecords(recent, unread) {
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
-module.exports = { visibleMessageQuery, isInboxMessage, mergeInboxRecords };
+module.exports = { visibleMessageQuery, isInboxMessage, mergeInboxRecords, legacyAnnualItemNoticeFilter };

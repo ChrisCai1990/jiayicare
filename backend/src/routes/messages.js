@@ -7,7 +7,7 @@ const { isHumanPresent } = require('../utils/chatPresence');
 const PushRecord = require('../models/PushRecord');
 const Order = require('../models/Order');
 const { QuestionnaireResponse, DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
-const { visibleMessageQuery, isInboxMessage, mergeInboxRecords } = require('../utils/messageInbox');
+const { visibleMessageQuery, isInboxMessage, mergeInboxRecords, legacyAnnualItemNoticeFilter } = require('../utils/messageInbox');
 const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { conversationRoleKeys, getConversationRole } = require('../utils/conversationRoles');
 const router = express.Router();
@@ -28,7 +28,7 @@ router.post('/:id/transcribe', auth, (req, res) => require('../utils/messageTran
 router.get('/unread-count', auth, async (req, res) => {
   const [unreadMessages, unreadPushes] = await Promise.all([
     Message.find(visibleMessageQuery(req.user._id, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
-    PushRecord.find({ patientId: req.user._id, readAt: null })
+    PushRecord.find({ patientId: req.user._id, readAt: null, ...legacyAnnualItemNoticeFilter })
       .select('type questionnaireId sourceOrderId').lean(),
   ]);
   const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);

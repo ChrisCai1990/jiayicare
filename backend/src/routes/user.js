@@ -1328,9 +1328,13 @@ router.get('/push-records', auth, async (req, res) => {
     }
     const filter = memberId && memberId !== String(req.user._id)
       ? { patientId, type: 'product' } : { patientId };
+    const inboxFilter = {
+      ...filter,
+      ...require('../utils/messageInbox').legacyAnnualItemNoticeFilter,
+    };
     const [recent, unread] = await Promise.all([
-      PushRecord.find(filter).sort({ createdAt: -1 }).limit(50).populate('staffId', 'name role title'),
-      PushRecord.find({ ...filter, $or: [{ readAt: null }, { type: 'questionnaire' }] })
+      PushRecord.find(inboxFilter).sort({ createdAt: -1 }).limit(50).populate('staffId', 'name role title'),
+      PushRecord.find({ ...inboxFilter, $or: [{ readAt: null }, { type: 'questionnaire' }] })
         .sort({ createdAt: -1 }).populate('staffId', 'name role title'),
     ]);
     const records = require('../utils/messageInbox').mergeInboxRecords(recent, unread).map(row => row.toObject ? row.toObject() : { ...row });
