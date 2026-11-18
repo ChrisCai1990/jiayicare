@@ -41,6 +41,7 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     && row.advisorCorrection?.status !== 'returned');
   const hasCurrentExam = require('./annualReviewEligibility').eligibility(currentReports, now, { lookbackMonths: 12 }).allowed;
   const planConfirmed = Boolean(plan?.confirmedAt);
+  const planReleased = Boolean(plan?.pushedAt || planConfirmed);
   const preparation = preparations.find(row => String(row.patientId) === id && Number(row.year) === Number(year));
   const screeningConfirmed = Boolean(preparation?.screeningConfirmedAt) && currentReports.every(row =>
     new Date(row.updatedAt || row.audited_at || row.createdAt || 0) <= new Date(preparation.screeningConfirmedAt));
@@ -48,8 +49,8 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     || require('./annualStandardGoals').fromPlan(plan).length);
   const missingPilotGoals = planConfirmed && require('./annualFlowPilot').enabled(id) && !hasGoals;
   const draftWithoutGoals = plan && !plan.pushedAt && !hasGoals;
-  const step = pending.length ? 'interpretation' : !hasCurrentExam && !plan?.pushedAt ? 'preparation'
-    : missingPilotGoals ? 'goals' : planConfirmed ? 'execution' : plan?.pushedAt ? 'plan' : plan ? (draftWithoutGoals ? 'goals' : 'plan')
+  const step = pending.length ? 'interpretation' : !hasCurrentExam && !planReleased ? 'preparation'
+    : missingPilotGoals ? 'goals' : planReleased ? 'execution' : plan ? (draftWithoutGoals ? 'goals' : 'plan')
       : screeningConfirmed ? 'goals' : 'screening';
   const label = { preparation: '年度资料待准备', interpretation: '年度报告待解读', screening: '当前筛查待核对',
     goals: '年度目标待确认', plan: plan?.pushedAt ? '年度方案待确认' : '年度方案待审核', execution: '年度管理执行与随访' }[step];
@@ -58,8 +59,8 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
       : item[0] === 'interpretation' ? pending.length ? 'pending' : currentReports.length ? 'complete' : 'waiting'
       : item[0] === 'screening' ? screeningConfirmed ? 'complete' : step === 'screening' ? 'active' : 'available'
       : item[0] === 'goals' ? hasGoals ? 'complete' : step === 'goals' ? 'active' : 'available'
-      : item[0] === 'plan' ? planConfirmed ? 'complete' : plan?.pushedAt ? 'waiting' : plan ? 'pending' : 'waiting'
-      : item[0] === 'execution' ? planConfirmed ? 'active' : 'waiting'
+      : item[0] === 'plan' ? planReleased ? 'complete' : plan ? 'pending' : 'waiting'
+      : item[0] === 'execution' ? planReleased ? 'active' : 'waiting'
       : item[0] === 'assessment' ? planConfirmed ? 'available' : 'waiting'
       : item[0] === step ? 'active' : 'available' }));
   const createdAt = pending.length ? pending.reduce((date, row) => {
@@ -70,7 +71,7 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     patientName: patient.name || '未知', year, planId: plan?._id || null, step, steps: details,
     label, summary: pending.length ? `${year}年度 · ${pending.length}份报告待解读，完成后继续筛查和方案核对`
       : step === 'preparation' ? `${year}年度 · 核对完整体检资料及审核状态`
-      : step === 'execution' ? `${year}年度 · 方案已确认，查看随访及专业服务进度`
+      : step === 'execution' ? `${year}年度 · 方案已推送${planConfirmed ? '' : '、待客户确认'}，查看随访及专业服务进度`
       : `${year}年度 · 从当前步骤继续办理`,
     priority: 2, createdAt, overdue: step !== 'execution' && step !== 'preparation' && now - new Date(createdAt) > 3 * DAY,
     link: `/patients/${id}/annual-workflow?year=${year}` };

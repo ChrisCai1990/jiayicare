@@ -42,6 +42,16 @@ test('服务起始年与当年已发布方案不同，流程使用正式方案�
   assert.equal(workflowYear('p1', access, at, [{ patientId: 'p1', year: 2026 }]), 2025);
 });
 
+test('方案已推送并生成随访时进入执行，客户确认仍单独显示待完成', () => {
+  const pushed = { _id: 'pushed', patientId: 'p1', year: 2026, pushedAt: now, confirmedAt: null, moduleData: {} };
+  const interpreted = { ...report, advisorInterpretationConfirmedAt: now };
+  const flow = project(patient, 2026, [pushed], [interpreted], now);
+  assert.equal(flow.step, 'execution');
+  assert.equal(flow.steps.find(row => row.key === 'plan').status, 'complete');
+  assert.equal(flow.steps.find(row => row.key === 'execution').status, 'active');
+  assert.match(flow.summary, /待客户确认/);
+});
+
 test('已有确认方案保留原件；新报告先解读，之后进入目标或执行', t => {
   t.mock.method(pilot, 'enabled', () => true);
   const plan = { _id: 'plan1', patientId: 'p1', year: 2026, confirmedAt: now, pushedAt: now,
