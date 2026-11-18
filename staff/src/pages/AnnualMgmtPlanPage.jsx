@@ -1098,7 +1098,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const renderPlanAction = action => {
     const entry = visibleModuleEntries.find(item => item.key === action.key)
     if (annualPilot && pushedAt && canEdit && ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment', 'annual_checkup'].includes(action.key) && plansByType[planType])
-      return <AnnualPlanRevision key={`${action.key}:${action.index}`} pilot inlineItem={{ key: action.key, target: action.index }} patientId={id} plan={plansByType[planType]} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
+      return <AnnualPlanRevision key={`${action.key}:${action.index}`} pilot inlineItem={{ key: action.key, target: action.index }} defaultGoal={goalForAction(action)} patientId={id} plan={plansByType[planType]} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
     if (annualPilot && pushedAt) return <div key={`${action.key}:${action.index}`} style={{ display: 'grid', gap: 5, paddingTop: 8, fontSize: 13, color: '#52675D' }}>
       {action.key === 'health_consensus' && <>
         <div>本次主题：{action.record.question || action.record.topicPath?.[0] || '待确认'}</div>
@@ -1273,7 +1273,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {annualPilot && patientMode && <div style={{ margin: '-12px 0 20px', fontSize: 12, color: '#52675D' }}>
-        {pushedAt ? '保存当前项会更新已推送方案并通知客户；客户确认状态以上方标记为准。就医、检查等事项是否完成，请在服务执行中记录。' : '逐项保存后，点击“推送并分发”完成顾问确认；客户确认状态会在上方显示。'}
+        {confirmedAt ? '客户已确认方案，方案建立环节已完成。保存当前项是局部修订；原执行安排核对及就医、检查等服务完成情况分别在对应任务中记录。'
+          : pushedAt ? '方案已推送，等待客户确认。保存当前项会更新方案并通知客户；服务完成情况在执行任务中记录。'
+            : '逐项保存后，点击“推送并分发”完成顾问确认；客户确认状态会在上方显示。'}
       </div>}
 
       {patientMode && (searchParams.get('reviewAnnualInputs') === '1' || searchParams.has('reviewDraftId')) && (

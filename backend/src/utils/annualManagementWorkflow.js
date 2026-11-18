@@ -36,9 +36,10 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
   const preparation = preparations.find(row => String(row.patientId) === id && Number(row.year) === Number(year));
   const screeningConfirmed = Boolean(preparation?.screeningConfirmedAt) && currentReports.every(row =>
     new Date(row.updatedAt || row.audited_at || row.createdAt || 0) <= new Date(preparation.screeningConfirmedAt));
-  const missingPilotGoals = planConfirmed && require('./annualFlowPilot').enabled(id)
-    && !(plan.moduleData?.management_targets?.records || []).length;
-  const draftWithoutGoals = plan && !plan.pushedAt && !(plan.moduleData?.management_targets?.records || []).length;
+  const hasGoals = Boolean((plan?.moduleData?.management_targets?.records || []).length
+    || require('./annualStandardGoals').fromPlan(plan).length);
+  const missingPilotGoals = planConfirmed && require('./annualFlowPilot').enabled(id) && !hasGoals;
+  const draftWithoutGoals = plan && !plan.pushedAt && !hasGoals;
   const step = pending.length ? 'interpretation' : !hasCurrentExam && !plan?.pushedAt ? 'preparation'
     : missingPilotGoals ? 'goals' : planConfirmed ? 'execution' : plan?.pushedAt ? 'plan' : plan ? (draftWithoutGoals ? 'goals' : 'plan')
       : screeningConfirmed ? 'goals' : 'screening';
@@ -48,7 +49,7 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     status: item[0] === 'preparation' ? hasCurrentExam ? 'complete' : step === 'preparation' ? 'active' : 'waiting'
       : item[0] === 'interpretation' ? pending.length ? 'pending' : currentReports.length ? 'complete' : 'waiting'
       : item[0] === 'screening' ? screeningConfirmed ? 'complete' : step === 'screening' ? 'active' : 'available'
-      : item[0] === 'goals' ? (plan?.moduleData?.management_targets?.records || []).length ? 'complete' : step === 'goals' ? 'active' : 'available'
+      : item[0] === 'goals' ? hasGoals ? 'complete' : step === 'goals' ? 'active' : 'available'
       : item[0] === 'plan' ? planConfirmed ? 'complete' : plan?.pushedAt ? 'waiting' : plan ? 'pending' : 'waiting'
       : item[0] === 'execution' ? planConfirmed ? 'active' : 'waiting'
       : item[0] === 'assessment' ? planConfirmed ? 'available' : 'waiting'
@@ -77,7 +78,7 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '') {
   if (!users.length) return [];
   const [plans, packages, preparations] = await Promise.all([
     (deps.AnnualPlan || AnnualPlan).find({ patientId: { $in: users.map(user => user._id) } })
-      .select('patientId year createdAt updatedAt pushedAt confirmedAt formalizedAt reviewStatus moduleData.management_targets.records').lean(),
+      .select('patientId year createdAt updatedAt pushedAt confirmedAt formalizedAt reviewStatus moduleData.management_targets.records moduleData.medical_treatment moduleData.specialist_collab moduleData.checkup_completion moduleData.abnormal_followup moduleData.vaccine moduleData.annual_checkup').lean(),
     (deps.ServicePackage || ServicePackage).find({ 'configuration.membershipTier': 'annual' }).select('name clientBrand').lean(),
     (deps.AnnualPlanPreparation || AnnualPlanPreparation).find({ patientId: { $in: users.map(user => user._id) } })
       .select('patientId year screeningConfirmedAt').lean(),
@@ -96,7 +97,9 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '') {
   const reports = await (deps.MedicalReport || MedicalReport).find({ user: { $in: eligible.map(item => item.user._id) },
     audit_status: 'audited', archiveOnly: { $ne: true } })
     .select('user _id title type status documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt audited_at updatedAt createdAt').lean();
-  return eligible.map(({ user, year }) => project(user, year, plans, reports, now, preparations));
+  // A confirmed plan is already past the advisor's plan-building task. Execution has its own tasks.
+  return eligible.map(({ user, year }) => project(user, year, plans, reports, now, preparations))
+    .filter(flow => flow.step !== 'execution');
 }
 
 module.exports = { load, project, stepLink, steps };

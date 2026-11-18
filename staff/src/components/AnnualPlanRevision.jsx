@@ -5,9 +5,9 @@ const LABELS = { medical_treatment: '就医安排', specialist_collab: '多学�
 const titleOf = row => row?.items || row?.name || row?.purpose || row?.department || (row?.institution !== undefined ? '年度体检' : '未命名事项')
 const originalReason = row => String(row?.basisSummary || row?.reason || '').split('\n处理建议：')[0]
 const originalAdvice = row => row?.personalizedAdvice || row?.personalization || String(row?.reason || '').split('\n处理建议：')[1] || ''
-const draftOf = (row, assignedManagerId = '') => row ? { title: titleOf(row), reason: originalReason(row), advice: originalAdvice(row), notes: row.notes || '', date: row.visit_time || row.plan_time || row.time || row.date || '', timingReason: row.timingReason || '', hospital: row.hospital || row.institution || '', campus: row.campus || '', department: row.department || '', expert: row.expert || '', followUpStaff: row.followUpStaff || assignedManagerId, bookingRequired: row.bookingRequired === true, serviceMode: row.serviceMode || 'reminder', serviceType: row.serviceType || '', managedServiceType: row.managedServiceType || '', institution: row.institution || '', focus: row.focus || '' } : { title: '', reason: '', advice: '', notes: '', date: '', timingReason: '', hospital: '', campus: '', department: '', expert: '', followUpStaff: assignedManagerId, bookingRequired: false, serviceMode: 'reminder', serviceType: '', managedServiceType: '', institution: '', focus: '' }
+const draftOf = (row, assignedManagerId = '', defaultGoal = '') => row ? { title: titleOf(row), goal: row.goal || defaultGoal, reason: originalReason(row), advice: originalAdvice(row), notes: row.notes || '', date: row.visit_time || row.plan_time || row.time || row.date || '', timingReason: row.timingReason || '', hospital: row.hospital || row.institution || '', campus: row.campus || '', department: row.department || '', expert: row.expert || '', followUpStaff: row.followUpStaff || assignedManagerId, bookingRequired: row.bookingRequired === true, serviceMode: row.serviceMode || 'reminder', serviceType: row.serviceType || '', managedServiceType: row.managedServiceType || '', institution: row.institution || '', focus: row.focus || '' } : { title: '', goal: defaultGoal, reason: '', advice: '', notes: '', date: '', timingReason: '', hospital: '', campus: '', department: '', expert: '', followUpStaff: assignedManagerId, bookingRequired: false, serviceMode: 'reminder', serviceType: '', managedServiceType: '', institution: '', focus: '' }
 
-export default function AnnualPlanRevision({ patientId, plan, pilot = false, inlineItem, staffList = [], assignedManagerId = '', onSaved, toast }) {
+export default function AnnualPlanRevision({ patientId, plan, pilot = false, inlineItem, defaultGoal = '', staffList = [], assignedManagerId = '', onSaved, toast }) {
   const editorRef = useRef(null)
   const options = useMemo(() => [
     ...Object.entries(LABELS).flatMap(([key, label]) =>
@@ -17,14 +17,14 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
   ], [plan, pilot])
   const inlineSelection = inlineItem ? `${inlineItem.key}:${inlineItem.target}` : ''
   const [selection, setSelection] = useState(inlineSelection)
-  const [draft, setDraft] = useState(() => draftOf(options.find(option => `${option.key}:${option.target}` === inlineSelection)?.row, assignedManagerId))
+  const [draft, setDraft] = useState(() => draftOf(options.find(option => `${option.key}:${option.target}` === inlineSelection)?.row, assignedManagerId, defaultGoal))
   const [saving, setSaving] = useState(false)
   const selected = options.find(option => `${option.key}:${option.target}` === selection)
   const medicalService = pilot && ['medical_treatment', 'specialist_collab', 'checkup_completion', 'abnormal_followup', 'annual_checkup'].includes(selected?.key)
   const choose = value => {
     setSelection(value)
     const next = options.find(option => `${option.key}:${option.target}` === value)
-    setDraft(draftOf(next?.row, assignedManagerId))
+    setDraft(draftOf(next?.row, assignedManagerId, defaultGoal))
   }
   useEffect(() => {
     if (inlineItem) return
@@ -50,6 +50,7 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [inlineItem])
   const save = async () => {
+    if (pilot && (!draft.goal.trim() || draft.goal.trim().length > 240)) { toast('请填写不超过240字的本项目标'); return }
     if (!selected || (selected.key !== 'annual_checkup' && (!draft.title.trim() || !draft.reason.trim() || (!medicalService && !draft.advice.trim())))) {
       toast('请填写事项名称和设置依据'); return
     }
@@ -64,10 +65,10 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
     try {
       const res = await staffAPI.reviseAnnualPlan(patientId, {
         planId: plan._id, baseUpdatedAt: plan.updatedAt, reason: draft.notes.trim() || '健康顾问调整年度方案事项',
-        item: selected.key === 'annual_checkup' ? { key: 'annual_checkup', date: draft.date, institution: draft.institution.trim(), focus: draft.focus.trim(), notes: draft.notes.trim(), delivery: {
+        item: selected.key === 'annual_checkup' ? { key: 'annual_checkup', goal: draft.goal.trim(), date: draft.date, institution: draft.institution.trim(), focus: draft.focus.trim(), notes: draft.notes.trim(), delivery: {
           hospital: draft.institution, campus: draft.campus, department: '', expert: draft.expert, followUpStaff: draft.followUpStaff,
           bookingRequired: draft.bookingRequired, serviceMode: draft.serviceMode, serviceType: draft.serviceType, managedServiceType: draft.managedServiceType,
-        } } : { key: selected.key, target: selected.target, title: draft.title.trim(), reason: draft.reason.trim(), advice: draft.advice.trim(), notes: draft.notes.trim(),
+        } } : { key: selected.key, target: selected.target, title: draft.title.trim(), goal: draft.goal.trim(), reason: draft.reason.trim(), advice: draft.advice.trim(), notes: draft.notes.trim(),
           ...(medicalService ? { date: draft.date } : draft.date !== originalDate ? draft.date ? { date: draft.date, timingReason: draft.timingReason.trim() } : { datePending: true, timingReason: draft.timingReason.trim() } : {}) ,
           ...(medicalService ? { delivery: { hospital: draft.hospital, campus: draft.campus, department: selected.key === 'medical_treatment' ? draft.title : draft.department, expert: draft.expert,
             followUpStaff: draft.followUpStaff, bookingRequired: draft.bookingRequired, serviceMode: draft.serviceMode, serviceType: draft.serviceType, managedServiceType: draft.managedServiceType } } : {}) },
@@ -111,6 +112,7 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
     {!inlineItem && <p style={{ fontSize: 13, color: '#52675D' }}>修改后保存。已派发任务的实际排期另行核对。</p>}
     {!inlineItem && <label>方案事项<select className="form-input" value={selection} onChange={event => choose(event.target.value)} style={{ display: 'block', width: '100%', marginTop: 5 }}><option value="">请选择</option>{options.map(option => <option key={`${option.key}:${option.target}`} value={`${option.key}:${option.target}`}>{option.label} · {titleOf(option.row)}</option>)}</select></label>}
     {selected && <div style={{ display: 'grid', gap: 9, marginTop: 10 }}>
+      {pilot && <label>本项目标<textarea className="form-input" rows={2} maxLength={240} value={draft.goal} onChange={event => setDraft({ ...draft, goal: event.target.value })} placeholder="核对并调整系统带出的目标" /></label>}
       {selected.key === 'annual_checkup' ? <>
         <label>计划体检日期<input className="form-input" type="date" value={draft.date} onChange={event => setDraft({ ...draft, date: event.target.value })} /></label>
         <label>体检机构<input className="form-input" value={draft.institution} onChange={event => setDraft({ ...draft, institution: event.target.value })} /></label>

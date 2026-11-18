@@ -28,7 +28,7 @@ test('顾问只修订本人客户的一项，保留日期和已发布状态并�
   const server = app.listen(0);
   t.after(() => { server.close(); paths.forEach((p, i) => { if (prior[i]) require.cache[p] = prior[i]; else delete require.cache[p]; }); delete require.cache[routePath]; });
   const body = { planId, baseUpdatedAt: plan.updatedAt.toISOString(), reason: '按客户意见调整描述',
-    item: { key: 'abnormal_followup', target: 0, title: '尿酸复查', reason: '顾问核对后的依据', advice: '按原定日期复查', notes: '客户希望提前电话联系' } };
+    item: { key: 'abnormal_followup', target: 0, title: '尿酸复查', goal: '完成复查，明确后续管理措施', reason: '顾问核对后的依据', advice: '按原定日期复查', notes: '客户希望提前电话联系' } };
   const call = async patch => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}/${patientId}/annual-plan-revision`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, ...patch }) });
@@ -41,6 +41,7 @@ test('顾问只修订本人客户的一项，保留日期和已发布状态并�
   assert.equal(result.status, 200, JSON.stringify(result));
   assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].time, '2027-01-26');
   assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].notes, '客户希望提前电话联系');
+  assert.equal(update.changes.$set.moduleData.abnormal_followup.records[0].goal, '完成复查，明确后续管理措施');
   assert.equal(update.changes.$push.supplementRevisions.executionReview.status, 'pending');
   assert.equal(update.changes.$set.returnReason, '');
   assert.equal(notification.sourceAnnualPlanId, planId);
@@ -48,10 +49,11 @@ test('顾问只修订本人客户的一项，保留日期和已发布状态并�
   const oldMode = process.env.MANAGEMENT_REVIEW_MODE, oldIds = process.env.MANAGEMENT_REVIEW_PATIENT_IDS;
   process.env.MANAGEMENT_REVIEW_MODE = 'phase_assessment'; process.env.MANAGEMENT_REVIEW_PATIENT_IDS = patientId;
   t.after(() => { if (oldMode === undefined) delete process.env.MANAGEMENT_REVIEW_MODE; else process.env.MANAGEMENT_REVIEW_MODE = oldMode; if (oldIds === undefined) delete process.env.MANAGEMENT_REVIEW_PATIENT_IDS; else process.env.MANAGEMENT_REVIEW_PATIENT_IDS = oldIds; });
-  const checkup = await call({ item: { key: 'annual_checkup', date: '2027-05-02', institution: '新体检机构', focus: '核对重点', notes: '需确认陪检', delivery: { hospital: '新体检机构', campus: '东院区', department: '', expert: '', followUpStaff: managerId, bookingRequired: true, serviceMode: 'managed', serviceType: '', managedServiceType: 'checkup' } } });
+  const checkup = await call({ item: { key: 'annual_checkup', goal: '完成年度体检并核对重点项目', date: '2027-05-02', institution: '新体检机构', focus: '核对重点', notes: '需确认陪检', delivery: { hospital: '新体检机构', campus: '东院区', department: '', expert: '', followUpStaff: managerId, bookingRequired: true, serviceMode: 'managed', serviceType: '', managedServiceType: 'checkup' } } });
   assert.equal(checkup.status, 200, JSON.stringify(checkup));
   assert.equal(update.changes.$set.moduleData.annual_checkup.campus, '东院区');
   assert.equal(update.changes.$set.moduleData.annual_checkup.notes, '需确认陪检');
+  assert.equal(update.changes.$set.moduleData.annual_checkup.goal, '完成年度体检并核对重点项目');
   assert.equal(update.changes.$set.moduleData.annual_checkup.managedServiceType, 'checkup');
   const relocated = await call({ item: { ...body.item, date: '2027-02-26', delivery: { hospital: '浙江省人民医院', campus: '朝晖院区', department: '风湿免疫科', expert: '李医生', followUpStaff: managerId, bookingRequired: true, serviceMode: 'single', serviceType: 'escort_exam', managedServiceType: '' } } });
   assert.equal(relocated.status, 200, JSON.stringify(relocated));

@@ -92,11 +92,13 @@ module.exports=({getVisiblePlanPatientIds})=>{
         const date=String(input.date||'').trim();
         const institution=String(input.institution||'').trim();
         const focus=String(input.focus||'').trim();
+        const goal=String(input.goal||'').trim();
         const notes=String(input.notes||'').trim();
         if(date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)) return res.status(400).json({success:false,message:'体检日期格式无效'});
         if(institution.length>200 || focus.length>2000 || notes.length>1000) return res.status(400).json({success:false,message:'体检机构、重点关注或备注内容过长'});
-        const after={...before,date,institution,focus,notes};
-        item={key:'annual_checkup',target:0,title:'年度体检',date,institution,focus};
+        if(input.goal!==undefined && (!goal || goal.length>240)) return res.status(400).json({success:false,message:'请填写不超过240字的本项目标'});
+        const after={...before,date,institution,focus,notes,...(input.goal!==undefined?{goal}:{})};
+        item={key:'annual_checkup',target:0,title:'年度体检',date,institution,focus,goal};
         moduleData={...plan.moduleData,annual_checkup:after};
         changes=[{key:'annual_checkup',index:0,before,after}];
       } else if(directServiceEdit) {
@@ -106,18 +108,19 @@ module.exports=({getVisiblePlanPatientIds})=>{
         if(!Number.isInteger(target) || target<0 || !before) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
         const titleField=key==='medical_treatment'?'department':key==='specialist_collab'?'purpose':'items';
         const dateField=key==='medical_treatment'?'visit_time':key==='specialist_collab'?'plan_time':'time';
-        const title=String(input.title||'').trim(),date=String(input.date||'').trim(),basis=String(input.reason||'').trim(),notes=String(input.notes||'').trim();
+        const title=String(input.title||'').trim(),date=String(input.date||'').trim(),basis=String(input.reason||'').trim(),notes=String(input.notes||'').trim(),goal=String(input.goal||'').trim();
         if(!title || title.length>200) return res.status(400).json({success:false,message:'请填写就诊科室或检查事项'});
         if(!basis || basis.length>4000) return res.status(400).json({success:false,message:'请填写设置依据（不超过4000字）'});
         if(notes.length>1000) return res.status(400).json({success:false,message:'备注不能超过1000字'});
+        if(input.goal!==undefined && (!goal || goal.length>240)) return res.status(400).json({success:false,message:'请填写不超过240字的本项目标'});
         if(date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10)!==date)) return res.status(400).json({success:false,message:'建议日期格式无效'});
-        const after={...before,[titleField]:title,[dateField]:date,notes};
+        const after={...before,[titleField]:title,[dateField]:date,notes,...(input.goal!==undefined?{goal}:{})};
         const originalAdvice=before.personalizedAdvice || before.personalization || String(before.reason||'').split('\n处理建议：')[1] || '';
         after.basisSummary=basis;
         after.reason=originalAdvice?`${basis}\n处理建议：${originalAdvice}`:basis;
         if(date!==String(before[dateField]||'')) after.timingReason='';
         moduleData={...plan.moduleData,[key]:{...plan.moduleData[key],records:plan.moduleData[key].records.map((row,index)=>index===target?after:row)}};
-        item={key,target,title,date,basis,delivery};
+        item={key,target,title,date,basis,goal,delivery};
         changes=[{key,index:target,before,after}];
       } else if(removeItem && pilot) {
         const key=req.body.item?.key,target=req.body.item?.target;

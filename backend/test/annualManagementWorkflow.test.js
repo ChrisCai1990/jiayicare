@@ -47,8 +47,17 @@ test('已有确认方案保留原件；新报告先解读，之后进入目标�
   assert.equal(execution.overdue, false);
   assert.equal(execution.planId, 'plan1');
 });
+test('确认方案已有标准事项目标时不再提示年度目标待确认', t => {
+  t.mock.method(pilot, 'enabled', () => true);
+  const plan = { _id: 'plan1', patientId: 'p1', year: 2026, confirmedAt: now, pushedAt: now,
+    moduleData: { management_targets: { records: [] }, abnormal_followup: { records: [{ items: '肌酐复查', time: '2026-11-28' }] } } };
+  const flow = project(patient, 2026, [plan], [{ ...report, advisorInterpretationConfirmedAt: now }], now);
+  assert.equal(flow.step, 'execution');
+  assert.equal(flow.steps.find(row => row.key === 'goals').status, 'complete');
+});
 
 test('只给所属顾问的有效年度客户投影一张流程卡', async () => {
+  let planRows = [], reportRows = [report];
   const users = { find: filter => {
     assert.equal(filter.assignedFamilyDoctor, 'advisor');
     return { select: () => ({ lean: async () => [
@@ -58,15 +67,19 @@ test('只给所属顾问的有效年度客户投影一张流程卡', async () =>
   } };
   const deps = {
     User: users,
-    AnnualPlan: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+    AnnualPlan: { find: () => ({ select: () => ({ lean: async () => planRows }) }) },
     ServicePackage: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
     AnnualPlanPreparation: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
-    MedicalReport: { find: () => ({ select: () => ({ lean: async () => [report] }) }) },
+    MedicalReport: { find: () => ({ select: () => ({ lean: async () => reportRows }) }) },
     resolveServiceAccess: async () => ({ active: true, startDate: '2026-06-01' }),
   };
   const rows = await load({ _id: 'advisor', role: 'familyDoctor' }, now, deps);
   assert.deepEqual(rows.map(row => row.patientId), ['p1']);
   assert.equal(rows[0].link, '/patients/p1/annual-workflow?year=2026');
+  planRows = [{ _id: 'plan1', patientId: 'p1', year: 2026, pushedAt: now, confirmedAt: now,
+    moduleData: { abnormal_followup: { records: [{ items: '肌酐复查' }] } } }];
+  reportRows = [{ ...report, advisorInterpretationConfirmedAt: now }];
+  assert.deepEqual(await load({ _id: 'advisor', role: 'familyDoctor' }, now, deps), []);
 });
 
 test('筛查核对完成必须由顾问留结论，其他阶段不得重复确认', async t => {

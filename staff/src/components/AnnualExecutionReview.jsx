@@ -57,7 +57,7 @@ export default function AnnualExecutionReview({ patientId, planId, planVersion, 
     {error && <div role="alert">{error} <button className="btn btn-secondary btn-sm" disabled={busy} onClick={reload}>刷新核对</button></div>}
     {message && <p role="status">{message}</p>}
     {pending.length > 0 && <>
-      <p style={{ fontSize: 13, color: '#52675D' }}>这里比对的是修订前的已发布方案与新方案，以及原随访和服务任务；不是与 AI 建议核对。同一问题若只是日期调整，请在<a href={`/patients/${patientId}?tab=followups`}>原执行流程</a>续办原事项并核对新日期，避免重复建一条随访。已完成记录保留为历史。</p>
+      <p style={{ fontSize: 13, color: '#52675D' }}>方案已保存；这项待办只核对修订对原执行任务的影响，不代表方案未完成。记录下方核对结论后，这项待办会退出工作台。这里比对的是修订前的已发布方案与新方案，以及原随访和服务任务；不是与 AI 建议核对。同一问题若只是日期调整，请在<a href={`/patients/${patientId}?tab=followups`}>原执行流程</a>续办原事项并核对新日期，避免重复建一条随访。已完成记录保留为历史。</p>
       {carriedList}
       <details style={{ margin: '12px 0' }}><summary style={{ cursor: 'pointer', fontWeight: 600 }}>查看方案变更明细（{pending.reduce((count, review) => count + review.changes.length, 0)}项）</summary><div style={{ display: 'grid', gap: 8, margin: '12px 0' }}>{pending.flatMap(review => review.changes.map((change, index) =>
         <div key={`${review.id}:${index}`} style={{ padding: '9px 12px', border: '1px solid #E8E3D7', borderRadius: 8, background: '#FFFCF6', fontSize: 13 }}>

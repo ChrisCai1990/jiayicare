@@ -29,6 +29,10 @@ function clean(items) {
       if (typeof item.notes !== 'string' || item.notes.length > 1000) throw Error('备注不能超过1000字');
       out.notes = item.notes.trim();
     }
+    if (item.goal !== undefined) {
+      if (typeof item.goal !== 'string' || !item.goal.trim() || item.goal.trim().length > 240) throw Error('请填写不超过240字的本项目标');
+      out.goal = item.goal.trim();
+    }
     if (!out.title || !out.reason || !out.advice) throw Error('请填写事项、依据和处理建议');
     for (const key of ['precautions','customerAction','frequency']) {
       if (!Object.hasOwn(item,key)) continue;
@@ -85,6 +89,7 @@ function apply(base, items, source, catalog=[]) {
     const before=index>=0?rows[index]:null;
     const after={...before,[fields[item.key]]:item.title,reason:`${item.reason}\n处理建议：${item.advice}`,personalizedAdvice:item.advice,
       basisSummary:item.reason,reviewAmendmentSource:source};
+    if (Object.hasOwn(item, 'goal')) after.goal = item.goal;
     if (Object.hasOwn(item, 'notes')) after.notes = item.notes;
     for (const key of ['precautions','customerAction','frequency']) {
       if (Object.hasOwn(item,key)) after[key]=item[key];

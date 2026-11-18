@@ -22,4 +22,7 @@ test('published plan without explicit goals still supplies standard goals for ph
   const reviewed = goalReviews([plan], [], { start: '2026-10-01', end: '2026-12-31' });
   assert.equal(reviewed.length, 2);
   assert.equal(reviewed[0].goal, defaults[0].goal);
+  plan.moduleData.checkup_completion.records[0].goal = '完成眼底照相并明确复查安排';
+  assert.equal(goalReviews([plan], [], { start: '2026-10-01', end: '2026-12-31' })[1].goal,
+    '完成眼底照相并明确复查安排');
 });

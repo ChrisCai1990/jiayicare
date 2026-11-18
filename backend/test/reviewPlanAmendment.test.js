@@ -17,6 +17,12 @@ test('顾问可指定别名事项更新；新项独立追加并留前后快照',
  assert.equal(apply(base,[{...item,title:'另一项目'}],{}).moduleData.abnormal_followup.records.length,2);
  assert.throws(()=>apply(base,[{...item,target:4}],{}));
 });
+test('单项修订保存目标，同时拒绝空目标',()=>{
+ const base={abnormal_followup:{records:[{items:'尿酸复查',reason:'原依据'}]}};
+ const saved=apply(base,[{...item,title:'尿酸复查',target:0,goal:'按计划完成复查，明确变化'}],{});
+ assert.equal(saved.moduleData.abnormal_followup.records[0].goal,'按计划完成复查，明确变化');
+ assert.throws(()=>clean([{...item,goal:'  '}]),/本项目标/);
+});
 test('拒绝缺依据、错误日期、越权模块和隐藏注入字段',()=>{
  for(const edit of [{reason:''},{key:'__proto__'},{date:'2026-02-30',timingReason:'test'},{date:'2026-11-01'}])assert.throws(()=>clean([{...item,...edit}]));
  assert.equal(clean([{...item,standardPlanName:'篡改模板',followUpStaff:'任意'}])[0].followUpStaff,undefined);
