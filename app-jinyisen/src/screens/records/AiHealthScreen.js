@@ -15,7 +15,6 @@ const TABS = ['AI健康分析', 'AI风险评估'];
 function buildSummarySpeech(sections) {
   const s = sections || {};
   const parts = [];
-  if (s.lifestyle_assessment?.summary) parts.push(`生活方式评估：${s.lifestyle_assessment.summary}`);
   if (s.medical_priority?.items?.length) {
     parts.push('重点关注医疗问题：' + s.medical_priority.items.map(i => `${i.name}，${i.action || ''}`).join('；'));
   }
@@ -78,7 +77,6 @@ function ListLines({ items, color }) {
 
 function HealthSummaryView({ sections }) {
   const s = sections || {};
-  const lifestyle = s.lifestyle_assessment || {};
   const medPriority = s.medical_priority || {};
   const tumor = s.tumor_risk || {};
   const cardio = s.cardiovascular_risk || {};
@@ -150,17 +148,6 @@ function HealthSummaryView({ sections }) {
         })}
       </SectionCard>
 
-      <SectionCard icon="🌿" title="生活方式评估">
-        {(lifestyle.items || []).map((it, i) => (
-          <View key={i} style={styles.lifestyleItem}>
-            <Text style={styles.lifestyleDim}>{it.dimension}</Text>
-            {!!it.finding && <Text style={styles.lineText}>{it.finding}</Text>}
-            {!!it.risk && <Text style={[styles.lineText, { color: colors.warning }]}>风险：{it.risk}</Text>}
-            {!!it.suggestion && <Text style={[styles.lineText, { color: colors.primary }]}>建议：{it.suggestion}</Text>}
-          </View>
-        ))}
-        {!!lifestyle.summary && <Text style={styles.summaryBox}>{lifestyle.summary}</Text>}
-      </SectionCard>
     </View>
   );
 }
@@ -209,7 +196,7 @@ export default function AiHealthScreen({ navigation }) {
   const [summaryPending, setSummaryPending] = useState(false);
   const [riskPending, setRiskPending] = useState(false);
   // 健康分析两部分各自的审核状态：5维度(医疗,家医审)/生活方式(营养师审)
-  const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, nutritionApproved: false, hasLifestyle: false, isSelfService: false });
+  const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, isSelfService: false });
   const [message, setMessage] = useState('');
   const [speaking, setSpeaking] = useState(false);
 
@@ -260,8 +247,8 @@ export default function AiHealthScreen({ navigation }) {
   const riskHasData = Array.isArray(riskData?.dimensions) && riskData.dimensions.length > 0;
   const curHasData = tab === TABS[0] ? summaryHasData : riskHasData;
   const curPending = tab === TABS[0] ? summaryPending : riskPending;
-  // 健康分析：只要任一部分（5维度/生活方式）已被审核，就锁定生成（客户端生成是整份覆盖，会毁掉已审部分）
-  const summaryLocked = hasDoctor && !reviewStatus.isSelfService && (reviewStatus.doctorApproved || reviewStatus.nutritionApproved);
+  // 五维分析已审核后不允许客户重新生成覆盖。
+  const summaryLocked = hasDoctor && !reviewStatus.isSelfService && reviewStatus.doctorApproved;
   const riskLocked = hasDoctor && riskHasData && !riskPending; // 风险评估单一审核，已审即锁
   const curLocked = tab === TABS[0] ? summaryLocked : riskLocked;
 
@@ -340,14 +327,6 @@ export default function AiHealthScreen({ navigation }) {
                   医疗分析（5维度）：{reviewStatus.doctorApproved ? '已由家庭医生审核确认' : '草稿待家庭医生审核，结果可能调整'}
                 </Text>
               </View>
-              {reviewStatus.hasLifestyle && (
-                <View style={styles.doctorNotice}>
-                  <Ionicons name={reviewStatus.nutritionApproved ? 'nutrition-outline' : 'time-outline'} size={18} color={reviewStatus.nutritionApproved ? colors.success : colors.info} />
-                  <Text style={styles.doctorNoticeText}>
-                    生活方式评估：{reviewStatus.nutritionApproved ? '已由营养师审核确认' : '草稿待营养师审核，结果可能调整'}
-                  </Text>
-                </View>
-              )}
             </View>
           )}
 

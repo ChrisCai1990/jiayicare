@@ -2055,16 +2055,11 @@ router.get('/ai-health-summary', auth, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
     const hasDoctor = !!user.assignedFamilyDoctor;
     const data = user.aiHealthSummary || {};
-    // 5维度(医疗)与生活方式评估各自独立审核：家医审5维度写doctorApprovedAt，营养师审生活方式写nutritionApprovedAt。
-    // 用户端要分开展示两部分的审核状态，不能只看顶层 approvedAt（否则家医审了、营养师没审时会笼统显示"草稿待审"）。
+    // 生活方式 AI 分析已停用；客户只需查看五维分析的审核状态。
     const isSelfService = data.source === 'self_service';
-    const hasSections = !!(data.sections && Object.keys(data.sections).length);
-    const hasLifestyle = !!(data.sections && data.sections.lifestyle_assessment &&
-      Array.isArray(data.sections.lifestyle_assessment.items) && data.sections.lifestyle_assessment.items.length);
+    const hasSections = !!(data.sections && ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'].some(key => data.sections[key]));
     const reviewStatus = {
       doctorApproved: !!data.doctorApprovedAt,      // 5维度已被家医审核
-      nutritionApproved: !!data.nutritionApprovedAt, // 生活方式已被营养师审核
-      hasLifestyle,
       isSelfService,
     };
     // An older approved statement can be copied into a new draft. Do not show
@@ -2087,8 +2082,8 @@ router.get('/ai-health-summary', auth, async (req, res) => {
     if (hasDoctor && hasSections && !isSelfService) {
       return res.json({
         success: true, data, hasDoctor, reviewStatus,
-        // 兼容旧前端：只要还有任一部分未审就置 pendingReview
-        pendingReview: !data.doctorApprovedAt || (hasLifestyle && !data.nutritionApprovedAt),
+        // 客户只需等待五维分析审核。
+        pendingReview: !data.doctorApprovedAt,
       });
     }
     res.json({ success: true, data, hasDoctor, reviewStatus });
@@ -2118,12 +2113,9 @@ router.post('/ai-health-summary', auth, async (req, res) => {
       message: `本年度体检方案资料未齐（${readiness.completed}/${readiness.total}项），暂不能生成5维分析`,
     });
 
-    // 已被审核的版本，客户端不能再重新生成覆盖。关键：审核是分部分的（家医审5维度写doctorApprovedAt、
-    // 营养师审生活方式写nutritionApprovedAt），而客户端生成是【整份覆盖】——只要任一部分已审，重新生成就会
-    // 抹掉那部分的审核成果并产出与已审结果不同的内容。所以按部分判断：任一部分已审即拦截（不能只看顶层approvedAt，
-    // 否则家医审了但营养师没审时 approvedAt=null 拦不住，正是金娟反馈"家医已审客户端仍能生成"的根因）。self_service不受限。
+    // 五维分析已审核后，客户端不能重新生成覆盖。兼容旧版顶层审核字段。
     const existingSummary = user.aiHealthSummary || {};
-    const anyReviewed = (existingSummary.doctorApprovedAt || existingSummary.nutritionApprovedAt || existingSummary.approvedAt);
+    const anyReviewed = (existingSummary.doctorApprovedAt || existingSummary.approvedAt);
     if (anyReviewed && existingSummary.source !== 'self_service') {
       return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前分析已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
     }
@@ -2135,7 +2127,7 @@ router.post('/ai-health-summary', auth, async (req, res) => {
       return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI健康信息整理结果（每年限1次），如需更新请联系客服' });
     }
 
-    const { sections, failed, validationError } = await generateHealthSummarySections(user);
+    const { sections, failed, validationError } = await generateHealthSummarySections(user, { scope: 'doctor' });
     if (failed) return res.status(validationError ? 422 : 500).json({ success: false, message: validationError || 'AI生成失败，请重试' });
     const latestReadiness = await checkupAnalysisReadiness(req.user._id, new Date().getFullYear());
     if (!latestReadiness.ready) return res.status(409).json({

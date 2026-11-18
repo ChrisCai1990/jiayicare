@@ -14043,6 +14043,9 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     }
 
     const scope = req.body.scope || 'all';
+    if (scope !== 'doctor') {
+      return res.status(403).json({ success: false, message: '营养师生活方式分析已停用' });
+    }
     const force = req.body.force === true;
     const recheckFromSources = req.body.recheckFromSources === true && (scope === 'doctor' || scope === 'all');
     const currentYear = new Date().getFullYear();
@@ -14257,8 +14260,8 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const latestRecord = {
       sections: { ...(latestDoctor.sections || {}), ...(latestNutrition.sections || {}) },
       generatedAt: newestRecords[0]?.generatedAt || new Date(),
-      approvedAt: newestYearEntry.approvedAt || newestRecords[0]?.approvedAt || null,
-      approvedBy: newestYearEntry.approvedBy || newestRecords[0]?.approvedBy || null,
+      approvedAt: latestDoctor.doctorApprovedAt || latestDoctor.approvedAt || null,
+      approvedBy: latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null,
       source: newestYearEntry.source || newestRecords[0]?.source || null,
       doctorApprovedAt: latestDoctor.doctorApprovedAt || latestDoctor.approvedAt || null,
       doctorApprovedBy: latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null,
@@ -14680,6 +14683,9 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const { sections, sectionNotes, action, scope, year, recordIndex, sectionKey, expectedRecordToken } = req.body;
     const user = await User.findById(req.params.id).lean();
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (scope !== 'doctor' || sectionKey === 'lifestyle_assessment') {
+      return res.status(403).json({ success: false, message: '营养师生活方式分析已停用' });
+    }
     const current = user.aiHealthSummary || {};
     const updated = { ...current };
     const byYear = { ...(updated.byYear || {}) };
@@ -14694,11 +14700,18 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (idx < 0) return res.status(409).json({ success: false, message: '该分析记录已变化或页面版本过旧，请刷新后重新核对再提交' });
     const entry = { ...records[idx] };
     const beforeSections = entry.sections || {};
+    if (sections?.lifestyle_assessment !== undefined
+      && JSON.stringify(sections.lifestyle_assessment) !== JSON.stringify(beforeSections.lifestyle_assessment)) {
+      return res.status(403).json({ success: false, message: '营养师生活方式分析已停用' });
+    }
     const beforeSection = sectionKey ? entry.sections?.[sectionKey] : null;
     if (sections !== undefined) {
       entry.sections = sectionKey
         ? { ...(entry.sections || {}), [sectionKey]: sections[sectionKey] }
         : sections;
+      if (beforeSections.lifestyle_assessment !== undefined) {
+        entry.sections.lifestyle_assessment = beforeSections.lifestyle_assessment;
+      }
     }
     if (sectionNotes !== undefined) entry.sectionNotes = sectionNotes;
     if (sections !== undefined && (sc === 'doctor' || sc === 'all')) {
@@ -14787,8 +14800,8 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         if (!isSuper && req.staff.role !== 'nutritionist') return res.status(403).json({ success: false, message: '仅营养师可审核该维度' });
         entry.nutritionApprovedAt = now; entry.nutritionApprovedBy = req.staff.name;
       }
-      // 两个维度都已审核 → 置整体已审核（供 ai-annual-plan 等下游判断）
-      if (entry.doctorApprovedAt && entry.nutritionApprovedAt) {
+      // 五维分析审核完成即确认整体结果，供年度方案等下游使用。
+      if (entry.doctorApprovedAt) {
         entry.approvedAt = now; entry.approvedBy = req.staff.name;
       }
     }
@@ -14809,10 +14822,9 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     updated.doctorApprovedBy = latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null;
     updated.nutritionApprovedAt = latestNutrition.nutritionApprovedAt || latestNutrition.approvedAt || null;
     updated.nutritionApprovedBy = latestNutrition.nutritionApprovedBy || latestNutrition.approvedBy || null;
-    if (updated.doctorApprovedAt && updated.nutritionApprovedAt) {
-      updated.approvedAt = [updated.doctorApprovedAt, updated.nutritionApprovedAt]
-        .sort((a, b) => new Date(b) - new Date(a))[0];
-      updated.approvedBy = [updated.doctorApprovedBy, updated.nutritionApprovedBy].filter(Boolean).join('、');
+    if (updated.doctorApprovedAt) {
+      updated.approvedAt = updated.doctorApprovedAt;
+      updated.approvedBy = updated.doctorApprovedBy;
     } else {
       updated.approvedAt = null;
       updated.approvedBy = null;
@@ -14878,12 +14890,8 @@ router.delete('/patients/:id/ai-health-summary/records/:recordIndex', staffAuth,
       nutritionApprovedAt: latestNutrition.nutritionApprovedAt || latestNutrition.approvedAt || null,
       nutritionApprovedBy: latestNutrition.nutritionApprovedBy || latestNutrition.approvedBy || null,
     };
-    updated.approvedAt = updated.doctorApprovedAt && updated.nutritionApprovedAt
-      ? [updated.doctorApprovedAt, updated.nutritionApprovedAt].sort((a, b) => new Date(b) - new Date(a))[0]
-      : null;
-    updated.approvedBy = updated.approvedAt
-      ? [updated.doctorApprovedBy, updated.nutritionApprovedBy].filter(Boolean).join('、')
-      : null;
+    updated.approvedAt = updated.doctorApprovedAt || null;
+    updated.approvedBy = updated.doctorApprovedBy || null;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: { aiHealthSummary: updated } }
@@ -15033,6 +15041,9 @@ router.post('/patients/:id/ai-health-summary/discussions/apply', staffAuth, asyn
 
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (isNutrition) {
+      return res.status(403).json({ success: false, message: '营养师生活方式分析已停用' });
+    }
     const summary = user.aiHealthSummary || {};
     const y = String(year || summary.latestYear || new Date().getFullYear());
     const yearEntry = { ...(summary.byYear?.[y] || {}) };
@@ -17206,20 +17217,11 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
 
     // ── 健康顾问 / 营养师：AI 汇总分析按维度拆分审核 ──
-    if (can('summary_review') || can('lifestyle_review') || can('lifestyle_generate')) {
-      // summary_review(健康顾问)和lifestyle_review(营养师)各自归属字段不同，若都能审(如superadmin)则不限制；
-      // 否则用当前角色对应的会员范围（myPatientIds 已按 role 算好）
+    if (can('summary_review')) {
       const sumFilter = { aiHealthSummary: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const sumUsers = await User.find(sumFilter)
         .select('name aiHealthSummary assignedNutritionist servicePackage serviceStartDate serviceExpiry clientBrand isDeleted archiveReviewSnapshotAt').lean();
-      const { lifestyleGenerationEligible } = require('../utils/lifestyleHandoffEligibility');
-      const projected = sumUsers.flatMap(u => summaryTodos(u, can, now).map(todo => ({ user: u, todo })));
-      const checked = await Promise.all(projected.map(async ({ user, todo }) => {
-        if (todo.type !== 'lifestyle_generate') return todo;
-        try { return await lifestyleGenerationEligible(user, now.getFullYear()) ? todo : null; }
-        catch (error) { console.error('[lifestyle-handoff] eligibility check failed:', error); return null; }
-      }));
-      todos.push(...checked.filter(Boolean));
+      todos.push(...sumUsers.flatMap(u => summaryTodos(u, can, now)));
     }
 
     // ── 健康顾问：AI用药建议待审核 ──

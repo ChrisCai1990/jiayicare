@@ -36,13 +36,7 @@ async function loadAssignmentAttention(staff, models = {}) {
   for (const p of patients) {
     if (p.archiveDraft && String(p.archiveDraft.questionnaireId) !== '6a49eab9fc1595013da70645') add(p._id, 'healthManager', '档案草稿待审核');
     for (const todo of summaryTodos(p, () => true)) {
-      if (todo.type === 'lifestyle_generate') {
-        try {
-          if (!await require('./lifestyleHandoffEligibility').lifestyleGenerationEligible(p, new Date().getFullYear())) continue;
-        } catch (error) { console.error('[lifestyle-handoff] assignment check failed:', error); continue; }
-      }
-      add(p._id, todo.type === 'summary_review' ? 'familyDoctor' : 'nutritionist',
-        todo.type === 'lifestyle_generate' ? '生活方式分析待生成' : 'AI健康整理待审核');
+      add(p._id, 'familyDoctor', 'AI健康整理待审核');
     }
   }
   const sources = [

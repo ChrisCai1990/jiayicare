@@ -2675,7 +2675,7 @@ export default function PatientDetailPage() {
   }
   useEffect(() => { refreshCheckupReadiness() }, [id, aiYear])
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
-  const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  const aiAnalysisView = 'doctor'
   const [aiReviewConflicts, setAiReviewConflicts] = useState({ token: '', loading: false, error: '', conflicts: [] })
   const [aiReviewEvidenceRevision, setAiReviewEvidenceRevision] = useState(0)
   const [editingAIConflict, setEditingAIConflict] = useState(null)
@@ -2721,7 +2721,7 @@ export default function PatientDetailPage() {
     const target = summaryTarget(data.user.aiHealthSummary, location.search)
     setAiTodoTargetMissing(!!target?.missing)
     if (!target) return
-    setAiYear(target.year); setScreeningWorkspaceView('analysis'); setAiAnalysisView(target.scope)
+    setAiYear(target.year); setScreeningWorkspaceView('analysis')
     if (!target.missing && target.index !== null) setAiRecordIndex(v => ({ ...v, [target.scope]: target.index }))
   }, [location.search, data?.user?.aiHealthSummary])
   const [lastRegeneratedItem, setLastRegeneratedItem] = useState('')
@@ -8899,7 +8899,7 @@ export default function PatientDetailPage() {
         }
         const hasDoctorData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.cardiovascular_risk || ais.sections?.chronic_disease || ais.sections?.checkup_completeness)
         const hasLifestyle = !!(ais.sections?.lifestyle_assessment?.summary || (ais.sections?.lifestyle_assessment?.items || []).length)
-        const hasData = hasDoctorData || hasLifestyle
+        const hasData = hasDoctorData
         const activeHasData = aiAnalysisView === 'doctor' ? hasDoctorData : hasLifestyle
 
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
@@ -9202,20 +9202,15 @@ export default function PatientDetailPage() {
                 <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => nav(`/plans/${checkupReadiness.planId}`)}>查看体检方案</button>
               </div>
             )}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-              <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>家庭医生5维分析</button>
-              <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>营养师生活方式分析</button>
-
-            </div>
             <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>评估管理与依据</summary>
-            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期记录，按年度与历史数据比较。5维分析须由家庭医生审核，生活方式分析须由营养师审核；未审核内容仅为草稿。</div></details>
+            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期记录，按年度与历史数据比较。5维分析须由家庭医生审核；未审核内容仅为草稿。</div></details>
 <p style={{ fontSize: 12, color: '#65776F' }}>团队成员可查看已审核结果，生成和审核按专业角色权限开放。</p>
               {aiSummaryLoading && <div role="status" style={{ marginTop: 10, color: '#1E6B50' }}>正在生成，资料较多时可能需要2–4分钟，请勿重复提交。</div>}
               {aiSummaryError && <div role="alert" style={{ marginTop: 10, color: '#B91C1C' }}>{aiSummaryError}</div>}
               <div style={{ marginTop: 12 }}>
             {Number(curYear) < nowY && <div style={{ fontSize: 12, color: '#8A6B36', marginBottom: 12 }}>
-              历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期记录不作为当年事实。生活方式评估无法据此回溯生成。
+              历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期记录不作为当年事实。
             </div>}
             <div style={{ fontSize: 12, color: '#65776F', marginBottom: 12 }}>
               五维趋势范围：{Number(curYear) - 4}—{curYear}年（最近5个自然年）；更早检查记录只作历史背景，并须注明发生年份。

@@ -18,7 +18,7 @@ function model(rows = [], queries = []) {
 }
 const doctor = { generatedAt: '2026-08-01T00:00:00Z', scope: 'doctor', sections: { medical_priority: { summary: 'test' } } };
 
-test('all years and records remain pending; independent nutrition records cannot hide doctor reviews', () => {
+test('all years and records retain doctor reviews but no nutrition analysis tasks', () => {
   const user = { _id: 'u', aiHealthSummary: { byYear: {
     2025: { records: [doctor] }, 2026: { records: [
       { generatedAt: '2026-09-01T00:00:00Z', scope: 'nutrition', sections: { lifestyle_assessment: { summary: 'test' } } },
@@ -26,13 +26,11 @@ test('all years and records remain pending; independent nutrition records cannot
     ] },
   } } };
   const todos = summaryTodos(user, () => true, now);
-  assert.equal(todos.length, 3);
-  assert.equal(new Set(todos.map(t => t.id)).size, 3);
+  assert.equal(todos.length, 2);
+  assert.equal(new Set(todos.map(t => t.id)).size, 2);
   assert.ok(todos.some(t => t.link.includes('aiYear=2025')));
   assert.ok(todos.some(t => t.link.includes('aiRecordIndex=1')));
-  const nutritionTodo = todos.find(t => t.type === 'lifestyle_review');
-  assert.equal(nutritionTodo.label, 'AI生活方式草稿待营养师审核');
-  assert.match(nutritionTodo.link, /aiScope=nutrition/);
+  assert.ok(todos.every(todo => todo.type === 'summary_review'));
   assert.equal(summaryTodos(user, type => type === 'summary_review', now).length, 2);
 });
 test('root-only summaries preserve prior approvals and ignore empty dimensions', () => {
@@ -40,21 +38,17 @@ test('root-only summaries preserve prior approvals and ignore empty dimensions',
     .filter(todo => todo.type === 'summary_review').length, 0);
   assert.equal(summaryTodos({ _id: 'u', aiHealthSummary: { ...doctor, sections: {} } }, () => true).length, 0);
 });
-test('doctor approval hands off lifestyle generation and the draft replaces the handoff', async () => {
+test('doctor approval does not create nutrition analysis work', () => {
   const clock = new Date('2026-10-27T12:00:00Z');
   const approval = '2026-10-27T08:00:00Z';
   const reviewedDoctor = { ...doctor, doctorApprovedAt: approval };
   const user = { _id: 'u', name: '会员', aiHealthSummary: { byYear: { 2026: { records: [reviewedDoctor] } } } };
   const nutritionTodos = () => summaryTodos(user, type => type.startsWith('lifestyle_'), clock);
-  assert.deepEqual(nutritionTodos().map(todo => todo.type), ['lifestyle_generate']);
-  assert.match(nutritionTodos()[0].link, /aiAction=generate/);
-  const { summaryTarget } = await import('../../staff/src/utils/workbenchTargets.js');
-  assert.deepEqual(summaryTarget(user.aiHealthSummary, nutritionTodos()[0].link.split('?')[1]),
-    { year: '2026', scope: 'nutrition', index: null, missing: false });
+  assert.deepEqual(nutritionTodos(), []);
   assert.equal(summaryTodos(user, type => type === 'summary_review', clock).length, 0);
   user.aiHealthSummary.byYear[2026].records.unshift({ scope: 'nutrition', generatedAt: '2026-10-27T09:00:00Z',
     sections: { lifestyle_assessment: { summary: '草稿' } } });
-  assert.deepEqual(nutritionTodos().map(todo => todo.type), ['lifestyle_review']);
+  assert.deepEqual(nutritionTodos(), []);
   user.aiHealthSummary.byYear[2026].records[0].nutritionApprovedAt = '2026-10-27T10:00:00Z';
   assert.deepEqual(nutritionTodos(), []);
   user.aiHealthSummary.byYear[2026].records[0].generatedAt = '2026-10-26T09:00:00Z';
@@ -117,9 +111,9 @@ test('assignment exceptions are scoped, detect inactive staff and vanish when th
     { _id: 'foreign', tenantId: 'other', assignedHealthPlanner: 'planner', aiHealthSummary: doctor }];
   const admins = [{ _id: 'planner', tenantId: null, role: 'healthPlanner', staffStatus: 'active' },
     { _id: 'inactive', tenantId: null, role: 'familyDoctor', staffStatus: 'inactive' }];
-  const models = Object.fromEntries(['MedicalReport', 'Medication', 'Supplement', 'HealthPlan', 'FollowUp', 'ChatLog', 'ServiceRecord', 'PhaseAssessment'].map(name => [name, model()]));
+  const models = Object.fromEntries(['MedicalReport', 'Medication', 'Supplement', 'HealthPlan', 'FollowUp', 'ChatLog', 'ServiceRecord', 'PhaseAssessment', 'AnnualPlan', 'AnnualServiceRecommendation'].map(name => [name, model()]));
   models.User = model(patients); models.Admin = model(admins);
-  const staff = { _id: 'planner', role: 'healthPlanner' };
+  const staff = { _id: 'admin', role: 'superadmin' };
   assert.equal((await loadAssignmentAttention(staff, models)).length, 1);
   assert.equal((await loadAssignmentAttention({ _id: 'other', role: 'healthPlanner' }, models)).length, 0);
   assert.equal((await loadAssignmentAttention({ _id: 'planner', role: 'familyDoctor' }, models)).length, 0);
