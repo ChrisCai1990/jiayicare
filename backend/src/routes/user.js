@@ -1190,7 +1190,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
       const annual = require('../../../shared/customerAnnualFollowUp.cjs').customerAnnualFollowUp(row);
       if (annual) {
         const customerDetails = annual.details.join('\n');
-        return { ...row, theme: annual.title, content: customerDetails,
+        return { ...row, customerAnnual: annual, theme: annual.title, content: customerDetails,
           plannedContent: customerDetails, taskRequirements: customerDetails,
           description: '' };
       }
