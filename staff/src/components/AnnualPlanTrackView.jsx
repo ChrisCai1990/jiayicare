@@ -19,7 +19,7 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, nutritionEnabled, nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
+export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -29,17 +29,18 @@ export default function AnnualPlanTrackView({ actions, renderAction, nutritionEn
     const itemCount = items.length + (nutrition ? 1 : 0)
     return <div key={title} style={{ borderTop: title === '年度体检' ? 0 : '1px solid #E1EAE4', padding: '15px 0' }}>
       {title !== '年度体检' && <><strong style={{ fontSize: 16, color: '#183E30' }}>{title}</strong><span style={{ marginLeft: 8, fontSize: 12, color: '#71877B' }}>{itemCount ? `${itemCount} 项` : '待安排'}</span></>}
-      {nutrition && <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.7 }}>
+      {nutrition && <details style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC', fontSize: 13, lineHeight: 1.7 }}>
+        <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>营养干预<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>目标：明确异常指标与症状，按顾问确认的目标实施干预</span></summary>
         {nutritionAdvisorTargets.length ? <div className="annual-nutrition-advisor-summary">{[['metric', '异常指标'], ['symptom', '症状']].map(([kind, label]) => {
           const rows = nutritionAdvisorTargets.filter(row => (row.kind || nutritionCatalog.kindFor(row.metric)) === kind)
           return rows.length ? <div key={kind}><strong className="annual-nutrition-group-title">{label}</strong>{rows.map((row, index) => <div className="annual-nutrition-summary-row" key={`${row.metric}:${index}`}><strong>{row.metric}{nutritionCatalog.isInternalNutritionMetric(row.metric) && <small> · 仅内部</small>}</strong><span>当前：{row.baseline || '待核对'}</span><span>目标：{row.target}</span></div>)}</div> : null
         })}</div> : <div style={{ color: '#62776A' }}>待顾问明确异常指标、症状和期望目标</div>}
         <div style={{ color: '#52675D' }}>计划日期：{nutritionExecutionDate || '待确定'} · 执行营养师：{nutritionExecutorName || '待匹配'}</div>
         {nutritionAdvisorEditor}
-      </div>}
+      </details>}
       {items.map(action => <details key={`${action.key}:${action.index}`} style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC' }}>
         <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600, lineHeight: 1.55 }} title={action.title}>
-          {conciseTitle(action)}<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>{action.key === 'specialist_collab' ? '多学科会诊 · ' : action.key === 'medical_treatment' ? '门诊／检查 · ' : ''}{displayDate(action.date)}</span>
+          {conciseTitle(action)}<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>{action.key === 'specialist_collab' ? '多学科会诊 · ' : action.key === 'medical_treatment' ? '门诊／检查 · ' : ''}{displayDate(action.date)}</span>{goalForAction?.(action) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>目标：{goalForAction(action)}</span>}
         </summary>
         {renderAction(action)}
       </details>)}
@@ -54,7 +55,7 @@ export default function AnnualPlanTrackView({ actions, renderAction, nutritionEn
     <h2 style={{ margin: '0 0 12px', fontSize: 21, color: '#1A2B24' }}>年度管理方案</h2>
     <div className="annual-track-stack">
       <div className="annual-track-panel annual-track-panel--medical"><h3 className="annual-track-heading"><span className="annual-track-number">01</span>医疗服务</h3>{medical.map(renderGroup)}</div>
-      <div className="annual-track-panel annual-track-panel--management"><h3 className="annual-track-heading"><span className="annual-track-number">02</span>健康管理</h3>{management.map(renderGroup)}
+      <div className="annual-track-panel annual-track-panel--management"><h3 className="annual-track-heading"><span className="annual-track-number">02</span>健康管理</h3>{management.map(group => group[0] === '疫苗接种' && !itemsFor(group[1]).length ? <div key="vaccine-review" style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0', fontSize: 13, color: '#62776A' }}><strong style={{ fontSize: 16, color: '#183E30' }}>疫苗接种</strong><div style={{ marginTop: 5 }}>当前方案未纳入接种事项；需核对接种史、检查结果和适宜性后决定。</div></div> : renderGroup(group))}
         <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · 按已有每周计划执行</strong>{manualMonitoringEditor}</div>
       </div>
       <div className="annual-track-panel annual-track-panel--checkup"><h3 className="annual-track-heading"><span className="annual-track-number">03</span>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A' }}>待安排</div>}</div>

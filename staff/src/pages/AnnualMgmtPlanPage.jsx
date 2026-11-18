@@ -1080,7 +1080,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       date: record.executionDate || record.visit_time || record.plan_time || record.time || record.date || '',
     }))
   })
-  const defaultActionGoals = { medical_treatment: '及时完成就医，明确诊治方案', checkup_completion: '完成检查，明确结果与后续处理方向', abnormal_followup: '按计划完成复查，明确变化与后续管理措施', vaccine: '核实接种适宜性，按确认的方案完成接种', annual_checkup: '按计划完成年度体检，核对重点项目结果' }
+  const defaultActionGoals = { medical_treatment: '及时完成就医，明确诊治方案', specialist_collab: '完成专家会诊，明确后续诊治方案', checkup_completion: '完成检查，明确结果与后续处理方向', abnormal_followup: '按计划完成复查，明确变化与后续管理措施', vaccine: '核实接种适宜性，按确认的方案完成接种', annual_checkup: '按计划完成年度体检，核对重点项目结果', rehab_assessment: '完成运动复健评估，明确干预方案', health_consensus: '完成本次主题沟通，确认客户理解与下一步安排' }
+  const goalForAction = action => action.record.goal || defaultActionGoals[action.key] || ''
   const displayedGoals = managementTargets.length ? managementTargets.map((row, index) => ({ id: targetIssueId(row, index), title: row.sourceTitle || `问题 ${index + 1}`, goal: row.goal || '目标待健康顾问确认' }))
     : planActions.filter(action => defaultActionGoals[action.key]).map(action => ({ id: `${action.key}:${action.index}`, title: action.title, goal: action.record.goal || defaultActionGoals[action.key] }))
   const integratedActions = planActions.map(action => ({ ...action, issueId: patientMode ? displayIssueId(action.record, managementTargets) : '' }))
@@ -1145,7 +1146,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </label>}
     </div>
   }
-  const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction}
+  const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction} goalForAction={goalForAction}
     nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted ? moduleData.nutrition_assessment?.advisorTargets || [] : nutritionAdvisorTargets.mergeAdvisorTargets(moduleData.nutrition_assessment?.advisorTargets || [], managementTargets)} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
     nutritionExecutionDate={moduleData.nutrition_assessment?.executionDate || ''} nutritionExecutorName={staffList.find(staff => String(staff._id) === String(moduleData.nutrition_assessment?.executorId || patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''))?.name || patient?.assignedNutritionist?.name || ''}
     nutritionAdvisorEditor={<AnnualNutritionAdvisorTargets patientId={id} plan={plansByType[planType]} rows={moduleData.nutrition_assessment?.advisorTargets || []}
@@ -1270,6 +1271,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={saveCurrentPublishedItem}>保存当前项</button>}
         </div>
       </div>
+
+      {annualPilot && patientMode && <div style={{ margin: '-12px 0 20px', fontSize: 12, color: '#52675D' }}>
+        {pushedAt ? '保存当前项会更新已推送方案并通知客户；客户确认状态以上方标记为准。就医、检查等事项是否完成，请在服务执行中记录。' : '逐项保存后，点击“推送并分发”完成顾问确认；客户确认状态会在上方显示。'}
+      </div>}
 
       {patientMode && (searchParams.get('reviewAnnualInputs') === '1' || searchParams.has('reviewDraftId')) && (
         <ReportFollowUpDrafts patientId={id} year={year} canEdit={canEdit} />
