@@ -19,20 +19,38 @@ test('内部备注不会进入客户展示结构', () => {
   assert.equal(Object.values(item).includes('内部沟通记录'), false);
 });
 
-test('客户方案不返回内部研判依据和编号，仍保留行动目标', () => {
+test('营养师评估重点不作为客户年度方案事项', () => {
   const source = { nutrition_assessment: { records: [{
     items: '营养师专项评估', reason: '内部研判 (topicId:secret)',
     basisSummary: '设置依据 (topicId:secret)', personalizedAdvice: '营养师内部处置建议',
     goal: '核实膳食和体成分情况', time: '2026-12-01',
   }] } };
   const publicData = customerModuleData(source);
-  const displayItems = buildAnnualPlanDisplayItems(publicData);
-  assert.equal(displayItems.length, 1);
-  const item = displayItems[0];
-  assert.equal(JSON.stringify({ publicData, item }).includes('topicId'), false);
-  assert.equal(JSON.stringify({ publicData, item }).includes('内部处置建议'), false);
-  assert.equal(item.goal, '核实膳食与体成分情况');
-  assert.equal(item.schedule, '2026-12-01');
+  assert.deepEqual(buildAnnualPlanDisplayItems(publicData), []);
+  assert.equal(publicData.nutrition_assessment, undefined);
+});
+
+test('年度体检只向客户提供日期、机构和服务方式', () => {
+  const source = { annual_checkup: {
+    enabled: true, standardPlanName: '【年度体检】', date: '2027-05-01', institution: '邵逸夫医院',
+    focus: '内部体检关注清单（来源：missing:0）', expert: '吴医生', frequency: '单次',
+    serviceMode: 'single', serviceType: 'escort_exam',
+  } };
+  const publicData = customerModuleData(source);
+  const [item] = buildAnnualPlanDisplayItems(publicData);
+  assert.equal(item.title, '年度体检');
+  assert.equal(item.schedule, '2027-05-01');
+  assert.equal(item.careTarget.hospital, '邵逸夫医院');
+  assert.equal(item.service.modeLabel, '单项服务');
+  assert.equal(item.service.typeLabel, '陪检');
+  assert.equal(JSON.stringify({ publicData, item }).includes('内部体检关注清单'), false);
+  assert.equal(JSON.stringify({ publicData, item }).includes('吴医生'), false);
+});
+
+test('个性化随访模板只在执行流程展示', () => {
+  const source = { personalized_followups: { records: [{ standardPlanName: '【更年期管理随访】', executionDate: '2026-11-20' }] } };
+  assert.deepEqual(buildAnnualPlanDisplayItems(source), []);
+  assert.equal(customerModuleData(source).personalized_followups, undefined);
 });
 
 test('已移除的年度营养评估不进入客户完整方案', () => {

@@ -11,6 +11,13 @@ const first = (...values) => values.find(value => value !== undefined && value !
 const internalDaily = record => /^【?日常跟进(?:与动态调整)?】?$/.test(String(record?.standardPlanName || record?.items || '').trim());
 
 function normalizeItem(moduleKey, record, index) {
+  if (moduleKey === 'annual_checkup') return {
+    id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: MODULE_NAME[moduleKey],
+    schedule: record.date || '',
+    careTarget: { hospital: record.institution || '', department: '', expert: '' },
+    service: { mode: record.serviceMode || 'reminder', modeLabel: SERVICE_MODE[record.serviceMode || 'reminder'],
+      type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
+  };
   if (moduleKey === 'health_consensus') return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: record.question || `沟通问题 ${index + 1}`,
     goal: record.question || '', interventionPlan: record.method || '', schedule: record.firstDate || '', frequency: record.frequency || '',
@@ -44,6 +51,8 @@ function normalizeItem(moduleKey, record, index) {
 function buildAnnualPlanDisplayItems(moduleData = {}) {
   const items = [];
   Object.entries(moduleData).forEach(([moduleKey, module]) => {
+    // 营养师的评估重点及标准随访模板在各自执行流程中呈现，不作为客户年度方案事项。
+    if (moduleKey === 'nutrition_assessment' || moduleKey === 'personalized_followups') return;
     if (!module || module.enabled === false) return;
     const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records) && module.records.length
       ? module.records
@@ -59,13 +68,12 @@ function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
   if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
   return Object.fromEntries(Object.entries(value)
-    .filter(([key, child]) => !internalFields.has(key) && !(key === 'nutrition_assessment' && child?.enabled === false))
+    .filter(([key]) => !internalFields.has(key) && key !== 'nutrition_assessment' && key !== 'personalized_followups')
     .map(([key, child]) => [key, key === 'management_targets'
       ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
-      : key === 'nutrition_assessment'
-      ? { ...customerModuleData(child),
-          nutritionComparisonMetrics: (child?.nutritionComparisonMetrics || []).filter(name => !isInternalNutritionMetric(name)),
-          advisorTargets: (child?.advisorTargets || []).filter(row => !isInternalNutritionMetric(row.metric) && row.internalOnly !== true).map(row => ({ kind: row.kind, metric: row.metric, baseline: row.baseline, target: row.target })) }
+      : key === 'annual_checkup'
+      ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '',
+          serviceMode: child?.serviceMode || 'reminder', serviceType: child?.serviceType || '' }
       : key === 'health_consensus'
       ? { enabled: child?.enabled !== false, records: (child?.records || []).map(row => ({ question: row.question || '', method: row.method || '', frequency: row.frequency || '', firstDate: row.firstDate || '' })) }
       : customerModuleData(child)]));

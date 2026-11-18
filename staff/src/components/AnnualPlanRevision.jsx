@@ -60,7 +60,6 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
       || draft.serviceMode === 'single' && !draft.serviceType || draft.serviceMode === 'managed' && !draft.managedServiceType)) {
       toast('请选择执行健管专员和具体服务方式'); return
     }
-    if (!window.confirm('确认保存这一项修订并通知客户？已有执行任务的排期需要另行核对。')) return
     setSaving(true)
     try {
       const res = await staffAPI.reviseAnnualPlan(patientId, {
@@ -77,7 +76,7 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
       if (!inlineItem) setSelection('')
       const editor = editorRef.current
       if (editor) editor.open = false
-      toast(res.message || '局部修订已推送给客户')
+      toast(res.message || '本项已暂存，客户尚未看到修改')
     } catch (error) { toast(error.message || '修订失败，请刷新后重试') }
     finally { setSaving(false) }
   }
@@ -86,13 +85,13 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
     const deletionReason = window.prompt('请填写删除原因（至少2字）：', '')
     if (deletionReason === null) return
     if (deletionReason.trim().length < 2) { toast('删除原因至少填写2字'); return }
-    if (!window.confirm('确认从年度方案删除本项并通知客户？已有执行任务仍需到执行安排核对。')) return
+    if (!window.confirm('确认将本项删除暂存到修订草稿？发布前客户仍看到原方案。')) return
     setSaving(true)
     try {
       const response = await staffAPI.reviseAnnualPlan(patientId, { planId: plan._id, baseUpdatedAt: plan.updatedAt,
         reason: deletionReason.trim(), item: { key: selected.key, target: selected.target, operation: 'remove', deletionReason: deletionReason.trim() } })
       onSaved(response.data)
-      toast('本项已从方案删除；请核对原执行任务')
+      toast('删除已暂存；发布后客户方案才会更新，原执行任务仍需核对')
     } catch (error) { toast(error.message || '删除失败，请刷新后重试') }
     finally { setSaving(false) }
   }
@@ -143,7 +142,7 @@ export default function AnnualPlanRevision({ patientId, plan, pilot = false, inl
       {!medicalService && draft.date !== (selected.row.visit_time || selected.row.plan_time || selected.row.time || selected.row.date || '') && <label>时间调整依据<input className="form-input" value={draft.timingReason} onChange={event => setDraft({ ...draft, timingReason: event.target.value })} /></label>}
       </>}
       <label>备注（内部）<textarea className="form-input" rows={2} maxLength={1000} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} placeholder="记录客户意见或执行时需要关注的事项（选填）" /></label>
-      <div className="annual-plan-revision-controls"><button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? '保存中…' : '保存本项'}</button>
+      <div className="annual-plan-revision-controls"><button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? '暂存中…' : '暂存本项'}</button>
         {inlineItem && selected.key !== 'annual_checkup' && <button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B73D3D' }} disabled={saving} onClick={remove}>删除本项</button>}</div>
     </div>}
   </>

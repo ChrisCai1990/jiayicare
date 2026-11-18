@@ -10838,10 +10838,10 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     // 指定 planType → 返回该类型单份；否则返回该年度全部类型的方案数组
     if (planType !== undefined && planType !== '') {
       query.planType = planType;
-      const plan = await AnnualPlan.findOne(query).select('+nutritionMetricHistory');
+      const plan = await AnnualPlan.findOne(query).select('+nutritionMetricHistory +revisionDraft');
       return res.json({ success: true, data: exposeVersion(plan) });
     }
-    const plans = await AnnualPlan.find(query).select('+nutritionMetricHistory').sort({ year: -1, updatedAt: -1 });
+    const plans = await AnnualPlan.find(query).select('+nutritionMetricHistory +revisionDraft').sort({ year: -1, updatedAt: -1 });
     res.json({ success: true, data: plans.map(exposeVersion) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

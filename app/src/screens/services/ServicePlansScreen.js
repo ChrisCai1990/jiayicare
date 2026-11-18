@@ -408,7 +408,13 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
                   )}
                   <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                 </View>
-                {plan.type === 'annual_mgmt' && (item.goal || item.schedule) ? (
+                {plan.type === 'annual_mgmt' && item.summaryRows?.length ? (
+                  <View style={{ marginTop: 5, marginLeft: 24, paddingRight: 20 }}>
+                    {item.summaryRows.map(([label, value]) => <Text key={label} style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 19 }}>
+                      <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{label}  </Text>{value}
+                    </Text>)}
+                  </View>
+                ) : plan.type === 'annual_mgmt' && (item.goal || item.schedule) ? (
                   <View style={{ marginTop: 5, marginLeft: 24, paddingRight: 20 }}>
                     {!!item.goal && <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 19 }} numberOfLines={2}><Text style={{ fontWeight: '700', color: colors.textPrimary }}>目标  </Text>{item.goal}</Text>}
                     {!!item.schedule && <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 19 }}><Text style={{ fontWeight: '700', color: colors.textPrimary }}>时间  </Text>{item.schedule}</Text>}
@@ -625,7 +631,11 @@ export default function ServicePlansScreen({ navigation, route }) {
         health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
         chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
       };
-      const displayItemRows = item => [
+      const displayItemRows = item => item.moduleKey === 'annual_checkup' ? [
+        ['体检日期', item.schedule || '待确定'],
+        ['计划体检机构', item.careTarget?.hospital || '待确定'],
+        ['体检服务方式', [item.service?.modeLabel || '仅提醒', item.service?.typeLabel].filter(Boolean).join(' · ')],
+      ] : [
         ['管理目标', item.goal],
         ['完成标准', item.completionStandard],
         ['建议时间', item.schedule],
@@ -657,6 +667,7 @@ export default function ServicePlansScreen({ navigation, route }) {
             items: Array.isArray(ap.displayItems) ? ap.displayItems.map(item => ({
               _id: item.id, name: displayItemName(item),
               goal: item.goal, schedule: item.schedule,
+              summaryRows: item.moduleKey === 'annual_checkup' ? displayItemRows(item) : null,
               detailRows: displayItemRows(item), status: 'pending',
             })) : Object.entries(ap.moduleData || {})
               .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : v.enabled !== false))

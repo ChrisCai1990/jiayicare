@@ -72,15 +72,32 @@ module.exports=({getVisiblePlanPatientIds})=>{
       req.amendmentPatientId=req.params.patientId;
       const {planId,baseUpdatedAt}=req.body;
       if(!mongoose.isValidObjectId(planId)) return res.status(400).json({success:false,message:'年度方案标识无效'});
-      const plan=await Plan.findOne({_id:planId,patientId:req.amendmentPatientId}).select('+supplementRevisions').lean();
+      let plan=await Plan.findOne({_id:planId,patientId:req.amendmentPatientId}).select('+supplementRevisions +revisionDraft').lean();
       if(!plan || !plan.pushedAt || plan.reviewStatus!=='approved') return res.status(409).json({success:false,message:'请先打开已发布的年度方案'});
       if(String(plan.updatedAt?.toISOString())!==baseUpdatedAt) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
+      if(req.body.action==='publish') {
+        const draft=plan.revisionDraft;
+        if(!draft?.moduleData || !draft.changes?.length) return res.status(409).json({success:false,message:'没有待发布的修订，请先暂存事项'});
+        const executionReview=require('../utils/annualExecutionReview').markForReview(plan,draft.changes);
+        const revision={id:draft.id,status:'applied',kind:'published_revision',createdAt:new Date(),createdBy:req.staff._id,
+          source:{kind:'advisor_revision',reason:'顾问确认发布本次修订'},baseUpdatedAt:plan.updatedAt,
+          changes:draft.changes,taskStatus:'not_created',...(executionReview?{executionReview}:{})};
+        const saved=await Plan.findOneAndUpdate({_id:plan._id,patientId:req.amendmentPatientId,updatedAt:plan.updatedAt,'revisionDraft.id':draft.id},
+          {$set:{moduleData:draft.moduleData,returnedAt:null,returnReason:''},$unset:{revisionDraft:''},$push:{supplementRevisions:revision}},{new:true}).select('+supplementRevisions');
+        if(!saved) return res.status(409).json({success:false,message:'修订草稿已变化，请刷新后重新核对'});
+        const noticeId=new mongoose.Types.ObjectId(require('crypto').createHash('sha256').update(`annual-plan-published-revision:${plan._id}:${draft.id}`).digest('hex').slice(0,24));
+        await require('../models/PushRecord').updateOne({_id:noticeId},{$setOnInsert:{_id:noticeId,staffId:req.staff._id,patientId:req.amendmentPatientId,
+          type:'plan',sourceAnnualPlanId:plan._id,title:`${plan.year}年度${plan.templateName||'健康管理方案'}已更新`,
+          content:'您的年度方案已更新，请查看最新安排。'}},{upsert:true});
+        return res.json({success:true,data:saved,message:executionReview?'本次修订已发布，客户已收到一条通知；执行安排待核对':'本次修订已发布，客户已收到一条通知'});
+      }
+      const priorDraft=plan.revisionDraft;
+      plan={...plan,moduleData:priorDraft?.moduleData||plan.moduleData};
       const pilot=require('../utils/annualFlowPilot').enabled(req.params.patientId);
       const delivery=req.body.item?.delivery;
       const directServiceEdit=pilot && ['medical_treatment','specialist_collab','checkup_completion','abnormal_followup'].includes(req.body.item?.key) && delivery!==undefined && req.body.item?.operation!=='remove';
       const reason=String(req.body.reason || (directServiceEdit?'顾问调整就医与检查安排':req.body.item?.key==='annual_checkup' && pilot?'顾问调整年度体检安排':'')).trim();
       if(reason.length<2 || reason.length>500) return res.status(400).json({success:false,message:'请填写2至500字的修订原因'});
-      const source={kind:'advisor_revision',reason,customerFeedback:plan.returnReason||'',customerFeedbackAt:plan.returnedAt||null};
       const checkupEdit=req.body.item?.key==='annual_checkup';
       const removeItem=req.body.item?.operation==='remove';
       let item,moduleData,changes;
@@ -178,16 +195,13 @@ module.exports=({getVisiblePlanPatientIds})=>{
       }
       if(changes[0]?.before && changes[0]?.after && JSON.stringify(changes[0].before)===JSON.stringify(changes[0].after))
         return res.status(400).json({success:false,message:'本项内容没有变化'});
-      const revisionId=logic.hash({planId,baseUpdatedAt,item,reason});
-      const executionReview=require('../utils/annualExecutionReview').markForReview(plan,changes);
-      const revision={id:revisionId,status:'applied',createdAt:new Date(),createdBy:req.staff._id,source,baseUpdatedAt:plan.updatedAt,changes,taskStatus:'not_created',...(executionReview?{executionReview}:{})};
-      const saved=await Plan.findOneAndUpdate({_id:plan._id,patientId:req.amendmentPatientId,updatedAt:plan.updatedAt,'supplementRevisions.id':{$ne:revisionId}},
-        {$set:{moduleData,returnedAt:null,returnReason:''},$push:{supplementRevisions:revision}},{new:true}).select('+supplementRevisions');
+      const revisionDraft={id:priorDraft?.id||require('crypto').randomUUID(),moduleData,
+        changes:[...(priorDraft?.changes||[]),...changes],savedAt:new Date(),savedBy:req.staff._id};
+      const saved=await Plan.findOneAndUpdate({_id:plan._id,patientId:req.amendmentPatientId,updatedAt:plan.updatedAt},
+        {$set:{revisionDraft}},{new:true}).select('+revisionDraft');
       if(!saved) return res.status(409).json({success:false,message:'方案已变化，请刷新后重新核对'});
-      const itemTitle=checkupEdit?'年度体检':removeItem?(logic.title(changes[0].before)||changes[0].before?.purpose||'该事项'):item.title;
-      await require('../models/PushRecord').create({staffId:req.staff._id,patientId:req.amendmentPatientId,type:'plan',sourceAnnualPlanId:plan._id,
-        title:`${plan.year}年度${plan.templateName||'健康管理方案'}已更新`,content:`您的年度方案中“${itemTitle}”已${removeItem?'取消':'修订'}，点击通知查看完整方案。`});
-      res.json({success:true,data:saved,message:executionReview?'修订已推送客户；执行安排已进入顾问核对，原任务保留':'修订已推送客户；原执行任务保留'});
+      const response=saved.toObject?saved.toObject():saved;
+      res.json({success:true,data:{...response,moduleData,revisionDraft,hasUnpublishedRevision:true},message:'本项已暂存，仅医护端可见；核对完成后请发布本次修订'});
     }catch(error){res.status(error.statusCode||400).json({success:false,message:error.message});}
   });
   return router;

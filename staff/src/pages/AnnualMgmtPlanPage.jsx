@@ -442,6 +442,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return () => { observer.disconnect(); clearTimeout(timeout) }
   }, [patientMode, loading, year, planType, annualPilot])
   const [saving, setSaving]         = useState(false)
+  const [publishingRevision, setPublishingRevision] = useState(false)
   const [pushing, setPushing]       = useState(false)
   const [internalTaskStarting, setInternalTaskStarting] = useState(false)
   const [internalTaskReason, setInternalTaskReason] = useState('')
@@ -513,7 +514,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       try {
         const res = await staffAPI.getAnnualPlan(id, year)
         if (!active) return
-        const list = Array.isArray(res.data) ? res.data : [res.data].filter(Boolean)
+        const list = (Array.isArray(res.data) ? res.data : [res.data].filter(Boolean))
+          .map(plan => plan.revisionDraft?.moduleData ? { ...plan, moduleData: plan.revisionDraft.moduleData, hasUnpublishedRevision: true } : plan)
         const latest = list.find(p => (p.servicePlanCode || p.planType) === planType)
         if (!latest || latest.updatedAt === currentPlanVersion) return
         if (dirty || metricSelectionDirty) { setRemotePlanChanged(true); return }
@@ -613,7 +615,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           advisorReady: !!preparationData?.preparation?.advisorReadyConfirmedAt,
         })
         // 后端返回该年度全部类型的方案数组，按 updatedAt 降序
-        const list = Array.isArray(planRes.data) ? planRes.data : (planRes.data ? [planRes.data] : [])
+        const list = (Array.isArray(planRes.data) ? planRes.data : (planRes.data ? [planRes.data] : []))
+          .map(plan => plan.revisionDraft?.moduleData ? { ...plan, moduleData: plan.revisionDraft.moduleData, hasUnpublishedRevision: true } : plan)
         const map = {}
         list.forEach(p => { const key = p.servicePlanCode || p.planType; if (key) map[key] = p })
         setPlansByType(map)
@@ -1186,6 +1189,21 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!button || button.disabled) { toast('请先展开要修改的事项，填写后再保存本项'); return }
     button.click()
   }
+  const publishRevision = async () => {
+    const current = plansByType[planType]
+    if (!current?.hasUnpublishedRevision || publishingRevision) return
+    if (!window.confirm('确认一次发布本次暂存的全部修订？发布后客户方案会更新，并收到一条通知；原执行安排仍需核对。')) return
+    setPublishingRevision(true)
+    try {
+      const response = await staffAPI.reviseAnnualPlan(id, { planId: current._id, baseUpdatedAt: current.updatedAt, action: 'publish' })
+      const saved = { ...response.data, hasUnpublishedRevision: false, revisionDraft: null }
+      setPlansByType(previous => ({ ...previous, [planType]: saved }))
+      setModuleData(saved.moduleData || {})
+      setRemotePlanChanged(false)
+      toast(response.message || '本次修订已发布')
+    } catch (error) { toast(error.message || '发布失败，请刷新后重试') }
+    finally { setPublishingRevision(false) }
+  }
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
 
@@ -1268,14 +1286,18 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           >
             {saving ? '保存中...' : '暂存草稿'}
           </button>}
-          {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={saveCurrentPublishedItem}>保存当前项</button>}
+          {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={saveCurrentPublishedItem}>暂存当前项</button>}
+          {annualPilot && pushedAt && canEdit && plansByType[planType]?.hasUnpublishedRevision && <button type="button" className="btn btn-secondary btn-sm" disabled={publishingRevision} onClick={publishRevision}>{publishingRevision ? '发布中…' : '发布本次修订'}</button>}
         </div>
       </div>
 
       {annualPilot && patientMode && <div style={{ margin: '-12px 0 20px', fontSize: 12, color: '#52675D' }}>
-        {confirmedAt ? '客户已确认方案，方案建立环节已完成。保存当前项是局部修订；原执行安排核对及就医、检查等服务完成情况分别在对应任务中记录。'
-          : pushedAt ? '方案已推送，等待客户确认。保存当前项会更新方案并通知客户；服务完成情况在执行任务中记录。'
+        {confirmedAt ? '客户已确认方案。暂存当前项仅保留医护端修改；核对后点击“发布本次修订”，客户才会看到更新。原执行安排另行核对。'
+          : pushedAt ? '方案已推送，等待客户确认。暂存当前项不会更新客户方案或发送通知；核对后再发布本次修订。'
             : '逐项保存后，点击“推送并分发”完成顾问确认；客户确认状态会在上方显示。'}
+      </div>}
+      {annualPilot && pushedAt && plansByType[planType]?.hasUnpublishedRevision && <div role="status" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 8, background: '#FFF5E6', color: '#855315', fontSize: 13, fontWeight: 600 }}>
+        当前展示的是医护端暂存修订；客户仍看到上一版方案。核对完成后点击“发布本次修订”。
       </div>}
 
       {patientMode && (searchParams.get('reviewAnnualInputs') === '1' || searchParams.has('reviewDraftId')) && (
@@ -1602,7 +1624,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
       <div className="annual-plan-footer">
         {canEdit && !pushedAt && planType && <button type="button" className="btn btn-primary" disabled={saving} onClick={() => handleSave()}>{saving ? '保存中…' : '保存方案草稿'}</button>}
-        {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary" onClick={saveCurrentPublishedItem}>保存当前项</button>}
+        {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary" onClick={saveCurrentPublishedItem}>暂存当前项</button>}
+        {annualPilot && pushedAt && canEdit && plansByType[planType]?.hasUnpublishedRevision && <button type="button" className="btn btn-secondary" disabled={publishingRevision} onClick={publishRevision}>{publishingRevision ? '发布中…' : '发布本次修订'}</button>}
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
     </div>
