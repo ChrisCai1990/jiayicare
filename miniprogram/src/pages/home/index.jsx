@@ -5,6 +5,7 @@ import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { userAPI, tasksAPI, followupTasksAPI, systemAPI, servicesAPI } from '../../services/api';
+const { customerAnnualFollowUp } = require('../../utils/customerAnnualFollowUp');
 import TrendChart from '../../components/TrendChart';
 import Icon from '../../components/Icon';
 import useNavBar from '../../hooks/useNavBar';
@@ -78,7 +79,7 @@ function TaskItemRow({ task, onPress }) {
   return <View style={{backgroundColor:'#fff',borderRadius:'18px',padding:'16px',marginBottom:'10px'}}>
     <View onClick={() => onPress(task)} style={{display:'flex',alignItems:'center',gap:'10px'}}>
       <View style={{width:'36px',height:'36px',borderRadius:'11px',backgroundColor:colors.primary10,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name="📋" size={19} color={colors.primary}/></View>
-      <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'15px',fontWeight:600,color:colors.textPrimary}}>{title}</Text><Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'3px'}}>{task.assignee} · {displayTaskDate(task.dueDate || task.date, language)} {task.dueTime}</Text></View>
+      <View style={{flex:1,minWidth:0}}><Text style={{display:'block',fontSize:'15px',fontWeight:600,color:colors.textPrimary}}>{title}</Text><Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'3px'}}>{task.assignee} · {displayTaskDate(task.dueDate || task.date, language)} {task.dueTime}</Text>{!!task.arrangementContent && <Text style={{display:'block',fontSize:'12px',color:colors.textSecondary,marginTop:'4px',lineHeight:'18px'}} numberOfLines={2}>{task.arrangementContent}</Text>}</View>
       <Text style={{fontSize:'12px',color:colors.primary,flexShrink:0}}>{upload ? t('详情 ›') : `${t(urgency.label)} ›`}</Text>
     </View>
     {upload && <>
@@ -144,7 +145,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
             )}
             {!!task.description && (
               <View style={{ display: 'flex', marginBottom: '4px' }}>
-                <Text style={{ fontSize: '13px', color: colors.textMuted, width: '64px' }}>备注</Text>
+                <Text style={{ fontSize: '13px', color: colors.textMuted, width: '64px' }}>{task.sourceAnnualPlanId ? '本次安排' : '备注'}</Text>
                 <Text style={{ fontSize: '13px', color: colors.textPrimary, flex: 1 }}>{task.description}</Text>
               </View>
             )}
@@ -209,6 +210,7 @@ export default function HomePage() {
   sessionRef.current = token;
   const [taskDetail, setTaskDetail] = useState(null);
   const [popularServices, setPopularServices] = useState([]);
+  const [join365Plan, setJoin365Plan] = useState(null);
   const loadRequestRef = useRef(0);
 
   // Each source publishes independently; a slow mall request must not hold up tasks.
@@ -219,7 +221,7 @@ export default function HomePage() {
     const current = () => requestId === loadRequestRef.current && sessionRef.current === token;
     setLoading(true);
     setSectionState({ dashboard: token ? 'loading' : 'ready', tasks: token ? 'loading' : 'ready', followups: token ? 'loading' : 'ready', services: 'loading' });
-    if (!token) { setDashData(null); setTasks([]); setFollowups([]); }
+    if (!token) { setDashData(null); setTasks([]); setFollowups([]); setJoin365Plan(null); }
     const load = async (key, request, apply) => {
       try {
         const result = await request();
@@ -233,6 +235,7 @@ export default function HomePage() {
     };
     const jobs = [load('services', () => servicesAPI.list(), data => setPopularServices((data?.services || []).slice(0, 4)))];
     if (token) jobs.push(
+      load('membership', () => servicesAPI.packages(), data => setJoin365Plan((data || []).find(item => item.membershipTier === 'consumer365' && item.includes365 && Number(item.durationMonths) === 12 && item.canJoin365 === true) || null)),
       load('dashboard', () => userAPI.getDashboard(), setDashData),
       load('tasks', () => tasksAPI.list(), data => setTasks((data || []).filter(t => t.status === 'pending'))),
       load('followups', () => followupTasksAPI.list(), data => setFollowups((data || []).filter(p => !p.completedByUser && !['completed', 'cancelled'].includes(p.status))))
@@ -241,7 +244,7 @@ export default function HomePage() {
     if (current()) setLoading(false);
   }, [token, authLoading, authUser?._id]);
 
-  useEffect(() => { setDashData(null); setTasks([]); setFollowups([]); setTaskDetail(null); }, [token]);
+  useEffect(() => { setDashData(null); setTasks([]); setFollowups([]); setJoin365Plan(null); setTaskDetail(null); }, [token]);
   useEffect(() => () => { loadRequestRef.current += 1; }, []);
 
   useEffect(() => { loadCore(); }, [loadCore]);
@@ -273,21 +276,26 @@ export default function HomePage() {
 
   const todayReminders = dashData?.todayReminders || [];
   // 合并待办：Task表任务 + 随访计划（对齐app端allPendingTaskItems，同一口径过滤已完成/取消）
-  const followupTaskItems = followups.map((plan) => ({
+  const followupTaskItems = followups.map((plan) => {
+    const annual = customerAnnualFollowUp(plan);
+    return ({
       _id: plan._id,
       type: 'followup',
-      title: plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划'),
-      description: plan.taskRequirements || plan.plannedContent || plan.content,
+      title: annual?.title || (plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划')),
+      description: annual ? annual.details.join('\n') : (plan.taskRequirements || plan.plannedContent || plan.content),
+      arrangementContent: annual?.summary || '',
       assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: formatChineseDate(plan.date),
       dueTime: '',
       priority: plan.sourceType === 'symptom' ? 'high' : urgencyByDate(plan.date),
       sourceType: plan.sourceType,
+      sourceAnnualPlanId: plan.sourceAnnualPlanId,
       followupType: plan.type,
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],
       formData: plan.formData || {},
-    }));
+    });
+  });
   const allPendingTaskItems = [
     ...followupTaskItems.filter((item) => item.sourceType === 'symptom'),
     ...tasks,
@@ -386,6 +394,11 @@ export default function HomePage() {
         {submittedFeedback.length>0&&<View onClick={()=>Taro.navigateTo({url:'/pages/tasks/index?feedback=1'})} style={{backgroundColor:'#fff',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px',display:'flex',justifyContent:'space-between'}}><Text style={{fontSize:'13px',color:colors.textSecondary}}>{language === 'en-US' ? `Feedback sent · ${submittedFeedback.length} awaiting your care team` : `已提交反馈 · ${submittedFeedback.length} 项待团队处理`}</Text><Text style={{fontSize:'13px',color:colors.primary}}>{t('查看 ›')}</Text></View>}
         <View style={{marginBottom:'24px'}}>
           <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>{t('我的权益')}</Text>
+          {join365Plan && <View onClick={() => Taro.navigateTo({ url: `/pages/services/mall/index?productId=${encodeURIComponent(join365Plan.id)}` })} style={{backgroundColor:'#EFF8F1',borderRadius:'18px',padding:'18px',marginBottom:'12px',border:`1px solid ${colors.primary}`}}>
+            <Text style={{fontSize:'16px',fontWeight:700,color:colors.textPrimary,display:'block'}}>{t('加入365会员计划')}</Text>
+            <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'5px'}}>{t('当前没有有效年度服务，可查看计划内容并选择加入')}</Text>
+            <Text style={{fontSize:'14px',fontWeight:700,color:colors.primary,display:'block',marginTop:'8px'}}>¥{Number(join365Plan.price).toFixed(2)} · {t('查看会员计划 ›')}</Text>
+          </View>}
           <View onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section=plan'})} style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',display:'flex',alignItems:'center',gap:'12px'}}>
             <Icon name="🎁" size={24} color={colors.primary}/>
             <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'15px',fontWeight:600,display:'block',color:colors.textPrimary}}>{t('会员权益')}</Text><Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'5px'}}>{t('查看计划、使用情况与健康基金')}</Text>{user?.healthFund?.total!=null&&<Text style={{fontSize:'13px',color:colors.primary,display:'block',marginTop:'7px'}}>{t('健康基金')} ¥{Number(user.healthFund.total).toFixed(2)}</Text>}</View>
