@@ -8,7 +8,7 @@ import Svg, { Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI } from '../../services/api';
+import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI, plansAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
@@ -221,6 +221,7 @@ export default function HomeScreen({ navigation }) {
   const [taskTab, setTaskTab]               = useState('全部');
   const [followupPlans, setFollowupPlans]   = useState([]);
   const [allTasks, setAllTasks]             = useState([]);
+  const [annualPlans, setAnnualPlans]       = useState([]);
   const [popularServices, setPopularServices] = useState([]);
   // 记录相关状态/弹窗已抽离到 CheckinScreen.js（2026-07-18 记录页重构）
   const todayStr = toLocalDateStr(new Date());
@@ -231,12 +232,13 @@ export default function HomeScreen({ navigation }) {
 
   const loadData = useCallback(async () => {
     try {
-      const [dashRes, followupRes, tasksRes, servicesRes] =
+      const [dashRes, followupRes, tasksRes, servicesRes, annualRes] =
         await Promise.allSettled([
           token ? userAPI.getDashboard() : Promise.resolve(null),
           token ? followupTasksAPI.list() : Promise.resolve(null),
           token ? tasksAPI.list() : Promise.resolve(null),
           servicesAPI.list(),
+          token ? plansAPI.listAnnualMgmt() : Promise.resolve(null),
         ]);
 
       if (dashRes.status === 'fulfilled' && dashRes.value?.success) {
@@ -253,6 +255,9 @@ export default function HomeScreen({ navigation }) {
       }
       if (servicesRes.status === 'fulfilled' && servicesRes.value?.success) {
         setPopularServices((servicesRes.value.data?.services || []).slice(0, 4));
+      }
+      if (annualRes.status === 'fulfilled' && annualRes.value?.success) {
+        setAnnualPlans(annualRes.value.data || []);
       }
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
@@ -364,6 +369,7 @@ export default function HomeScreen({ navigation }) {
       dueTime: '',
       priority: plan.sourceType === 'symptom' ? 'high' : urgencyByDate(plan.date),
       sourceType: plan.sourceType,
+      sourceAnnualPlanId: plan.sourceAnnualPlanId,
       followupType: plan.type,
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],
@@ -374,6 +380,21 @@ export default function HomeScreen({ navigation }) {
     ...allTasks,
     ...activeFollowupTaskItems.filter(item => item.sourceType !== 'symptom'),
   ];
+  const otherPendingTaskItems = allPendingTaskItems.filter(item => !item.sourceAnnualPlanId);
+  // 首页年度安排与方案详情共用已发布的 displayItems；医护端暂存不会进入此处。
+  const latestPlanYear = Math.max(0, ...annualPlans.map(plan => Number(plan.year) || 0));
+  const annualArrangements = annualPlans.filter(plan => Number(plan.year) === latestPlanYear)
+    .flatMap(plan => (plan.displayItems || []).map(item => ({ planId: plan._id, item })))
+    .filter(({ item }) => /^(?:medical_treatment|specialist_collab|checkup_completion|abnormal_followup|vaccine|annual_checkup|functional_medicine|quarterly_eval|nutrition_intervention)$/.test(item.moduleKey)
+      && /^\d{4}-\d{2}-\d{2}$/.test(item.schedule || '') && item.schedule >= todayStr)
+    .map(({ planId, item }) => ({
+      _id: `${planId}:${item.id}`, planId, type: 'checkup',
+      title: item.title === item.category ? item.title : `${item.category} · ${item.title}`,
+      assignee: '已发布年度方案', dueDate: item.schedule, dueTime: '', scheduleLabel: '计划',
+      sortDate: item.schedule,
+    }))
+    .sort((a, b) => a.sortDate.localeCompare(b.sortDate))
+    .filter((item, index, rows) => rows.findIndex(row => row.title === item.title && row.sortDate === item.sortDate) === index);
 
   if (loading) {
     return <SafeAreaView style={styles.container}><HomeScreenSkeleton /></SafeAreaView>;
@@ -446,14 +467,22 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.sectionTitle}>近期安排</Text>
               <TouchableOpacity
                 style={styles.sectionMore}
-                onPress={() => goProtected('Tasks')}
+                onPress={() => goProtected(annualPlans.length ? 'ServicePlans' : 'Tasks')}
               >
-                <Text style={styles.sectionMoreText}>全部</Text>
+                <Text style={styles.sectionMoreText}>{annualPlans.length ? '查看年度方案' : '全部'}</Text>
                 <Ionicons name="chevron-forward" size={14} color={colors.primary} />
               </TouchableOpacity>
             </View>
             <View style={styles.taskCard}>
-              {allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
+              {annualPlans.length ? (annualArrangements.length ? annualArrangements.slice(0, 3).map((item, i, rows) => (
+                <TaskItem key={item._id} task={item} isLast={i === rows.length - 1}
+                  onPress={() => navigation.navigate('ServicePlans', { annualPlanId: item.planId, direct: true })} />
+              )) : (
+                <View style={styles.emptyTask}>
+                  <Ionicons name="calendar-outline" size={32} color={colors.primary} />
+                  <Text style={styles.emptyTaskText}>年度方案暂无已确定日期的近期安排</Text>
+                </View>
+              )) : allPendingTaskItems.length === 0 && todayReminders.length === 0 ? (
                 <View style={styles.emptyTask}>
                   <Ionicons name="checkmark-circle-outline" size={32} color={colors.success} />
                   <Text style={styles.emptyTaskText}>暂无待办任务</Text>
@@ -474,7 +503,21 @@ export default function HomeScreen({ navigation }) {
                 </>
               )}
             </View>
-            {allPendingTaskItems.length > 3 && (
+            {annualPlans.length && annualArrangements.length > 3 && (
+              <TouchableOpacity style={styles.reminderHint} onPress={() => goProtected('ServicePlans')} activeOpacity={0.7}>
+                <Ionicons name="calendar-outline" size={12} color={colors.primary} />
+                <Text style={styles.reminderHintText}>还有 {annualArrangements.length - 3} 项年度安排 · 查看方案</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+            {annualPlans.length > 0 && otherPendingTaskItems.length > 0 && (
+              <TouchableOpacity style={styles.reminderHint} onPress={() => goProtected('Tasks')} activeOpacity={0.7}>
+                <Ionicons name="checkbox-outline" size={12} color={colors.primary} />
+                <Text style={styles.reminderHintText}>其他待办 {otherPendingTaskItems.length} 项 · 查看待办</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+            {!annualPlans.length && allPendingTaskItems.length > 3 && (
               <TouchableOpacity
                 style={styles.reminderHint}
                 onPress={() => goProtected('Tasks')}
@@ -492,7 +535,7 @@ export default function HomeScreen({ navigation }) {
                 activeOpacity={0.7}
               >
                 <Ionicons name="notifications-outline" size={12} color={colors.primary} />
-                <Text style={styles.reminderHintText}>今日 {todayReminders.length} 条提醒已合并 · 管理提醒</Text>
+                <Text style={styles.reminderHintText}>今日 {todayReminders.length} 条提醒 · 查看提醒</Text>
                 <Ionicons name="chevron-forward" size={12} color={colors.primary} />
               </TouchableOpacity>
             )}
