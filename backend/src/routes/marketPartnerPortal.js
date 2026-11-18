@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const MarketPartner = require('../models/MarketPartner');
 const MarketPartnerVerificationCode = require('../models/MarketPartnerVerificationCode');
 const MarketPartnerCommission = require('../models/MarketPartnerCommission');
+const MarketPartnerAttribution = require('../models/MarketPartnerAttribution');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const ServicePackage = require('../models/ServicePackage');
@@ -136,6 +137,47 @@ router.get('/commissions', async (req, res) => {
     status: row.status, firstEligibleAt: row.firstEligibleAt, finalEligibleAt: row.finalEligibleAt })) });
 });
 
+// Claims are written when a signed-in customer opens a valid partner product entry.
+// Anonymous visits cannot be identified; absence of a claim does not mean "unread".
+router.get('/activity', async (req, res) => {
+  const tenantId = req.marketPartner.tenantId;
+  const partnerId = req.marketPartner._id;
+  const views = await MarketPartnerAttribution.find({ tenantId, partnerId, source: 'code', productId: { $ne: null } })
+    .sort({ effectiveAt: -1 }).limit(500).select('patientId productId effectiveAt')
+    .populate('patientId', 'name').lean();
+  const grouped = new Map();
+  for (const view of views) {
+    if (!view.patientId?._id) continue;
+    const key = `${view.patientId._id}:${view.productId}`;
+    const existing = grouped.get(key);
+    if (existing) { existing.openCount += 1; existing.firstOpenedAt = view.effectiveAt; }
+    else grouped.set(key, { patientId: view.patientId._id, customer: maskedName(view.patientId.name),
+      productId: view.productId, lastOpenedAt: view.effectiveAt, firstOpenedAt: view.effectiveAt, openCount: 1 });
+  }
+  const entries = [...grouped.values()].slice(0, 200);
+  const productIds = [...new Set(entries.map(row => String(row.productId)))];
+  const [products, packages, orders] = await Promise.all([
+    Product.find({ _id: { $in: productIds } }).select('name').lean(),
+    ServicePackage.find({ _id: { $in: productIds } }).select('name').lean(),
+    Order.find({ tenantId, marketPartnerId: partnerId, user: { $in: entries.map(row => row.patientId) },
+      serviceId: { $in: productIds } }).sort({ createdAt: -1 })
+      .select('user serviceId orderNo paymentStatus paidAt createdAt').lean(),
+  ]);
+  const names = new Map([...products, ...packages].map(row => [String(row._id), row.name]));
+  const latestOrders = new Map();
+  for (const order of orders) {
+    const key = `${order.user}:${order.serviceId}`;
+    const entry = grouped.get(key);
+    if (entry && order.createdAt >= entry.firstOpenedAt && !latestOrders.has(key)) latestOrders.set(key, order);
+  }
+  res.json({ success: true, data: entries.map(row => {
+    const order = latestOrders.get(`${row.patientId}:${row.productId}`);
+    return { customer: row.customer, productName: names.get(String(row.productId)) || '已下架商品',
+      lastOpenedAt: row.lastOpenedAt, openCount: row.openCount,
+      orderNo: order?.orderNo || '', paymentStatus: order?.paymentStatus || '' };
+  }) });
+});
+
 router.get('/orders', async (req, res) => {
   const rows = await Order.find({ tenantId: req.marketPartner.tenantId, marketPartnerId: req.marketPartner._id })
     .sort({ createdAt: -1 }).limit(200).select('user orderNo serviceName paidAt paidAmount paymentStatus refundStatus')
@@ -147,7 +189,7 @@ router.get('/orders', async (req, res) => {
   res.json({ success: true, data: rows.map(row => ({ orderNo: row.orderNo,
     customer: maskedName(row.user?.name), serviceName: row.serviceName, paidAt: row.paidAt,
     paidAmount: row.paidAmount, paymentStatus: row.paymentStatus, refundStatus: row.refundStatus,
-    commissionStatus: commissionStatus.get(String(row._id)) || 'awaiting_review' })) });
+    commissionStatus: commissionStatus.get(String(row._id)) || (row.paymentStatus === 'paid' ? 'awaiting_review' : 'not_accrued') })) });
 });
 
 module.exports = router;

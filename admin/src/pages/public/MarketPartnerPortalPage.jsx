@@ -4,8 +4,10 @@ import './marketPartnerPortal.css'
 const API_BASE = `${import.meta.env.VITE_API_URL || '/api'}/market-partner`
 const money = cents => `¥${(Number(cents || 0) / 100).toFixed(2)}`
 const date = value => value ? new Date(value).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '—'
+const dateTime = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '—'
 const labels = { estimated: '预估', pending: '待审核', partially_paid: '部分已发', paid: '已发放',
   cancelled: '已取消', reversal_due: '待冲回' }
+const paymentLabels = { paid: '已支付', pending: '待支付', failed: '支付失败', refunded: '已退款' }
 const productLines = { medical: '就医服务', nutrition: '营养与食养', annual: '年度健康管理',
   consultation: '咨询服务', consumer365: '365会员' }
 const PAGE_SIZE = 10
@@ -62,22 +64,23 @@ export default function MarketPartnerPortalPage({ view = 'cooperation' }) {
   const [productPage, setProductPage] = useState(1)
   const [commissions, setCommissions] = useState([])
   const [orders, setOrders] = useState([])
+  const [activity, setActivity] = useState([])
   const [detailPage, setDetailPage] = useState(1)
   const [teamPage, setTeamPage] = useState(1)
   const [overview, setOverview] = useState(null)
   const [cooperation, setCooperation] = useState(null)
   const [month, setMonth] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit' }).format(new Date()))
-  const [tab, setTab] = useState('commissions')
+  const [tab, setTab] = useState('activity')
 
   useEffect(() => {
     if (!token) return
     const requests = view === 'cooperation'
       ? [call('/me', undefined, token), call('/cooperation/me', undefined, token), call('/products', undefined, token)]
-      : [call('/me', undefined, token), call('/commissions', undefined, token), call('/orders', undefined, token)]
-    Promise.all(requests).then(([identity, second, third]) => {
+      : [call('/me', undefined, token), call('/commissions', undefined, token), call('/orders', undefined, token), call('/activity', undefined, token)]
+    Promise.all(requests).then(([identity, second, third, fourth]) => {
       setMe(identity)
       if (view === 'cooperation') { setCooperation(second); setProducts(third) }
-      else { setCommissions(second); setOrders(third) }
+      else { setCommissions(second); setOrders(third); setActivity(fourth) }
     }).catch(err => {
       setError(err.message)
       if (err.status === 401) { sessionStorage.removeItem('jy_market_partner_token'); setToken('') }
@@ -121,7 +124,7 @@ export default function MarketPartnerPortalPage({ view = 'cooperation' }) {
   const field = { width: '100%', padding: '11px 12px', border: '1px solid #c6d6ce', borderRadius: 8, marginTop: 8, boxSizing: 'border-box' }
   const button = { border: 0, background: '#176b4d', color: '#fff', borderRadius: 8, padding: '11px 16px', cursor: 'pointer' }
   const visibleProducts = products.filter(item => item.name.includes(productSearch.trim()))
-  const detailRows = tab === 'commissions' ? commissions : orders
+  const detailRows = tab === 'activity' ? activity : tab === 'commissions' ? commissions : orders
   const selfPromotion = Number(overview?.self?.promotionCents || 0)
   const selfService = Number(overview?.self?.serviceCents || 0)
   const canSeeTeam = overview?.role === 'leader'
@@ -217,22 +220,34 @@ export default function MarketPartnerPortalPage({ view = 'cooperation' }) {
           </>}
         </section>
         <h2 style={{ fontSize: 18 }}>业务与佣金明细</h2>
+        <section style={card}>
+          <strong>业务动态</strong><p style={{ marginBottom: 4 }}>已识别查看 {activity.length} 项 · 客户交易 {orders.length} 笔 · 佣金记录 {commissions.length} 笔</p>
+          <small style={{ color: '#607568' }}>打开本页时更新；目前没有独立的微信或短信成交提醒。</small>
+        </section>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button onClick={() => { setTab('activity'); setDetailPage(1) }} aria-pressed={tab === 'activity'}>客户查看</button>
           <button onClick={() => { setTab('commissions'); setDetailPage(1) }} aria-pressed={tab === 'commissions'}>佣金明细</button>
           <button onClick={() => { setTab('orders'); setDetailPage(1) }} aria-pressed={tab === 'orders'}>客户交易</button>
         </div>
-        {tab === 'commissions' ? (commissions.length ? pageRows(commissions, detailPage).map(item => <section key={item.id} style={card}>
+        {tab === 'activity' ? <>
+          <p style={{ fontSize: 12, color: '#607568' }}>仅显示登录后打开有效推荐商品入口的客户。匿名访问无法识别；暂无记录不代表客户未查看。</p>
+          {activity.length ? pageRows(activity, detailPage).map((item, index) => <section key={`${item.productName}-${(detailPage - 1) * PAGE_SIZE + index}`} style={card}>
+            <strong>{item.productName}</strong><span style={{ float: 'right' }}>{item.paymentStatus === 'paid' ? '已支付' : item.orderNo ? '已下单待支付' : '已打开'}</span>
+            <p style={{ marginBottom: 4 }}>客户 {item.customer} · 最近打开 {dateTime(item.lastOpenedAt)} · 最近记录中打开 {item.openCount} 次</p>
+            {item.orderNo && <p style={{ marginBottom: 0 }}>关联订单 {item.orderNo} · {paymentLabels[item.paymentStatus] || item.paymentStatus}</p>}
+          </section>) : <section style={card}>暂无可识别的客户查看记录</section>}
+        </> : tab === 'commissions' ? (commissions.length ? pageRows(commissions, detailPage).map(item => <section key={item.id} style={card}>
           <strong>{item.serviceName}</strong><span style={{ float: 'right' }}>{labels[item.status] || item.status}</span>
           <p style={{ marginBottom: 4 }}>客户 {item.customer} · {date(item.paidAt)} · 第 {item.periodNumber} 期</p>
           <p style={{ margin: '4px 0' }}>计佣实收 {money(item.eligibleCashCents)} × {(item.basisPoints / 100).toFixed(2)}%</p>
           <p style={{ marginBottom: 0 }}>应计 {money(item.accruedCents)}　累计已发 {money(item.paidCents)}　已追回 {money(item.recoveredCents || 0)}</p>
         </section>) : <section style={card}>暂无佣金记录</section>)
           : (orders.length ? pageRows(orders, detailPage).map((item, index) => <section key={`${item.orderNo}-${(detailPage - 1) * PAGE_SIZE + index}`} style={card}>
-            <strong>{item.serviceName}</strong><p>客户 {item.customer} · {date(item.paidAt)}</p>
-            <p style={{ marginBottom: 0 }}>订单登记实收 ¥{Number(item.paidAmount || 0).toFixed(2)} · {item.paymentStatus} · 佣金 {item.commissionStatus === 'awaiting_review' ? '待核对' : (labels[item.commissionStatus] || item.commissionStatus)}</p>
+            <strong>{item.serviceName}</strong><p>客户 {item.customer} · 订单 {item.orderNo || '—'} · 支付时间 {date(item.paidAt)}</p>
+            <p style={{ marginBottom: 0 }}>订单登记实收 ¥{Number(item.paidAmount || 0).toFixed(2)} · {paymentLabels[item.paymentStatus] || item.paymentStatus}{item.refundStatus && item.refundStatus !== 'none' ? ` · 退款 ${item.refundStatus}` : ''} · 佣金 {item.commissionStatus === 'not_accrued' ? '待支付后计提' : item.commissionStatus === 'awaiting_review' ? '待核对' : (labels[item.commissionStatus] || item.commissionStatus)}</p>
           </section>) : <section style={card}>暂无交易记录</section>)}
         <PageControls total={detailRows.length} page={detailPage} onPageChange={setDetailPage} noun="笔记录" />
-        <p style={{ fontSize: 12, color: '#607568' }}>每页 10 笔，当前可翻阅最近最多 200 笔；上方月度业务汇总按完整有效范围核算。</p>
+        <p style={{ fontSize: 12, color: '#607568' }}>每页 10 笔；交易和佣金各显示最近最多 200 笔，客户查看显示最近最多 200 位客户与商品组合。上方月度业务汇总按完整有效范围核算。</p>
         </>}
       </>}
     </div>
