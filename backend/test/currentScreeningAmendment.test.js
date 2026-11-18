@@ -78,6 +78,31 @@ test('同次定期复查作为一条完整就诊安排补入，带齐项目、�
   assert.equal(saved.time, '2027-02-01');
 });
 
+test('非试点客户可将专项筛查新决定补入已推送但未确认方案', async t => {
+  const patientId = id(), planId = id(), decisionId = id(), staffId = id(), at = new Date('2026-11-18T00:00:00Z');
+  const plan = { _id: planId, patientId, year: 2026, updatedAt: at, pushedAt: at, confirmedAt: null,
+    reviewStatus: 'approved', moduleData: { medical_treatment: { records: [] } } };
+  let saved;
+  let sourceKey = `screening:${id()}:lung`;
+  t.mock.method(pilot, 'enabled', () => false);
+  t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId }));
+  t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
+  t.mock.method(Decision, 'findOne', () => chain({ _id: decisionId, sourceKey, title: '肺结节', direction: 'medical_treatment' }));
+  t.mock.method(evidenceService, 'load', async () => ({ evidence: [{ id: `management_issue:${decisionId}`, content: {} }] }));
+  t.mock.method(AnnualPlan, 'findOneAndUpdate', async (_filter, update) => { saved = update.$set.moduleData; return plan; });
+  t.mock.method(PushRecord, 'updateOne', async () => {});
+  const req = { params: { id: patientId, planId }, staff: { _id: staffId, role: 'superadmin', tenantId: null }, body: {
+    sourceKind: 'decision', sourceId: decisionId, baseUpdatedAt: at.toISOString(), reason: '已审核报告提示肺结节',
+    advice: '先由呼吸内科评估', changeReason: '新增专项筛查结果' } };
+  const result = { code: 200 }, res = { status(code) { result.code = code; return this; }, json(value) { result.value = value; return this; } };
+  await handler(req, res);
+  assert.equal(result.code, 200, JSON.stringify(result));
+  assert.deepEqual(saved.medical_treatment.records[0].sourceIds, [`management_issue:${decisionId}`]);
+  sourceKey = `report_item:${id()}:lung`;
+  await handler(req, res);
+  assert.equal(result.code, 404);
+});
+
 test('通知失败后重试只补发通知，不重复补入方案', async t => {
   const patientId = id(), planId = id(), reviewId = id(), staffId = id(), at = new Date('2026-11-17T00:00:00Z');
   const plan = { _id: planId, patientId, year: 2026, updatedAt: at, pushedAt: at, confirmedAt: at,

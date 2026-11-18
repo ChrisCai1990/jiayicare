@@ -10287,7 +10287,6 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     }
     const formal = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year),
       $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] });
-    if (formal && !annualPilot) return res.status(409).json({ success: false, message: '本年度方案已推送或确认，客户退回后才能调整管理来源；新检查结果请走单项随访' });
     const sourceKey = `${source.kind}:${report._id}${itemId ? `:${itemId}` : ''}`;
     const Decision = require('../models/AnnualManagementDecision');
     const existing = await Decision.findOne({ patientId: req.params.id, year: Number(year), sourceKey }).select('_id').lean();
@@ -10295,6 +10294,10 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
       const plans = await AnnualPlan.find({ patientId: req.params.id, year: Number(year), pushedAt: { $ne: null } }).select('moduleData').lean();
       if (plans.some(plan => Object.values(plan.moduleData || {}).some(module => (module?.records || []).some(row => (row.sourceIds || []).includes(`management_issue:${existing._id}`)))))
         return res.status(409).json({ success: false, message: '该检查项已进入已发布方案，请走局部修订' });
+    }
+    if (formal && !annualPilot) {
+      const amendable = await AnnualPlan.exists({ patientId: req.params.id, year: Number(year), pushedAt: { $ne: null }, reviewStatus: 'approved' });
+      if (!amendable) return res.status(409).json({ success: false, message: '本年度方案尚未完成审核推送，暂不能补入；请先核对方案状态' });
     }
     if (source.kind === 'screening_report' && await Decision.exists({ patientId: req.params.id, year: Number(year), sourceKey, status: 'withdrawn' })) {
       return res.status(409).json({ success: false, message: '旧版整份报告归属已撤销，请在具体检查项重新纳入管理' });
@@ -11020,11 +11023,12 @@ async function notifyAnnualPlanRevision(plan, revision, staffId, patientId, titl
   }
 }
 
-// A confirmed plan stays intact. New screening decisions become one audited
+// A pushed plan stays intact. New screening decisions become one audited
 // amendment; task changes remain in the existing execution-review workbench.
 router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    const annualPilot = require('../utils/annualFlowPilot').enabled(req.params.id);
+    if (!annualPilot && req.body.sourceKind !== 'decision') return res.status(404).json({ success: false, message: '该客户未进入试点' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可补入年度方案' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -11033,9 +11037,14 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可补入方案' });
     const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
-    if (!plan?.pushedAt || !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: '请先选择已审核、已发布且客户已确认的方案' });
+    if (!plan?.pushedAt || annualPilot && !plan.confirmedAt || plan.reviewStatus !== 'approved') return res.status(409).json({ success: false, message: annualPilot ? '请先选择已审核、已发布且客户已确认的方案' : '请先选择已审核并推送的方案' });
     const kind = String(req.body.sourceKind || ''), sourceObjectId = String(req.body.sourceId || '');
     if (!mongoose.isValidObjectId(sourceObjectId) || !['decision', 'ai_checkup'].includes(kind)) return res.status(400).json({ success: false, message: '请选择已核对来源' });
+    if (!annualPilot) {
+      const decision = await require('../models/AnnualManagementDecision').findOne({ _id: sourceObjectId, patientId: req.params.id, year: plan.year, status: 'active' }).lean();
+      if (!/^(screening|screening_report):/.test(String(decision?.sourceKey || '')))
+        return res.status(404).json({ success: false, message: '仅可补入专项筛查管理决定' });
+    }
     const sourceIdForRetry = `management_issue:${sourceObjectId}`;
     const applied = (plan.supplementRevisions || []).find(row => row.kind === 'current_screening_action'
       && row.source?.kind === kind && row.source?.sourceId === sourceIdForRetry);
@@ -11052,6 +11061,8 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
     if (kind === 'decision') {
       const decision = await require('../models/AnnualManagementDecision').findOne({ _id: sourceObjectId, patientId: req.params.id, year: plan.year, status: 'active' }).lean();
       if (!decision) return res.status(409).json({ success: false, message: '管理决定已变化，请刷新' });
+      if (!annualPilot && !/^(screening|screening_report):/.test(String(decision.sourceKey || '')))
+        return res.status(404).json({ success: false, message: '仅可补入专项筛查管理决定' });
       const evidence = await require('../utils/annualManagementEvidence').load(req.params.id, plan.year);
       if (!evidence.evidence.some(row => row.id === `management_issue:${decision._id}`)) return res.status(409).json({ success: false, message: '原检查或主诉资料已变化，请先重新核对' });
       sourceId = `management_issue:${decision._id}`; title = decision.title; direction = decision.direction;

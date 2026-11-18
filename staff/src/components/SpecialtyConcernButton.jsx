@@ -30,7 +30,22 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [reviewDepartment, setReviewDepartment] = useState('')
   const [saved, setSaved] = useState(null), [legacy, setLegacy] = useState(null), [adoptLegacy, setAdoptLegacy] = useState(false), [error, setError] = useState('')
   const [pilot, setPilot] = useState(false)
+  const [planCheck, setPlanCheck] = useState({ loading: false, formal: false, plan: null, error: '' })
+  const [amendment, setAmendment] = useState({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
   useEffect(() => { let active = true; setPilot(false); if (patientId) loadPilot(patientId).then(value => { if (active) setPilot(value) }); return () => { active = false } }, [patientId])
+  useEffect(() => {
+    if (!open || pilot || !patientId || !year) return
+    let active = true
+    setPlanCheck({ loading: true, formal: false, plan: null, error: '' })
+    staffAPI.getAnnualPlan(patientId, year).then(result => {
+      if (!active) return
+      const plans = Array.isArray(result.data) ? result.data : [result.data].filter(Boolean)
+      const formal = plans.some(plan => plan.pushedAt || plan.confirmedAt)
+      const plan = plans.find(row => row.pushedAt && row.reviewStatus === 'approved') || null
+      setPlanCheck({ loading: false, formal, plan, error: '' })
+    }).catch(error => { if (active) setPlanCheck({ loading: false, formal: false, plan: null, error: error.message || '无法核对年度方案状态' }) })
+    return () => { active = false }
+  }, [open, pilot, patientId, year])
   const suggestions = specialtyIssueSuggestions(sourceText)
   const key = annualManagementSourceKey(source)
   const symptomSource = source?.kind === 'symptom' && !!source?.recordId
@@ -50,6 +65,10 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   if (!['familyDoctor', 'superadmin'].includes(staff?.role) || (!reportSource && !symptomSource)
     || !pilot && (symptomSource || source.kind === 'report_item')) return null
   const submit = async () => {
+    if (!pilot && (planCheck.loading || planCheck.error || planCheck.formal && !planCheck.plan)) { setError(planCheck.error || '请先核对已发布方案状态'); return }
+    if (!pilot && planCheck.plan && (!amendment.reason.trim() || !amendment.advice.trim() || amendment.changeReason.trim().length < 2 || amendment.date && !amendment.timingReason.trim())) {
+      setError('请填写资料依据、处理建议和修订原因；填写日期时还需时间依据'); return
+    }
     if (title.trim().length < 2 || !direction || pilot && (!goal.trim() || !action.trim())) { setError(pilot ? '请填写具体问题、管理方向、目标和下一步行动' : '请填写具体问题和管理方向'); return }
     setBusy(true); setError('')
     try {
@@ -57,8 +76,18 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         ...(pilot ? { goal: goal.trim(), action: action.trim(), actionTiming: { mode: timingMode, firstDueDate, frequency: frequency.trim() } } : {}),
         reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
         ...(adoptLegacy && legacy?._id ? { legacyDecisionId: legacy._id } : {}) })
-      setSaved(result.data); if (adoptLegacy) setLegacy(null); setOpen(false)
-      toast(pilot ? '已确认管理方向；已发布方案请继续核对是否需要局部补入' : '已纳入管理，生成年度方案时将按此方向带入', 5000)
+      setSaved(result.data); if (adoptLegacy) setLegacy(null)
+      if (planCheck.plan && !pilot) {
+        try {
+          await staffAPI.appendCurrentScreeningAction(patientId, planCheck.plan._id, { sourceKind: 'decision', sourceId: result.data._id,
+            baseUpdatedAt: planCheck.plan.updatedAt, title: title.trim(), ...amendment })
+          toast('已补入年度方案，执行安排待顾问复核', 5000)
+        } catch (appendError) {
+          setError(`管理方向已保存，但补入方案未完成：${appendError.message || '请重试'}`)
+          return
+        }
+      } else toast(pilot ? '已确认管理方向；已发布方案请继续核对是否需要局部补入' : '已纳入管理，生成年度方案时将按此方向带入', 5000)
+      setOpen(false)
       onSaved?.()
     } catch (e) { setError(e.message || '保存失败，请重试') }
     finally { setBusy(false) }
@@ -81,6 +110,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setFirstDueDate(saved?.reviewPlan?.kind === 'recheck' ? '' : saved?.actionTiming?.firstDueDate || '')
       setFrequency(saved?.reviewPlan?.kind === 'recheck' ? '' : saved?.actionTiming?.frequency || '')
       setAdoptLegacy(false); setError(''); setOpen(true)
+      setAmendment({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
       setReviewKind(saved?.reviewPlan?.kind === 'recheck' ? 'recheck' : 'none')
       setReviewMonths(String(saved?.reviewPlan?.intervalMonths || 3))
       setReviewItems((saved?.reviewPlan?.items || []).join('、'))
@@ -136,9 +166,25 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           }} /> 此报告有旧版整份报告纳入的“{legacy.title}”。确认它属于当前检查项目后，可勾选并重新归属；否则不要勾选。
         </label>}
         {error && <div role="alert" style={{ marginTop: 8, color: '#B42318' }}>{error}</div>}
+        {!pilot && planCheck.loading && <div role="status">正在核对本年度方案状态…</div>}
+        {!pilot && planCheck.error && <div role="alert" style={{ color: '#B42318' }}>{planCheck.error}</div>}
+        {!pilot && planCheck.formal && !planCheck.plan && <div role="alert" style={{ color: '#B42318' }}>本年度方案尚未完成审核推送，暂不能局部修订。请先核对方案状态。</div>}
+        {!pilot && planCheck.plan && <div style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
+          <strong>补入已推送年度方案</strong>
+          <div style={{ fontSize: 12, color: '#65776F' }}>保存管理方向后，将把此项作为局部修订补入方案，并通知客户；已有相同事项时会阻止重复补入。</div>
+          <label className="form-label" style={{ marginTop: 8 }}>资料依据</label>
+          <textarea className="form-input" rows={2} value={amendment.reason} onChange={e => setAmendment({ ...amendment, reason: e.target.value })} />
+          <label className="form-label" style={{ marginTop: 8 }}>处理建议</label>
+          <textarea className="form-input" rows={2} value={amendment.advice} onChange={e => setAmendment({ ...amendment, advice: e.target.value })} />
+          <label className="form-label" style={{ marginTop: 8 }}>修订原因</label>
+          <input className="form-input" value={amendment.changeReason} onChange={e => setAmendment({ ...amendment, changeReason: e.target.value })} />
+          <label className="form-label" style={{ marginTop: 8 }}>执行日期（待确认可留空）</label>
+          <DateField type="date" className="form-input" value={amendment.date} onChange={e => setAmendment({ ...amendment, date: e.target.value })} />
+          {amendment.date && <><label className="form-label" style={{ marginTop: 8 }}>时间依据</label><input className="form-input" value={amendment.timingReason} onChange={e => setAmendment({ ...amendment, timingReason: e.target.value })} /></>}
+        </div>}
         <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>团队专项研判可另行开展，不影响本项进入年度方案。</div>
       </div>
-      <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy || drafting} onClick={submit}>{busy ? '保存中…' : '确认纳入管理'}</button></div>
+      <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy || drafting || !pilot && (planCheck.loading || !!planCheck.error || planCheck.formal && !planCheck.plan)} onClick={submit}>{busy ? '保存中…' : planCheck.plan && !pilot ? '确认纳入并补入方案' : '确认纳入管理'}</button></div>
     </div></div>}
   </>
 }
