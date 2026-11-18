@@ -6785,8 +6785,6 @@ router.patch('/medical-reports/:id/duplicate', staffAuth, checkPermission('repor
       ['随访', FollowUp, { $or: [{ reportId: id }, { sourceId: { $in: [id, String(id)] } }, { 'formData.reportIds': { $in: [id, String(id)] } }] }],
       ['其他原件关联', MedicalReport, { $or: [{ archiveSourceReportId: id }, { 'organizedFrom.reportId': id }] }],
     ];
-    const reportYear = Number(String(report.checkDate || report.date || '').slice(0, 4));
-    if (Number.isInteger(reportYear) && reportYear >= 2000) checks.push(['已审核年度小结', require('../models/ScreeningYearSummary'), { user: report.user, year: reportYear, status: 'approved' }]);
     const hits = await Promise.all(checks.map(async ([label, Model, query]) => (await Model.exists(query)) ? label : ''));
     const blockers = hits.filter(Boolean);
     if (blockers.length) return res.status(409).json({ success: false, message: `该报告已被以下业务引用，请先核对并处理：${blockers.join('、')}` });
@@ -7062,16 +7060,8 @@ router.patch('/medical-reports/:id/advisor-confirm', staffAuth, async (req, res)
   } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
 });
 
-// GET /api/staff/patients/:id/screening-yearly-summary?year=2026 — 专项筛查年度小结（肿瘤/
-// 心脑血管病/慢性病及其他三大类），供医护端查看AI健康分析时对照核查
-router.get('/patients/:id/screening-yearly-summary', staffAuth, async (req, res) => {
-  try {
-    const { buildScreeningYearlySummary } = require('../utils/screeningYearlySummary');
-    const year = req.query.year || new Date().getFullYear();
-    const data = await buildScreeningYearlySummary(req.params.id, year);
-    res.json({ success: true, data });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
+router.get('/patients/:id/screening-yearly-summary', staffAuth, (_req, res) =>
+  res.status(410).json({ success: false, message: '年度专项筛查小结已停用' }));
 
 // POST /api/staff/patients/:id/archive-review — 健康顾问确认已查看该客户新增的健康档案/体检
 // 报告。这是客户维度的增量确认（不是逐份审核报告数据，也不是"全部推倒重来"）——已经看过、
@@ -12108,6 +12098,10 @@ router.get('/patients/:id/screening-year-summaries', staffAuth, async (req, res)
     res.json({ success: true, data: list });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
+
+// 历史小结保留只读查询；所有新建、生成、审核和删除入口停止使用。
+router.use('/patients/:id/screening-year-summaries/:year', staffAuth, (_req, res) =>
+  res.status(410).json({ success: false, message: '年度专项筛查小结已停用' }));
 
 router.put('/patients/:id/screening-year-summaries/:year', staffAuth, async (req, res) => {
   try {

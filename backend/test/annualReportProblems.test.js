@@ -42,22 +42,22 @@ test('顾问可修订分析建议，必须逐项审核且不能篡改来源或�
   input[0].decision = 'exclude'; assert.throws(() => service.validateReview(input, topics, true), /不纳入/);
   input[0].exclusionReason = '已有方案承接'; assert.equal(service.validateReview(input, topics, true)[0].decision, 'exclude');
 });
-test('来源指纹随报告、小结、旧顾问意见变化，重排报告不改变指纹', () => {
+test('来源指纹随报告和旧顾问意见变化，旧小结不再参与', () => {
   const original = service.buildContext(reports, null).sourceFingerprint;
   assert.equal(service.buildContext([...reports].reverse(), null).sourceFingerprint, original);
   assert.notEqual(service.buildContext(reports.slice(1), null).sourceFingerprint, original);
-  assert.notEqual(service.buildContext(reports, { sections: { summary: '新小结' } }).sourceFingerprint, original);
+  assert.equal(service.buildContext(reports, { sections: { summary: '旧小结' } }).sourceFingerprint, original);
   assert.notEqual(service.buildContext(reports, null, [{ recommendation: '新意见' }]).sourceFingerprint, original);
 });
-test('综合生成输入含所有报告来源和已审核小结；未完成提取不能成为空问题', async () => {
-  const context = service.buildContext(reports, { sections: { summary: '脂肪肝' } });
+test('综合生成输入含所有报告来源且不读旧小结；未完成提取不能成为空问题', async () => {
+  const context = service.buildContext(reports, null);
   const result = await service.synthesize(context, {
     extract: async (report, options) => {
       assert.equal(options.skipNormal, true);
       return { coverage: [{ status: 'problem' }], issues: [{ id: 'liver', title: '脂肪肝', evidence: '脂肪肝', sourceName: report.title }] };
     },
     chat: async messages => {
-      const data = JSON.parse(messages[0].content); assert.equal(data.problems.length, 2); assert.ok(data.screeningSummary);
+      const data = JSON.parse(messages[0].content); assert.equal(data.problems.length, 2); assert.equal(data.screeningSummary, undefined);
       return JSON.stringify({ topics: [{ ...output.topics[0], problemIds: ['ct:liver', 'us:liver'] }] });
     },
   });

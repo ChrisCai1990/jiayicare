@@ -113,7 +113,6 @@ export const userAPI = {
   postAiHealthSummary: ()         => request('/user/ai-health-summary', { method: 'POST' }),
   getAiRiskAssessment: ()         => request('/user/ai-risk-assessment'),
   postAiRiskAssessment:()         => request('/user/ai-risk-assessment', { method: 'POST' }),
-  getScreeningYearlySummary: (year) => request(`/user/screening-yearly-summary${year ? `?year=${year}` : ''}`),
 };
 
 // ── Health Records ────────────────────────────────────────────────

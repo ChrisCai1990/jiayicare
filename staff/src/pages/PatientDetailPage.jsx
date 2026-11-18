@@ -264,19 +264,6 @@ const normalizeRiskTagValues = values => [...new Set((Array.isArray(values) ? va
   .map(value => value.trim())
   .filter(Boolean))]
 
-// 年度小结的每个专项以“专项名：内容”开头。旧版数据会把影像报告内部的多行
-// 编号原样保存；这些续行没有专项标题，应继续归属到上一个专项，不能被渲染为
-// 新的编号卡片。
-const screeningSummaryDisplayLines = summary => String(summary || '')
-  .split(/\r?\n+/)
-  .map(line => line.trim())
-  .filter(Boolean)
-  .reduce((lines, line) => {
-    if (/^[^：:]+[：:]/.test(line) || !lines.length) lines.push(line)
-    else lines[lines.length - 1] = `${lines[lines.length - 1]} ${line}`
-    return lines
-  }, [])
-
 function HealthPortraitOverview({ user, reports = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({})
   const profile = user.healthProfile || {}
@@ -2505,16 +2492,9 @@ export default function PatientDetailPage() {
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
-  const [screeningYearSummaries, setScreeningYearSummaries] = useState([])
   const [currentScreeningPilot, setCurrentScreeningPilot] = useState(null)
   useEffect(() => { let active = true; setCurrentScreeningPilot(null); managementReviewAPI.get(id).then(result => { if (active) setCurrentScreeningPilot(result.restored === true) }).catch(() => { if (active) setCurrentScreeningPilot(false) }); return () => { active = false } }, [id])
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
-  const [screeningSummaryExpanded, setScreeningSummaryExpanded] = useState(true)
-  const [screeningSectionExpanded, setScreeningSectionExpanded] = useState({})
-  const [screeningSummaryBusy, setScreeningSummaryBusy] = useState(false)
-  const [editingScreeningSummary, setEditingScreeningSummary] = useState(null)
-  const [screeningSummaryRecordIndex, setScreeningSummaryRecordIndex] = useState(0)
-  const [screeningSummaryEditMode, setScreeningSummaryEditMode] = useState('new')
   const [screeningFiles, setScreeningFiles] = useState([])
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -3465,20 +3445,18 @@ export default function PatientDetailPage() {
   }
   const loadScreening = async () => {
     try {
-      const [sr, hr, scr, tree, summaries] = await Promise.allSettled([
+      const [sr, hr, scr, tree] = await Promise.allSettled([
         staffAPI.getPatientScreening(id),
         // 今日健康状态必须在会员档案长期可追溯，不能被最近30条普通记录挤出列表。
         staffAPI.getPatientHealthRecords(id, { type: 'symptom', days: 365, limit: 500 }),
         staffAPI.getScreeningReports(id),
         staffAPI.getScreeningTree(),
-        staffAPI.getScreeningYearSummaries(id),
       ])
       if (activePatientId.current !== id) return
       if (sr.status === 'fulfilled') setScreeningItems(sr.value.data || [])
       if (hr.status === 'fulfilled') setHealthRecords(hr.value.data || [])
       if (scr.status === 'fulfilled') setScreeningReports(scr.value.data || [])
       if (tree.status === 'fulfilled') setScreeningTree(tree.value.data || [])
-      if (summaries.status === 'fulfilled') setScreeningYearSummaries(summaries.value.data || [])
     } catch {}
   }
 
@@ -7251,139 +7229,7 @@ export default function PatientDetailPage() {
                 </div>
               </div>
               <AnnualReviewCommunicationPanel patientId={id} year={screeningSummaryYear} staff={staff} toast={toast} onOpenReview={openSpecialtyReview} />
-              {(() => {
-                const current = screeningYearSummaries.find(item => Number(item.year) === Number(screeningSummaryYear))
-                const summaryRecords = current
-                  ? (Array.isArray(current.records) && current.records.length ? current.records : [current])
-                  : []
-                const currentRecord = summaryRecords[screeningSummaryRecordIndex] || summaryRecords[0]
-                const sections = editingScreeningSummary || currentRecord?.sections || {}
-                const canManage = ['familyDoctor', 'superadmin'].includes(staff?.role)
-                const pendingSummaryReports = reports.filter(report => {
-                  const reportYear = Number(report.reportYear || String(report.checkDate || report.date || '').slice(0, 4))
-                  return !report.archiveOnly && reportYear === Number(screeningSummaryYear) && report.audit_status !== 'audited'
-                })
-                const summaryGateMessage = pendingSummaryReports.length
-                  ? `${screeningSummaryYear}年度还有 ${pendingSummaryReports.length} 份体检报告未完成健管审核，请全部审核后再进行专项筛查小结`
-                  : ''
-                const categories = [
-                  ['tumor_risk', '肿瘤筛查小结'],
-                  ['cardiovascular_risk', '心脑血管病筛查小结'],
-                  ['chronic_disease', '慢性病及其他小结'],
-                ]
-                const years = [...new Set([
-                  new Date().getFullYear(),
-                  ...screeningYearSummaries.map(item => Number(item.year)),
-                  ...screeningReports.map(item => Number(item.reportYear || String(item.checkDate || '').slice(0, 4))).filter(Boolean),
-                ])].sort((a, b) => b - a)
-                return currentScreeningPilot === null ? <div style={{ margin: '0 16px 14px', padding: 14 }}>正在读取筛查核对方式…</div> : currentScreeningPilot ? <><CurrentScreeningChecklist patientId={id} year={Number(screeningSummaryYear)} reports={screeningReports} staff={staff} toast={toast} onOpenReport={openReportDetail} />
-                  {!!screeningYearSummaries.length && <details style={{ margin: '0 16px 14px', fontSize: 12, color: '#65776F' }}><summary>旧版年度筛查小结草稿（历史留存，不参与当前核对）</summary><p>原草稿保留供追溯；当前筛查事项请以上方已审核报告、AI 整理和顾问决定为准。</p></details>}</> : (
-                  <div style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-                      <strong style={{ color: '#1E6B50' }}>年度专项筛查小结</strong>
-                      <select className="form-input" style={{ width: 120 }} value={screeningSummaryYear}
-                        onChange={e => { setScreeningSummaryYear(Number(e.target.value)); setEditingScreeningSummary(null) }}>
-                        {years.map(year => <option key={year} value={year}>{year}年度</option>)}
-                      </select>
-                      {summaryRecords.length > 0 && <select className="form-input" style={{ width: 250 }} value={currentRecord ? screeningSummaryRecordIndex : 0}
-                        onChange={e => { setScreeningSummaryRecordIndex(Number(e.target.value)); setEditingScreeningSummary(null) }}>
-                        {summaryRecords.map((record, index) => (
-                          <option key={index} value={index}>第{summaryRecords.length - index}次 · {record.createdAt ? new Date(record.createdAt).toLocaleString('zh-CN') : '历史小结'} · {record.status === 'approved' ? '已审核' : '待审核'}</option>
-                        ))}
-                      </select>}
-                      {currentRecord && <span style={{ fontSize: 12, color: currentRecord.status === 'approved' ? '#16A34A' : '#D97706' }}>
-                        {currentRecord.status === 'approved' ? `✓ 健康顾问已审核${currentRecord.approvedByName ? ' · ' + currentRecord.approvedByName : ''}` : '待健康顾问审核'}
-                      </span>}
-                      <button className="btn btn-secondary btn-sm"
-                        aria-expanded={screeningSummaryExpanded}
-                        onClick={() => setScreeningSummaryExpanded(value => !value)}>
-                        {screeningSummaryExpanded ? '收起小结 ▲' : '展开小结 ▼'}
-                      </button>
-                      {canManage && <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                        <button className="btn btn-secondary btn-sm" disabled={screeningSummaryBusy || !!summaryGateMessage} title={summaryGateMessage} onClick={async () => {
-                          setScreeningSummaryBusy(true)
-                          try {
-                            await staffAPI.generateScreeningYearSummary(id, screeningSummaryYear)
-                            await loadScreening()
-                            toast('AI年度专项筛查小结已生成，待健康顾问审核')
-                          } catch (error) { toast(error.message || '生成失败') }
-                          finally { setScreeningSummaryBusy(false) }
-                        }}>{screeningSummaryBusy ? '生成中…' : '✨ AI自动小结'}</button>
-                        <button className="btn btn-primary btn-sm" disabled={!!summaryGateMessage} title={summaryGateMessage} onClick={() => {
-                          setScreeningSummaryEditMode('new')
-                          setEditingScreeningSummary({
-                          tumor_risk: { summary: '', sourceReportIds: [] },
-                          cardiovascular_risk: { summary: '', sourceReportIds: [] },
-                          chronic_disease: { summary: '', sourceReportIds: [] },
-                        })
-                        }}>＋ 新增小结</button>
-                        {currentRecord && <button className="btn btn-secondary btn-sm" disabled={!!summaryGateMessage} title={summaryGateMessage} onClick={() => {
-                          setScreeningSummaryEditMode('edit')
-                          setEditingScreeningSummary(JSON.parse(JSON.stringify(currentRecord.sections || {})))
-                        }}>编辑当前小结</button>}
-                        {currentRecord && <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }} onClick={async () => {
-                          const time = currentRecord.createdAt ? new Date(currentRecord.createdAt).toLocaleString('zh-CN') : ''
-                          if (!window.confirm(`确认删除${time ? ` ${time} 的` : '当前'}专项筛查小结？删除后不可恢复。`)) return
-                          try {
-                            await staffAPI.deleteScreeningYearSummary(id, screeningSummaryYear, screeningSummaryRecordIndex)
-                            setScreeningSummaryRecordIndex(0)
-                            setEditingScreeningSummary(null)
-                            await loadScreening()
-                            toast('当前专项筛查小结已删除')
-                          } catch (error) { toast(error.message || '删除失败') }
-                        }}>删除当前小结</button>}
-                        {currentRecord && currentRecord.status !== 'approved' && <button className="btn btn-primary btn-sm" disabled={!!summaryGateMessage} title={summaryGateMessage} onClick={async () => {
-                          try { await staffAPI.approveScreeningYearSummary(id, screeningSummaryYear, screeningSummaryRecordIndex); await loadScreening(); toast('年度小结已审核') }
-                          catch (error) { toast(error.message || '审核失败') }
-                        }}>审核通过</button>}
-                      </div>}
-                    </div>
-                    {canManage && summaryGateMessage && <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 6, background: '#FFF7ED', color: '#C2410C', fontSize: 12 }}>{summaryGateMessage}</div>}
-                    {screeningSummaryExpanded && (!currentRecord && !editingScreeningSummary ? (
-                      <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度尚无小结，可由健康顾问新增或使用 AI 自动生成。</div>
-                    ) : (
-                      <div style={{ display: 'grid', gap: 10 }}>
-                        {categories.map(([key, label]) => (
-                          <div key={key} style={{ background: '#fff', borderRadius: 8, padding: '14px 16px', border: '1px solid #EEF2EF' }}>
-                            <button type="button" onClick={() => setScreeningSectionExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
-                              style={{ width: '100%', border: 0, background: 'none', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: 0 }}>
-                              <span>{label}</span><span>{screeningSectionExpanded[key] ? '收起 ▲' : '展开 ▼'}</span>
-                            </button>
-                            {screeningSectionExpanded[key] && (editingScreeningSummary ? (
-                              <textarea className="form-input" rows={10} value={sections[key]?.summary || ''}
-                                style={{ marginTop: 12, minHeight: 240, maxHeight: '60vh', boxSizing: 'border-box', padding: '14px 16px', fontSize: 14, lineHeight: 1.8, resize: 'vertical' }}
-                                onChange={e => setEditingScreeningSummary(prev => ({
-                                  ...prev,
-                                  [key]: { ...(prev[key] || {}), summary: e.target.value },
-                                }))} />
-                            ) : <div style={{ marginTop: 12, padding: '2px 4px', fontSize: 14, color: '#4A6558', lineHeight: 1.85 }}>
-                              {screeningSummaryDisplayLines(sections[key]?.summary || '暂无相关资料').map((line, i) => {
-                                const matched = line.match(/^([^：:]+)[：:]\s*(.*)$/)
-                                return <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-                                  <span style={{ flexShrink: 0, width: 20, height: 20, borderRadius: '50%', background: '#1E6B50', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>{i + 1}</span>
-                                  {matched ? <span><strong style={{ color: '#1E6B50' }}>{matched[1]}：</strong>{matched[2]}</span> : <span>{line}</span>}
-                                </div>
-                              })}
-                            </div>)}
-                          </div>
-                        ))}
-                        {editingScreeningSummary && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingScreeningSummary(null)}>取消</button>
-                          <button className="btn btn-primary btn-sm" onClick={async () => {
-                            try {
-                              await staffAPI.saveScreeningYearSummary(id, screeningSummaryYear, editingScreeningSummary, screeningSummaryEditMode, screeningSummaryRecordIndex)
-                              setEditingScreeningSummary(null)
-                              setScreeningSummaryRecordIndex(0)
-                              await loadScreening()
-                              toast(screeningSummaryEditMode === 'new' ? '已新增一次年度小结，待健康顾问审核' : '当前年度小结已修改，待健康顾问审核')
-                            } catch (error) { toast(error.message || '保存失败') }
-                          }}>保存小结</button>
-                        </div>}
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
+              {currentScreeningPilot === null ? <div style={{ margin: '0 16px 14px', padding: 14 }}>正在读取筛查核对方式…</div> : currentScreeningPilot ? <CurrentScreeningChecklist patientId={id} year={Number(screeningSummaryYear)} reports={screeningReports} staff={staff} toast={toast} onOpenReport={openReportDetail} /> : null}
               {(() => {
                 // 2026-07-02：体检方案里已开具但客户还未做/未上传报告的检验检查项目，在这里做一条轻量提示——
                 // 不把方案项目直接并入下面的三层筛查树渲染（那块逻辑已经很复杂，硬塞进去容易出连锁问题），

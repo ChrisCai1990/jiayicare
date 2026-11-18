@@ -67,7 +67,6 @@ export default function AnnualReportProblems({ patientId, year, canEdit }) {
     {row?.status === 'ready' && !topics.length && <p>已核对的资料未整理出需要管理的问题，请顾问确认资料范围。</p>}
     {!!row?.coverage?.length && <details className="report-issues-coverage"><summary>资料范围与整理依据（{row.coverage?.length || 0}项）</summary>
       <p>正常或无需跟进：{row.coverage?.filter(item => item.status === 'normal').length || 0}项。覆盖范围仅限本年度已审核且已解析报告。</p>
-      {row.summaryReference && <details><summary>参考的已审核年度筛查小结</summary>{[['tumor_risk', '肿瘤筛查'], ['cardiovascular_risk', '心脑血管病筛查'], ['chronic_disease', '慢性病及其他']].map(([key, label]) => <div key={key}><b>{label}</b><p>{row.summaryReference.sections?.[key]?.summary || '暂无内容'}</p></div>)}</details>}
       {!!row.priorAdvice?.length && <details><summary>既有顾问意见（保留供核对）</summary>{row.priorAdvice.map((advice, i) => <p key={i}><b>{advice.problem}：</b>{advice.recommendation}{advice.exclusionReason ? `；原不纳入原因：${advice.exclusionReason}` : ''}</p>)}</details>}
       <details><summary>全部检查覆盖记录</summary>{row.coverage?.map((item, i) => <p key={i}>{item.reportTitle} · {item.name}：{item.status === 'normal' ? '正常或无需跟进' : '已纳入综合问题'}</p>)}</details>
       {!!row.historyCount && <p>保留了 {row.historyCount} 次保存或重新整理前的版本。</p>}

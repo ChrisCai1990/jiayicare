@@ -2041,19 +2041,8 @@ router.delete('/family-links/:linkId', auth, async (req, res) => {
 //   不计入 staff.js getAiTodos 的健康顾问待审核队列，避免误入人工审核工作流）
 const { generateHealthSummarySections } = require('../utils/aiHealthSummary');
 const { generateRiskAssessment } = require('../utils/aiRiskAssessment');
-const { buildScreeningYearlySummary } = require('../utils/screeningYearlySummary');
-
-// GET /api/user/screening-yearly-summary?year=2026 — 专项筛查年度小结（肿瘤/心脑血管病/慢性病
-// 及其他三大类，与AI健康分析板块对应），供查看AI健康分析时对照核查
-router.get('/screening-yearly-summary', auth, async (req, res) => {
-  try {
-    const year = req.query.year || new Date().getFullYear();
-    const data = await buildScreeningYearlySummary(req.user._id, year);
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
+router.get('/screening-yearly-summary', auth, (_req, res) =>
+  res.status(410).json({ success: false, message: '年度专项筛查小结已停用' }));
 
 // GET /api/user/ai-health-summary — 查看AI健康汇总分析（有家医时草稿也可见，附带审核状态）
 router.get('/ai-health-summary', auth, async (req, res) => {

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { staffAPI } from '../api'
 import './ReportFollowUpDrafts.css'
-import { approvedScreeningReference, compactEvidence, evidenceSummary, groupedIssues, problemGroups } from '../utils/reportIssuePresentation'
+import { compactEvidence, evidenceSummary, groupedIssues, problemGroups } from '../utils/reportIssuePresentation'
 
 const PURPOSE = 'annual_report_input'
 const statusLabel = { advisor_review: '待顾问确认', approved: '已确认', rejected: '未采纳', excluded: '已有服务承接', superseded: '来源已更新', no_action: '无明确后续行动·待确认' }
@@ -15,7 +15,7 @@ export function ReportIssueCard({ issue, index, disabled, onChange }) {
     {sources.length > 1 && <p className="report-issue-summary">合并 {new Set(sources.map(source => source.sourceId || source.sourceName)).size} 处依据：{[...new Set(sources.map(source => source.sourceName))].join('、')}。不同日期及描述请在来源中核对。</p>}
     {issue.reviewCarryover && <p className="report-issues-error">已有顾问意见保留，请核对其对应问题；未自动拆分或改写。</p>}
     {issue.recommendationConflict && <div className="report-issues-error">原有顾问意见不一致，请统一确认：{issue.advisorAlternatives?.map((note, i) => <p key={i}>{note}</p>)}</div>}
-    <div className="report-issue-analysis"><b>问题分析{issue.analysis ? '（草稿，待顾问核对）' : ''}</b><p>{issue.analysis || (issue.needsVerification ? '现有资料尚不足以明确判断，请先核实原文及相关资料。' : '旧稿尚无问题分析，可按问题重新整理后核对；请结合上述依据和年度筛查小结判断管理重点。')}</p></div>
+    <div className="report-issue-analysis"><b>问题分析{issue.analysis ? '（草稿，待顾问核对）' : ''}</b><p>{issue.analysis || (issue.needsVerification ? '现有资料尚不足以明确判断，请先核实原文及相关资料。' : '旧稿尚无问题分析，可按问题重新整理并核对原报告。')}</p></div>
     {proposal && <div className="report-issue-recommendations">
       {issue.originalRecommendation && <p><b>原文建议：</b>{issue.originalRecommendation}</p>}
       {issue.suggestedRecommendation && issue.suggestedRecommendation !== issue.originalRecommendation && <p><b>系统建议草稿（待审核）：</b>{issue.suggestedRecommendation}</p>}
@@ -105,7 +105,6 @@ function RelatedFollowUps({ draftId }) {
 
 export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleOnly = false, onCompleted, completionNotice, onNextTodo }) {
   const [rows, setRows] = useState([]), [busy, setBusy] = useState(false), [error, setError] = useState('')
-  const [screening, setScreening] = useState({ rows: [], patientId: null, error: '', loading: true })
   const [dirtyRows, setDirtyRows] = useState({}), [reviewed, setReviewed] = useState({})
   const dirty = Object.values(dirtyRows).some(Boolean)
   const activePatient = useRef(patientId); activePatient.current = patientId
@@ -116,14 +115,6 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
     catch (e) { if (activePatient.current === requestedPatient) setError(e.message) } finally { if (activePatient.current === requestedPatient) setBusy(false) }
   }
   useEffect(() => { setRows([]); setReviewed({}); setDirtyRows({}); load() }, [patientId])
-  useEffect(() => {
-    let cancelled = false
-    setScreening({ rows: [], patientId, error: '', loading: true })
-    staffAPI.getScreeningYearSummaries(patientId).then(result => {
-      if (!cancelled) setScreening({ rows: result.data || [], patientId, error: '', loading: false })
-    }).catch(() => { if (!cancelled) setScreening({ rows: [], patientId, error: '年度筛查小结读取失败，请刷新页面重试。', loading: false }) })
-    return () => { cancelled = true }
-  }, [patientId, year])
   useEffect(() => {
     if (dirty || !rows.some(row => ['queued', 'running'].includes(row.followUpAutomation?.status))) return
     const timer = setTimeout(load, 5000)
@@ -158,19 +149,12 @@ export default function ReportFollowUpDrafts({ patientId, year, canEdit, singleO
       }
     } catch (e) { if (activePatient.current === requestedPatient) setError(e.message) } finally { if (activePatient.current === requestedPatient) setBusy(false) }
   }
-  const reference = screening.patientId === patientId ? approvedScreeningReference(screening.rows, year) : null
   const reviewDraftId = new URLSearchParams(window.location.search).get('reviewDraftId')
   const reviewAnnualInputs = new URLSearchParams(window.location.search).get('reviewAnnualInputs') === '1'
   const visibleRows = reviewDraftId ? rows.filter(row => String(row._id) === reviewDraftId && (!singleOnly || row.purpose !== PURPOSE))
     : reviewAnnualInputs ? rows.filter(row => row.purpose === PURPOSE && ['advisor_review', 'no_action', 'excluded'].includes(row.status)) : singleOnly ? rows.filter(row => row.purpose !== PURPOSE) : rows
   return <section id="report-followup-drafts" className="report-issues">
     <header className="report-issues-heading"><div><h3>{singleOnly || (reviewDraftId && visibleRows.length === 1 && visibleRows[0].purpose !== PURPOSE) ? '本次就医 · 单次随访' : '报告问题与后续随访'}</h3><p>{singleOnly ? '请核对本次报告来源与随访草稿，确认后派发一条后续随访。' : '已有年度方案的客户，后续就医只核对本次报告并安排一次随访；首次资料的问题建议供年度方案参考。'}</p></div><button disabled={busy} onClick={() => { if (!dirty || window.confirm('刷新会替换未保存编辑，是否继续？')) load() }}>刷新状态</button></header>
-    {visibleRows.some(row => row.purpose === PURPOSE) && <div className="report-screening-reference"><h4>{year}年度筛查小结 · 定位参考</h4>
-      {screening.error ? <p role="alert">{screening.error}</p> : screening.loading ? <p>正在读取年度筛查小结…</p> : reference ? <>
-        <p className="report-issue-summary">已审核{reference.createdAt ? ` · ${String(reference.createdAt).slice(0, 10)}` : ''}。结合原报告核对，后续新发现仍需补充。</p>
-        {[['tumor_risk', '肿瘤筛查'], ['cardiovascular_risk', '心脑血管病筛查'], ['chronic_disease', '慢性病及其他']].map(([key, label]) => <details key={key}><summary>{label}</summary><p>{reference.sections?.[key]?.summary || '暂无相关小结'}</p></details>)}
-      </> : <p>本年度暂无已审核小结，可先核对下方报告问题。</p>}
-    </div>}
     {error && <p role="alert" className="report-issues-error">{error}</p>}
     {!rows.length && <p>{singleOnly ? '暂无单次随访记录。' : '暂无问题整理记录。新报告审核后生成；历史资料不会自动批量重跑。'}</p>}
     {reviewDraftId && !busy && rows.length > 0 && !visibleRows.length && <p role="alert">这条审核任务已处理或不属于当前客户，请返回工作台刷新任务。</p>}

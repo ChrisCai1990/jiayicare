@@ -178,7 +178,6 @@ export const userAPI = {
   changePhone: (newPhone, code) => request('/user/change-phone', { method: 'POST', body: JSON.stringify({ newPhone, code }) }),
   getAiHealthSummary: () => request('/user/ai-health-summary'),
   postAiHealthSummary: () => request('/user/ai-health-summary', { method: 'POST' }),
-  getScreeningYearlySummary: (year) => request(`/user/screening-yearly-summary${year ? `?year=${year}` : ''}`),
   requestRenewal: (data) => request('/user/renewal-request', { method: 'POST', body: JSON.stringify(data) }),
 };
 

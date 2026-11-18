@@ -19,11 +19,6 @@ test('问题分析与建议默认可见，来源折叠且重复CT结论只展示
   assert.match(beforeDetails, /问题分析/);
   assert.match(beforeDetails, /系统建议草稿/);
   assert.match(beforeDetails, /结合病理资料评估/);
-  const reference = { status: 'approved', sections: { chronic_disease: { summary: '已审核内容' } } };
-  const rows = [{ year: 2026, records: [{ status: 'draft' }, reference] }, { year: 2025, status: 'approved' }];
-  assert.equal(helpers.approvedScreeningReference(rows, 2026), reference);
-  assert.equal(helpers.approvedScreeningReference(rows, 2027), null);
-  assert.equal(helpers.approvedScreeningReference([{ year: 2026, status: 'draft' }], 2026), null);
   const ct = '胸廓对称。\n1.肺内结节（建议年度复查）\n2.肺内纤维索条影\n1.肺内结节（建议年度复查）\n2.肺内纤维索条影\n3.另一不同结论';
   assert.equal(helpers.compactEvidence(ct).split('1.肺内结节').length, 2);
   assert.match(helpers.compactEvidence(ct), /另一不同结论/);
