@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseTextAikangExam } = require('../src/utils/reportTextAikangExam');
+const { filterUnsupportedCtProtocol } = require('../src/utils/reportCtProtocol');
 
 test('transcribes the printed CT findings and numbered opinion without image inference', () => {
   const text = `健康体检报告 MEDICAL EXAMINATION REPORT
@@ -47,4 +48,10 @@ test('preserves all five oral finding and advice rows as one reviewable exam', (
 test('does not infer an exam from incomplete or unrelated layouts', () => {
   assert.equal(parseTextAikangExam('健康体检报告 MEDICAL EXAMINATION REPORT\nCT室', 20).supported, false);
   assert.equal(parseTextAikangExam('序号 症状描述 建议\n1 牙结石', 22).supported, false);
+});
+
+test('ordinary chest CT is not classified as low-dose screening CT', () => {
+  const lowDose = { node: { id: '肺癌早筛|胸部（低剂量螺旋）CT' } };
+  assert.deepEqual(filterUnsupportedCtProtocol({ itemType: 'imaging', name: '胸部（CT）' }, [lowDose]), []);
+  assert.deepEqual(filterUnsupportedCtProtocol({ itemType: 'imaging', name: '胸部低剂量CT' }, [lowDose]), [lowDose]);
 });
