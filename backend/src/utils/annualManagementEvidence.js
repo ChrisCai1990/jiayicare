@@ -180,7 +180,7 @@ function draftPlanActions(evidence = []) {
       sourceIds: group.sourceIds, reviewGroupVersion: 1, reviewItems: group.items,
       items: `复查${group.items.length}项检查`,
       reason: group.problems.join('、'), department: group.department,
-      time: group.dueDate, reviewStatus: 'pending_family_doctor_review',
+      time: group.dueDate, timingReason: `按已确认的${group.intervalMonths}个月复查间隔`, reviewStatus: 'pending_family_doctor_review',
     } });
   }
   const fields = {
@@ -191,9 +191,13 @@ function draftPlanActions(evidence = []) {
     const content = item.content || {};
     const direction = content.direction;
     if (content.reviewPlan?.kind === 'recheck' || !fields[direction]) continue;
+    const suggestedDate = ['single', 'rolling'].includes(content.actionTiming?.mode) && require('../../../shared/annualAppointment.cjs').validDay(content.actionTiming?.firstDueDate)
+      ? content.actionTiming.firstDueDate : '';
+    const dateKey = direction === 'medical_treatment' ? 'visit_time' : 'time';
     actions.push({ key: direction, record: {
       sourceIds: [item.id], [fields[direction]]: content.problem || content.reportTitle || '待核对事项',
       ...(direction === 'medical_treatment' ? {} : { reason: content.action || content.advisorNote || content.problem || '' }),
+      ...(suggestedDate ? { [dateKey]: suggestedDate, timingReason: '按顾问纳入年度管理时确认的首次执行日期' } : {}),
       goal: content.goal || DEFAULT_MANAGEMENT_GOALS[direction] || '',
       reviewStatus: 'pending_family_doctor_review',
     } });

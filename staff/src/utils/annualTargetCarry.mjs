@@ -20,12 +20,19 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
   if (nutritionIssues.length) next.nutrition_assessment = { ...(modules.nutrition_assessment || {}), enabled: true }
   const activeNutritionIds = new Set(nutritionIssues.map(row => String(row.issueId)))
   for (const key of ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine']) {
-    const activeDraftIds = new Set(draftActions.filter(action => action.key === key).flatMap(action => action.record?.sourceIds || []).map(String))
+    const sourceDrafts = draftActions.filter(action => action.key === key).map(action => action.record)
+    const activeDraftIds = new Set(sourceDrafts.flatMap(record => record?.sourceIds || []).map(String))
     const oldRows = modules[key]?.records || []
     const retained = oldRows.filter(row => !row.screeningDraft || (row.sourceIds || []).some(id => activeDraftIds.has(String(id)) && !activeNutritionIds.has(String(id))))
-    const additions = draftActions.filter(action => action.key === key).map(action => action.record).filter(record =>
-      !retained.some(row => (row.sourceIds || []).some(id => record.sourceIds?.includes(id))))
-    if (retained.length !== oldRows.length || additions.length) next[key] = { ...(modules[key] || {}), enabled: true, records: [...retained, ...additions.map(record => ({ ...record, screeningDraft: true }))] }
+    const dateKey = key === 'medical_treatment' ? 'visit_time' : 'time'
+    const hydrated = retained.map(row => {
+      if (!row.screeningDraft || row[dateKey] || row.appointmentSchedulingVersion || row.datePending || row.timingStatus === 'pending_confirmation') return row
+      const source = sourceDrafts.find(record => (record.sourceIds || []).some(id => row.sourceIds?.includes(id)))
+      return source?.[dateKey] ? { ...row, [dateKey]: source[dateKey], timingReason: row.timingReason || source.timingReason || '' } : row
+    })
+    const additions = sourceDrafts.filter(record =>
+      !hydrated.some(row => (row.sourceIds || []).some(id => record.sourceIds?.includes(id))))
+    if (JSON.stringify(hydrated) !== JSON.stringify(oldRows) || additions.length) next[key] = { ...(modules[key] || {}), enabled: true, records: [...hydrated, ...additions.map(record => ({ ...record, screeningDraft: true }))] }
   }
   const changed = JSON.stringify(next) !== JSON.stringify(modules)
   return { modules: changed ? next : modules, changed }
