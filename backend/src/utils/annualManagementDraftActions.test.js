@@ -21,13 +21,14 @@ test('已确认复查进入方案复查条目，营养问题合并为一个评�
 
 test('纳入管理时确认的首次日期进入对应方案日期，待确认时间保持空白', () => {
   const evidence = [
-    { id: 'visit:1', content: { direction: 'medical_treatment', problem: '肺结节', actionTiming: { mode: 'single', firstDueDate: '2027-05-05' } } },
+    { id: 'visit:1', content: { direction: 'medical_treatment', problem: '肺结节', actionTiming: { mode: 'single', dateBasis: 'interval', anchorDate: '2026-11-05', intervalMonths: 6, firstDueDate: '2027-05-05' } } },
     { id: 'exam:1', content: { direction: 'checkup_completion', problem: '完善检查', actionTiming: { mode: 'rolling', firstDueDate: '2027-06-01' } } },
     { id: 'visit:2', content: { direction: 'medical_treatment', problem: '待核实问题', actionTiming: { mode: 'pending', firstDueDate: '' } } },
   ];
   const actions = draftPlanActions(evidence);
   assert.equal(actions[0].record.visit_time, '2027-05-05');
-  assert.match(actions[0].record.timingReason, /纳入年度管理/);
+  assert.match(actions[0].record.timingReason, /6个月后就医/);
+  assert.equal(actions[0].record.appointmentSchedulingVersion, 1);
   assert.equal(actions[1].record.time, '2027-06-01');
   assert.equal(actions[2].record.visit_time, undefined);
 });

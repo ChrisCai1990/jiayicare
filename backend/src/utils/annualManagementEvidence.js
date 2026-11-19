@@ -197,7 +197,12 @@ function draftPlanActions(evidence = []) {
     actions.push({ key: direction, record: {
       sourceIds: [item.id], [fields[direction]]: content.problem || content.reportTitle || '待核对事项',
       ...(direction === 'medical_treatment' ? {} : { reason: content.action || content.advisorNote || content.problem || '' }),
-      ...(suggestedDate ? { [dateKey]: suggestedDate, timingReason: '按顾问纳入年度管理时确认的首次执行日期' } : {}),
+      ...(suggestedDate ? { [dateKey]: suggestedDate,
+        timingReason: content.actionTiming?.dateBasis === 'interval'
+          ? `按顾问确认的从${content.actionTiming.anchorDate}起${content.actionTiming.intervalMonths}个月后就医`
+          : '按顾问纳入年度管理时确认的首次执行日期',
+        ...(direction === 'medical_treatment' ? { appointmentSchedulingVersion: 1 } : {}),
+      } : {}),
       goal: content.goal || DEFAULT_MANAGEMENT_GOALS[direction] || '',
       reviewStatus: 'pending_family_doctor_review',
     } });

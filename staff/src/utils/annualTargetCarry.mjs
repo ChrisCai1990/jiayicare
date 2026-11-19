@@ -28,7 +28,8 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
     const hydrated = retained.map(row => {
       if (!row.screeningDraft || row[dateKey] || row.appointmentSchedulingVersion || row.datePending || row.timingStatus === 'pending_confirmation') return row
       const source = sourceDrafts.find(record => (record.sourceIds || []).some(id => row.sourceIds?.includes(id)))
-      return source?.[dateKey] ? { ...row, [dateKey]: source[dateKey], timingReason: row.timingReason || source.timingReason || '' } : row
+      return source?.[dateKey] ? { ...row, [dateKey]: source[dateKey], timingReason: row.timingReason || source.timingReason || '',
+        ...(source.appointmentSchedulingVersion === 1 ? { appointmentSchedulingVersion: 1 } : {}) } : row
     })
     const additions = sourceDrafts.filter(record =>
       !hydrated.some(row => (row.sourceIds || []).some(id => record.sourceIds?.includes(id))))

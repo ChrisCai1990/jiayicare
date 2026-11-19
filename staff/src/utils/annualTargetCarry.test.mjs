@@ -35,11 +35,12 @@ test('筛查决定直接进入执行板块，重复加载不新增，改为营�
 
 test('已有空日期草稿补入来源建议日期，顾问明确调整或清空后不覆盖', () => {
   const target = [{ issueId: 'visit:1', sourceGoal: '安排就医', sourceTitle: '肺结节' }]
-  const draft = [{ key: 'medical_treatment', record: { sourceIds: ['visit:1'], reason: '肺结节', visit_time: '2027-05-05', timingReason: '顾问确认' } }]
+  const draft = [{ key: 'medical_treatment', record: { sourceIds: ['visit:1'], reason: '肺结节', visit_time: '2027-05-05', timingReason: '顾问确认', appointmentSchedulingVersion: 1 } }]
   const old = { medical_treatment: { records: [{ sourceIds: ['visit:1'], reason: '肺结节', screeningDraft: true }] } }
   const filled = carryAnnualTargets(old, target, draft).modules.medical_treatment.records[0]
   assert.equal(filled.visit_time, '2027-05-05')
   assert.equal(filled.timingReason, '顾问确认')
+  assert.equal(filled.appointmentSchedulingVersion, 1)
   assert.equal(carryAnnualTargets({ ...old, medical_treatment: { records: [{ ...old.medical_treatment.records[0], visit_time: '2027-05-08' }] } }, target, draft).modules.medical_treatment.records[0].visit_time, '2027-05-08')
   assert.equal(carryAnnualTargets({ ...old, medical_treatment: { records: [{ ...old.medical_treatment.records[0], appointmentSchedulingVersion: 1 }] } }, target, draft).modules.medical_treatment.records[0].visit_time, undefined)
 })
