@@ -266,11 +266,13 @@ function classifyItemWithMatches(item, matches) {
   };
 }
 
+const { filterUnsupportedCtProtocol } = require('./reportCtProtocol');
+
 async function classifyItemAsync(item) {
   // 已归类结果（包括人工审核确认）是权威数据，不再重新匹配。
   if (hasConfirmedClassification(item)) return { ...item };
   const index = await buildAdminIndex();
-  const matches = selectMatchesForItem(item, index);
+  const matches = filterUnsupportedCtProtocol(item, selectMatchesForItem(item, index));
   return classifyItemWithMatches(item, matches);
 }
 
@@ -424,7 +426,7 @@ async function classifyItemsAsync(items) {
     if (hasConfirmedClassification(item)) return { ...item };
     const page = Number(item.sourcePage || item._page || 0);
     const inferredPanel = page && stoolPages.has(page) && isStoolRoutineRow(item) ? '粪便常规' : '';
-    const matches = selectMatchesForItem(item, index, inferredPanel);
+    const matches = filterUnsupportedCtProtocol(item, selectMatchesForItem(item, index, inferredPanel));
     return classifyItemWithMatches(item, matches);
   });
 }

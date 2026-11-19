@@ -6,7 +6,8 @@ import DateField from '../../../shared/DateField.jsx'
 
 const DIRECTIONS = [
   ['checkup_completion', '完善检查'], ['medical_treatment', '安排就医'],
-  ['abnormal_followup', '定期复查'], ['ongoing_management', '持续管理或观察'],
+  ['abnormal_followup', '定期复查'], ['nutrition_assessment', '营养评估'],
+  ['ongoing_management', '持续管理或观察（旧方向）'],
   ['vaccine', '疫苗接种'], ['monitoring', '日常监测'],
 ]
 const pending = new Map()
@@ -129,7 +130,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         <div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核专项筛查'}。请选择对应现有方案的管理方向。</div>
         <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
-        <select className="form-input" value={direction} disabled={drafting} onChange={e => { setDirection(e.target.value); if (!['ongoing_management', 'abnormal_followup'].includes(e.target.value)) setReviewKind('none') }}><option value="">请选择</option>{DIRECTIONS.filter(([value]) => !symptomSource || ['medical_treatment', 'ongoing_management'].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <select className="form-input" value={direction} disabled={drafting} onChange={e => { setDirection(e.target.value); if (!['ongoing_management', 'abnormal_followup'].includes(e.target.value)) setReviewKind('none') }}><option value="">请选择</option>{DIRECTIONS.filter(([value]) => (value !== 'ongoing_management' || saved?.direction === value) && (!symptomSource || ['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(value))).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         {pilot && <><label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
         <textarea className="form-input" rows={2} maxLength={240} value={goal} onChange={e => setGoal(e.target.value)} placeholder="写出本年度要达到或明确的可核对结果；缺少基线时先以建立基线为目标" />
         <label className="form-label" style={{ marginTop: 12 }}>下一步行动</label>

@@ -38,6 +38,7 @@ test('dense annual page checks four bands and does not stop after a partial loca
     ] }; } },
     '../utils/reportTextUrineTable': { parseTextUrineTable: () => ({ supported: false, items: [] }) },
     '../utils/reportTextPhysicalExam': { parseTextPhysicalExam: () => ({ supported: false, items: [] }) },
+    '../utils/reportTextAikangExam': { parseTextAikangExam: () => ({ supported: false, items: [] }) },
     '../utils/reportTextUltrasoundTable': { parseTextUltrasoundTable: () => ({ supported: false, items: [] }) },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
     '../utils/zheyiReportTemplate': { isZheyiReport: () => false },

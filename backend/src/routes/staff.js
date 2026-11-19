@@ -10193,7 +10193,7 @@ router.post('/patients/:id/annual-management-decision-draft', staffAuth, async (
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
     const { source, direction } = req.body;
     if (source?.kind === 'symptom') {
-      if (!mongoose.isValidObjectId(source.recordId) || !['medical_treatment', 'ongoing_management'].includes(direction)) return res.status(400).json({ success: false, message: '请选择已处理主诉及对应管理方向' });
+      if (!mongoose.isValidObjectId(source.recordId) || !['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(direction)) return res.status(400).json({ success: false, message: '请选择已处理主诉及对应管理方向' });
       const record = await HealthRecord.findOne({ _id: source.recordId, user: req.params.id, type: 'symptom',
         'symptomWorkflow.status': { $in: ['referred', 'manager_followup'] }, 'symptomWorkflow.decidedAt': { $ne: null } })
         .select('value note recordedAt symptomWorkflow').lean();
@@ -10205,7 +10205,7 @@ router.post('/patients/:id/annual-management-decision-draft', staffAuth, async (
       return res.json({ success: true, data: require('../utils/annualManagementAction').parseDraft(response) });
     }
     if (!['screening', 'screening_report', 'report_item'].includes(source?.kind) || !mongoose.isValidObjectId(source.reportId)) return res.status(400).json({ success: false, message: '请选择已审核检查项目来源' });
-    if (!['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'ongoing_management'].includes(direction)) return res.status(400).json({ success: false, message: '请先选择管理方向' });
+    if (!['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'ongoing_management', 'nutrition_assessment'].includes(direction)) return res.status(400).json({ success: false, message: '请先选择管理方向' });
     const report = await MedicalReport.findOne({ _id: source.reportId, user: req.params.id, audit_status: 'audited' })
       .select('title checkDate reportItems examConclusion advisorInterpretationConfirmedAt archiveOnly duplicateOf documentCategory').lean();
     if (!report) return res.status(409).json({ success: false, message: '来源报告尚未审核或已变化，请先核对' });
@@ -10238,11 +10238,11 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
       return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
     if (!Number.isInteger(Number(year)) || Number(year) < 2020 || Number(year) > 2100) return res.status(400).json({ success: false, message: '年度无效' });
     if (source?.kind !== 'symptom' && (!['screening', 'screening_report', 'report_item'].includes(source?.kind) || !mongoose.isValidObjectId(source.reportId))) return res.status(400).json({ success: false, message: '仅可引用已审核检查项目或已处理的不适主诉' });
-    if (!['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'ongoing_management'].includes(direction)) return res.status(400).json({ success: false, message: '请选择现有管理方向' });
+    if (!['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'ongoing_management', 'nutrition_assessment'].includes(direction)) return res.status(400).json({ success: false, message: '请选择现有管理方向' });
     const title = String(req.body.title || '').trim(), note = String(req.body.note || '').trim();
     if (title.length < 2 || title.length > 80 || note.length > 1000) return res.status(400).json({ success: false, message: '请填写有效的问题名称及说明' });
     if (source.kind === 'symptom') {
-      if (!mongoose.isValidObjectId(source.recordId) || !['medical_treatment', 'ongoing_management'].includes(direction)) return res.status(400).json({ success: false, message: '已处理主诉仅可安排就医或持续管理' });
+      if (!mongoose.isValidObjectId(source.recordId) || !['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(direction)) return res.status(400).json({ success: false, message: '已处理主诉仅可安排就医、营养评估或持续管理' });
       const symptom = await HealthRecord.findOne({ _id: source.recordId, user: req.params.id, type: 'symptom',
         'symptomWorkflow.status': { $in: ['referred', 'manager_followup'] }, 'symptomWorkflow.decidedAt': { $ne: null } })
         .select('value note recordedAt symptomWorkflow').lean();
@@ -10761,7 +10761,7 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
       const unresolvedSymptoms = await HealthRecord.find({ user: req.params.id, type: 'symptom', 'symptomWorkflow.status': 'pending_doctor',
         recordedAt: { $lt: new Date(`${year + 1}-01-01T00:00:00+08:00`) } })
         .select('_id value recordedAt').sort({ recordedAt: -1 }).limit(20).lean();
-      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
+      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), draftActions: require('../utils/annualManagementEvidence').draftPlanActions(management.evidence), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
         unresolvedSymptoms: unresolvedSymptoms.map(row => ({ id: row._id, value: String(row.value || '').slice(0, 120), recordedAt: row.recordedAt })) });
     }
     const confirmed = await AiCaseReview.find({
@@ -15279,6 +15279,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .select('title type documentCategory institution hospital checkDate reportItems.institution reportItems.itemId reportItems.name reportItems.value reportItems.status reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const management = closedLoop ? await require('../utils/annualManagementEvidence').load(user._id, year) : { evidence: [], stale: [] };
+    const actionEvidence = require('../utils/annualManagementEvidence').generationActionEvidence(management.evidence);
     if (management.stale.length) return res.status(409).json({ success: false, message: `以下管理方向的来源报告已变化，请重新核对：${management.stale.join('、')}` });
     if (management.unresolved?.length) return res.status(409).json({ success: false, message: `已审核AI健康信息整理还有待完善检查未由顾问逐项处理：${management.unresolved.join('、')}` });
     const confirmedReviews = require('../utils/annualReviewPlan').reviewGroups(management.evidence);
@@ -15286,6 +15287,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (confirmedReviews.some(group => !group.dueDate || group.dueDate < generationToday)) return res.status(409).json({ success: false, message: '已有复查期限无效或已过，请顾问重新核对复查间隔和项目后再生成' });
     for (const source of management.evidence) {
       const direction = source.content.direction;
+      if (direction === 'nutrition_assessment') continue;
       if (source.content.legacyReviewNote) return res.status(409).json({ success: false, message: `“${source.content.problem}”的顾问备注写有复查期限，请在原管理决定中补齐复查间隔和具体项目后重新生成` });
       const review = source.content.reviewPlan?.kind === 'recheck';
       const category = review ? 'abnormal_followup' : direction === 'ongoing_management' ? 'personalized' : direction;
@@ -15340,8 +15342,8 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       || confirmedCaseReviews[0];
     const assessmentFocus = management.evidence.length ? {
       title: '顾问在专项筛查中确认纳入管理的事项',
-      issues: management.evidence,
-      instruction: '逐项按顾问选择的管理方向调用现有方案模板；若证据不足，应提示待核实，不能换成其他方向或自行增加治疗。',
+      issues: actionEvidence,
+      instruction: '逐项按顾问选择的管理方向调用现有方案模板；营养评估方向由系统统一承接，不在这里重复生成；若证据不足，应提示待核实，不能换成其他方向或自行增加治疗。',
     } : preparation.continuity?.ready && preparation.continuity?.source?.annualReviewId ? {
       title: '上一年度健康管理总评与下一年度重点',
       annualReviewId: preparation.continuity.source.annualReviewId,
@@ -15412,7 +15414,7 @@ ${discussedScheduling || '无明确的医院或时间线索'}
 
 【健康顾问已确认的管理目标与干预重点】
 ${confirmedManagementTargets.length ? JSON.stringify(confirmedManagementTargets) : '暂无逐条确认的目标；不得虚构量化目标'}
-这些已确认目标和干预重点是年度方案的内容边界。逐条落实对应行动、复评期限和预期，不得改写目标或自行扩展新问题；年度体检和近五年趋势仅用于核对事实与完善执行细节。标记为营养相关的条目应供营养师后续核实，不要替营养师编造基线或能量处方。
+这些已确认目标和干预重点是年度方案的内容边界。除营养评估方向由系统合并为一项年度营养评估外，逐条落实对应行动、复评期限和预期，不得改写目标或自行扩展新问题；年度体检和近五年趋势仅用于核对事实与完善执行细节。标记为营养相关的条目应供营养师后续核实，不要替营养师编造基线或能量处方。
 每项执行安排须带出可供阶段评估核对的目标。若已确认目标明确，以原目标为准；未另有明确目标时按服务类型使用简洁目标：就医为“及时完成就医，明确诊治方案”，完善检查为“完成检查，明确结果与后续处理方向”，定期复查为“按计划完成复查，明确变化与后续管理措施”，疫苗为“核实接种适宜性，按确认的方案完成接种”。不要让顾问重复录入同类目标，也不得编造数值目标。
 
 ${closedLoop ? `【已由专业人员提出、健康顾问终审的年度综合健康评估】
@@ -15473,7 +15475,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     const promptEvidence = require('../utils/annualGenerationEvidence');
     const confirmedReportIssues = closedLoop ? await require('../utils/reportIssues').annualIssueEvidence(user._id, { year }) : [];
     const evidence = [
-      ...management.evidence,
+      ...actionEvidence,
       ...confirmedReportIssues,
       ...confirmedCaseReviews.map(item => ({ id: `review:${item._id}`, content: item.conclusion })),
       ...professionalAssessments.map(item => ({ id: `assessment:${item._id}`, content: item })),
@@ -15485,7 +15487,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     ];
     const carePreferences = require('../utils/carePreferences').carePreferenceContext(user);
     const logisticsPrompt = '\n【就医机构与服务权益】同一专科的已核实既往就诊医院优先；体检报告标题不能写入医院字段。没有已核实医院时，顾问填写的偏好仅作待确认线索。洁牙可建议艾维口腔；如有赠送权益，须核对使用状态及有效期，不得称已预约。复查项目和复查原因必须对应同一来源，不得把不同部位检查或肿瘤标志物混写为一次CT。日常跟进请写明对应的具体问题和工作人员要核对的事项，避免空白方案或内部代码。\n已核实既往就诊记录：' + JSON.stringify([...previousVisits].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12)) + '\n就医偏好：' + JSON.stringify(carePreferences) + '\n当前可核对的赠送洁牙权益：' + JSON.stringify(dentalGift || '无已确认适用权益');
-    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + logisticsPrompt + '\nAI优先关注信息仅供理解背景，不作为独立行动来源，也不要求逐项再次确认；已由顾问选择方向的问题须按management_issue的direction调用对应模板，不得自行改为就医或检查。' + (supplement ? '\n【补充生成模式】只针对supplement中的顾问选定依据提出新增或需调整事项，不重新生成整份，不重复已落实行动。原方案仅供对照，不是新的医学依据：' + JSON.stringify(supplement.baseModuleData) + '\n未涉及的模块返回空，不能把未输出当作取消。年度focus只给新增重点，不重复原项目；其他原内容由系统保留。每项补充建议sourceIds必须包含supplement及具体来源。' : '') : prompt;
+    const checkedPrompt = closedLoop ? require('../utils/annualGenerationContract').annualGenerationPrompt(prompt, availableAnnualFollowUpCatalog, evidence, allowedKeys) + '\n' + clinicalRules.clinicalRulesPrompt + logisticsPrompt + '\nAI优先关注信息仅供理解背景，不作为独立行动来源，也不要求逐项再次确认；已由顾问选择方向的问题须按management_issue的direction调用对应模板，不得自行改为就医或检查。营养评估方向由系统合并到一项年度营养评估，不在本次AI执行事项中重复生成。' + (supplement ? '\n【补充生成模式】只针对supplement中的顾问选定依据提出新增或需调整事项，不重新生成整份，不重复已落实行动。原方案仅供对照，不是新的医学依据：' + JSON.stringify(supplement.baseModuleData) + '\n未涉及的模块返回空，不能把未输出当作取消。年度focus只给新增重点，不重复原项目；每项补充建议sourceIds必须包含supplement及具体来源。' : '') : prompt;
     const generate = async (resumeRaw = null) => {
       let parsed = resumeRaw;
       if (!parsed) {
@@ -15524,7 +15526,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     };
     const generation = closedLoop ? await consistency.reuseAnnualGeneration(
       require('mongoose').connection.db.collection('annual_generation_snapshots'),
-      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 16, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, management: management.evidence, confirmedReportIssues, confirmedCaseReviews: confirmedCaseReviews.map(({ messages, ...review }) => review), discussedScheduling, professionalAssessments, continuity: preparation.continuity || null, dentalGift, previousVisits, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
+      { patientId: String(user._id), year, templateId: String(templateId), ruleVersion: 17, model: process.env.QWEN_API_KEY ? 'qwen-plus' : 'deepseek-chat', prompt: checkedPrompt.split(todayText).join('<EXECUTION_DATE>'), sourceSnapshot: { sections: s, reports, auditedGlucose, management: management.evidence, confirmedReportIssues, confirmedCaseReviews: confirmedCaseReviews.map(({ messages, ...review }) => review), discussedScheduling, professionalAssessments, continuity: preparation.continuity || null, dentalGift, previousVisits, notes }, catalog: availableAnnualFollowUpCatalog }, generate,
     ) : { raw: await generate() };
     const raw = generation.raw;
     const generationDay = generation.createdAt ? new Date(new Date(generation.createdAt).getTime() + 8 * 3600000).toISOString().slice(0, 10) : todayText;
@@ -15592,7 +15594,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     }
 
     res.json({ success: true, data: result, managementTargets: confirmedManagementTargets,
-      generation: { fingerprint: generation.fingerprint, reused: generation.reused, evidenceCoverage: raw.evidenceCoverage || [], requiresNutritionAssessment: management.evidence.some(item => item.content.direction === 'ongoing_management') }, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
+      generation: { fingerprint: generation.fingerprint, reused: generation.reused, evidenceCoverage: raw.evidenceCoverage || [], requiresNutritionAssessment: management.evidence.some(item => ['ongoing_management', 'nutrition_assessment'].includes(item.content.direction)) }, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: require('../utils/annualGenerationContract').annualGenerationError(err.message) });
   }
@@ -19761,21 +19763,24 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const urineCandidate = parseTextUrineTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
       const physicalCandidate = parseTextPhysicalExam(layout, pageNum);
+      const { parseTextAikangExam } = require('../utils/reportTextAikangExam');
+      const aikangCandidate = parseTextAikangExam(layout, pageNum);
       const { parseTextUltrasoundTable } = require('../utils/reportTextUltrasoundTable');
       let ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum);
       if (ultrasoundCandidate.supported && !ultrasoundCandidate.items[0].diagnosis
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported) {
-        localScan = { source: 'pdf_text', items: [
+      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
+        localScan = { source: aikangCandidate.supported ? 'pdf_text_exam' : 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
           ...(urineCandidate.supported ? urineCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
+          ...(aikangCandidate.supported ? aikangCandidate.items : []),
         ] };
       }
-      if (!localScan || localScan.items.length < 25) {
+      if (!localScan || (localScan.source !== 'pdf_text_exam' && localScan.items.length < 25)) {
         // Loose text-layer name/value pairs are only omission signals. Scanned
         // pages can contain many such pairs while no structured table is
         // readable; a small structured result may also cover only one table.
@@ -19788,7 +19793,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
         }
       }
       if (localScan) imagePageEvidence[pageNum] = { status: 'needs_review',
-        message: `本地${localScan.source === 'pdf_text' ? 'PDF文字层' : '扫描表格'}提取出${localScan.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
+        message: localScan.source === 'pdf_text_exam'
+          ? `PDF文字层转录出${localScan.items.length}条检查记录；请对照原件核对完整所见和意见。`
+          : `本地${localScan.source === 'pdf_text' ? 'PDF文字层' : '扫描表格'}提取出${localScan.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
     } catch (error) {
       console.log(`[parse-page] P${pageNum} 本地表格OCR不可用，继续原补提流程：${error.code || error.name || 'ERROR'}`);
     }
@@ -19798,7 +19805,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
   const { hasBroadLocalLabScan } = require('../utils/reportPageSupplement');
-  const useLocalScanOnly = hasBroadLocalLabScan(localScan);
+  const useLocalScanOnly = localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
   if (!useLocalScanOnly) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
@@ -19876,7 +19883,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (!allRegionsImageOnly && imagePageEvidence[pageNum]?.status === 'image_only') delete imagePageEvidence[pageNum];
   if (imagePageEvidence[pageNum]?.status === 'image_only') {
     const evidence = imagePageEvidence[pageNum];
-    await MedicalReport.findByIdAndUpdate(reportId, { $set: {
+    await MedicalReport.findOneAndUpdate({ _id: reportId, 'pageParseStatus.status': 'processing',
+      'pageParseStatus.pageNum': pageNum, 'pageParseStatus.startedAt': report.pageParseStatus?.startedAt }, { $set: {
       [`imagePageEvidence.${pageNum}`]: evidence,
       pageParseStatus: { pageNum, status: 'image_only', startedAt: report.pageParseStatus?.startedAt || new Date(),
         completedAt: new Date(), itemCount: 0,
@@ -19933,7 +19941,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
     : '';
   const resultMessage = localScan
-    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选${useLocalScanOnly ? '' : '并完成分段补漏'}，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    ? `第${pageNum}页本地${localScan.source.startsWith('pdf_text') ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选${useLocalScanOnly ? '' : '并完成分段补漏'}，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
     : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'
@@ -19941,7 +19949,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
       : parsedItems.length
         ? `第${pageNum}页识别到${parsedItems.length}项候选${candidateDetail}，未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
         : `第${pageNum}页AI未读到可接纳的遗漏项目，已保留原${oldPage.length}项，请对照原件核对是否漏提`;
-  const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision) }, {
+  const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision),
+    'pageParseStatus.status': 'processing', 'pageParseStatus.pageNum': pageNum,
+    'pageParseStatus.startedAt': report.pageParseStatus?.startedAt }, {
     $set: {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
@@ -20027,7 +20037,7 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     const pageNum = Number(req.body?.pageNum);
     if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > 500) return res.status(400).json({ success: false, message: '页码无效' });
     const MedicalReport = require('../models/MedicalReport');
-    const { isActivePageParse } = require('../utils/reportPageSupplement');
+    const { isActivePageParse, PAGE_PARSE_STALE_MS } = require('../utils/reportPageSupplement');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析' });
@@ -20036,11 +20046,14 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     if (isActivePageParse(report.pageParseStatus, pageNum)) {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
     }
-    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(Date.now() - 20 * 60000) } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });
+    const claimStartedAt = new Date();
+    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(claimStartedAt.getTime() - PAGE_PARSE_STALE_MS) } }, { 'pageParseStatus.startedAt': { $exists: false } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` } });
     if (!pageClaim) return res.status(409).json({ success: false, message: '报告正在识别、补提或已暂停，请勿重复提交' });
     runReportPageParse(report._id, pageNum).catch(async error => {
       console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);
-      await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'failed', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: error.message } }).catch(() => {});
+      await MedicalReport.findOneAndUpdate({ _id: report._id, 'pageParseStatus.status': 'processing',
+        'pageParseStatus.pageNum': pageNum, 'pageParseStatus.startedAt': claimStartedAt },
+      { pageParseStatus: { pageNum, status: 'failed', startedAt: claimStartedAt, completedAt: new Date(), message: error.message } }).catch(() => {});
     });
     res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
   } catch (err) {

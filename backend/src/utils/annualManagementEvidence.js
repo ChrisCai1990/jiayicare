@@ -140,7 +140,7 @@ async function load(patientId, year, dependencies = {}) {
 
 const DIRECTION_LABELS = {
   medical_treatment: '安排就医', checkup_completion: '完善检查', abnormal_followup: '定期复查',
-  vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察',
+  vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察', nutrition_assessment: '营养评估',
 };
 const DEFAULT_MANAGEMENT_GOALS = {
   medical_treatment: '及时完成就医，明确诊治方案',
@@ -148,7 +148,7 @@ const DEFAULT_MANAGEMENT_GOALS = {
   abnormal_followup: '按计划完成复查，明确变化与后续管理措施',
   vaccine: '核实接种适宜性，按确认的方案完成接种',
   monitoring: '按计划监测，及时识别异常变化',
-  ongoing_management: '持续跟进变化，按评估结果调整管理措施',
+  ongoing_management: '持续跟进变化，按评估结果调整管理措施', nutrition_assessment: '完成营养评估，由营养师确认干预重点',
 };
 function managementTargets(evidence = [], pilot = true) {
   return evidence.slice(0, 32).map(item => {
@@ -156,15 +156,49 @@ function managementTargets(evidence = [], pilot = true) {
     const directionLabel = DIRECTION_LABELS[direction] || '持续管理';
     if (!pilot) return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
       focus: [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
-      nutritionRelevant: direction === 'ongoing_management', sourceTitle: reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+      nutritionRelevant: ['ongoing_management', 'nutrition_assessment'].includes(direction), sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
     return { issueId: item.id, goal: goal || DEFAULT_MANAGEMENT_GOALS[direction] || `${problem} · ${directionLabel}`,
       focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
       goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)
         ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
       sourceStatus: source?.status || '',
       ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
-      nutritionRelevant: direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+      nutritionRelevant: direction === 'nutrition_assessment' || direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
   });
+}
+
+function generationActionEvidence(evidence = []) {
+  return evidence.filter(item => item.content.direction !== 'nutrition_assessment');
+}
+
+// Project confirmed screening decisions into editable annual-plan actions. This
+// never schedules an appointment or writes a plan; the advisor reviews the draft.
+function draftPlanActions(evidence = []) {
+  const actions = [];
+  for (const group of require('./annualReviewPlan').reviewGroups(evidence)) {
+    actions.push({ key: 'abnormal_followup', record: {
+      sourceIds: group.sourceIds, reviewGroupVersion: 1, reviewItems: group.items,
+      items: `复查${group.items.length}项检查`,
+      reason: group.problems.join('、'), department: group.department,
+      time: group.dueDate, reviewStatus: 'pending_family_doctor_review',
+    } });
+  }
+  const fields = {
+    medical_treatment: 'reason', checkup_completion: 'items',
+    abnormal_followup: 'items', vaccine: 'name',
+  };
+  for (const item of evidence) {
+    const content = item.content || {};
+    const direction = content.direction;
+    if (content.reviewPlan?.kind === 'recheck' || !fields[direction]) continue;
+    actions.push({ key: direction, record: {
+      sourceIds: [item.id], [fields[direction]]: content.problem || content.reportTitle || '待核对事项',
+      ...(direction === 'medical_treatment' ? {} : { reason: content.action || content.advisorNote || content.problem || '' }),
+      goal: content.goal || DEFAULT_MANAGEMENT_GOALS[direction] || '',
+      reviewStatus: 'pending_family_doctor_review',
+    } });
+  }
+  return actions;
 }
 
 function validatePlanCoverage(moduleData = {}, evidence = []) {
@@ -190,6 +224,13 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
     }
   }
   for (const source of evidence) {
+    if (source.content.direction === 'nutrition_assessment') {
+      const goals = moduleData.management_targets?.records || [];
+      if (moduleData.nutrition_assessment?.enabled === false || !moduleData.nutrition_assessment
+        || !goals.some(row => row.issueId === source.id && row.nutritionRelevant === true))
+        return `“${source.content.problem}”尚未进入营养评估与对应管理目标，请核对方案`;
+      continue;
+    }
     const key = source.content.reviewPlan?.kind === 'recheck' ? 'abnormal_followup'
       : source.content.direction === 'ongoing_management' ? 'personalized_followups' : source.content.direction;
     const module = moduleData[key];
@@ -203,4 +244,4 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
   return '';
 }
 
-module.exports = { load, managementTargets, validatePlanCoverage, effectiveDecisions, reportSourceItems };
+module.exports = { load, managementTargets, draftPlanActions, generationActionEvidence, validatePlanCoverage, effectiveDecisions, reportSourceItems };

@@ -29,19 +29,9 @@ import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
 import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
+import { mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
 const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
-function mergeManagementTargetEdits(incoming, existing = []) {
-  const byIssue = new Map(existing.filter(row => row.issueId).map(row => [row.issueId, row]))
-  const editable = ['goal', 'focus', 'goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'nutritionRelevant', 'rehabRelevant']
-  return incoming.map(row => {
-    const old = byIssue.get(row.issueId)
-    if (!old) return row
-    const kept = {}
-    for (const key of editable) if (Object.hasOwn(old, key)) kept[key] = old[key]
-    return { ...row, ...kept }
-  })
-}
 function GoalMetricEditor({ value, onChange, disabled }) {
   const metric = value || null
   return <div style={{ gridColumn:'1/-1', borderTop:'1px solid #E4ECE7', paddingTop:8 }}>
@@ -411,6 +401,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
   const [confirmedReviewTargets, setConfirmedReviewTargets] = useState([])
+  const [screeningDraftActions, setScreeningDraftActions] = useState([])
   const [unresolvedAiCheckups, setUnresolvedAiCheckups] = useState([])
   const [unresolvedSymptoms, setUnresolvedSymptoms] = useState([])
   const [staleManagementSources, setStaleManagementSources] = useState([])
@@ -632,14 +623,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           : (queryPlanType ? map[strategyOf(queryPlanType)] || null : list.find(p => p.servicePlanCode || p.planType))
         const confirmedTargets = targetsRes.data || []
         setConfirmedReviewTargets(confirmedTargets)
+        const incomingDraftActions = targetsRes.draftActions || []
+        setScreeningDraftActions(incomingDraftActions)
         setUnresolvedAiCheckups(targetsRes.unresolved || [])
         setUnresolvedSymptoms(targetsRes.unresolvedSymptoms || [])
         setStaleManagementSources(targetsRes.stale || [])
         setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
           (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
         const targetModules = target?.moduleData || {}
-        const carryTargets = !target?.pushedAt && !targetModules.management_targets?.records?.length && confirmedTargets.length > 0
-        setModuleData(carryTargets ? { ...targetModules, management_targets: { enabled: true, records: confirmedTargets } } : targetModules)
+        const carried = !target?.pushedAt ? carryAnnualTargets(targetModules, confirmedTargets, incomingDraftActions) : { modules: targetModules, changed: false }
+        setModuleData(carried.modules)
         setContinuitySource(target?.continuitySource || preparationData?.continuity?.source || null)
         if (target) {
           setPlanType(target.servicePlanCode || target.planType)
@@ -661,7 +654,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPushedAt(null)
           setConfirmedAt(null)
         }
-        setDirty(carryTargets)
+        setDirty(carried.changed)
         setMetricSelectionDirty(false)
       }).catch(err => { if (!cancelled) toast(err.message || '加载失败') })
         .finally(() => { if (!cancelled) setLoading(false) })
@@ -705,12 +698,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setPlanType(key)
     setSelectedTemplateId(template?._id || p?.templateId || '')
     const existingModules = p?.moduleData || {}
-    const carryTargets = !p?.pushedAt && !existingModules.management_targets?.records?.length && confirmedReviewTargets.length > 0
-    setModuleData(carryTargets ? { ...existingModules, management_targets: { enabled: true, records: confirmedReviewTargets } } : existingModules)
+    const carried = !p?.pushedAt ? carryAnnualTargets(existingModules, confirmedReviewTargets, screeningDraftActions) : { modules: existingModules, changed: false }
+    setModuleData(carried.modules)
     setPhaseAssessmentFrequency(p?.phaseAssessmentFrequency || '')
     setPushedAt(p?.pushedAt || null)
     setConfirmedAt(p?.confirmedAt || null)
-    setDirty(carryTargets)
+    setDirty(carried.changed)
     setMetricSelectionDirty(false)
   }
 
@@ -916,7 +909,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           if (!Array.isArray(merged[key]?.records) || key === 'management_targets') return
           merged[key] = { ...merged[key], records: merged[key].records.map(record => { const issueId = displayIssueId(record, targets) || record.issueId || ''; const target = targets.find((row, index) => targetIssueId(row, index) === issueId); return { ...record, issueId, ...(target ? { goal: target.goal } : {}) } }) }
         })
-        return merged
+        return carryAnnualTargets(merged, confirmedReviewTargets, screeningDraftActions).modules
       })
       setDirty(true)
       const appliedCount = BASIC_STANDARD_MODULE_KEYS.reduce((total, key) => {
@@ -1067,9 +1060,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
   const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
-  const templateModuleEntries = selectedAdminTemplate
+  const configuredModuleEntries = selectedAdminTemplate
     ? templateEntries(selectedAdminTemplate)
     : (PLAN_TYPE_MODULES[strategyOf(planType)] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
+  const templateModuleEntries = annualPilot ? [...configuredModuleEntries, ...BASIC_STANDARD_MODULE_KEYS
+    .filter(key => !configuredModuleEntries.some(entry => entry.key === key) && (moduleData[key]?.records || []).length)
+    .map(key => ({ key, def: MODULE_DEFS[key] }))] : configuredModuleEntries
   const pendingExecutionChanges = (executionReviewData?.reviews || []).filter(review => review.status === 'pending').flatMap(review => review.changes || [])
   const visibleModuleEntries = templateModuleEntries.filter(entry => {
     if (pendingExecutionChanges.some(change => change.key === entry.key)) return true
@@ -1078,6 +1074,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false)
   })
   const managementTargets = moduleData.management_targets?.records || []
+  const nutritionScreeningIssues = managementTargets.filter(row => row.sourceGoal === '营养评估')
   const nutritionSummary = nutritionMetricRules.nutritionSummary({ moduleData })
   const planActions = visibleModuleEntries.flatMap(entry => {
     const data = moduleData[entry.key] || {}
@@ -1154,6 +1151,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     </div>
   }
   const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction} goalForAction={goalForAction}
+    nutritionScreeningIssues={nutritionScreeningIssues}
     nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted ? moduleData.nutrition_assessment?.advisorTargets || [] : nutritionAdvisorTargets.mergeAdvisorTargets(moduleData.nutrition_assessment?.advisorTargets || [], managementTargets)} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
     nutritionExecutionDate={moduleData.nutrition_assessment?.executionDate || ''} nutritionExecutorName={staffList.find(staff => String(staff._id) === String(moduleData.nutrition_assessment?.executorId || patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''))?.name || patient?.assignedNutritionist?.name || ''}
     nutritionAdvisorEditor={<AnnualNutritionAdvisorTargets patientId={id} plan={plansByType[planType]} rows={moduleData.nutrition_assessment?.advisorTargets || []}
@@ -1549,7 +1547,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                 {row.goalDimension === 'symptom' && <label style={{ fontSize: 12, color: '#62776A' }}>追踪的症状关键词<input className="form-input" aria-label={`症状关键词 ${index + 1}`} maxLength={80} value={row.symptomTerm || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, symptomTerm:e.target.value } : item))} placeholder="如便秘；空白时仅显示本期全部主诉线索" /></label>}
                 {row.goalDimension === 'lifestyle' && <label style={{ fontSize: 12, color: '#62776A' }}>追踪的记录类别<select className="form-input" aria-label={`生活方式记录类别 ${index + 1}`} value={row.lifestyleType || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, lifestyleType:e.target.value } : item))}><option value="">待选择</option><option value="diet">饮食</option><option value="exercise">运动</option><option value="sleep">睡眠</option><option value="smoking">吸烟</option><option value="alcohol">饮酒</option><option value="mood">情绪</option></select></label>}</>}
               </div>
-              <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养师参与此项目</label>
+              <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt || row.sourceGoal === '营养评估'} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养师参与此项目{row.sourceGoal === '营养评估' ? '（顾问已确认）' : ''}</label>
               {annualPilot && <label style={{ fontSize: 13, display: 'inline-block', marginLeft: 14, marginTop: 7 }}><input type="checkbox" checked={row.rehabRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, rehabRelevant: e.target.checked } : item))} /> 建议运动复健评估</label>}
               </details>
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
