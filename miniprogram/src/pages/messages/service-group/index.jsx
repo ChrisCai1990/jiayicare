@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Textarea, Image } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
-import { mediaUrl, inAppServiceGroupAPI as api } from '../../../services/api';
+import { mediaUrl, inAppServiceGroupAPI as api, reportsAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import GroupHistory from '../../../components/GroupHistory';
 import GroupMaterialUpload from '../../../components/GroupMaterialUpload';
@@ -204,14 +204,14 @@ export default function ServiceGroupPage() {
             {message.senderAvatar && <Image src={mediaUrl(message.senderAvatar)} mode="aspectFill" style={{ width: '36px', height: '36px', borderRadius: '50%', marginBottom: '5px' }} />}
             <Text style={{ display: 'block', color: colors.textMuted, fontSize: '11px' }}>{message.senderName}{message.senderType !== 'customer' && ` · ${({familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员',specialist:'专科医师',ai:'嘉医汇AI健康管家'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
             {!!message.mentions?.length&&<View style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'6px'}}>{message.mentions.filter(person=>!person.name || !String(message.content || '').includes('@'+person.name)).map(p=><Text key={p.id} onClick={()=>Taro.showModal({title:p.name,content:p.role || '服务成员',showCancel:false})} style={{color:'#187e87',fontSize:'12px',padding:'3px',background:'#eaf8f8'}}>@{p.name}</Text>)}</View>}
-            {message.fileUrl && <Text onClick={() => openChatFile(message)} style={{display:'block',padding:'6px 0',color:colors.primary,fontWeight:700,wordBreak:'break-all'}}>📎 {message.fileName||'查看文件'}</Text>}
+            {message.fileUrl && <Text onClick={() => openChatFile(message, group.id)} style={{display:'block',padding:'6px 0',color:colors.primary,fontWeight:700,wordBreak:'break-all'}}>📎 {message.fileName||'查看文件'}</Text>}
             <Text style={{ display: 'block', marginTop: '4px', color: colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.audioUrl || (message.fileUrl && message.content==='[文件]')?'':message.content}</Text>
             {message.quote&&<Text onClick={()=>{if(message.quote.id){setHistoryAnchor(message.quote.id);setHistoryOpen(true);}}} style={{display:'block',padding:'8px',background:'#eef1ef',fontSize:'12px',color:colors.textMuted}}>{message.quote.senderName?message.quote.senderName+'：':''}{message.quote.content}</Text>}
             {message.audioUrl&&<GroupVoiceMessage message={message} groupId={group.id}/>}
             {message.material && <View style={{marginTop:'8px'}}>
               <Text style={{display:'block',fontSize:'12px',color:colors.textMuted}}>{message.material.status}</Text>
               {(message.material.files||[]).map((url,i)=>message.material.mimeType==='application/pdf'
-                ? <Text key={i} style={{display:'block',padding:'8px',color:colors.primary}} onClick={async()=>{try{if(process.env.TARO_ENV==='h5')window.location.assign(url);else{const file=await Taro.downloadFile({url});await Taro.openDocument({filePath:file.tempFilePath,fileType:'pdf'});}}catch{Taro.showToast({title:'原件打开失败，请重试',icon:'none'});}}}>查看PDF原件</Text>
+                ? <Text key={i} style={{display:'block',padding:'8px',color:colors.primary}} onClick={async()=>{Taro.showLoading({title:'正在打开文件...'});try{if(process.env.TARO_ENV==='h5')window.location.assign(url);else{const filePath=await reportsAPI.downloadOriginal(message.material.id,i,'application/pdf');await Taro.openDocument({filePath,fileType:'pdf',showMenu:true});}}catch(error){Taro.showModal({title:'原件打开失败',content:error?.message||'请稍后重试',showCancel:false});}finally{Taro.hideLoading();}}}>查看PDF原件</Text>
                 : <Image key={i} src={url} mode="widthFix" onClick={()=>Taro.previewImage({current:url,urls:message.material.files})} style={{width:'100px',margin:'6px',borderRadius:'6px'}} />)}
             </View>}
           </View>)}

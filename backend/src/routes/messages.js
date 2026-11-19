@@ -12,6 +12,20 @@ const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const { conversationRoleKeys, getConversationRole } = require('../utils/conversationRoles');
 const router = express.Router();
 
+// 小程序在安卓端通过已登录的 API 域名下载，避免私有 OSS 域名和临时文件后缀影响预览。
+router.get('/:id/file', auth, async (req, res) => {
+  try {
+    if (!require('mongoose').isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '消息标识无效' });
+    const message = await Message.findOne({ _id: req.params.id, user: req.user._id, fileUrl: { $nin: ['', null] }, recalled: { $ne: true } })
+      .select('fileUrl fileName').lean();
+    if (!message) return res.status(404).json({ success: false, message: '文件不存在' });
+    await require('../utils/chatFileDownload').sendChatFile(res, message);
+  } catch (error) {
+    console.error('[chat-file-download]', error.message);
+    if (!res.headersSent) res.status(502).json({ success: false, message: '文件读取失败' });
+  }
+});
+
 function withSignedMessageMedia(message) {
   const obj = message.toObject ? message.toObject() : { ...message };
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
