@@ -7,6 +7,7 @@ const Group = require('../models/InAppServiceGroup');
 const GroupMessage = require('../models/InAppServiceGroupMessage');
 const GroupDelivery = require('../models/StaffGroupPushDelivery');
 const OrderDelivery = require('../models/StaffOrderPushDelivery');
+const PurchaseDelivery = require('../models/StaffPlannerPurchaseDelivery');
 const FollowUp = require('../models/FollowUp');
 const Order = require('../models/Order');
 const { assignedIds, canStaffAccess, canUseGroupModule, needsStaffReply, same } = require('./inAppServiceGroupPolicy');
@@ -122,6 +123,32 @@ async function sendOrder(item, sender = transport(), countUnread = unreadCount) 
     await finishOrder('failed', 'provider_unconfirmed');
   }
 }
+async function sendPurchase(item, sender = transport(), countUnread = unreadCount) {
+  const finishPurchase = (status, reason = '') => PurchaseDelivery.updateOne({ _id: item._id, status: 'sending' },
+    { $set: { status, reason, finishedAt: new Date() } });
+  const [order, staff] = await Promise.all([
+    Order.findById(item.orderId).lean(), Admin.findById(item.staffId).lean(),
+  ]);
+  if (!order || order.initiationSource !== 'customer' || order.paymentStatus !== 'paid' ||
+      !['pending', 'scheduled'].includes(order.status) || ['closed', 'refunded'].includes(order.tradeStatus) ||
+      !staff || staff.role !== 'healthPlanner' || staff.staffStatus !== 'active' || staff.mustChangePassword ||
+      String(order.tenantId) !== String(staff.tenantId))
+    return finishPurchase('skipped', 'order_or_staff_unavailable');
+  const patient = await User.findOne({ _id: order.user, tenantId: order.tenantId,
+    isDeleted: { $ne: true } }).select('assignedHealthPlanner').lean();
+  if (String(patient?.assignedHealthPlanner || '') !== String(staff._id))
+    return finishPurchase('skipped', 'planner_assignment_changed');
+  const devices = await Device.find({ staffId: staff._id, tenantId: staff.tenantId,
+    tokenExpiresAt: { $gt: new Date() } }).select('+token').lean();
+  if (!devices.length) return finishPurchase('skipped', 'no_device');
+  try {
+    const count = await countUnread(staff);
+    for (const device of devices) await sender.send(device.token, count, '有新的服务产品订单待处理，请打开工作台查看。');
+    await finishPurchase('sent');
+  } catch {
+    await finishPurchase('failed', 'provider_unconfirmed');
+  }
+}
 async function tick() {
   const config = pushReady();
   if (!config || running) return;
@@ -132,6 +159,8 @@ async function tick() {
     await GroupDelivery.updateMany({ status: 'sending', claimedAt: { $lt: new Date(Date.now() - 120000) } },
       { $set: { status: 'failed', reason: 'send_interrupted', finishedAt: new Date() } });
     await OrderDelivery.updateMany({ status: 'sending', claimedAt: { $lt: new Date(Date.now() - 120000) } },
+      { $set: { status: 'failed', reason: 'send_interrupted', finishedAt: new Date() } });
+    await PurchaseDelivery.updateMany({ status: 'sending', claimedAt: { $lt: new Date(Date.now() - 120000) } },
       { $set: { status: 'failed', reason: 'send_interrupted', finishedAt: new Date() } });
     const missed = await Message.find({ type: 'user', recipient: { $in: Object.keys(CHANNELS) },
       createdAt: { $gte: config.startAt }, staffPushQueuedAt: null })
@@ -152,39 +181,44 @@ async function tick() {
         { $set: { status: 'sending', claimedAt: new Date() } }, { new: true }).lean();
       if (item) await sendGroup(item, config);
     }
-    const orderStartAt = new Date(process.env.STAFF_ORDER_PUSH_START_AT || '');
+    const orderStartAt = new Date(process.env.STAFF_PLANNER_PURCHASE_PUSH_START_AT || '');
     if (Number.isFinite(orderStartAt.getTime())) {
       const newlyPaid = await Order.find({ initiationSource: 'customer', paymentStatus: 'paid',
         paidAt: { $gte: orderStartAt }, status: { $in: ['pending', 'scheduled'] },
-        tradeStatus: { $nin: ['closed', 'refunded'] } }).sort({ paidAt: -1 }).limit(200).select('_id').lean();
-      const tasks = await FollowUp.collection.find({ sourceType: 'order', sourceOrderId: { $ne: null },
-        status: { $in: ['planned', 'in_progress', 'missed'] }, isBlocked: { $ne: true },
-        $or: [{ updatedAt: { $gte: orderStartAt } }, { sourceOrderId: { $in: newlyPaid.map(order => order._id) } }] })
-        .sort({ updatedAt: -1 }).limit(200).project({ _id: 1, assignedTo: 1, tenantId: 1, sourceOrderId: 1 }).toArray();
-      const staffIds = [...new Set(tasks.map(task => String(task.assignedTo || '')).filter(Boolean))];
+        tradeStatus: { $nin: ['closed', 'refunded'] } }).sort({ paidAt: -1 }).limit(200)
+        .select('_id user tenantId').lean();
+      const patients = await User.find({ _id: { $in: newlyPaid.map(order => order.user) },
+        isDeleted: { $ne: true } }).select('_id tenantId assignedHealthPlanner').lean();
+      const patientById = new Map(patients.map(patient => [String(patient._id), patient]));
+      const staffIds = [...new Set(patients.map(patient => String(patient.assignedHealthPlanner || '')).filter(Boolean))];
       const staffMembers = await Admin.find({ _id: { $in: staffIds }, role: 'healthPlanner', staffStatus: 'active' }).select('_id tenantId').lean();
       const byId = new Map(staffMembers.map(staff => [String(staff._id), staff]));
-      const orderIds = [...new Set(tasks.map(task => String(task.sourceOrderId)))];
-      const orders = await Order.find({ _id: { $in: orderIds }, initiationSource: 'customer', paymentStatus: 'paid',
-        status: { $in: ['pending', 'scheduled'] }, tradeStatus: { $nin: ['closed', 'refunded'] } }).select('_id tenantId').lean();
-      const validOrders = new Map(orders.map(order => [String(order._id), order]));
-      const existing = await OrderDelivery.find({ taskId: { $in: tasks.map(task => task._id) } }).select('taskId staffId').lean();
-      const queuedKeys = new Set(existing.map(item => `${item.taskId}:${item.staffId}`));
-      for (const task of tasks) {
-        const staff = byId.get(String(task.assignedTo));
-        const order = validOrders.get(String(task.sourceOrderId));
-        if (!staff || !order || String(task.tenantId) !== String(staff.tenantId) || String(order.tenantId) !== String(staff.tenantId)) continue;
-        const key = `${task._id}:${staff._id}`;
+      const alreadyQueued = await PurchaseDelivery.find({ orderId: { $in: newlyPaid.map(order => order._id) } })
+        .select('orderId staffId').lean();
+      const queuedKeys = new Set(alreadyQueued.map(item => `${item.orderId}:${item.staffId}`));
+      for (const order of newlyPaid) {
+        const patient = patientById.get(String(order.user));
+        const staff = byId.get(String(patient?.assignedHealthPlanner || ''));
+        if (!staff || String(patient.tenantId) !== String(order.tenantId) ||
+            String(staff.tenantId) !== String(order.tenantId)) continue;
+        const key = `${order._id}:${staff._id}`;
         if (queuedKeys.has(key)) continue;
-        await OrderDelivery.updateOne({ taskId: task._id, staffId: staff._id },
-          { $setOnInsert: { taskId: task._id, staffId: staff._id, status: 'queued' } }, { upsert: true });
+        await PurchaseDelivery.updateOne({ orderId: order._id, staffId: staff._id },
+          { $setOnInsert: { orderId: order._id, staffId: staff._id, status: 'queued' } }, { upsert: true });
         queuedKeys.add(key);
       }
+      // Deliveries queued by the previous task-based implementation are drained once.
       const pendingOrders = await OrderDelivery.find({ status: 'queued' }).sort({ createdAt: 1 }).limit(50).lean();
       for (const candidate of pendingOrders) {
         const item = await OrderDelivery.findOneAndUpdate({ _id: candidate._id, status: 'queued' },
           { $set: { status: 'sending', claimedAt: new Date() } }, { new: true }).lean();
         if (item) await sendOrder(item);
+      }
+      const pendingPurchases = await PurchaseDelivery.find({ status: 'queued' }).sort({ createdAt: 1 }).limit(50).lean();
+      for (const candidate of pendingPurchases) {
+        const item = await PurchaseDelivery.findOneAndUpdate({ _id: candidate._id, status: 'queued' },
+          { $set: { status: 'sending', claimedAt: new Date() } }, { new: true }).lean();
+        if (item) await sendPurchase(item);
       }
     }
   } finally { running = false; }
@@ -196,4 +230,4 @@ function start() {
   const timer = setInterval(run, 10000);
   timer.unref();
 }
-module.exports = { enqueue, enqueueGroup, send, sendGroup, sendOrder, tick, start };
+module.exports = { enqueue, enqueueGroup, send, sendGroup, sendOrder, sendPurchase, tick, start };
