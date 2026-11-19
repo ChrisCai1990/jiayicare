@@ -211,9 +211,9 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
   }, [def.visitGrouping, record.serviceMode, record.visitGroupId, record.scheduleSeparationReason, soleVisitLeaderKey, visitCandidates[0]?.row.scheduleSeparationReason])
   const directNutrition = def.personalizedAssignment && annualNutrition.isRow(record)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
-  const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['notes','basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
+  const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
   const optionalEmpty = field => supplementalKeys.includes(field.key)
-  const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'内部备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
+  const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
     <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'expertIds' && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
   </FieldRow>
   return (

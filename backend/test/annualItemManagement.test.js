@@ -27,3 +27,14 @@ test('only three annual modules hide template/person/frequency controls; service
   assert.equal(result.managerName, '测试健管');
   assert.equal(annualItemLayout('medication', def, 'm'), def);
 });
+test('annual review remarks stay visible beside timing and retain the existing internal notes key', async () => {
+  const { annualItemLayout } = await import('../../staff/src/utils/annualItemLayout.mjs');
+  const def = { fields: [
+    { key: 'reason', type: 'textarea' }, { key: 'time', type: 'date' },
+    { key: 'department', type: 'text' }, { key: 'notes', type: 'textarea', internal: true },
+  ] };
+  const fields = annualItemLayout('abnormal_followup', def, '测试健管').fields;
+  assert.deepEqual(fields.map(field => field.key), ['reason', 'time', 'timingReason', 'notes', 'department']);
+  assert.equal(fields.find(field => field.key === 'notes').internal, true);
+  assert.equal(fields.find(field => field.key === 'notes').label, '备注');
+});
