@@ -19,7 +19,7 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
+export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor, latestCheckupDate = '', onArrangeAnnualCheckup }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -59,7 +59,11 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
       <div className="annual-track-panel annual-track-panel--management"><h3 className="annual-track-heading"><span className="annual-track-number">02</span>健康管理</h3>{management.map(group => group[0] === '疫苗接种' && !itemsFor(group[1]).length ? <div key="vaccine-review" style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0', fontSize: 13, color: '#62776A' }}><strong style={{ fontSize: 16, color: '#183E30' }}>疫苗接种</strong><div style={{ marginTop: 5 }}>当前方案未纳入接种事项；需核对接种史、检查结果和适宜性后决定。</div></div> : renderGroup(group))}
         <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · 按已有每周计划执行</strong>{manualMonitoringEditor}</div>
       </div>
-      <div className="annual-track-panel annual-track-panel--checkup"><h3 className="annual-track-heading"><span className="annual-track-number">03</span>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A' }}>待安排</div>}</div>
+      <div className="annual-track-panel annual-track-panel--checkup"><h3 className="annual-track-heading"><span className="annual-track-number">03</span>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A', lineHeight: 1.7 }}>
+        <div>本方案尚未纳入下一次年度体检安排。{latestCheckupDate ? `已审核的最近一次完整体检日期：${latestCheckupDate}。` : ''}</div>
+        <div>专项复查和完善检查已分别列在医疗服务；下一次年度体检的项目、日期及机构需由顾问核对后确定。</div>
+        {onArrangeAnnualCheckup && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={onArrangeAnnualCheckup}>＋ 安排年度体检</button>}
+      </div>}</div>
     </div>
   </section>
 }

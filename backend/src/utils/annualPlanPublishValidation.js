@@ -17,6 +17,7 @@ function validate(data = {}, today = new Date(Date.now() + 8 * 3600000).toISOStr
     if (records.some(row => !validDate(row[field]))) return `推送前请补全${label}的执行日期（不早于今天）`;
   }
   const annualCheckup = data?.annual_checkup;
+  if (annualCheckup?.enabled === true && (!String(annualCheckup.focus || '').trim() || !validDate(annualCheckup.date))) return '推送前请核对年度体检的重点关注项目和计划日期';
   if (annualCheckup?.enabled !== false && annualCheckup && (annualCheckup.focus || annualCheckup.standardPlanId || annualCheckup.date) && !validDate(annualCheckup.date)) return '推送前请补全年度体检日期（不早于今天）';
   const personalized = data?.personalized_followups?.enabled === false ? [] : data?.personalized_followups?.records || [];
   if (personalized.some(r => !validDate(r.executionDate))) return '推送前请补全每项随访日期（不早于今天）；由客户所属健管专员跟进，当前可暂存草稿';

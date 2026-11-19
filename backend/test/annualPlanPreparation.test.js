@@ -42,6 +42,7 @@ test('专业协作领域即使未完成，也不阻断年度方案', () => {
     assessments: [{ purpose: 'annual_input', domain: '心血管', status: 'approved' }],
   });
   assert.equal(result.ready, true);
+  assert.equal(result.latestCheckupDate, '2026-06-01');
   assert.deepEqual(result.blockingKeys, []);
 });
 

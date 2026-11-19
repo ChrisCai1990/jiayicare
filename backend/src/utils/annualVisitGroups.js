@@ -32,10 +32,11 @@ function validateVisitGroups(data = {}) {
     }
   }
   for (const [id, entries] of visitGroups(data)) {
+    const reminders = entries.every(e => e.row.serviceMode === 'reminder');
     const leaders = entries.filter(e => ['single', 'managed'].includes(e.row.serviceMode));
-    if (leaders.length !== 1 || entries.some(e => !['single', 'managed', 'shared'].includes(e.row.serviceMode))) return `“${id}”须恰好有一项单项或一站式服务，其余选择随同本次就诊`;
-    if (entries.some(e => !validDay(e.date) || e.date !== leaders[0].date)) return `“${id}”的就诊日期须一致且有效`;
-    if (entries.some(e => !e.hospital || e.hospital !== leaders[0].hospital)) return `“${id}”的就诊医院须一致；不同医院请分别派单`;
+    if (!reminders && (leaders.length !== 1 || entries.some(e => !['single', 'managed', 'shared'].includes(e.row.serviceMode)))) return `“${id}”须全部为仅提醒，或恰好有一项单项或一站式服务、其余随同办理`;
+    if (entries.some(e => !validDay(e.date) || e.date !== entries[0].date)) return `“${id}”的就诊日期须一致且有效`;
+    if ((!reminders && entries.some(e => !e.hospital)) || entries.some(e => e.hospital !== entries[0].hospital)) return `“${id}”的就诊医院须一致；不同医院请分别安排`;
   }
   return '';
 }

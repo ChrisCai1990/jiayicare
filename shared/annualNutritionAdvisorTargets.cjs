@@ -47,12 +47,15 @@ function fromManagementTargets(records = []) {
   }).slice(0, MAX_ADVISOR_TARGETS);
 }
 
-function mergeAdvisorTargets(existing = [], records = []) {
-  const result = existing.map(row => ({ ...row, kind: row.kind || kindFor(row.metric), internalOnly: isInternalNutritionMetric(row.metric) }));
+function mergeAdvisorTargets(existing = [], records = [], evidence = {}) {
+  const reviewedBaseline = metric => evidence[metric]?.status === 'abnormal' && !evidence[metric].conflict
+    ? String(evidence[metric].baseline || '').slice(0, 200) : '';
+  const result = existing.map(row => ({ ...row, kind: row.kind || kindFor(row.metric), internalOnly: isInternalNutritionMetric(row.metric),
+    ...(!row.baseline && row.sourceIssueId && reviewedBaseline(row.metric) ? { baseline: reviewedBaseline(row.metric) } : {}) }));
   for (const candidate of fromManagementTargets(records)) {
     if (result.length >= MAX_ADVISOR_TARGETS) break;
     if (result.some(row => row.metric === candidate.metric)) continue;
-    result.push(candidate);
+    result.push({ ...candidate, baseline: candidate.baseline || reviewedBaseline(candidate.metric) });
   }
   return result;
 }

@@ -52,6 +52,16 @@ test('仅最新异常入选，最新正常覆盖历史异常，保留同报告�
   assert.equal(unknown.latest['尿酸'].referenceRange, '');
 });
 
+test('已审核血脂报告分别识别 HDL-C 和 LDL-C 数值供年度营养目标引用', () => {
+  const report = { audit_status: 'audited', title: '血脂报告', checkDate: '2026-11-05', reportItems: [
+    { name: '高密度脂蛋白胆固醇', value: '0.8', unit: 'mmol/L', status: 'abnormal' },
+    { name: '低密度脂蛋白胆固醇', value: '4.1', unit: 'mmol/L', status: 'abnormal' },
+  ] };
+  const { latest } = latestNutritionEvidence({}, [], [report], new Date('2026-11-19T00:00:00Z'));
+  assert.match(latest['高密度脂蛋白'].baseline, /0.8 mmol\/L/);
+  assert.match(latest['低密度脂蛋白'].baseline, /4.1 mmol\/L/);
+});
+
 
 test('营养指标复用体检关键指标名称映射，排除尿酸结晶和尿肌酐误匹配', () => {
   const data = latestNutritionEvidence({}, [], [{ audit_status: 'audited', checkDate: '2026-10-21', reportItems: [

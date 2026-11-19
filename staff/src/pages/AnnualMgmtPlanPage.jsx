@@ -28,7 +28,7 @@ import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
-import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
+import { VISIT_DATE_FIELDS, visitRows, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
 import { mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
 const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
@@ -402,6 +402,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
   const [confirmedReviewTargets, setConfirmedReviewTargets] = useState([])
+  const [nutritionEvidence, setNutritionEvidence] = useState({})
   const [screeningDraftActions, setScreeningDraftActions] = useState([])
   const [unresolvedAiCheckups, setUnresolvedAiCheckups] = useState([])
   const [unresolvedSymptoms, setUnresolvedSymptoms] = useState([])
@@ -624,6 +625,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           : (queryPlanType ? map[strategyOf(queryPlanType)] || null : list.find(p => p.servicePlanCode || p.planType))
         const confirmedTargets = targetsRes.data || []
         setConfirmedReviewTargets(confirmedTargets)
+        setNutritionEvidence(targetsRes.nutritionEvidence || {})
         const incomingDraftActions = targetsRes.draftActions || []
         setScreeningDraftActions(incomingDraftActions)
         setUnresolvedAiCheckups(targetsRes.unresolved || [])
@@ -762,6 +764,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         (res.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
       if (!res.data?.length) return toast('专项筛查及AI健康信息整理中暂无已纳入管理的问题')
       setConfirmedReviewTargets(res.data)
+      setNutritionEvidence(res.nutritionEvidence || {})
       setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: mergeManagementTargetEdits(res.data, prev.management_targets?.records) } }))
       setDirty(true)
       toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
@@ -775,6 +778,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       await staffAPI.withdrawLegacyAnnualManagementDecision(id, withdrawalTarget._id, withdrawalReason.trim())
       const [targetsRes, decisionsRes] = await Promise.all([staffAPI.getAnnualManagementTargets(id, year), staffAPI.getAnnualManagementDecisions(id, year)])
       setConfirmedReviewTargets(targetsRes.data || [])
+      setNutritionEvidence(targetsRes.nutritionEvidence || {})
       setStaleManagementSources(targetsRes.stale || [])
       setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
         (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
@@ -1072,7 +1076,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (pendingExecutionChanges.some(change => change.key === entry.key)) return true
     const data = moduleData[entry.key]
     if (!data) return false
-    return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false)
+    return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && (data.enabled === true || entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false))
   })
   const managementTargets = moduleData.management_targets?.records || []
   const nutritionScreeningIssues = managementTargets.filter(row => row.sourceGoals?.includes('营养评估') || row.sourceGoal === '营养评估')
@@ -1152,11 +1156,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     </div>
   }
   const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction} goalForAction={goalForAction}
+    latestCheckupDate={preparation?.checklist?.latestCheckupDate || ''}
+    onArrangeAnnualCheckup={canEdit && !pushedAt ? () => handleModuleChange('annual_checkup', 'enabled', true) : null}
     nutritionScreeningIssues={nutritionScreeningIssues}
-    nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted ? moduleData.nutrition_assessment?.advisorTargets || [] : nutritionAdvisorTargets.mergeAdvisorTargets(moduleData.nutrition_assessment?.advisorTargets || [], managementTargets)} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
+    nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted || pushedAt ? moduleData.nutrition_assessment?.advisorTargets || [] : nutritionAdvisorTargets.mergeAdvisorTargets(moduleData.nutrition_assessment?.advisorTargets || [], managementTargets, nutritionEvidence)} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
     nutritionExecutionDate={moduleData.nutrition_assessment?.executionDate || ''} nutritionExecutorName={staffList.find(staff => String(staff._id) === String(moduleData.nutrition_assessment?.executorId || patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''))?.name || patient?.assignedNutritionist?.name || ''}
     nutritionAdvisorEditor={<AnnualNutritionAdvisorTargets patientId={id} plan={plansByType[planType]} rows={moduleData.nutrition_assessment?.advisorTargets || []}
-      metrics={nutritionMetricRules.selectedFromAnnualPlan({ moduleData })} managementTargets={managementTargets} autoImport={!moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted}
+      metrics={nutritionMetricRules.selectedFromAnnualPlan({ moduleData })} managementTargets={managementTargets} nutritionEvidence={nutritionEvidence} autoImport={!moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted && !pushedAt}
       executionDate={moduleData.nutrition_assessment?.executionDate || ''} executorId={moduleData.nutrition_assessment?.executorId || ''}
       assignedNutritionistId={patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''} staffList={staffList} canEdit={canEdit} toast={toast}
       onDraftChange={change => { setModuleData(previous => ({ ...previous, nutrition_assessment: { ...previous.nutrition_assessment, ...change } })); setDirty(true) }}
@@ -1178,6 +1184,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
     consensusEditor={canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualConsensus patientId={id} plan={plansByType[planType]} topics={CONSENSUS_TOPICS} toast={toast}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />} />
+  const openDetailedAction = selector => {
+    const tools = document.getElementById('annual-plan-tools')
+    if (tools?.tagName === 'DETAILS') tools.open = true
+    requestAnimationFrame(() => {
+      const target = document.querySelector(selector)
+      if (target?.tagName === 'DETAILS') target.open = true
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+  const visitGroupingAvailable = !pushedAt && visitRows(moduleData).length >= 2
+  const nutritionNeedsAction = moduleData.nutrition_assessment?.enabled !== false && Boolean(moduleData.nutrition_assessment) && !nutritionTask
   const SecondaryPlanSection = annualPilot ? 'details' : 'div'
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === strategyOf(planType)) || PLAN_TYPES[3]), key: planType, name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
@@ -1327,6 +1344,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>}
       {patientMode && pushedAt && !annualPilot && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
       {pilotOverview}
+      {annualPilot && patientMode && planType && canEdit && (visitGroupingAvailable || nutritionNeedsAction) && <section aria-label="方案待处理操作" style={{ background: '#F0F8F3', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 18 }}>
+        <strong style={{ display: 'block', marginBottom: 8, fontSize: 16 }}>方案操作</strong>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {visitGroupingAvailable && <div style={{ flex: '1 1 260px', fontSize: 13 }}>同次就诊归类 <span style={{ color: '#62776A' }}>· 可核对 {visitRows(moduleData).length} 项就医与检查安排</span><div style={{ marginTop: 7 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => openDetailedAction('#annual-visit-schedule-review')}>核对日期并合并</button></div></div>}
+          {nutritionNeedsAction && <div style={{ flex: '1 1 260px', fontSize: 13 }}>营养评估 <span style={{ color: '#62776A' }}>· {patient?.assignedNutritionist ? '尚未派发营养师' : '请先分配责任营养师'}</span><div style={{ marginTop: 7 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => pushedAt ? dispatchNutritionTask() : openDetailedAction('#annual-nutrition-assessment')} disabled={pushedAt && (nutritionDispatching || nutritionTaskLoading || remotePlanChanged || dirty || metricSelectionDirty || !patient?.assignedNutritionist)}>{pushedAt ? '派发营养师' : '核对指标与派发'}</button></div></div>}
+        </div>
+      </section>}
       {annualPilot && pushedAt && patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} onDataChange={setExecutionReviewData} />}
       {patientMode && plansByType[planType]?.returnedAt && pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户修改意见：{plansByType[planType].returnReason || '请核对客户反馈'}。</div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
@@ -1570,7 +1594,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </section>
           </details>}
           <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />
-          {patientMode && <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
+          {patientMode && <details id="annual-nutrition-assessment" style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
             <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估与干预 · {moduleData.nutrition_assessment?.enabled === false ? '已从本次方案移除' : `${nutritionSummary.metrics.length} 项对比指标${nutritionTask ? ' · 已派发营养师' : ' · 顾问推送时派发'}`}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment') && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</summary>
             {moduleData.nutrition_assessment?.enabled === false ? <div style={{ marginTop: 10, fontSize: 13, color: '#62776A' }}>本次方案不再重复派发营养评估。{canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => handleModuleChange('nutrition_assessment', 'enabled', true)}>恢复此项</button>}</div> : <>
             <div style={{ fontSize: 12, color: '#62776A', margin: '8px 0' }}>研判内容自动带入；顾问核对并推送方案时同步派发营养师。营养师评估后调整并形成方案。</div>

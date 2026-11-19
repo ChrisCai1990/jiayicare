@@ -20,7 +20,7 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
     if (!chosen.length) return
     const leader = chosen.find(row => ['managed', 'single'].includes(row.row.serviceMode)) || chosen[0]
     setLeaderKey(leader.key)
-    setServiceMode(['managed', 'single'].includes(leader.row.serviceMode) ? leader.row.serviceMode : '')
+    setServiceMode(['reminder', 'managed', 'single'].includes(leader.row.serviceMode) ? leader.row.serviceMode : '')
     setServiceType(leader.row.serviceType || '')
     setDate(leader.date || '')
   }, [selected.join('|')])
@@ -37,7 +37,7 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
     } catch (error) { onError(error.message) }
   }
   const inputStyle = { padding: '6px 8px', border: '1px solid #D6DED8', borderRadius: 6, maxWidth: '100%' }
-  return <details style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+  return <details id="annual-visit-schedule-review" style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
     <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>排期工具：合并多项同次就医与检查</summary>
     <p style={{ fontSize: 12, color: '#62776A' }}>下面是年度方案中已有的就医和检查事项，仅供核对是否能同次办理，不会另生成方案。相隔 14 天以内的日期相邻显示；核实医院、时限、准备要求后可统一日期和服务安排。</p>
     {groups.map((group, groupIndex) => <div key={group[0].cluster} style={{ borderTop: '1px solid #E5ECE7', paddingTop: 10, marginTop: 10 }}>
@@ -53,12 +53,12 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
       <strong style={{ fontSize: 13 }}>将所选 {selected.length} 项归为同次就诊</strong>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 9, alignItems: 'end' }}>
         <label style={{ fontSize: 12 }}>统一日期<br /><DateInput value={date} onChange={setDate} label="统一就诊日期" style={inputStyle} /></label>
-        <label style={{ fontSize: 12 }}>主事项<br /><select value={leaderKey} onChange={event => { const key = event.target.value; const leader = chosen.find(row => row.key === key); setLeaderKey(key); setServiceMode(['managed', 'single'].includes(leader?.row.serviceMode) ? leader.row.serviceMode : ''); setServiceType(leader?.row.serviceType || '') }} style={inputStyle}>{chosen.map(row => <option key={row.key} value={row.key}>{row.title.slice(0, 28)}</option>)}</select></label>
-        <label style={{ fontSize: 12 }}>服务方式<br /><select value={serviceMode} onChange={event => setServiceMode(event.target.value)} style={inputStyle}><option value="">请选择</option><option value="managed">门诊一站式</option><option value="single">单项服务</option></select></label>
+        <label style={{ fontSize: 12 }}>主事项<br /><select value={leaderKey} onChange={event => { const key = event.target.value; const leader = chosen.find(row => row.key === key); setLeaderKey(key); setServiceMode(['reminder', 'managed', 'single'].includes(leader?.row.serviceMode) ? leader.row.serviceMode : ''); setServiceType(leader?.row.serviceType || '') }} style={inputStyle}>{chosen.map(row => <option key={row.key} value={row.key}>{row.title.slice(0, 28)}</option>)}</select></label>
+        <label style={{ fontSize: 12 }}>服务方式<br /><select value={serviceMode} onChange={event => setServiceMode(event.target.value)} style={inputStyle}><option value="">请选择</option><option value="reminder">仅提醒</option><option value="managed">门诊一站式</option><option value="single">单项服务</option></select></label>
         {serviceMode === 'single' && <label style={{ fontSize: 12 }}>单项服务内容<br /><select value={serviceType} onChange={event => setServiceType(event.target.value)} style={inputStyle}><option value="">请选择</option>{serviceTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
         <button type="button" className="btn btn-primary btn-sm" onClick={apply}>确认归类</button>
       </div>
-      <div style={{ marginTop: 7, fontSize: 12, color: '#62776A' }}>将统一所选事项的日期；主事项承接一次服务，其他事项随同办理。保存草稿后，推送前仍需通过服务校验。</div>
+      <div style={{ marginTop: 7, fontSize: 12, color: '#62776A' }}>将统一所选事项的日期；仅提醒时各事项保留提醒，不生成就医协助服务。选择单项或一站式时由主事项承接服务，其他事项随同办理。保存草稿后，推送前仍需通过服务校验。</div>
     </div>}
   </details>
 }

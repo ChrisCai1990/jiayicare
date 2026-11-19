@@ -10772,10 +10772,16 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
     if (require('../utils/healthManagementRollout').enabledForPatient(req.params.id)) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, year);
+      const reviewedNutritionReports = await MedicalReport.find({ user: req.params.id, audit_status: 'audited' })
+        .select('_id title checkDate audit_status reportItems').lean();
+      const nutritionEvidence = require('../utils/nutritionLatestEvidence')
+        .latestNutritionEvidence({}, [], reviewedNutritionReports).latest;
       const unresolvedSymptoms = await HealthRecord.find({ user: req.params.id, type: 'symptom', 'symptomWorkflow.status': 'pending_doctor',
         recordedAt: { $lt: new Date(`${year + 1}-01-01T00:00:00+08:00`) } })
         .select('_id value recordedAt').sort({ recordedAt: -1 }).limit(20).lean();
-      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), draftActions: require('../utils/annualManagementEvidence').draftPlanActions(management.evidence), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
+      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), draftActions: require('../utils/annualManagementEvidence').draftPlanActions(management.evidence), nutritionEvidence: Object.fromEntries(Object.entries(nutritionEvidence)
+        .filter(([, row]) => row.status === 'abnormal' && !row.conflict && row.baseline)
+        .map(([metric, row]) => [metric, { baseline: row.baseline, status: row.status, conflict: false }])), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
         unresolvedSymptoms: unresolvedSymptoms.map(row => ({ id: row._id, value: String(row.value || '').slice(0, 120), recordedAt: row.recordedAt })) });
     }
     const confirmed = await AiCaseReview.find({

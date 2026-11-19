@@ -4,14 +4,14 @@ import nutritionAdvisor from '../../../shared/annualNutritionAdvisorTargets.cjs'
 
 const blank = kind => ({ kind, metric: '', baseline: '', target: '' })
 
-export default function AnnualNutritionAdvisorTargets({ patientId, plan, rows = [], metrics = [], managementTargets = [], autoImport = true, executionDate = '', executorId = '', assignedNutritionistId = '', staffList = [], canEdit, onDraftChange, onSaved, toast }) {
+export default function AnnualNutritionAdvisorTargets({ patientId, plan, rows = [], metrics = [], managementTargets = [], nutritionEvidence = {}, autoImport = true, executionDate = '', executorId = '', assignedNutritionistId = '', staffList = [], canEdit, onDraftChange, onSaved, toast }) {
   const [editing, setEditing] = useState(false)
-  const suggested = autoImport ? nutritionAdvisor.mergeAdvisorTargets(rows, managementTargets) : rows
+  const suggested = autoImport ? nutritionAdvisor.mergeAdvisorTargets(rows, managementTargets, nutritionEvidence) : rows
   const [draft, setDraft] = useState(suggested)
   const [date, setDate] = useState(executionDate)
   const [executor, setExecutor] = useState(executorId || assignedNutritionistId)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!editing) { setDraft(autoImport ? nutritionAdvisor.mergeAdvisorTargets(rows, managementTargets) : rows); setDate(executionDate); setExecutor(executorId || assignedNutritionistId) } }, [rows, managementTargets, autoImport, executionDate, executorId, assignedNutritionistId, editing])
+  useEffect(() => { if (!editing) { setDraft(autoImport ? nutritionAdvisor.mergeAdvisorTargets(rows, managementTargets, nutritionEvidence) : rows); setDate(executionDate); setExecutor(executorId || assignedNutritionistId) } }, [rows, managementTargets, nutritionEvidence, autoImport, executionDate, executorId, assignedNutritionistId, editing])
   if (!canEdit) return null
   const update = (index, key, value) => setDraft(current => current.map((row, i) => i === index ? { ...row, [key]: value } : row))
   const save = async () => {

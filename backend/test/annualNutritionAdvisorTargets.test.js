@@ -31,6 +31,24 @@ test('血脂拆成四项，症状单列，内部指标不进入客户方案', ()
   assert.ok(!JSON.stringify(buildAnnualPlanDisplayItems(client)).includes('脂蛋白磷脂酶A2'));
 });
 
+test('血脂分项从最新已审核且无冲突的异常结果补齐当前值，保留顾问已填写的值', () => {
+  const source = [{ issueId: 'lipid', nutritionRelevant: true, sourceStatus: 'abnormal', goal: '改善血脂', baseline: '总胆固醇(TC) 6.5 mmol/L' }];
+  const evidence = {
+    高密度脂蛋白: { baseline: '0.8 mmol/L（2026-11-05；已审核报告）', status: 'abnormal', conflict: false },
+    低密度脂蛋白: { baseline: '4.1 mmol/L（2026-11-05；已审核报告）', status: 'abnormal', conflict: false },
+    甘油三酯: { baseline: '1.2 mmol/L（2026-11-05；已审核报告）', status: 'normal', conflict: false },
+  };
+  const rows = mergeAdvisorTargets([], source, evidence);
+  assert.match(rows.find(row => row.metric === '总胆固醇').baseline, /6.5/);
+  assert.match(rows.find(row => row.metric === '高密度脂蛋白').baseline, /0.8/);
+  assert.match(rows.find(row => row.metric === '低密度脂蛋白').baseline, /4.1/);
+  assert.equal(rows.find(row => row.metric === '甘油三酯').baseline, '');
+  const existing = [{ kind: 'metric', metric: '低密度脂蛋白', baseline: '顾问已确认 4.2 mmol/L', target: '控制指标', sourceIssueId: 'lipid' }];
+  assert.equal(mergeAdvisorTargets(existing, source, evidence).find(row => row.metric === '低密度脂蛋白').baseline, existing[0].baseline);
+  assert.match(mergeAdvisorTargets([{ ...existing[0], baseline: '' }], source, evidence).find(row => row.metric === '低密度脂蛋白').baseline, /4.1/);
+  assert.equal(mergeAdvisorTargets([], source, { ...evidence, 高密度脂蛋白: { ...evidence.高密度脂蛋白, conflict: true } }).find(row => row.metric === '高密度脂蛋白').baseline, '');
+});
+
 test('胃功能三项只带入异常子项，正常数据不进入营养干预或客户视图', () => {
   const source = [
     { issueId: 'pg1', nutritionRelevant: true, sourceStatus: 'abnormal', goal: '胃蛋白酶原I异常需监测', baseline: '胃蛋白酶原I 42 ng/mL' },

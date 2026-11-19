@@ -22,6 +22,7 @@ function buildAnnualPlanPreparationChecklist({ patient = {}, preparation = null,
   return {
     mode: isRenewal ? 'renewal' : 'initial',
     year: preparation?.year || null,
+    latestCheckupDate: recentCheckup?.allowed ? recentCheckup.latest?.date || '' : '',
     ready: blockingItems.length === 0,
     items,
     blockingKeys: blockingItems.map(item => item.key),
