@@ -9,6 +9,7 @@ import { useToast } from '../App'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
 import { referralDateTime } from '../utils/decisionReferralForm.mjs'
 import { nativeRecorder, nativeRecorderAvailable } from '../components/groupRecorder'
+import { readChatFile } from '../utils/chatFile'
 
 const PUSH_TYPE_LABEL = { knowledge:'科普', questionnaire:'问卷', plan:'方案', product:'产品', supplement:'营养素', notice:'通知' }
 const PUSH_TYPE_COLOR = { knowledge:'#22A06B', questionnaire:'#0077B6', plan:'#D97706', product:'#1E6B50', supplement:'#8e44ad', notice:'#666' }
@@ -1032,6 +1033,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
   const [replyImages, setReplyImages] = useState([])
+  const [replyFile, setReplyFile] = useState(null)
   const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [recordCancelling, setRecordCancelling] = useState(false)
@@ -1058,6 +1060,14 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
     event.target.value = ''
     setThreadMenuOpen(false)
     setVoiceMode(false)
+  }
+  const selectReplyFile = async event => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    setThreadMenuOpen(false)
+    if (!file) return
+    try { setReplyFile(await readChatFile(file)); setErr(''); setVoiceMode(false) }
+    catch (error) { setErr(error.message) }
   }
 
   useEffect(() => {
@@ -1191,13 +1201,14 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   }
 
   const handleSend = async () => {
-    if (!content.trim() && !replyImages.length) { setErr('请输入回复内容或选择图片'); return }
+    if (!content.trim() && !replyImages.length && !replyFile) { setErr('请输入回复内容或选择文件'); return }
     setSubmitting(true); setErr('')
     try {
-      await staffAPI.replyToUser(userId, content.trim(), replyImages.map(({data,mimeType})=>({data,mimeType})))
+      await staffAPI.replyToUser(userId, content.trim(), replyImages.map(({data,mimeType})=>({data,mimeType})), null, replyFile)
       setHumanActive(true)
       setContent('')
       setReplyImages([])
+      setReplyFile(null)
       onSent()
       await loadThread()
     } catch (e) { setErr(e.message || '发送失败') }
@@ -1223,6 +1234,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           <button type="button" className="staff-thread-more" aria-label="更多会话操作" onClick={() => setThreadMenuOpen(value => !value)}>…</button>
           {threadMenuOpen && <div className="staff-thread-menu">
             <label className="staff-thread-menu-upload">发送图片<input type="file" accept="image/*" multiple hidden onChange={selectReplyImages} /></label>
+            <label className="staff-thread-menu-upload">发送文件<input type="file" accept=".pdf,.docx,.xlsx,.pptx" hidden onChange={selectReplyFile} /></label>
             {onNavigate && <button type="button" onClick={() => { onNavigate(`/patients/${userId}?tab=reports`); onClose() }}>查看原始资料</button>}
             {proxyOrders.map(order => onNavigate && <button key={order._id} type="button" onClick={() => { onNavigate(`/patients/${userId}?openChat=1`, { state: { serviceBooking: { sourceOrderId: order } } }); onClose() }}>确认代诊订单{proxyOrders.length > 1 ? ` ${order.orderNo || String(order._id).slice(-6)}` : ''}</button>)}
           </div>}
@@ -1268,7 +1280,8 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" onClick={() => setPreviewImageUrl(url)} style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />)}
                     {m.audioUrl && <ThreadVoiceMessage message={m} userId={userId} roleKey={roleKey} />}
-                    {(!m.audioUrl || m.content !== '[语音消息]') && m.content}
+                    {m.fileUrl && <a href={m.fileUrl} target="_blank" rel="noreferrer" download={m.fileName} style={{display:'block',color:isUser?'#1e6b50':'#fff',fontWeight:700,overflowWrap:'anywhere'}}>📎 {m.fileName || '查看文件'}</a>}
+                    {(!m.audioUrl || m.content !== '[语音消息]') && (!m.fileUrl || m.content !== '[文件]') && m.content}
                   </div>
                   {roleKey === 'nutritionist' && m.aiGenerated && m.aiReviewStatus === 'pending' && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 6, justifyContent: 'flex-end' }}>
@@ -1285,6 +1298,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
 
         <div className="staff-thread-composer-wrap" style={{ flexShrink: 0, padding: '12px 20px', borderTop: '1px solid #f0ede8', background: '#fff' }}>
           {replyImages.length > 0 && <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>{replyImages.map((img,i)=><div key={i} style={{position:'relative'}}><img src={img.data} alt="待发送" style={{width:58,height:58,objectFit:'cover',borderRadius:8}}/><button type="button" onClick={()=>setReplyImages(v=>v.filter((_,x)=>x!==i))} style={{position:'absolute',right:-4,top:-4,border:0,borderRadius:10,background:'#DC3545',color:'#fff'}}>×</button></div>)}</div>}
+          {replyFile && <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,fontSize:13}}>📎 {replyFile.name}<button type="button" onClick={()=>setReplyFile(null)} aria-label="移除文件">×</button></div>}
           {androidStaff && <div className="staff-thread-mobile-composer">
             {recording && <div className={`staff-thread-voice-status${recordCancelling ? ' is-cancelling' : ''}`} role="status"><strong>● {recordSeconds} 秒</strong><span>{recordCancelling ? '松开取消' : '正在录音 · 上滑取消'}</span></div>}
             <button type="button" aria-label={voiceMode ? '切换到文字' : '切换到语音'} onClick={() => { if (!recording) { setVoiceMode(value => !value); setEmojiOpen(false) } }}>{voiceMode ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M6 16h12"/></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg>}</button>
@@ -1294,10 +1308,11 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
             <div className="staff-thread-emoji-control"><button type="button" aria-label="选择表情" disabled={recording} onClick={() => { setVoiceMode(false); setEmojiOpen(value => !value) }}>☺</button>
               {emojiOpen && <div className="staff-thread-emoji-list">{['😊','🙂','🙏','👍','❤️','🌹','💪','✅'].map(emoji => <button key={emoji} type="button" onClick={() => { setContent(value => value + emoji); setEmojiOpen(false) }}>{emoji}</button>)}</div>}
             </div>
-            {!voiceMode && <button type="button" className="staff-thread-mobile-send" disabled={submitting || (!content.trim() && !replyImages.length)} onClick={handleSend}>{submitting ? '…' : '发送'}</button>}
+            {!voiceMode && <button type="button" className="staff-thread-mobile-send" disabled={submitting || (!content.trim() && !replyImages.length && !replyFile)} onClick={handleSend}>{submitting ? '…' : '发送'}</button>}
           </div>}
           {!androidStaff && <div className="staff-thread-composer" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>图片<input type="file" accept="image/*" multiple hidden onChange={e=>{Array.from(e.target.files||[]).slice(0,9-replyImages.length).forEach(file=>{const reader=new FileReader();reader.onload=()=>setReplyImages(v=>[...v,{data:reader.result,mimeType:file.type||'image/jpeg'}].slice(0,9));reader.readAsDataURL(file)});e.target.value='' }}/></label>
+            <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>文件<input type="file" accept=".pdf,.docx,.xlsx,.pptx" hidden onChange={selectReplyFile} /></label>
             <button type="button" className={recording ? 'btn btn-danger staff-thread-voice' : 'btn btn-secondary staff-thread-voice'} onClick={tapVoice ? () => recording ? stopVoice() : startVoice() : undefined} onMouseDown={tapVoice ? undefined : startVoice} onMouseUp={tapVoice ? undefined : stopVoice} onMouseLeave={tapVoice ? undefined : stopVoice} disabled={submitting} style={{ alignSelf: 'stretch' }}>{recording ? (tapVoice ? '点此发送语音' : '松开发送') : (tapVoice ? '点此录音' : '按住说话')}</button>
             <textarea className="form-input" rows={2} value={content}
               onChange={e => { setContent(e.target.value); setErr('') }}

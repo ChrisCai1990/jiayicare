@@ -147,6 +147,7 @@ function LayoutContent() {
           <nav className="mobile-message-nav" aria-label="消息切换">
             <button type="button" aria-current={isDirectMessages ? 'page' : undefined} onClick={() => nav('/notifications?tab=userMsgs')}>一对一</button>
             <button type="button" aria-current={isServiceGroups ? 'page' : undefined} onClick={() => nav('/in-app-service-groups')}>服务群</button>
+            {staff?.role === 'healthPlanner' && <button type="button" onClick={() => nav('/home?todo=service')}>订单任务</button>}
           </nav>
         ) : <>
           <div className="mobile-header-title">{staff?.tenantName || '机构医护端'}</div>

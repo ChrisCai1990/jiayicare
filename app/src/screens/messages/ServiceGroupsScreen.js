@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Image,
-  KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet, Alert } from 'react-native';
+  KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet, Alert, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme';
 import { mediaUrl, inAppServiceGroupAPI as api } from '../../services/api';
@@ -85,7 +85,8 @@ export default function ServiceGroupsScreen({ navigation }) {
           message.senderType === 'customer' ? styles.mine : styles.staff]}>
           {message.senderAvatar && <Image source={{ uri: mediaUrl(message.senderAvatar) }} style={{ width: 36, height: 36, borderRadius: 18, marginBottom: 6 }} />}
           <Text style={styles.sender}>{message.senderName}{message.senderType !== 'customer' && ` · ${({ai:'嘉医汇AI健康管家',familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
-          <Text style={styles.body}>{message.content}</Text>
+          {message.fileUrl && <Text style={[styles.body,{color:colors.primary,fontWeight:'700'}]} onPress={() => Linking.openURL(message.fileUrl).catch(() => Alert.alert('文件暂时无法打开'))}>📎 {message.fileName || '查看文件'}</Text>}
+          {(!message.fileUrl || message.content !== '[文件]') && <Text style={styles.body}>{message.content}</Text>}
           {message.mentions?.map(p=><Text key={p.id} style={{color:'#187e87'}} onPress={()=>Alert.alert(p.name,p.role || '服务成员')}>@{p.name}</Text>)}
         </View>)}
       </ScrollView>

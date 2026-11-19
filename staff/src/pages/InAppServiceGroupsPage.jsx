@@ -1,4 +1,5 @@
 import GroupVoiceInput from '../components/GroupVoiceInput';
+import { readChatFile } from '../utils/chatFile';
 import GroupVoiceMessage from '../components/GroupVoiceMessage';
 import ServiceGroupHistory from '../components/ServiceGroupHistory';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -48,6 +49,7 @@ export default function InAppServiceGroupsPage() {
   const [voiceMode,setVoiceMode]=useState(false);
   useEffect(()=>{if(!voiceMode&&!emojiOpen)draftInput.current?.focus();},[voiceMode]);
   const [draft, setDraft] = useState('');
+  const [pendingFile, setPendingFile] = useState(null);
   useLayoutEffect(() => {
     const input = draftInput.current;
     if (!input) return;
@@ -137,7 +139,7 @@ export default function InAppServiceGroupsPage() {
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', pulse); };
   }, [selected?.id, selected?.supervised, selected?.status]);
   useEffect(()=>{const id=linkedGroup.current;if(!id)return;linkedGroup.current='';let active=true;api.list(1,'','active','',id).then(result=>{if(active&&result.data?.[0])open(result.data[0]);else if(active)setError('服务群已归档或您已不在服务范围内');}).catch(e=>active&&setError(e.message));return()=>{active=false;};},[]);
-  const open = group => { followLatest.current = true; currentId.current = group.id; setSelected(group); setMessages([]); setOlder(false); setDraft('');setQuote(null);setQuoteMenu(null); setMentionIds([]); setMentionAnchor(''); setShowMentions(false); setError(''); loadMessages(group.id); };
+  const open = group => { followLatest.current = true; currentId.current = group.id; setSelected(group); setMessages([]); setOlder(false); setDraft('');setPendingFile(null);setQuote(null);setQuoteMenu(null); setMentionIds([]); setMentionAnchor(''); setShowMentions(false); setError(''); loadMessages(group.id); };
   const findPatient = async () => {
     if (!search.trim()) return setPatients([]);
     try { const res = await staffAPI.getPatients({ search: search.trim(), limit: 10 });
@@ -165,9 +167,11 @@ export default function InAppServiceGroupsPage() {
     finally { setBusy(false); }
   };
   const send = async () => {
-    if (!selected || !draft.trim() || busy) return;
+    if (!selected || (!draft.trim() && !pendingFile) || busy) return;
     setBusy(true); setError('');
-    try { await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+p.name+'（'+roleLabel(p)+'）'))),quote?.id); setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft('');setQuote(null);setQuoteMenu(null); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
+    try { if (pendingFile) await api.sendFile(selected.id,pendingFile,draft.trim(),quote?.id);
+      else await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+p.name+'（'+roleLabel(p)+'）'))),quote?.id);
+      setPendingFile(null);setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft('');setQuote(null);setQuoteMenu(null); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
     catch (e) { setError(e.message || '发送失败'); }
     finally { setBusy(false); }
   };
@@ -269,7 +273,7 @@ export default function InAppServiceGroupsPage() {
         {selected ? <>
           {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} initialMessageId={historyAnchor} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
           <div className="sg-chat-header">
-            <button type="button" className="sg-back-to-list" onClick={() => { setSelected(null); currentId.current = ''; }} aria-label="返回服务群列表">‹ 返回群列表</button>
+            <button type="button" className="sg-back-to-list" onClick={() => { setSelected(null); setPendingFile(null); currentId.current = ''; }} aria-label="返回服务群列表">‹ 返回群列表</button>
             <div className="sg-chat-heading"><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
               {selected.assistant && <div className="sg-assistant-status">
                 <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} />
@@ -294,7 +298,8 @@ export default function InAppServiceGroupsPage() {
                 <div className="sg-bubble">
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
               {quoteMenu?.id===message.id&&<div className="sg-message-menu" role="group" aria-label="消息操作"><button onClick={()=>{setQuote(message);setQuoteMenu(null);draftInput.current?.focus();}}>引用</button><button onClick={()=>setQuoteMenu(null)}>取消</button></div>}
-              {message.audioUrl?<GroupVoiceMessage groupId={selected.id} message={message}/>:<div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>}
+              {message.audioUrl?<GroupVoiceMessage groupId={selected.id} message={message}/>:(!message.fileUrl || message.content!=='[文件]')&&<div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>}
+              {message.fileUrl&&<a href={message.fileUrl} target="_blank" rel="noreferrer" download={message.fileName} style={{display:'block',overflowWrap:'anywhere'}}>📎 {message.fileName||'查看文件'}</a>}
               {message.material && <div style={{marginTop:8}}>
                 <small>{message.material.status}</small>
                 <div style={{display:'flex',flexWrap:'wrap',gap:8}}>{(message.material.files||[]).map((url,i)=><a key={i} href={url} target="_blank" rel="noreferrer">{message.material.mimeType==='application/pdf'?'查看PDF':<img src={url} alt={`资料第${i+1}页`} style={{width:100,height:100,objectFit:'contain'}}/>}</a>)}</div>
@@ -310,9 +315,10 @@ export default function InAppServiceGroupsPage() {
             : <div className="sg-composer">
               <button type="button" aria-label={voiceMode?'切换到键盘':'切换到语音'} title={voiceMode?'切换到键盘':'切换到语音'} style={{width:44,minWidth:44,height:44,padding:8,flexShrink:0}} onClick={()=>{setEmojiOpen(false);setShowMentions(false);setVoiceMode(v=>!v);}}>{voiceMode?<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M6 16h12"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg>}</button>
               <div ref={emojiPicker} className="sg-mention-picker"><button type="button" aria-label="选择表情" onClick={()=>{setEmojiOpen(v=>!v);setShowMentions(false);setVoiceMode(false);}}>☺</button>{emojiOpen&&<div style={{display:'flex',flexWrap:'wrap'}}>{emojis.map(emoji=><button key={emoji} style={{width:48,minWidth:48,fontSize:22}} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))}>{emoji}</button>)}</div>}{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
-              <div className="sg-composer-field" style={{display:'flex',flexDirection:'column',flex:1,minWidth:0}}>{quote&&<div>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)} <button onClick={()=>setQuote(null)}>取消引用</button></div>}{voiceMode?<GroupVoiceInput key={selected.id} groupId={selected.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;loadMessages(selected.id);refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<textarea ref={draftInput} aria-label="服务群消息" onFocus={()=>setEmojiOpen(false)} onClick={()=>setEmojiOpen(false)} value={draft} onChange={e => {setDraft(e.target.value);const at=e.target.selectionStart-1;mentionPosition.current=e.target.value[at]==='@'?at:null;setShowMentions(mentionPosition.current!==null);if(mentionPosition.current!==null)setEmojiOpen(false);}}
+              <label className="sg-file-control" aria-label="选择文件" title="发送文件">＋<input type="file" accept=".pdf,.docx,.xlsx,.pptx" hidden onChange={async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;try{setPendingFile(await readChatFile(file));setError('');setVoiceMode(false);}catch(error){setError(error.message);}}}/></label>
+              <div className="sg-composer-field" style={{display:'flex',flexDirection:'column',flex:1,minWidth:0}}>{quote&&<div>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)} <button onClick={()=>setQuote(null)}>取消引用</button></div>}{pendingFile&&<div className="sg-pending-file">📎 {pendingFile.name} <button type="button" onClick={()=>setPendingFile(null)}>移除</button></div>}{voiceMode?<GroupVoiceInput key={selected.id} groupId={selected.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;loadMessages(selected.id);refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<textarea ref={draftInput} aria-label="服务群消息" onFocus={()=>setEmojiOpen(false)} onClick={()=>setEmojiOpen(false)} value={draft} onChange={e => {setDraft(e.target.value);const at=e.target.selectionStart-1;mentionPosition.current=e.target.value[at]==='@'?at:null;setShowMentions(mentionPosition.current!==null);if(mentionPosition.current!==null)setEmojiOpen(false);}}
                 maxLength={2000} rows={1} placeholder="给客户发送消息…" />}</div>
-              {!voiceMode&&<button type="button" className="sa-primary" disabled={busy || !draft.trim()} onClick={send}>发送</button>}
+              {!voiceMode&&<button type="button" className="sa-primary" disabled={busy || (!draft.trim()&&!pendingFile)} onClick={send}>发送</button>}
             </div>}
         </> : <p className="sg-select-prompt">从左侧选择一个服务群，查看对话记录。</p>}
       </section>

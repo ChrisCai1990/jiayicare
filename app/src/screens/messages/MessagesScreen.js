@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Modal,
-  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Alert,
+  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Alert, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -1161,7 +1161,8 @@ function ConversationThreadModal({ role, onClose }) {
                           )}
                         </View>
                       )}
-                      <Text style={[threadStyles.bubbleText, isMine && threadStyles.bubbleTextUser]}>{m.content}</Text>
+                      {m.fileUrl && <Text onPress={() => Linking.openURL(m.fileUrl).catch(() => Alert.alert('文件暂时无法打开'))} style={[threadStyles.bubbleText, isMine && threadStyles.bubbleTextUser, { fontWeight: '700' }]}>📎 {m.fileName || '查看文件'}</Text>}
+                      {(!m.fileUrl || m.content !== '[文件]') && <Text style={[threadStyles.bubbleText, isMine && threadStyles.bubbleTextUser]}>{m.content}</Text>}
                       {canRecall && (
                         <Text style={[threadStyles.timestamp, { marginTop: 2, textAlign: 'right', color: isMine ? 'rgba(255,255,255,0.6)' : colors.textMuted }]}>长按撤回</Text>
                       )}

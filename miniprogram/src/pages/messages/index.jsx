@@ -1,4 +1,5 @@
 import { ensureAiDataConsent, manageAiDataConsent } from '../../utils/aiDataConsent';
+import { openChatFile } from '../../utils/openChatFile';
 import MedicalReferences from '../../components/MedicalReferences';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
@@ -1160,6 +1161,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
                     backgroundColor: isMine ? colors.primary : '#fff', border: isMine ? 'none' : `1px solid ${colors.border}`,
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url) => <Image key={url} src={url} mode="aspectFill" onClick={() => Taro.previewImage({ current: url, urls: m.imageUrls?.length ? m.imageUrls : [url] }).catch(() => Taro.showToast({ title: '图片暂时无法查看', icon: 'none' }))} style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />)}
+                    {m.fileUrl && <Text onClick={() => openChatFile(m)} style={{ display: 'block', color: isMine ? '#fff' : colors.primary, fontWeight: 700, wordBreak: 'break-all', padding: '4px 0' }}>📎 {m.fileName || '查看文件'}</Text>}
                     {!isMine && (
                       <Text style={{ fontSize: '11px', fontWeight: 700, color: meta.color, display: 'block', marginBottom: '4px' }}>
                         {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
@@ -1174,7 +1176,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
                         {visibleTranscriptIds.has(m._id) && <Text style={{ display: 'block', marginTop: '7px', paddingTop: '7px', borderTop: `1px solid ${isMine ? 'rgba(255,255,255,.25)' : colors.border}`, fontSize: '13px', lineHeight: '19px', color: isMine ? '#fff' : colors.textPrimary, whiteSpace: 'pre-wrap' }}>{m.audioTranscript}</Text>}
                       </View>
                     )}
-                    {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
+                    {(!m.audioUrl || !/^\[语音消息\]$/.test(m.content || '')) && (!m.fileUrl || m.content !== '[文件]') && <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>}
                     {isMine && m.audioUrl && !m.audioTranscript && <Text onClick={() => transcribeVoice(m)} style={{ display: 'block', fontSize: '13px', color: '#fff', textDecoration: 'underline', marginTop: '8px' }}>{transcribingId === m._id ? '正在转文字…' : '转文字（需授权）'}</Text>}
                     {!isMine && <MedicalReferences references={m.references || []} />}
                     {!isMine && !m.audioUrl && visibleMessageContent(m).trim() && (

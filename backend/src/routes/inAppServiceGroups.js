@@ -96,12 +96,13 @@ async function serializeMessages(group,rows) {
     return { id:row.materialReportId, title:report?.title || '医疗资料', status:materials.statusOf(report),
       mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signStoredUrl(url,report.ossKeys?.[i] || '')) };
   };
-  const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId}).select('senderName content audioUrl materialReportId').lean();
-  const quoteMap=new Map(quoted.map(q=>[String(q._id),{id:q._id,senderName:q.senderName,content:q.audioUrl?'[语音消息]':q.materialReportId?'[医疗资料]':q.content.slice(0,180)}]));
+  const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId}).select('senderName content audioUrl fileUrl materialReportId').lean();
+  const quoteMap=new Map(quoted.map(q=>[String(q._id),{id:q._id,senderName:q.senderName,content:q.audioUrl?'[语音消息]':q.fileUrl?'[文件]':q.materialReportId?'[医疗资料]':q.content.slice(0,180)}]));
   return rows.map(row => ({ id: row._id, quote:row.quotedMessageId?(quoteMap.get(String(row.quotedMessageId))||{unavailable:true,content:'原消息已不可用'}):null, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
     audioUrl:row.audioUrl?require('../utils/oss').signStoredUrl(row.audioUrl):'',audioDuration:row.audioDuration||0,audioTranscript:row.audioTranscript||'',
+    fileUrl:row.fileUrl?require('../utils/oss').signStoredUrl(row.fileUrl):'',fileName:row.fileName||'',fileMimeType:row.fileMimeType||'',fileSize:row.fileSize||0,
     material: materialOf(row), mentions: row.mentions || [], senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
 }
 async function send(group, senderType, sender, content, rawMentions = [], audioFields = {}, quotedMessageId = null) {
@@ -270,6 +271,17 @@ staffRouter.post('/:groupId/voice',wrap(async(req,res)=>{
   const message=await send(group,'staff',req.staff,'[语音消息]',[],{audioUrl:saved.url,audioDuration:audio.duration,audioMimeType:audio.mimeType},req.body?.quotedMessageId);
   res.status(201).json({success:true,data:message});
  }catch(error){if(!await Message.exists({groupId:group._id,audioUrl:saved.url}))await oss.deleteFile(saved.key);throw error;}
+}));
+staffRouter.post('/:groupId/files',wrap(async(req,res)=>{
+ const {group,patient}=await groupAndPatient(req.params.groupId,req.staff.tenantId);
+ if(!canStaffAccess(group,patient,req.staff))fail('仅当前入群服务人员可以发送文件');
+ const file=require('../utils/chatFile').validate(req.body?.file),oss=require('../utils/oss');
+ const saved=await oss.uploadBuffer(file.buffer,file.mimeType,'messages/files');
+ try{
+  const message=await send(group,'staff',req.staff,contentOf(req.body?.content)||'[文件]',[],
+    {fileUrl:saved.url,fileName:file.name,fileMimeType:file.mimeType,fileSize:saved.size},req.body?.quotedMessageId);
+  res.status(201).json({success:true,data:message});
+ }catch(error){if(!await Message.exists({groupId:group._id,fileUrl:saved.url}))await oss.deleteFile(saved.key);throw error;}
 }));
 staffRouter.post('/:groupId/speech',wrap(async(req,res)=>{
  const {group,patient}=await groupAndPatient(req.params.groupId,req.staff.tenantId);

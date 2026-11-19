@@ -124,6 +124,9 @@ export const inAppServiceGroupAPI = {
   send: (id, content, mentionIds = [], quotedMessageId = null) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
     method: 'POST', body: JSON.stringify({ content, mentionIds, quotedMessageId }),
   }),
+  sendFile: (id, file, content = '', quotedMessageId = null) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/files`, {
+    method: 'POST', timeout: 120000, body: JSON.stringify({ file, content, quotedMessageId }),
+  }),
 }
 
 export const staffAPI = {
@@ -718,7 +721,7 @@ export const staffAPI = {
   getUserMessages: () => req('/staff/user-messages'),
 
   // 回复用户留言
-  replyToUser: (userId, content, images = [], audio = null) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, images, audio }) }),
+  replyToUser: (userId, content, images = [], audio = null, file = null) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', timeout: file ? 120000 : undefined, body: JSON.stringify({ content, images, audio, file }) }),
   // 获取用户对话线程
   getUserMessageThread: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
   transcribeUserVoice: (userId, messageId, role) => req(`/staff/user-messages/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/transcribe`, { method: 'POST', timeout: 60000, body: JSON.stringify({ role }) }),

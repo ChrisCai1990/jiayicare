@@ -713,7 +713,7 @@ textarea.form-control { resize: vertical; }
   .staff-android-app:has(.notifications-page) .main-content,
   .staff-android-app:has(.in-app-service-groups) .main-content { padding-top: 44px; }
   .staff-android-app .mobile-message-nav { display: flex; flex: 1; justify-content: center; gap: 8px; margin-right: 32px; }
-  .staff-android-app .mobile-message-nav button { min-width: 90px; height: 34px; padding: 0 14px; border-radius: 17px; color: #376052; font-size: 14px; font-weight: 700; }
+  .staff-android-app .mobile-message-nav button { flex: 0 1 90px; min-width: 0; height: 34px; padding: 0 8px; border-radius: 17px; color: #376052; font-size: 14px; font-weight: 700; white-space: nowrap; }
   .staff-android-app .mobile-message-nav button[aria-current="page"] { background: #e8f5ed; color: #176b4d; }
   .staff-android-app .main-content:has(.notifications-page) { padding-right: 0; padding-bottom: 0; padding-left: 0; }
   .staff-android-app .notifications-page { padding: 10px; }

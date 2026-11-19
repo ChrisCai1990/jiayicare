@@ -19,6 +19,7 @@ function withSignedMessageMedia(message) {
   obj.imageUrls = signedUrls;
   obj.imageUrl = signedUrls[0] || '';
   obj.audioUrl = obj.audioUrl ? signStoredUrl(obj.audioUrl) : '';
+  obj.fileUrl = obj.fileUrl ? signStoredUrl(obj.fileUrl) : '';
   return obj;
 }
 

@@ -30,6 +30,9 @@ async function convertHeicBase64IfNeeded(base64Data, mimeType) {
 
 function extensionForMime(mimeType) {
   return mimeType === 'application/pdf' ? 'pdf'
+    : mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? 'docx'
+    : mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ? 'xlsx'
+    : mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ? 'pptx'
     : mimeType === 'image/png' ? 'png'
     : mimeType === 'image/jpeg' || mimeType === 'image/jpg' ? 'jpg'
     : mimeType === 'image/gif' ? 'gif'

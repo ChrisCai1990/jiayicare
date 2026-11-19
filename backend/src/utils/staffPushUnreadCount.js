@@ -1,6 +1,8 @@
 const User = require('../models/User');
 const Message = require('../models/Message');
 const Group = require('../models/InAppServiceGroup');
+const FollowUp = require('../models/FollowUp');
+const Order = require('../models/Order');
 const { CHANNELS } = require('./staffPushCore');
 const { assignmentFields, canStaffAccess, needsStaffReply } = require('./inAppServiceGroupPolicy');
 
@@ -20,7 +22,16 @@ async function unreadCount(staff) {
   const byId = new Map(patients.map(patient => [String(patient._id), patient]));
   const pendingGroups = groups.filter(group => needsStaffReply(group) &&
     canStaffAccess(group, byId.get(String(group.patientId)), staff)).length;
-  return Math.min(99, direct + pendingGroups);
+  let pendingOrders = 0;
+  if (staff.role === 'healthPlanner') {
+    const orderIds = await FollowUp.collection.distinct('sourceOrderId', { tenantId: staff.tenantId, assignedTo: { $in: [staff._id, String(staff._id)] },
+      sourceType: 'order', sourceOrderId: { $ne: null }, status: { $in: ['planned', 'in_progress', 'missed'] },
+      isBlocked: { $ne: true } }).distinct('sourceOrderId');
+    pendingOrders = await Order.countDocuments({ _id: { $in: orderIds }, tenantId: staff.tenantId,
+      initiationSource: 'customer', paymentStatus: 'paid', status: { $in: ['pending', 'scheduled'] },
+      tradeStatus: { $nin: ['closed', 'refunded'] } });
+  }
+  return Math.min(99, direct + pendingGroups + pendingOrders);
 }
 
 module.exports = { unreadCount };

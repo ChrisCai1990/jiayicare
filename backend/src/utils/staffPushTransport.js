@@ -26,14 +26,14 @@ function createStaffPushTransport({ clientId, clientSecret, fetchImpl = global.f
     return refreshing;
   }
   return {
-    async send(token, unreadCount = 0) {
+    async send(token, unreadCount = 0, body = '您有新的客户消息，请打开应用查看。') {
       if (!token || typeof token !== 'string') throw new Error('设备推送凭据无效');
       const auth = await accessToken();
       const count = Math.max(0, Math.min(99, Number(unreadCount) || 0));
       const result = await post(`https://push-api.cloud.huawei.com/v1/${clientId}/messages:send`,
         JSON.stringify({ validate_only: false, message: {
           token: [token],
-          notification: { title: '嘉医汇医护', body: '您有新的客户消息，请打开应用查看。' },
+          notification: { title: '嘉医汇医护', body },
           android: { ttl: '300s', category: 'IM', notification: {
             click_action: { type: 3 },
             badge: { class: 'com.jiayicare.staff.pilot.MainActivity', set_num: count },

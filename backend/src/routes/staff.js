@@ -236,6 +236,7 @@ function withSignedMessageMedia(message) {
   const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
   obj.imageUrls = urls.map(url => signStoredUrl(url));
   obj.imageUrl = obj.imageUrls[0] || '';
+  obj.fileUrl = obj.fileUrl ? signStoredUrl(obj.fileUrl) : '';
   const rawId = String(obj._id || '');
   const legacyMatch = rawId.match(/^chat-user:([a-f\d]{24})$/i);
   const audioRef = mongoose.isValidObjectId(rawId)
@@ -13872,8 +13873,8 @@ router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
 // POST /api/staff/user-messages/:userId/reply
 router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
   try {
-    const { content = '', images = [], audio = null, orderId = '', checkinRecordId = '' } = req.body;
-    if (!content?.trim() && !images.length && !audio?.data && !checkinRecordId) {
+    const { content = '', images = [], audio = null, file = null, orderId = '', checkinRecordId = '' } = req.body;
+    if (!content?.trim() && !images.length && !audio?.data && !file && !checkinRecordId) {
       return res.status(400).json({ success: false, message: '回复内容不能为空' });
     }
     const patient = await User.findById(req.params.userId).select('name');
@@ -13883,6 +13884,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     }
 
     const staff = req.staff;
+    const fileInput = file ? require('../utils/chatFile').validate(file) : null;
     const typeMap = {
       familyDoctor: 'doctor',
       nutritionist: 'nutritionist',
@@ -13945,13 +13947,15 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
         console.warn(`[staff-message-asr] ${conversationId} 语音转写失败，保留原语音: ${error.message}`);
       }
     }
+    const savedFile = fileInput ? await require('../utils/oss').uploadBuffer(fileInput.buffer, fileInput.mimeType, 'messages/files') : null;
     const replyMsg = await Message.create({
       user:    req.params.userId,
       type:    msgType,
       sender:  senderLabel,
       title:   `${staff.name} 回复了您的留言`,
-      content: content.trim() || (audioUrl ? '[语音消息]' : '图片'),
+      content: content.trim() || (audioUrl ? '[语音消息]' : savedFile ? '[文件]' : '图片'),
       imageUrl: imageUrls[0] || '', imageUrls,
+      fileUrl: savedFile?.url || '', fileName: fileInput?.name || '', fileMimeType: fileInput?.mimeType || '', fileSize: savedFile?.size || 0,
       audioUrl, audioDuration, audioMimeType, audioTranscript,
       unread:  true,
       conversationId,
@@ -13964,7 +13968,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     res.json({ success: true, message: '回复已发送', data: responseMessage });
   } catch (err) {
     console.error('[staff-message-reply] failed', { userId: req.params.userId, staffId: String(req.staff?._id || ''), message: err.message });
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.status || 500).json({ success: false, message: err.message });
   }
 });
 
