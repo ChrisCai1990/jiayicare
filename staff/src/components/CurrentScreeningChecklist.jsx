@@ -3,7 +3,7 @@ import { staffAPI } from '../api'
 import SpecialtyConcernButton from './SpecialtyConcernButton'
 import AICheckupReview from './AICheckupReview'
 
-const directionLabel = { medical_treatment: '安排就医', checkup_completion: '完善检查', abnormal_followup: '定期复查', vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察' }
+const directionLabel = { medical_treatment: '安排就医', checkup_completion: '完善检查', abnormal_followup: '定期复查', vaccine: '疫苗接种', monitoring: '日常监测', ongoing_management: '持续管理或观察（旧方向）', nutrition_assessment: '营养评估' }
 const actionable = new Set(['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine'])
 const hepatitisMarkers = [
   /乙型肝炎病毒?表面抗原|乙肝表面抗原|HBsAg/i,
@@ -86,9 +86,9 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><div><strong style={{ color: '#1E6B50' }}>筛查事项去向</strong><div style={{ fontSize: 12, color: '#52675D', marginTop: 4 }}>顾问核对异常与遗漏，决定是否纳入年度方案。</div></div><button type="button" className="btn btn-secondary btn-sm" onClick={refresh} disabled={state.loading}>刷新</button></div>
     {state.error && <div role="alert" style={{ color: '#B42318', marginTop: 8 }}>{state.error}</div>}
     {state.loading ? <p>正在核对来源…</p> : <>
-      <p style={{ fontSize: 13, margin: '10px 0' }}>需确认去向 {pendingSources.length} 项 · AI 待核对 {pendingAICheckups} 项</p>
-      <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>需确认方案去向</b>
-        {!state.plan && <p style={{ fontSize: 12 }}>未找到已确认的本年度方案；请先核对年度方案。</p>}
+      <p style={{ fontSize: 13, margin: '10px 0' }}>待年度方案承接 {pendingSources.length} 项 · AI 待核对 {pendingAICheckups} 项</p>
+      <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>待承接的管理事项</b>
+        {!state.plan && <p style={{ fontSize: 12 }}>本年度方案尚未确认。<a href={`/patients/${patientId}/annual-health?year=${year}#annual-management-sources`}>打开年度方案</a>核对已纳入的问题、目标和执行安排。</p>}
         {!pendingSources.length && <p style={{ fontSize: 12 }}>目前没有待补入事项。</p>}
         {pendingSources.map(source => <div key={`${source.kind}:${source.id}`} style={{ borderTop: '1px solid #E4ECE7', marginTop: 8, paddingTop: 8, fontSize: 13 }}>
           <b>{source.title}</b> · {directionLabel[source.direction] || '待确认去向'}

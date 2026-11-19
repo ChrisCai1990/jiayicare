@@ -29,19 +29,9 @@ import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
 import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
+import { mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
 const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
-function mergeManagementTargetEdits(incoming, existing = []) {
-  const byIssue = new Map(existing.filter(row => row.issueId).map(row => [row.issueId, row]))
-  const editable = ['goal', 'focus', 'goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'nutritionRelevant', 'rehabRelevant']
-  return incoming.map(row => {
-    const old = byIssue.get(row.issueId)
-    if (!old) return row
-    const kept = {}
-    for (const key of editable) if (Object.hasOwn(old, key)) kept[key] = old[key]
-    return { ...row, ...kept }
-  })
-}
 function GoalMetricEditor({ value, onChange, disabled }) {
   const metric = value || null
   return <div style={{ gridColumn:'1/-1', borderTop:'1px solid #E4ECE7', paddingTop:8 }}>
@@ -638,8 +628,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
           (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
         const targetModules = target?.moduleData || {}
-        const carryTargets = !target?.pushedAt && !targetModules.management_targets?.records?.length && confirmedTargets.length > 0
-        setModuleData(carryTargets ? { ...targetModules, management_targets: { enabled: true, records: confirmedTargets } } : targetModules)
+        const carried = !target?.pushedAt ? carryAnnualTargets(targetModules, confirmedTargets) : { modules: targetModules, changed: false }
+        setModuleData(carried.modules)
         setContinuitySource(target?.continuitySource || preparationData?.continuity?.source || null)
         if (target) {
           setPlanType(target.servicePlanCode || target.planType)
@@ -661,7 +651,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPushedAt(null)
           setConfirmedAt(null)
         }
-        setDirty(carryTargets)
+        setDirty(carried.changed)
         setMetricSelectionDirty(false)
       }).catch(err => { if (!cancelled) toast(err.message || '加载失败') })
         .finally(() => { if (!cancelled) setLoading(false) })
@@ -705,12 +695,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setPlanType(key)
     setSelectedTemplateId(template?._id || p?.templateId || '')
     const existingModules = p?.moduleData || {}
-    const carryTargets = !p?.pushedAt && !existingModules.management_targets?.records?.length && confirmedReviewTargets.length > 0
-    setModuleData(carryTargets ? { ...existingModules, management_targets: { enabled: true, records: confirmedReviewTargets } } : existingModules)
+    const carried = !p?.pushedAt ? carryAnnualTargets(existingModules, confirmedReviewTargets) : { modules: existingModules, changed: false }
+    setModuleData(carried.modules)
     setPhaseAssessmentFrequency(p?.phaseAssessmentFrequency || '')
     setPushedAt(p?.pushedAt || null)
     setConfirmedAt(p?.confirmedAt || null)
-    setDirty(carryTargets)
+    setDirty(carried.changed)
     setMetricSelectionDirty(false)
   }
 
@@ -1309,6 +1299,22 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       )}
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
+      {patientMode && confirmedReviewTargets.length > 0 && <section id="annual-management-sources" style={{ padding: 16, marginBottom: 18, background: '#F5FAF7', border: '1px solid #CFE3D7', borderRadius: 12 }} aria-label="筛查已纳入年度管理的事项">
+        <strong style={{ color: '#1E6B50' }}>筛查已纳入年度管理 · {confirmedReviewTargets.length} 项</strong>
+        <p style={{ fontSize: 13, color: '#52675D', margin: '7px 0 12px' }}>{!planType ? '这些是顾问已确认的管理来源。请先选择下方方案类型，再核对目标和执行安排。' : !plansByType[planType] ? '这些事项已带入待建立的方案草稿；保存草稿后才成为方案内容。' : pushedAt ? '下列来源与已发布方案逐项核对；新增来源需要通过方案修订承接。' : '下列来源已带入目标草稿；请核对并保存方案。'}</p>
+        {confirmedReviewTargets.filter(row => row.sourceGoal === '营养评估').length > 0 && <div style={{ padding: '9px 0', borderTop: '1px solid #DCE9E0', fontSize: 13 }}>
+          <b>营养评估 · {confirmedReviewTargets.filter(row => row.sourceGoal === '营养评估').length} 项问题合并为一项评估</b>
+          <div style={{ color: '#52675D', marginTop: 4 }}>{confirmedReviewTargets.filter(row => row.sourceGoal === '营养评估').map(row => row.sourceTitle).join('、')}</div>
+          <div style={{ color: '#9A5B13', marginTop: 4 }}>逐项保留管理目标和来源，由同一年度营养评估承接。</div>
+        </div>}
+        {confirmedReviewTargets.filter(row => row.sourceGoal !== '营养评估').map((row, index) => {
+          const saved = (plansByType[planType]?.moduleData?.management_targets?.records || []).some(target => target.issueId === row.issueId)
+          return <div key={row.issueId || index} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderTop: '1px solid #DCE9E0', fontSize: 13 }}>
+            <div><b>{row.sourceTitle || `管理问题 ${index + 1}`}</b><div style={{ color: '#52675D', marginTop: 3 }}>{row.sourceGoal || '管理方向待核对'} · {row.goal || '目标待确认'}</div></div>
+            <span style={{ color: saved ? '#1E6B50' : '#9A5B13', whiteSpace: 'nowrap' }}>{saved ? '方案已有目标' : '待保存到方案'}</span>
+          </div>
+        })}
+      </section>}
       {patientMode && staleManagementSources.length > 0 && !pushedAt && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', border: '1px solid #F4C995', borderRadius: 10, color: '#713F12' }}>
         <b>管理来源待核对</b><div style={{ marginTop: 5, fontSize: 13 }}>{staleManagementSources.join('、')}</div>
         {staleLegacyDecisions.map(row => <div key={row._id} style={{ marginTop: 10, padding: 10, background: '#fff', borderRadius: 8 }}>
@@ -1549,7 +1555,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                 {row.goalDimension === 'symptom' && <label style={{ fontSize: 12, color: '#62776A' }}>追踪的症状关键词<input className="form-input" aria-label={`症状关键词 ${index + 1}`} maxLength={80} value={row.symptomTerm || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, symptomTerm:e.target.value } : item))} placeholder="如便秘；空白时仅显示本期全部主诉线索" /></label>}
                 {row.goalDimension === 'lifestyle' && <label style={{ fontSize: 12, color: '#62776A' }}>追踪的记录类别<select className="form-input" aria-label={`生活方式记录类别 ${index + 1}`} value={row.lifestyleType || ''} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, lifestyleType:e.target.value } : item))}><option value="">待选择</option><option value="diet">饮食</option><option value="exercise">运动</option><option value="sleep">睡眠</option><option value="smoking">吸烟</option><option value="alcohol">饮酒</option><option value="mood">情绪</option></select></label>}</>}
               </div>
-              <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养师参与此项目</label>
+              <label style={{ fontSize: 13, display: 'inline-block', marginTop: 7 }}><input type="checkbox" checked={row.nutritionRelevant === true} disabled={!canEdit || !!pushedAt || row.sourceGoal === '营养评估'} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, nutritionRelevant: e.target.checked } : item))} /> 营养师参与此项目{row.sourceGoal === '营养评估' ? '（顾问已确认）' : ''}</label>
               {annualPilot && <label style={{ fontSize: 13, display: 'inline-block', marginLeft: 14, marginTop: 7 }}><input type="checkbox" checked={row.rehabRelevant === true} disabled={!canEdit || !!pushedAt} onChange={e => handleModuleChange('management_targets', 'records', moduleData.management_targets.records.map((item, i) => i === index ? { ...item, rehabRelevant: e.target.checked } : item))} /> 建议运动复健评估</label>}
               </details>
               {row.nutritionRelevant === true && <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 8 }}>营养师参与 · 纳入下方统一评估</div>}
