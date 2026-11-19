@@ -99,7 +99,12 @@ async function createAssessment({ plan = null, user, template, periodOverride = 
   const localDraft = monthlyReview ? await (async () => { const window = contextWindow || { start: new Date(Date.now() - windowDays * 86400000), end: new Date() }; return structuredAI ? require('./phaseReviewScheduledService').run(user, () => require('./phaseFourDimensionDraft').generate(user, window)) : require('./monthlyPhaseReviewDraft').buildMonthlyPhaseReviewDraft(user, window); })() : null;
   const context = monthlyReview ? { sources: localDraft.sources } : await buildStageAssessmentContext(user, windowDays, contextWindow);
   let goalReviews = [];
-  if (monthlyReview && annualFlowPilot.enabled(user._id) && /^\d{4}-\d{2}$/.test(period.key) && contextWindow) {
+   const annualGoalPlan = monthlyReview && !plan && !annualFlowPilot.enabled(user._id)
+     && require('mongoose').isValidObjectId(user._id)
+    ? await AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null } })
+      .sort({ confirmedAt: -1 }).select('patientId flowVersion').lean()
+    : plan;
+  if (monthlyReview && (annualFlowPilot.enabledForPlan(annualGoalPlan) || annualFlowPilot.enabled(user._id)) && /^\d{4}-\d{2}$/.test(period.key) && contextWindow) {
     const start = new Date(contextWindow.start).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
     const end = new Date(contextWindow.end.getTime() - 1).toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
     const goalPeriod = { start, end };

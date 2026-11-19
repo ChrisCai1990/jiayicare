@@ -11,9 +11,15 @@ const DIRECTIONS = [
 ]
 const pending = new Map()
 const pilotPending = new Map()
-function loadPilot(patientId) {
-  if (!pilotPending.has(patientId)) pilotPending.set(patientId, managementReviewAPI.get(patientId).then(result => result.annualFlowEnabled === true).catch(() => false))
-  return pilotPending.get(patientId)
+function loadPilot(patientId, year) {
+  const key = `${patientId}:${year}`
+  if (!pilotPending.has(key)) pilotPending.set(key, Promise.all([managementReviewAPI.get(patientId), staffAPI.getAnnualPlan(patientId, year)])
+    .then(([access, response]) => {
+      const plans = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean)
+      const plan = plans.find(row => row.pushedAt || row.confirmedAt) || plans[0]
+      return plan ? plan.flowVersion === 2 || plan.flowVersion == null && access.restored === true : access.newPlanFlowEnabled === true
+    }).catch(() => false))
+  return pilotPending.get(key)
 }
 function load(patientId, year) {
   const key = `${patientId}:${year}`
@@ -32,7 +38,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [pilot, setPilot] = useState(false)
   const [planCheck, setPlanCheck] = useState({ loading: false, formal: false, plan: null, error: '' })
   const [amendment, setAmendment] = useState({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
-  useEffect(() => { let active = true; setPilot(false); if (patientId) loadPilot(patientId).then(value => { if (active) setPilot(value) }); return () => { active = false } }, [patientId])
+  useEffect(() => { let active = true; setPilot(false); if (patientId && year) loadPilot(patientId, year).then(value => { if (active) setPilot(value) }); return () => { active = false } }, [patientId, year])
   useEffect(() => {
     if (!open || pilot || !patientId || !year) return
     let active = true
@@ -96,7 +102,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     if (title.trim().length < 2 || !direction) { setError('请先填写具体问题并选择管理方向'); return }
     setDrafting(true); setError('')
     try {
-      const result = await staffAPI.draftAnnualManagementDecision(patientId, { source, title: title.trim(), direction })
+      const result = await staffAPI.draftAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction })
       setGoal(current => current.trim() || result.data.goal)
       setAction(current => current.trim() || result.data.action)
     } catch (e) { setError(e.message || 'AI草稿暂不可用，请手动填写') }

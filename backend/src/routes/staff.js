@@ -2891,7 +2891,6 @@ router.get('/followups/:id/body-composition-options', staffAuth, async (req, res
   try {
     const bodyComp = require('../utils/nutritionBodyCompFollowUp');
     const task = await FollowUp.findById(req.params.id).lean();
-    if (!require('../utils/annualFlowPilot').enabled(task?.patientId)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
     if (!bodyComp.isBodyCompTask(task)) return res.status(404).json({ success: false, message: '体成分邀约不存在' });
     if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '此邀约未分配给当前账号' });
     const plan = await HealthPlan.findById(task.sourceHealthPlanId).select('confirmedAt patientId').lean();
@@ -2906,7 +2905,6 @@ router.post('/followups/:id/body-composition-reschedule', staffAuth, checkPermis
   try {
     const bodyComp = require('../utils/nutritionBodyCompFollowUp');
     const task = await FollowUp.findById(req.params.id).lean();
-    if (!require('../utils/annualFlowPilot').enabled(task?.patientId)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
     if (!bodyComp.isBodyCompTask(task)) return res.status(404).json({ success: false, message: '体成分邀约不存在' });
     if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅负责人可以改期' });
     if (!['planned', 'in_progress', 'missed'].includes(task.status)) return res.status(409).json({ success: false, message: '本轮已结束，不能改期' });
@@ -2928,7 +2926,6 @@ router.post('/followups/:id/body-composition-complete', staffAuth, checkPermissi
   try {
     const bodyComp = require('../utils/nutritionBodyCompFollowUp');
     const task = await FollowUp.findById(req.params.id).lean();
-    if (!require('../utils/annualFlowPilot').enabled(task?.patientId)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
     if (!bodyComp.isBodyCompTask(task)) return res.status(404).json({ success: false, message: '体成分邀约不存在' });
     if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅负责人可以确认测量并安排下一轮' });
     const plan = await HealthPlan.findById(task.sourceHealthPlanId).select('patientId staffId type status confirmedAt content').lean();
@@ -10150,7 +10147,7 @@ router.put('/patients/:id/ai-checkup-reviews', staffAuth, async (req, res) => {
     if (note.length > 1000 || (disposition === 'needs_exam' && (title.length < 2 || title.length > 80)) ||
         (disposition !== 'needs_exam' && !note)) return res.status(400).json({ success: false, message: '请填写检查名称或处理原因' });
     const confirmed = await AnnualPlan.exists({ patientId: req.params.id, year, confirmedAt: { $ne: null } });
-    if (confirmed && !require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(409).json({ success: false, message: '本年度方案已确认，新检查结果请走单项随访' });
+    if (confirmed && !await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)) return res.status(409).json({ success: false, message: '本年度方案已确认，新检查结果请走单项随访' });
     let linkedDecisionId = null;
     if (disposition === 'already_managed') {
       if (!mongoose.isValidObjectId(req.body.linkedDecisionId)) return res.status(400).json({ success: false, message: '请选择已有的完善检查事项' });
@@ -10189,7 +10186,7 @@ router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, r
 // the management decision separately; AI cannot set dates or publish a plan.
 router.post('/patients/:id/annual-management-decision-draft', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForYear(req.params.id, req.body.year)) return res.status(404).json({ success: false, message: '当前年度未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可起草管理决定' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -10234,7 +10231,7 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
     const { year, source, direction } = req.body;
-    const annualPilot = require('../utils/annualFlowPilot').enabled(req.params.id);
+    const annualPilot = await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year);
     if (!annualPilot && (['symptom', 'report_item'].includes(source?.kind)
       || ['goal', 'action', 'actionTiming'].some(key => req.body[key] !== undefined)))
       return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
@@ -10763,7 +10760,7 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
       const unresolvedSymptoms = await HealthRecord.find({ user: req.params.id, type: 'symptom', 'symptomWorkflow.status': 'pending_doctor',
         recordedAt: { $lt: new Date(`${year + 1}-01-01T00:00:00+08:00`) } })
         .select('_id value recordedAt').sort({ recordedAt: -1 }).limit(20).lean();
-      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, require('../utils/annualFlowPilot').enabled(req.params.id)), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
+      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
         unresolvedSymptoms: unresolvedSymptoms.map(row => ({ id: row._id, value: String(row.value || '').slice(0, 120), recordedAt: row.recordedAt })) });
     }
     const confirmed = await AiCaseReview.find({
@@ -10846,7 +10843,7 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
 
 router.get('/patients/:id/annual-plan/:planId/issue-progress', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
     if (!mongoose.isValidObjectId(req.params.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
@@ -10865,7 +10862,7 @@ router.get('/patients/:id/annual-plan/:planId/issue-progress', staffAuth, async 
 
 router.get('/patients/:id/annual-plan/:planId/goal-candidates', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
     if (!mongoose.isValidObjectId(req.params.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
@@ -10882,7 +10879,7 @@ router.get('/patients/:id/annual-plan/:planId/goal-candidates', staffAuth, async
 // plan. The ten suggested topics are a queue, not ten simultaneous follow-ups.
 router.get('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
     const patient = await User.findById(req.params.id).select('tenantId').lean();
@@ -10895,7 +10892,7 @@ router.get('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, async
 });
 router.get('/patients/:id/annual-plan/:planId/consensus-trial/draft', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可查看共识草稿' });
     const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
     if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
@@ -10908,7 +10905,7 @@ router.get('/patients/:id/annual-plan/:planId/consensus-trial/draft', staffAuth,
 });
 router.put('/patients/:id/annual-plan/:planId/consensus-trial/draft', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可保存共识草稿' });
     const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
     if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
@@ -10934,7 +10931,7 @@ router.put('/patients/:id/annual-plan/:planId/consensus-trial/draft', staffAuth,
 });
 router.post('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可安排共识沟通' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -10977,7 +10974,7 @@ router.post('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, asyn
 // The usual onboarding monitoring reminders remain untouched.
 router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForYear(req.params.id, req.body.year)) return res.status(404).json({ success: false, message: '当前年度未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可安排人工提醒' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -11030,8 +11027,6 @@ async function notifyAnnualPlanRevision(plan, revision, staffId, patientId, titl
 // amendment; task changes remain in the existing execution-review workbench.
 router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAuth, async (req, res) => {
   try {
-    const annualPilot = require('../utils/annualFlowPilot').enabled(req.params.id);
-    if (!annualPilot && req.body.sourceKind !== 'decision') return res.status(404).json({ success: false, message: '该客户未进入试点' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可补入年度方案' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -11040,6 +11035,8 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可补入方案' });
     const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('+supplementRevisions').lean();
+    const annualPilot = require('../utils/annualFlowPilot').enabledForPlan(plan);
+    if (!annualPilot && req.body.sourceKind !== 'decision') return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     const approved = plan?.reviewStatus === 'approved' || plan?.reviewStatus == null;
     if (!plan?.pushedAt || !approved) return res.status(409).json({ success: false, message: '请先选择已推送且未驳回的方案' });
     const kind = String(req.body.sourceKind || ''), sourceObjectId = String(req.body.sourceId || '');
@@ -11125,7 +11122,7 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
 
 router.post('/patients/:id/annual-plan/:planId/goal-draft', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可起草管理目标' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -11158,7 +11155,7 @@ router.post('/patients/:id/annual-plan/:planId/goal-draft', staffAuth, async (re
 
 router.patch('/patients/:id/annual-plan/:planId/management-goals', staffAuth, async (req, res) => {
   try {
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
+    if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.params.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认管理目标' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -11255,7 +11252,7 @@ router.patch('/patients/:id/annual-nutrition-metrics', staffAuth, async (req, re
     const hasAdvisorTargets = Object.hasOwn(req.body, 'advisorTargets');
     let advisorTargets;
     if (hasAdvisorTargets) {
-      if (!require('../utils/annualFlowPilot').enabled(req.params.id)) return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
+      if (!await require('../utils/annualFlowPilot').enabledForPlanId(req.params.id, req.body.planId)) return res.status(404).json({ success: false, message: '当前方案未进入新版年度管理' });
       if (!Array.isArray(req.body.advisorTargets) || req.body.advisorTargets.length > nutritionAdvisorCatalog.MAX_ADVISOR_TARGETS) return res.status(400).json({ success: false, message: '营养指标与症状最多填写24项' });
       advisorTargets = req.body.advisorTargets.map(row => ({
         kind: row?.kind === 'symptom' ? 'symptom' : 'metric', metric: String(row?.metric || '').trim(), baseline: String(row?.baseline || '').trim(), target: String(row?.target || '').trim(), sourceIssueId: String(row?.sourceIssueId || '').trim(),
@@ -11323,7 +11320,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       }
       if (moduleData?.nutrition_assessment?.advisorTargets !== undefined) {
         const rows = moduleData.nutrition_assessment.advisorTargets;
-        if (!require('../utils/annualFlowPilot').enabled(req.params.id) || !Array.isArray(rows) || rows.length > require('../../../shared/annualNutritionAdvisorTargets.cjs').MAX_ADVISOR_TARGETS
+        if (!Array.isArray(rows) || rows.length > require('../../../shared/annualNutritionAdvisorTargets.cjs').MAX_ADVISOR_TARGETS
           || rows.some(row => !String(row?.metric || '').trim() || !String(row?.target || '').trim()
             || String(row.metric).length > 100 || String(row.baseline).length > 200 || String(row.target).length > 200))
           throw new Error('请逐项填写营养指标或症状及顾问目标（最多24项）');
@@ -11351,10 +11348,6 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const targetYear = year || new Date().getFullYear();
     const checkup = await require('../utils/annualReviewEligibility').check(req.params.id, { lookbackMonths: 3 });
     if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
-    if (!require('../utils/annualFlowPilot').enabled(req.params.id)
-      && (moduleData.health_consensus?.records?.length
-        || (moduleData.management_targets?.records || []).some(row => ['goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'rehabRelevant', 'actionTiming'].some(key => row[key] !== undefined))))
-      return res.status(404).json({ success: false, message: '该客户未进入年度管理试点' });
     if (moduleData.management_targets?.records !== undefined) {
       const records = moduleData.management_targets.records;
       if (!Array.isArray(records) || records.length > 32 || records.some(row => !String(row?.goal || '').trim() || !String(row?.focus || '').trim()
@@ -11410,7 +11403,14 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (!require('../utils/annualPlanSourceMatches').annualPlanSourceMatches(sourcePlan, normalizedTemplate, servicePlanCode, version.strategyType)) return res.status(409).json({ success: false, message: '原年度方案与所选服务版本不匹配，请刷新核对' });
     }
     const selector = sourcePlan ? { _id: sourcePlan._id } : legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
-    const existingVersion = await AnnualPlan.findOne(selector).select('updatedAt confirmedAt frozenAt pushedAt +supplementRevisions').lean();
+    const existingVersion = await AnnualPlan.findOne(selector).select('patientId flowVersion updatedAt confirmedAt frozenAt pushedAt +supplementRevisions').lean();
+    const annualFlow = existingVersion
+      ? require('../utils/annualFlowPilot').enabledForPlan(existingVersion)
+      : require('../utils/annualFlowPilot').enabledForNewPlan(req.params.id);
+    if (!annualFlow && (moduleData.nutrition_assessment?.advisorTargets !== undefined
+      || moduleData.health_consensus?.records?.length
+      || (moduleData.management_targets?.records || []).some(row => ['goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'rehabRelevant', 'actionTiming'].some(key => row[key] !== undefined))))
+      return res.status(404).json({ success: false, message: '当前方案不支持新版年度管理事项' });
     try { require('../utils/annualPlanVersion').assertPlanVersion(existingVersion, req.body.baseUpdatedAt); }
     catch (error) { return res.status(error.statusCode || 409).json({success:false,message:error.message}); }
     const frozen = closedLoop ? existingVersion : null;
@@ -11420,7 +11420,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     })) return res.status(409).json({ success: false, message: '营养师任务已派发，不能直接移除年度营养评估；请先处理现有任务' });
     const plan = await AnnualPlan.findOneAndUpdate(
       { ...selector, ...(existingVersion ? {updatedAt:existingVersion.updatedAt} : {}), ...(frozen ? {confirmedAt:null,frozenAt:null,pushedAt:null} : {}) },
-      { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
+      { $set: { planType: servicePlanCode, servicePlanCode, strategyType: version.strategyType, clientBrand: patient.clientBrand,
         memberTypeSnapshot: patient.memberType || '',
         servicePackageSnapshot: packageRecord ? { id: packageRecord._id, name: packageRecord.name, noResponseRule: packageRecord.configuration?.noResponseRule || '', capturedAt: new Date() } : { name: patient.servicePackage || '', capturedAt: new Date() },
         entitlementSnapshot: packageRecord?.entitlements || {}, resourceSnapshot: normalizedTemplate.content?.resourceConfig || {},
@@ -11428,6 +11428,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
         pushedAt: null, pushedBy: null, confirmedAt: null },
+        $setOnInsert: { flowVersion: annualFlow ? 2 : 1 } },
       { upsert: !existingVersion, new: true, setDefaultsOnInsert: true }
     );
     if (!plan) return res.status(409).json({ success: false, message: '方案状态已变化，请刷新后核对' });
@@ -11673,7 +11674,7 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       nutritionPatient = patient;
       if (!patient.assignedHealthManager) return res.status(409).json({ success: false, message: '请先为客户分配责任健管专员，再推送并生成随访计划' });
       if (plan.moduleData?.nutrition_assessment?.enabled !== false) {
-        if (require('../utils/annualFlowPilot').enabled(req.params.id) && !plan.pushedAt && !/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData?.nutrition_assessment?.executionDate || ''))
+        if (require('../utils/annualFlowPilot').enabledForPlan(plan) && !plan.pushedAt && !/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData?.nutrition_assessment?.executionDate || ''))
           return res.status(409).json({ success: false, message: '请先在营养干预中确定计划日期，再推送方案' });
         if (!patient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再推送并派发方案' });
         const nutritionist = await Admin.findById(patient.assignedNutritionist).select('_id role staffStatus tenantId').lean();
@@ -15165,6 +15166,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
     }
 
+    const annualFlowForYear = await require('../utils/annualFlowPilot').enabledForYear(user._id, targetYear);
     const ais = user.aiHealthSummary;
 
     // 各方案类型包含的板块（与前端 AnnualMgmtPlanPage 的 PLAN_TYPE_MODULES 保持一致）
@@ -15204,7 +15206,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const requiredScreeningKeys = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup'];
     const allowedKeys = [...new Set([...(PLAN_TYPE_MODULES[strategyType] || GENERATABLE), ...requiredScreeningKeys, 'monitoring'])]
       .filter(k => GENERATABLE.includes(k) && (requiredScreeningKeys.includes(k) || allowedByTemplate(k))
-        && !(k === 'monitoring' && require('../utils/annualFlowPilot').enabled(user._id)));
+        && !(k === 'monitoring' && annualFlowForYear));
     const standardFollowUpPlans = await FollowUpPlan.find({ status: 'active', reviewStatus: { $ne: 'pending_review' } })
       .select('name cycles defaultRole defaultEmployeeId default_content').sort({ name: 1, _id: 1 }).lean();
     const standardFollowUpCatalog = standardFollowUpPlans.map((item, index) => ({
@@ -15295,7 +15297,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .sort({ 'conclusion.confirmedAt': -1, _id: 1 }).limit(20).select('title reviewType concerns.title conclusion.content conclusion.structured conclusion.managementTargets conclusion.confirmedAt messages.role messages.content').lean();
     if (supplement) confirmedCaseReviews = [...new Map([...confirmedCaseReviews, ...supplement.reviews].map(row => [String(row._id), row])).values()];
     const confirmedManagementTargets = management.evidence.length
-      ? require('../utils/annualManagementEvidence').managementTargets(management.evidence, require('../utils/annualFlowPilot').enabled(user._id))
+      ? require('../utils/annualManagementEvidence').managementTargets(management.evidence, annualFlowForYear)
       : require('../utils/caseReviewManagementTargets').fromConfirmedReviews(confirmedCaseReviews).slice(0, 32);
     const confirmedReviewText = confirmedCaseReviews.length
       ? confirmedCaseReviews.map(item => `【${item.title}】${item.conclusion.content}`).join('\n\n').slice(0, 16000)
@@ -20550,9 +20552,10 @@ ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
       if (!result.matchedCount) return res.status(409).json({ success: false, message: '生活方式档案已变化，请刷新并重新核对主观感受' });
     }
 
-    const annualSource = require('../utils/annualFlowPilot').enabled(user._id) ? await AnnualPlan.findOne({ patientId: user._id, pushedAt: { $ne: null },
+    const candidateAnnualSource = await AnnualPlan.findOne({ patientId: user._id, pushedAt: { $ne: null },
       'moduleData.nutrition_assessment': { $exists: true }, 'moduleData.nutrition_assessment.enabled': { $ne: false } })
-      .sort({ pushedAt: -1 }).select('_id moduleData').lean() : null;
+      .sort({ pushedAt: -1 }).select('_id patientId flowVersion moduleData').lean();
+    const annualSource = require('../utils/annualFlowPilot').enabledForPlan(candidateAnnualSource) ? candidateAnnualSource : null;
     const annualManagementIssues = (annualSource?.moduleData?.management_targets?.records || [])
       .filter(row => row.nutritionRelevant === true && row.issueId && String(row.goal || '').trim())
       .map(row => ({ issueId: String(row.issueId), goal: String(row.goal).trim(), focus: String(row.focus || '').trim() }));
@@ -20567,7 +20570,7 @@ ${require('../utils/nutritionMealVariants').variantPrompt(assessment)}`;
       items: require('../utils/nutritionPlanItems').nutritionPlanItems({ content: { moduleData }, items }),
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
-        ...(require('../utils/annualFlowPilot').enabled(user._id) ? { nutritionTaskVersion: 1 } : {}),
+        ...(annualSource ? { nutritionTaskVersion: 1 } : {}),
         annualManagementIssues,
         templateId: template._id, templateName: template.name || '',
         goal: assessment.goal,

@@ -16,6 +16,8 @@ const annualPlanSchema = new mongoose.Schema({
   templateName: { type: String, default: '' },
   templateSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
   year:       { type: Number, default: () => new Date().getFullYear() },
+  // Fixed at first save. Missing on historical plans; never backfilled on read.
+  flowVersion: { type: Number, enum: [1, 2] },
   moduleData: { type: mongoose.Schema.Types.Mixed, default: {} }, // { moduleKey: { enabled, field1, field2... } }
   consensusTrialDraft: { type: mongoose.Schema.Types.Mixed, default: null, select: false }, // 顾问内部草稿，不进入已发布客户方案或执行任务
   phaseAssessmentFrequency: { type: String, enum: ['', 'biweekly', 'monthly', 'quarterly'], default: '' }, // 已确认方案中的正式阶段评估节奏；仅在服务包未指定节奏时使用

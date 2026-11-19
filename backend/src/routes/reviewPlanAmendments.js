@@ -93,7 +93,7 @@ module.exports=({getVisiblePlanPatientIds})=>{
       }
       const priorDraft=plan.revisionDraft;
       plan={...plan,moduleData:priorDraft?.moduleData||plan.moduleData};
-      const pilot=require('../utils/annualFlowPilot').enabled(req.params.patientId);
+      const pilot=require('../utils/annualFlowPilot').enabledForPlan(plan);
       const delivery=req.body.item?.delivery;
       const directServiceEdit=pilot && ['medical_treatment','specialist_collab','checkup_completion','abnormal_followup'].includes(req.body.item?.key) && delivery!==undefined && req.body.item?.operation!=='remove';
       const reason=String(req.body.reason || (directServiceEdit?'顾问调整就医与检查安排':req.body.item?.key==='annual_checkup' && pilot?'顾问调整年度体检安排':'')).trim();
@@ -102,7 +102,7 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const removeItem=req.body.item?.operation==='remove';
       let item,moduleData,changes;
       if(checkupEdit) {
-        if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
+        if(!pilot) return res.status(404).json({success:false,message:'当前方案未进入新版年度管理'});
         const before=plan.moduleData?.annual_checkup;
         if(!before || before.enabled===false) return res.status(400).json({success:false,message:'年度体检不在当前方案中'});
         const input=req.body.item;
@@ -154,12 +154,12 @@ module.exports=({getVisiblePlanPatientIds})=>{
         item=logic.clean([req.body.item])[0];
         if(item.target<0 || !plan.moduleData?.[item.key]?.records?.[item.target]) return res.status(400).json({success:false,message:'请选择原方案中的具体事项'});
         if(item.moveFrom) return res.status(400).json({success:false,message:'此入口仅修改或删除原事项'});
-        if(removeItem && !require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
+        if(removeItem && !pilot) return res.status(404).json({success:false,message:'当前方案未进入新版年度管理'});
         const catalog=item.key==='personalized_followups'?await logic.templateCatalog():[];
         ({moduleData,changes}=logic.apply(plan.moduleData,[item],{kind:'advisor_revision',reason},catalog));
       }
       if(delivery !== undefined) {
-        if(!require('../utils/annualFlowPilot').enabled(req.params.patientId)) return res.status(404).json({success:false,message:'该客户未进入试点'});
+        if(!pilot) return res.status(404).json({success:false,message:'当前方案未进入新版年度管理'});
         if(!['medical_treatment','specialist_collab','checkup_completion','abnormal_followup','annual_checkup'].includes(item.key)
           || removeItem || !delivery || typeof delivery!=='object' || Array.isArray(delivery))
           return res.status(400).json({success:false,message:'此事项不支持修改就医服务安排'});

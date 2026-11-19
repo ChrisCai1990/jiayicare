@@ -401,11 +401,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [patient, setPatient]       = useState(null)
-  const [annualPilot, setAnnualPilot] = useState(false)
+  const [annualFlowAccess, setAnnualFlowAccess] = useState({ restored: false, newPlanFlowEnabled: false })
   useEffect(() => {
-    setAnnualPilot(false)
+    setAnnualFlowAccess({ restored: false, newPlanFlowEnabled: false })
     if (!patientMode || !id) return
-    managementReviewAPI.get(id).then(result => setAnnualPilot(result.annualFlowEnabled === true)).catch(() => {})
+    managementReviewAPI.get(id).then(result => setAnnualFlowAccess({ restored: result.restored === true, newPlanFlowEnabled: result.newPlanFlowEnabled === true })).catch(() => {})
   }, [patientMode, id])
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')
@@ -422,6 +422,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [lastGenerationKey, setLastGenerationKey] = useState('')
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
   const [year, setYear]             = useState(() => Number(searchParams.get('year')) || new Date().getFullYear())
+  const selectedFlowPlan = plansByType[planType]
+  const annualPilot = Boolean(patientMode && (selectedFlowPlan
+    ? selectedFlowPlan.flowVersion === 2 || selectedFlowPlan.flowVersion == null && annualFlowAccess.restored
+    : annualFlowAccess.newPlanFlowEnabled))
   const [loading, setLoading]       = useState(true)
   useEffect(() => {
     if (!patientMode || loading || !window.location.hash) return
@@ -1172,7 +1176,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }}
     consensusTopics={CONSENSUS_TOPICS} canAddConsensus={canEdit && !pushedAt && !(moduleData.health_consensus?.records || []).length}
     onConsensus={() => handleModuleChange('health_consensus', 'records', [{ consensusId: crypto.randomUUID(), question: '', topicPath: [] }])}
-    manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
+    manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
     consensusEditor={canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualConsensus patientId={id} plan={plansByType[planType]} topics={CONSENSUS_TOPICS} toast={toast}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />} />
   const SecondaryPlanSection = annualPilot ? 'details' : 'div'

@@ -47,7 +47,7 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
     new Date(row.updatedAt || row.audited_at || row.createdAt || 0) <= new Date(preparation.screeningConfirmedAt));
   const hasGoals = Boolean((plan?.moduleData?.management_targets?.records || []).length
     || require('./annualStandardGoals').fromPlan(plan).length);
-  const missingPilotGoals = planConfirmed && require('./managementReviewPolicy').restored(id) && !hasGoals;
+  const missingPilotGoals = planConfirmed && require('./annualFlowPilot').enabledForPlan(plan) && !hasGoals;
   const draftWithoutGoals = plan && !plan.pushedAt && !hasGoals;
   const step = pending.length ? 'interpretation' : !hasCurrentExam && !planReleased ? 'preparation'
     : missingPilotGoals ? 'goals' : planReleased ? 'execution' : plan ? (draftWithoutGoals ? 'goals' : 'plan')
@@ -87,7 +87,7 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '', incl
   if (!users.length) return [];
   const [plans, packages, preparations] = await Promise.all([
     (deps.AnnualPlan || AnnualPlan).find({ patientId: { $in: users.map(user => user._id) } })
-      .select('patientId year createdAt updatedAt pushedAt confirmedAt formalizedAt reviewStatus moduleData.management_targets.records moduleData.medical_treatment moduleData.specialist_collab moduleData.checkup_completion moduleData.abnormal_followup moduleData.vaccine moduleData.annual_checkup').lean(),
+      .select('patientId year flowVersion createdAt updatedAt pushedAt confirmedAt formalizedAt reviewStatus moduleData.management_targets.records moduleData.medical_treatment moduleData.specialist_collab moduleData.checkup_completion moduleData.abnormal_followup moduleData.vaccine moduleData.annual_checkup').lean(),
     (deps.ServicePackage || ServicePackage).find({ 'configuration.membershipTier': 'annual' }).select('name clientBrand').lean(),
     (deps.AnnualPlanPreparation || AnnualPlanPreparation).find({ patientId: { $in: users.map(user => user._id) } })
       .select('patientId year screeningConfirmedAt').lean(),

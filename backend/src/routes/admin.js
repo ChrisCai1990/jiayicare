@@ -3396,7 +3396,8 @@ router.put('/patients/:id/annual-plan', adminAuth, async (req, res) => {
     const targetYear = year || new Date().getFullYear();
     const plan = await AnnualPlan.findOneAndUpdate(
       { patientId: req.params.id, year: targetYear },
-      { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.admin._id },
+      { $set: { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.admin._id },
+        $setOnInsert: { flowVersion: require('../utils/annualFlowPilot').enabledForNewPlan(req.params.id) ? 2 : 1 } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     res.json({ success: true, data: plan });

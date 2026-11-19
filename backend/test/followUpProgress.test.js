@@ -65,8 +65,8 @@ test('outside the pilot, ordinary medical progress keeps its original due date',
   assert.equal(+row.date, +original);
 });
 test('all-customer rollout leaves existing follow-ups unchanged and advances marked annual tasks', async () => {
-  const priorMode = process.env.ANNUAL_FLOW_MODE;
-  process.env.ANNUAL_FLOW_MODE = 'all';
+  const priorMode = process.env.ANNUAL_FLOW_NEW_PLAN_MODE;
+  process.env.ANNUAL_FLOW_NEW_PLAN_MODE = 'all';
   try {
     const oldTask = setup({ ...medical, patientId: '6a4ef1980f2291549b4ffd8e', date: new Date('2026-11-10T00:00:00Z') });
     const oldDate = oldTask.get().date;
@@ -74,8 +74,8 @@ test('all-customer rollout leaves existing follow-ups unchanged and advances mar
     const newTask = setup({ ...medical, patientId: '6a4ef1980f2291549b4ffd8e', date: oldDate, formData: { annualFlowVersion: 2 } });
     assert.equal(+((await saveProgress(newTask.args)).date), +new Date(newTask.args.body.nextContactAt));
   } finally {
-    if (priorMode === undefined) delete process.env.ANNUAL_FLOW_MODE;
-    else process.env.ANNUAL_FLOW_MODE = priorMode;
+    if (priorMode === undefined) delete process.env.ANNUAL_FLOW_NEW_PLAN_MODE;
+    else process.env.ANNUAL_FLOW_NEW_PLAN_MODE = priorMode;
   }
 });
 test('response retry is idempotent', async () => { const s = setup(); await saveProgress(s.args); await saveProgress(s.args); assert.equal(s.get().progressRecords.length, 1); });

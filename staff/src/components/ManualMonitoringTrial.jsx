@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { staffAPI } from '../api'
 
-export default function ManualMonitoringTrial({ patientId, staffList = [], assignedManagerId = '', toast }) {
+export default function ManualMonitoringTrial({ patientId, year, staffList = [], assignedManagerId = '', toast }) {
   const [date, setDate] = useState('')
   const [managerId, setManagerId] = useState(String(assignedManagerId || ''))
   const [confirmed, setConfirmed] = useState(false)
@@ -11,7 +11,7 @@ export default function ManualMonitoringTrial({ patientId, staffList = [], assig
   const save = async () => {
     setBusy(true); setError('')
     try {
-      const result = await staffAPI.startManualAnnualMonitoring(patientId, { date, managerId, noClientAppConfirmed: confirmed })
+      const result = await staffAPI.startManualAnnualMonitoring(patientId, { year, date, managerId, noClientAppConfirmed: confirmed })
       setDone(true)
       toast(result.message || '人工监测提醒已建立')
     } catch (cause) { setError(cause.message || '安排失败，请核对已有任务') }

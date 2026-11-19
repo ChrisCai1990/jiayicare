@@ -17,7 +17,7 @@ export default function DeferMedicalFollowUp({ task, onSaved }) {
   useEffect(() => {
     let active = true
     setPilot(false)
-    if (patientId) managementReviewAPI.get(patientId).then(result => { if (active) setPilot(result.restored === true || result.annualFlowEnabled === true && task?.formData?.annualFlowVersion === 2) }).catch(() => {})
+    if (patientId) managementReviewAPI.get(patientId).then(result => { if (active) setPilot(result.restored === true || task?.formData?.annualFlowVersion === 2) }).catch(() => {})
     return () => { active = false }
   }, [patientId, task?.formData?.annualFlowVersion])
   if (!pilot || !canDeferMedicalFollowUp(task)) return null

@@ -36,7 +36,7 @@ test('金娟试点只把已核对缺项补入已发布方案，并留下执行�
   const plan = { _id: planId, patientId, year: 2026, updatedAt: at, pushedAt: at, confirmedAt: at,
     reviewStatus: 'approved', moduleData: { checkup_completion: { enabled: true, records: [] } } };
   let enabled = false, saved = null, notified = null, noticeAttempts = 0;
-  t.mock.method(pilot, 'enabled', () => enabled);
+  t.mock.method(pilot, 'enabledForPlan', () => enabled);
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId, aiHealthSummary: {} }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(CheckupReview, 'findOne', () => chain({ _id: reviewId, sourceKey: 'key', sourceVersion: 'version', itemText: '甲状腺超声待补', title: '甲状腺超声' }));
@@ -70,7 +70,8 @@ test('同次定期复查作为一条完整就诊安排补入，带齐项目、�
   const plan = { _id: planId, patientId, year: 2026, updatedAt: at, pushedAt: at, confirmedAt: at,
     reviewStatus: 'approved', moduleData: { abnormal_followup: { enabled: true, records: [] } } };
   let saved;
-  t.mock.method(pilot, 'enabled', () => true);
+  t.mock.method(pilot, 'enabledForPlan', () => true);
+  t.mock.method(pilot, 'enabledForPlanId', async () => true);
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(Decision, 'findOne', () => chain({ _id: decisionId, title: '肺结节', direction: 'abnormal_followup' }));
@@ -100,7 +101,7 @@ test('非试点客户可将专项筛查新决定补入已推送但未确认方�
   let saved;
   let sourceKey = `screening:${id()}:lung`;
   let annualFlowEnabled = false;
-  t.mock.method(pilot, 'enabled', () => annualFlowEnabled);
+  t.mock.method(pilot, 'enabledForPlan', () => annualFlowEnabled);
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(Decision, 'findOne', () => chain({ _id: decisionId, sourceKey, title: '肺结节', direction: 'medical_treatment' }));
@@ -132,7 +133,7 @@ test('通知失败后重试只补发通知，不重复补入方案', async t => 
   const plan = { _id: planId, patientId, year: 2026, updatedAt: at, pushedAt: at, confirmedAt: at,
     reviewStatus: 'approved', moduleData: { checkup_completion: { enabled: true, records: [] } }, supplementRevisions: [] };
   let planWrites = 0, noticeAttempts = 0;
-  t.mock.method(pilot, 'enabled', () => true);
+  t.mock.method(pilot, 'enabledForPlan', () => true);
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId, aiHealthSummary: {} }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(CheckupReview, 'findOne', () => chain({ _id: reviewId, sourceKey: 'key', sourceVersion: 'version', itemText: '骨密度待补', title: '骨密度检查' }));
@@ -161,7 +162,8 @@ test('已发布目标修订在 standalone 保存，通知失败可按请求编�
   const plan = { _id: planId, patientId, year: 2026, updatedAt: at, pushedAt: at, confirmedAt: at,
     reviewStatus: 'approved', moduleData: { checkup_completion: { records: [{ items: '骨密度检查', sourceIds: [issueId] }] } }, supplementRevisions: [] };
   let writes = 0, notices = 0;
-  t.mock.method(pilot, 'enabled', () => true);
+  t.mock.method(pilot, 'enabledForPlan', () => true);
+  t.mock.method(pilot, 'enabledForPlanId', async () => true);
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(AnnualPlan, 'findOneAndUpdate', async (_filter, update) => {

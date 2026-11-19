@@ -2493,9 +2493,21 @@ export default function PatientDetailPage() {
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [currentScreeningPilot, setCurrentScreeningPilot] = useState(null)
-  useEffect(() => { let active = true; setCurrentScreeningPilot(null); managementReviewAPI.get(id).then(result => { if (active) setCurrentScreeningPilot(result.annualFlowEnabled === true) }).catch(() => { if (active) setCurrentScreeningPilot(false) }); return () => { active = false } }, [id])
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(() => annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')
     ? Number(annualWorkflowYear) : new Date().getFullYear())
+  useEffect(() => {
+    let active = true
+    setCurrentScreeningPilot(null)
+    Promise.all([managementReviewAPI.get(id), staffAPI.getAnnualPlan(id, screeningSummaryYear)]).then(([access, response]) => {
+      if (!active) return
+      const plans = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean)
+      const plan = plans.find(row => row.pushedAt || row.confirmedAt) || plans[0]
+      setCurrentScreeningPilot(plan
+        ? plan.flowVersion === 2 || plan.flowVersion == null && access.restored === true
+        : access.newPlanFlowEnabled === true)
+    }).catch(() => { if (active) setCurrentScreeningPilot(false) })
+    return () => { active = false }
+  }, [id, screeningSummaryYear])
   useEffect(() => {
     if (annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')) setScreeningSummaryYear(Number(annualWorkflowYear))
   }, [annualWorkflowStep, annualWorkflowYear, id])

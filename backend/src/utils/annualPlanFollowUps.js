@@ -108,7 +108,7 @@ async function buildAnnualPlanFollowUps(plan) {
       content: content || '',
       status: 'planned',
       sourceAnnualPlanId: plan._id,
-      ...(require('./annualFlowPilot').enabled(plan.patientId) ? { managementIssueIds: [...new Set((delivery.sourceIds || []).map(String))] } : {}),
+      ...(require('./annualFlowPilot').enabledForPlan(plan) ? { managementIssueIds: [...new Set((delivery.sourceIds || []).map(String))] } : {}),
       sourceScheduleKey,
       sourceType: 'scheduled',
       deliveryMode: delivery.serviceMode || 'reminder',
@@ -139,7 +139,7 @@ async function buildAnnualPlanFollowUps(plan) {
     push(date, '年度标准营养评估', nutritionDispatch.contentForPlan(plan), patient?.assignedNutritionist,
       `nutrition-assessment:${dateKey}`, standardNutrition);
     if (created.length > before) Object.assign(created.at(-1), { workflowKey: 'annual_nutrition_assessment', reviewAssignedTo: null, reviewRole: null,
-      ...(require('./annualFlowPilot').enabled(plan.patientId) ? { managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))] } : {}),
+      ...(require('./annualFlowPilot').enabledForPlan(plan) ? { managementIssueIds: [...new Set(goals.map(row => String(row.issueId || '')).filter(Boolean))] } : {}),
       formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals } });
   }
 
@@ -158,7 +158,7 @@ async function buildAnnualPlanFollowUps(plan) {
       const label = rec.hospital || rec.name || rec.items || rec.standardPlanName || fallbackLabels[mod.key] || `第${i + 1}条`;
       // 年度方案随访统一由客户的健管专员承接；patientId 让同一计划同步展示给客户。
       // 其他岗位的代约、陪同、会诊等服务任务由 annualPlanServiceTasks 另行拆分。
-      const executor = require('./annualFlowPilot').enabled(plan.patientId) && require('mongoose').Types.ObjectId.isValid(rec.followUpStaff)
+      const executor = require('./annualFlowPilot').enabledForPlan(plan) && require('mongoose').Types.ObjectId.isValid(rec.followUpStaff)
         ? rec.followUpStaff : patient?.assignedHealthManager;
       const visitItems = rec.visitGroupId ? sharedVisitItems(moduleData, rec.visitGroupId) : [];
       const details = [
@@ -316,7 +316,7 @@ async function buildAnnualPlanFollowUps(plan) {
     });
   });
 
-  if (require('./annualFlowPilot').enabled(plan.patientId)) {
+  if (require('./annualFlowPilot').enabledForPlan(plan)) {
     for (const task of created) task.formData = { ...(task.formData || {}), annualFlowVersion: 2 };
   }
   return created;
