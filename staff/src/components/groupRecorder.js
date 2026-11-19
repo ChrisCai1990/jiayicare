@@ -1,5 +1,26 @@
 // H5 records PCM and encodes 16kHz mono WAV, matching the existing ASR service.
+export function nativeRecorderAvailable() {
+ return !!(window.StaffNativeAudio && window.__JIAYI_NATIVE_AUDIO_KEY);
+}
+
+export function nativeRecorder(onComplete) {
+ const key=window.__JIAYI_NATIVE_AUDIO_KEY;
+ const status=window.StaffNativeAudio.start(key);
+ if(status!=='ok') throw new Error(status==='permission_denied'?'请在手机设置中允许嘉医汇医护使用麦克风':'手机录音启动失败，请重试');
+ let stopped=false;
+ const timer=setTimeout(()=>stop(false),60000);
+ const stop=async(cancel=false)=>{
+  if(stopped)return;
+  stopped=true;clearTimeout(timer);
+  const result=JSON.parse(window.StaffNativeAudio.stop(key,!!cancel));
+  if(result.error) throw new Error('手机录音结束失败，请重试');
+  if(!cancel&&result.data) onComplete(result);
+ };
+ return {stop};
+}
+
 export async function browserRecorder(onComplete) {
+ if(nativeRecorderAvailable()) return nativeRecorder(onComplete);
  const stream=await navigator.mediaDevices.getUserMedia({audio:true});
  let ctx,node,source,stopped=false,timer;
  try {

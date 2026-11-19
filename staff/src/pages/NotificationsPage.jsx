@@ -8,6 +8,7 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
 import { reconcileConversationMessages } from '../utils/conversationMessages'
 import { referralDateTime } from '../utils/decisionReferralForm.mjs'
+import { nativeRecorder, nativeRecorderAvailable } from '../components/groupRecorder'
 
 const PUSH_TYPE_LABEL = { knowledge:'科普', questionnaire:'问卷', plan:'方案', product:'产品', supplement:'营养素', notice:'通知' }
 const PUSH_TYPE_COLOR = { knowledge:'#22A06B', questionnaire:'#0077B6', plan:'#D97706', product:'#1E6B50', supplement:'#8e44ad', notice:'#666' }
@@ -995,6 +996,7 @@ function ReplyModal({ userId, userName, onClose, onSent }) {
 
 // ── 对话线程弹窗 ──
 function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate }) {
+  const tapVoice = window.matchMedia?.('(pointer: coarse)').matches || false
   const toast = useToast()
   const [previewImageUrl, setPreviewImageUrl] = useState('')
   const [messages, setMessages] = useState([])
@@ -1064,6 +1066,24 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const startVoice = async () => {
     if (recording || submitting) return
     try {
+      if (nativeRecorderAvailable()) {
+        const native = nativeRecorder(async audio => {
+          setRecording(false)
+          if (audio.duration < 0.6) { setErr('说话时间太短'); return }
+          setSubmitting(true)
+          try {
+            await staffAPI.replyToUser(userId, '', [], audio)
+            setHumanActive(true)
+            onSent(); await loadThread()
+          } catch (e) { setErr(e.message || '语音发送失败') }
+          finally { setSubmitting(false) }
+        })
+        recorderRef.current = { state: 'recording', stop: () => native.stop(false) }
+        recordStartedRef.current = Date.now()
+        setRecording(true)
+        setTimeout(() => { if (recorderRef.current?.state === 'recording') stopVoice() }, 60000)
+        return
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(type => window.MediaRecorder?.isTypeSupported?.(type)) || ''
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
@@ -1089,10 +1109,17 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
       recorderRef.current = recorder; recordStreamRef.current = stream; recordStartedRef.current = Date.now()
       recorder.start(); setRecording(true)
       setTimeout(() => { if (recorder.state === 'recording') recorder.stop() }, 60000)
-    } catch { setErr('无法使用麦克风，请检查浏览器权限') }
+    } catch (error) { setErr(error.message || '无法使用麦克风，请检查浏览器权限') }
   }
 
-  const stopVoice = () => { if (recorderRef.current?.state === 'recording') recorderRef.current.stop() }
+  const stopVoice = () => {
+    if (recorderRef.current?.state === 'recording') {
+      const recorder = recorderRef.current
+      recorderRef.current = null
+      recorder.stop()
+      setRecording(false)
+    }
+  }
 
   const toggleHumanMode = async () => {
     try {
@@ -1128,7 +1155,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ width: 'min(860px, 94vw)', maxWidth: 860, height: '78vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="modal staff-thread-modal" style={{ width: 'min(860px, 94vw)', maxWidth: 860, height: '78vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ flexShrink: 0 }}>
           <div>
             <h3 className="modal-title">与 {userName} 的对话</h3>
@@ -1187,11 +1214,11 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           <div aria-hidden="true" style={{ height: 8, flexShrink: 0 }} />
         </div>
 
-        <div style={{ flexShrink: 0, padding: '12px 20px', borderTop: '1px solid #f0ede8', background: '#fff' }}>
+        <div className="staff-thread-composer-wrap" style={{ flexShrink: 0, padding: '12px 20px', borderTop: '1px solid #f0ede8', background: '#fff' }}>
           {replyImages.length > 0 && <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>{replyImages.map((img,i)=><div key={i} style={{position:'relative'}}><img src={img.data} alt="待发送" style={{width:58,height:58,objectFit:'cover',borderRadius:8}}/><button type="button" onClick={()=>setReplyImages(v=>v.filter((_,x)=>x!==i))} style={{position:'absolute',right:-4,top:-4,border:0,borderRadius:10,background:'#DC3545',color:'#fff'}}>×</button></div>)}</div>}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <div className="staff-thread-composer" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>图片<input type="file" accept="image/*" multiple hidden onChange={e=>{Array.from(e.target.files||[]).slice(0,9-replyImages.length).forEach(file=>{const reader=new FileReader();reader.onload=()=>setReplyImages(v=>[...v,{data:reader.result,mimeType:file.type||'image/jpeg'}].slice(0,9));reader.readAsDataURL(file)});e.target.value='' }}/></label>
-            <button type="button" className={recording ? 'btn btn-danger' : 'btn btn-secondary'} onMouseDown={startVoice} onMouseUp={stopVoice} onMouseLeave={stopVoice} onTouchStart={startVoice} onTouchEnd={stopVoice} disabled={submitting} style={{ alignSelf: 'stretch' }}>{recording ? '松开发送' : '按住说话'}</button>
+            <button type="button" className={recording ? 'btn btn-danger staff-thread-voice' : 'btn btn-secondary staff-thread-voice'} onClick={tapVoice ? () => recording ? stopVoice() : startVoice() : undefined} onMouseDown={tapVoice ? undefined : startVoice} onMouseUp={tapVoice ? undefined : stopVoice} onMouseLeave={tapVoice ? undefined : stopVoice} disabled={submitting} style={{ alignSelf: 'stretch' }}>{recording ? (tapVoice ? '点此发送语音' : '松开发送') : (tapVoice ? '点此录音' : '按住说话')}</button>
             <textarea className="form-input" rows={2} value={content}
               onChange={e => { setContent(e.target.value); setErr('') }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}

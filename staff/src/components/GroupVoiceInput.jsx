@@ -7,12 +7,12 @@ export default function GroupVoiceInput({groupId,quotedMessageId,onSent}){
  const [tapMode]=useState(()=>window.matchMedia?.('(pointer: coarse)').matches || false);
  useEffect(()=>{if(!recording)return;const at=Date.now();setSeconds(0);const timer=setInterval(()=>setSeconds(Math.min(60,Math.floor((Date.now()-at)/1000))),250);return()=>clearInterval(timer);},[recording]);
  const state=useRef({active:true,held:false,starting:false,cancel:false,y:0});
- useEffect(()=>()=>{state.current.active=false;state.current.held=false;state.current.recorder?.stop(true);},[]);
+ useEffect(()=>()=>{state.current.active=false;state.current.held=false;state.current.recorder?.stop(true)?.catch?.(()=>{});},[]);
  const start=async e=>{
   const s=state.current;if(s.starting||s.held||s.sending||recording||preparing||busy||audio)return;
   s.held=true;s.starting=true;s.cancel=false;s.y=e.clientY;setError('');setPreparing(true);setCancelling(false);if(e.pointerId!=null)e.currentTarget.setPointerCapture?.(e.pointerId);
   try{s.recorder=await browserRecorder(value=>{if(!s.active)return;setRecording(false);if(!s.cancel){if(value.duration<0.6)setError('说话时间太短');else void submit(value);}});if(!s.active||!s.held)s.recorder.stop(true);else setRecording(true);}
-  catch(e){if(s.active)setError(e?.name==='NotAllowedError'?'麦克风权限未开启，请在手机设置中允许录音':'无法录音，请稍后重试');}finally{s.starting=false;if(s.active)setPreparing(false);}
+  catch(e){if(s.active)setError(e?.message || (e?.name==='NotAllowedError'?'麦克风权限未开启，请在手机设置中允许录音':'无法录音，请稍后重试'));}finally{s.starting=false;if(s.active)setPreparing(false);}
  };
  const stop=cancel=>{const s=state.current;s.held=false;setPreparing(false);s.cancel=s.cancel||cancel;s.recorder?.stop(s.cancel);if(s.cancel)setRecording(false);};
  const submit=async value=>{if(!value||state.current.sending)return;state.current.sending=true;setBusy(true);setAudio(null);setError('');try{await api.sendVoice(groupId,value,quotedMessageId);if(state.current.active)onSent?.();}catch(e){if(state.current.active){setAudio(value);setError(e.message||'语音发送失败，可重试');}}finally{state.current.sending=false;if(state.current.active)setBusy(false);}};

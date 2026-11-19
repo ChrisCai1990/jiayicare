@@ -186,7 +186,7 @@ export default function InAppServiceGroupsPage() {
 
   return <main className={`service-assistant in-app-service-groups${selected ? ' sg-chat-open' : ''}`}>
     <h1>系统服务群</h1>
-    <details className="sg-lifecycle">
+    <details className={`sg-lifecycle${tasks.length ? '' : ' is-empty'}`}>
       <summary>小嘉服务群待确认（{tasks.length}）</summary>
       {tasks.length>0&&<p>核对服务来源和成员后确认执行；归档保留聊天记录。</p>}
       {tasks.map(task=><div key={task.key} className="sg-task"><strong>{task.name} · {({create:'确认建群',link:'续接 / 关联现有群',archive:'确认服务结束'})[task.action]}</strong><small>{task.sourceLabel}</small><small>{task.members?.map(p=>p.name).join('、')}</small>{!task.ready&&<p>{task.reason}</p>}<button disabled={!task.ready || busy} onClick={()=>{setConfirmation(task);setChecked(false);setNote('');setError('');}}>核对并确认</button></div>)}
@@ -200,16 +200,16 @@ export default function InAppServiceGroupsPage() {
       {error&&<p role="alert">{error}</p>}
       <button disabled={busy || (confirmation.action==='archive'&&(!checked||!note.trim()))} onClick={confirmTask}>确认执行</button><button onClick={()=>setConfirmation(null)}>暂不处理</button>
     </section>}
-    <div className="sg-filters"><button aria-pressed={!archive} onClick={()=>{setArchive(false);setSelected(null);currentId.current='';}}>服务中</button><button aria-pressed={archive} onClick={()=>{setArchive(true);setSelected(null);currentId.current='';}}>已归档</button></div>
+    <div className="sg-filters sg-status-filters"><button aria-pressed={!archive} onClick={()=>{setArchive(false);setSelected(null);currentId.current='';}}>服务中</button><button aria-pressed={archive} onClick={()=>{setArchive(true);setSelected(null);currentId.current='';}}>已归档</button></div>
     <form className="sg-search-row" role="search" onSubmit={event=>{event.preventDefault();setGroupQuery(groupSearch.trim());setSelected(null);currentId.current='';}}>
       <input aria-label="搜索服务群" maxLength={80} value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="搜索客户姓名或群名称" />
       <button type="submit">搜索群</button>
       {(groupSearch || groupQuery) && <button type="button" onClick={()=>{setGroupSearch('');setGroupQuery('');}}>清除</button>}
     </form>
-    <nav className="sg-filters" aria-label="服务类型">
+    <nav className="sg-filters sg-category-filters" aria-label="服务类型">
       {[['','全部'],...categories.map(([key,label]) => [key,label]),['legacy','原服务群']].map(([key,label]) => <button key={key} aria-pressed={category === key} onClick={() => { setCategory(key); setSelected(null); currentId.current = ''; setConfiguration(null); }}>{label}</button>)}
     </nav>
-    <p>所属健康顾问统筹查看客户全部服务群；其他岗位仅查看自己参与的服务群，团队负责人可只读监管本团队成员参与的群。健管专员负责建群，未入群人员不能回复。</p>
+    <p className="sg-permission-note">所属健康顾问统筹查看客户全部服务群；其他岗位仅查看自己参与的服务群，团队负责人可只读监管本团队成员参与的群。健管专员负责建群，未入群人员不能回复。</p>
     {canConfigure && <details className="sg-manual"><summary>手动配置服务群</summary>
     <div className="sg-search-row">
       <input aria-label="查找客户" value={search} onChange={e => setSearch(e.target.value)}
@@ -241,7 +241,7 @@ export default function InAppServiceGroupsPage() {
       </div>
     </section>}
     {error && <p role="alert">{error}</p>}
-    <div className="sg-filters">
+    <div className="sg-filters sg-scope-filters">
       <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>全部服务群（{groups.length}）</button>
       <button type="button" aria-pressed={scope === 'supervised'} onClick={() => setScope('supervised')}>
         团队监管（{groups.filter(group => group.supervised).length}）
@@ -260,7 +260,7 @@ export default function InAppServiceGroupsPage() {
           {group.mentionCount > 0 && <span className="sg-mention-badge">有人@我 · {group.mentionCount}</span>}{group.status==='closed'&&<small>已归档 · {stamp(group.closedAt)}</small>}
           {group.supervised && <small>团队监管 · 只读</small>}
           <small>客户：{group.patientName}</small>
-          <small>{group.staff.map(memberLabel).join('、')}</small>
+          <small className="sg-group-staff">{group.staff.map(memberLabel).join('、')}</small>
           <small>{stamp(group.lastMessageAt)}{group.waitingForStaff ? ' · 待团队回复' : ''}</small>
         </button>)}
         {hasMore && <button type="button" disabled={busy} onClick={loadMore}>加载更多服务群</button>}
