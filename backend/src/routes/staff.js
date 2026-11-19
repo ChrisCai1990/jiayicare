@@ -19763,21 +19763,24 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const urineCandidate = parseTextUrineTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
       const physicalCandidate = parseTextPhysicalExam(layout, pageNum);
+      const { parseTextAikangExam } = require('../utils/reportTextAikangExam');
+      const aikangCandidate = parseTextAikangExam(layout, pageNum);
       const { parseTextUltrasoundTable } = require('../utils/reportTextUltrasoundTable');
       let ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum);
       if (ultrasoundCandidate.supported && !ultrasoundCandidate.items[0].diagnosis
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported) {
-        localScan = { source: 'pdf_text', items: [
+      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
+        localScan = { source: aikangCandidate.supported ? 'pdf_text_exam' : 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
           ...(urineCandidate.supported ? urineCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
+          ...(aikangCandidate.supported ? aikangCandidate.items : []),
         ] };
       }
-      if (!localScan || localScan.items.length < 25) {
+      if (!localScan || (localScan.source !== 'pdf_text_exam' && localScan.items.length < 25)) {
         // Loose text-layer name/value pairs are only omission signals. Scanned
         // pages can contain many such pairs while no structured table is
         // readable; a small structured result may also cover only one table.
@@ -19790,7 +19793,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
         }
       }
       if (localScan) imagePageEvidence[pageNum] = { status: 'needs_review',
-        message: `本地${localScan.source === 'pdf_text' ? 'PDF文字层' : '扫描表格'}提取出${localScan.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
+        message: localScan.source === 'pdf_text_exam'
+          ? `PDF文字层转录出${localScan.items.length}条检查记录；请对照原件核对完整所见和意见。`
+          : `本地${localScan.source === 'pdf_text' ? 'PDF文字层' : '扫描表格'}提取出${localScan.items.length}条待核对候选；请逐行核对项目、数值、单位及异常标记。` };
     } catch (error) {
       console.log(`[parse-page] P${pageNum} 本地表格OCR不可用，继续原补提流程：${error.code || error.name || 'ERROR'}`);
     }
@@ -19800,7 +19805,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
   const { hasBroadLocalLabScan } = require('../utils/reportPageSupplement');
-  const useLocalScanOnly = hasBroadLocalLabScan(localScan);
+  const useLocalScanOnly = localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
   if (!useLocalScanOnly) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
@@ -19878,7 +19883,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (!allRegionsImageOnly && imagePageEvidence[pageNum]?.status === 'image_only') delete imagePageEvidence[pageNum];
   if (imagePageEvidence[pageNum]?.status === 'image_only') {
     const evidence = imagePageEvidence[pageNum];
-    await MedicalReport.findByIdAndUpdate(reportId, { $set: {
+    await MedicalReport.findOneAndUpdate({ _id: reportId, 'pageParseStatus.status': 'processing',
+      'pageParseStatus.pageNum': pageNum, 'pageParseStatus.startedAt': report.pageParseStatus?.startedAt }, { $set: {
       [`imagePageEvidence.${pageNum}`]: evidence,
       pageParseStatus: { pageNum, status: 'image_only', startedAt: report.pageParseStatus?.startedAt || new Date(),
         completedAt: new Date(), itemCount: 0,
@@ -19935,7 +19941,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
     : '';
   const resultMessage = localScan
-    ? `第${pageNum}页本地${localScan.source === 'pdf_text' ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选${useLocalScanOnly ? '' : '并完成分段补漏'}，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    ? `第${pageNum}页本地${localScan.source.startsWith('pdf_text') ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选${useLocalScanOnly ? '' : '并完成分段补漏'}，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
     : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'
@@ -19943,7 +19949,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
       : parsedItems.length
         ? `第${pageNum}页识别到${parsedItems.length}项候选${candidateDetail}，未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
         : `第${pageNum}页AI未读到可接纳的遗漏项目，已保留原${oldPage.length}项，请对照原件核对是否漏提`;
-  const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision) }, {
+  const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision),
+    'pageParseStatus.status': 'processing', 'pageParseStatus.pageNum': pageNum,
+    'pageParseStatus.startedAt': report.pageParseStatus?.startedAt }, {
     $set: {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
@@ -20029,7 +20037,7 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     const pageNum = Number(req.body?.pageNum);
     if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > 500) return res.status(400).json({ success: false, message: '页码无效' });
     const MedicalReport = require('../models/MedicalReport');
-    const { isActivePageParse } = require('../utils/reportPageSupplement');
+    const { isActivePageParse, PAGE_PARSE_STALE_MS } = require('../utils/reportPageSupplement');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.archiveOnly) return res.status(409).json({ success: false, message: '仅留存的补充原件不参与解析' });
@@ -20038,11 +20046,14 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     if (isActivePageParse(report.pageParseStatus, pageNum)) {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
     }
-    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(Date.now() - 20 * 60000) } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });
+    const claimStartedAt = new Date();
+    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(claimStartedAt.getTime() - PAGE_PARSE_STALE_MS) } }, { 'pageParseStatus.startedAt': { $exists: false } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` } });
     if (!pageClaim) return res.status(409).json({ success: false, message: '报告正在识别、补提或已暂停，请勿重复提交' });
     runReportPageParse(report._id, pageNum).catch(async error => {
       console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);
-      await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'failed', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: error.message } }).catch(() => {});
+      await MedicalReport.findOneAndUpdate({ _id: report._id, 'pageParseStatus.status': 'processing',
+        'pageParseStatus.pageNum': pageNum, 'pageParseStatus.startedAt': claimStartedAt },
+      { pageParseStatus: { pageNum, status: 'failed', startedAt: claimStartedAt, completedAt: new Date(), message: error.message } }).catch(() => {});
     });
     res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
   } catch (err) {
