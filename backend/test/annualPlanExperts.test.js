@@ -35,3 +35,26 @@ test('专家与方案医院不一致时拒绝保存', async t => {
   }] }));
   await assert.rejects(resolveAnnualPlanExperts({ abnormal_followup: { records: [{ hospital: '邵逸夫医院', department: '超声科', expertIds: ['000000000000000000000011'] }] } }), /不匹配/);
 });
+
+test('开单专家按开单科室独立校验并进入健管预约信息', async t => {
+  const id = '000000000000000000000011';
+  t.mock.method(MedicalExpert, 'find', () => ({ populate() { return this; }, lean: async () => [{
+    _id: id, name: '开单医生', title: '主任医师',
+    institutionId: { name: '邵逸夫医院' }, departmentId: { name: '心内科' },
+  }] }));
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: '000000000000000000000021' }) }) }));
+  t.mock.method(Admin, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  const record = {
+    items: '心脏超声', hospital: '邵逸夫医院', department: '超声科', order_dept: '心内科',
+    orderExpertIds: [id], time: '2026-12-01', bookingRequired: true,
+  };
+  const moduleData = { abnormal_followup: { records: [record] } };
+  await resolveAnnualPlanExperts(moduleData);
+  assert.equal(record.orderExpertSnapshots[0].name, '开单医生');
+  const rows = await buildAnnualPlanFollowUps({ _id: '000000000000000000000031', patientId: '000000000000000000000032', moduleData });
+  assert.match(rows[0].content, /开单候选专家：开单医生/);
+  assert.equal(rows[0].formData.bookingRequest.orderDepartment, '心内科');
+  assert.equal(rows[0].formData.bookingRequest.orderExperts[0].name, '开单医生');
+  record.order_dept = '神经内科';
+  await assert.rejects(resolveAnnualPlanExperts(moduleData), /不匹配/);
+});

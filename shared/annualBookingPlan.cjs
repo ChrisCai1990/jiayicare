@@ -32,10 +32,12 @@ function protectedEdit(task, role, body) {
 // from the ordering department or split a clinical item on arbitrary punctuation.
 function bookingSlots(task) {
   const p = bookingPlan(task);
-  const candidates = Array.isArray(task.formData?.bookingRequest?.experts) ? task.formData.bookingRequest.experts.filter(item => item.id && item.name).map(item => ({ id: String(item.id), name: item.name, title: item.title || '', campus: item.campus || '' })) : [];
+  const toCandidates = items => Array.isArray(items) ? items.filter(item => item.id && item.name).map(item => ({ id: String(item.id), name: item.name, title: item.title || '', campus: item.campus || '' })) : [];
+  const candidates = toCandidates(task.formData?.bookingRequest?.experts);
+  const orderCandidates = toCandidates(task.formData?.bookingRequest?.orderExperts);
   const exam = task.sourceType === 'report_followup' ? task.formData?.category === 'examination' : ['abnormal_followup', 'checkup_completion', 'annual_checkup', 'functional_medicine'].includes(String(task.sourceScheduleKey || '').split(':')[0]);
   const slots = [];
-  if (exam && p.orderDepartment && p.orderDepartment !== '无') slots.push({ id: 'outpatient', type: 'outpatient', title: '开单门诊', hospital: p.hospital, department: p.orderDepartment, expert: p.orderExpert });
+  if (exam && p.orderDepartment && p.orderDepartment !== '无') slots.push({ id: 'outpatient', type: 'outpatient', title: '开单门诊', hospital: p.hospital, department: p.orderDepartment, expert: p.orderExpert, ...(orderCandidates.length ? { candidates: orderCandidates } : {}) });
   const names = exam ? p.items.split(/[\r\n；;]+/).map(s => s.trim()).filter(Boolean) : [p.items];
   if (!names.length) names.push('检查预约');
   for (const [i, name] of names.entries()) slots.push({ id: `${exam ? 'exam' : 'outpatient'}-${i}`, type: exam ? 'exam' : 'outpatient', title: name || (exam ? '检查预约' : '就医预约'), hospital: p.hospital, campus: p.campus, department: exam ? p.examDepartment : p.department, expert: exam ? p.examExpert : p.expert, ...(candidates.length ? { candidates } : {}) });

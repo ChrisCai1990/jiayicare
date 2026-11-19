@@ -116,6 +116,7 @@ async function buildAnnualPlanFollowUps(plan) {
       ...(delivery.bookingRequired === true ? { formData: { bookingRequest: {
         required: true, hospital: delivery.hospital || '', department: delivery.department || '',
         items: delivery.items || '', experts: delivery.expertSnapshots || [],
+        orderDepartment: delivery.order_dept || '', orderExperts: delivery.orderExpertSnapshots || [],
       } } } : {}),
       // 年度方案已经过健康顾问审核及客户确认，不再让健管专员重新制定、
       // 也不重复进入家庭医生审核；负责人可直接在工作台按计划执行。
@@ -179,6 +180,7 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.institution && `机构：${rec.institution}`,
         rec.brand && `品牌：${rec.brand}`,
         rec.order_dept && `开单科室：${rec.order_dept}`,
+        rec.orderExpertSnapshots?.length && `开单候选专家：${rec.orderExpertSnapshots.map(item => item.name).join('、')}`,
         rec.order_expert && rec.order_expert !== '无' && `开单专家：${rec.order_expert}`,
         visitItems.length > 1 && `同次就诊事项：${visitItems.map(item => item.title).join('；')}`,
         ...visitItems.filter(item => item.moduleKey !== mod.key || item.recordIndex !== i).map(item =>
