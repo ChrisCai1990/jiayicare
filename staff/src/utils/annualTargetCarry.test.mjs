@@ -82,3 +82,17 @@ test('AI 已生成同方向行动但日期空白时承接顾问逐方向确认�
   assert.equal(carried.medical_treatment.records.length, 1)
   assert.equal(carried.checkup_completion.records.length, 1)
 })
+
+test('既有复查草稿把临床专科从检查科室转到开单科室，保留另行确认的检查科室', () => {
+  const target = [{ issueId: 'review:1', sourceGoal: '定期复查' }]
+  const draft = [{ key: 'abnormal_followup', record: { reviewGroupVersion: 1, sourceIds: ['review:1'], order_dept: '消化内科' } }]
+  const prior = { abnormal_followup: { records: [{ reviewGroupVersion: 1, sourceIds: ['review:1'], department: '消化内科' }] } }
+  const moved = carryAnnualTargets(prior, target, draft).modules.abnormal_followup.records[0]
+  assert.equal(moved.order_dept, '消化内科')
+  assert.equal(moved.department, '')
+  assert.equal(carryAnnualTargets(carryAnnualTargets(prior, target, draft).modules, target, draft).changed, false)
+  const confirmedExam = { ...prior, abnormal_followup: { records: [{ ...prior.abnormal_followup.records[0], department: '超声科' }] } }
+  const retained = carryAnnualTargets(confirmedExam, target, draft).modules.abnormal_followup.records[0]
+  assert.equal(retained.order_dept, '消化内科')
+  assert.equal(retained.department, '超声科')
+})

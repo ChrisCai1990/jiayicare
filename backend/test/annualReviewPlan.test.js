@@ -52,7 +52,8 @@ test('同月多问题归为一条复查，来源、日期和全部项目进入�
   assert.equal(result.abnormal_followup.length, 1);
   assert.equal(result.abnormal_followup[0].time, '2027-01-26');
   assert.equal(result.abnormal_followup[0].reviewItems.length, 8);
-  assert.equal(result.abnormal_followup[0].department, '消化内科');
+  assert.equal(result.abnormal_followup[0].order_dept, '消化内科');
+  assert.equal(result.abnormal_followup[0].department, undefined);
   assert.equal(result.abnormal_followup[0].serviceMode, 'single');
   assert.equal(result.abnormal_followup[0].serviceType, 'proxy_booking');
   assert.match(result.abnormal_followup[0].customerAction, /先到消化内科就诊.*医生评估并开具/);
@@ -90,7 +91,7 @@ test('同月不同专科分别就诊，未记录专科的旧决定不被擅自�
   const groups = reviewGroups(evidence);
   assert.equal(groups.length, 3);
   const result = normalizeConfirmedManagement(empty(evidence), evidence, catalog);
-  assert.deepEqual(result.abnormal_followup.map(row => row.department), ['消化内科', '肝病科', '']);
+  assert.deepEqual(result.abnormal_followup.map(row => row.order_dept), ['消化内科', '肝病科', '']);
   assert.ok(result.abnormal_followup.every(row => row.bookingRequired));
   assert.equal(validatePlanCoverage({ abnormal_followup: { records: result.abnormal_followup } }, evidence), '');
 });

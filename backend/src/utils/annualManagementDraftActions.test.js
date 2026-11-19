@@ -12,7 +12,8 @@ test('已确认复查进入方案复查条目，营养问题合并为一个评�
   assert.equal(actions.length, 1);
   assert.equal(actions[0].key, 'abnormal_followup');
   assert.deepEqual(actions[0].record.reviewItems, ['胸部CT']);
-  assert.equal(actions[0].record.department, '呼吸科');
+  assert.equal(actions[0].record.order_dept, '呼吸科');
+  assert.equal(actions[0].record.department, undefined);
   const targets = managementTargets(evidence);
   assert.equal(targets.filter(row => row.nutritionRelevant).length, 2);
   const moduleData = { abnormal_followup: { records: [actions[0].record] }, management_targets: { records: targets }, nutrition_assessment: { enabled: true } };

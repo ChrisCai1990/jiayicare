@@ -42,7 +42,11 @@ function validateVisitGroups(data = {}) {
 
 function sharedVisitItems(data, id) {
   return (visitGroups(data).get(text(id)) || []).map(({ moduleKey, index, row, title }) => ({
-    moduleKey, recordIndex: index, title, department: text(row.department || row.order_dept), expert: text(row.expert || row.order_expert), reason: text(row.reason || row.purpose),
+    moduleKey, recordIndex: index, title,
+    department: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1
+      ? row.order_dept || row.department : row.department || row.order_dept),
+    expert: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1
+      ? row.order_expert || row.expert : row.expert || row.order_expert), reason: text(row.reason || row.purpose),
     basisSummary: text(row.basisSummary), goal: text(row.goal), completionStandard: text(row.completionStandard),
     communicationContent: text(row.communicationContent), customerAction: text(row.customerAction),
     precautions: text(row.precautions || row.notes), issueId: row.issueId || null, issueIds: row.issueIds || [],

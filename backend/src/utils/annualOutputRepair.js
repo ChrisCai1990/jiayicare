@@ -108,7 +108,7 @@ function normalizeConfirmedManagement(raw, evidence = [], catalog = []) {
   const recheckTemplate = catalog.find(item => item.category === 'abnormal_followup');
   const rechecks = reviewGroups.map(group => ({
     standardPlanId: recheckTemplate?.id || '', items: `复查${group.items.length}项检查`,
-    reviewItems: group.items, reason: group.problems.join('、'), department: group.department,
+    reviewItems: group.items, reason: group.problems.join('、'), order_dept: group.department,
     basisSummary: `顾问已确认约${group.intervalMonths}个月后复查；${group.department ? `先就诊${group.department}；` : ''}项目：${group.items.join('、')}`,
     time: group.dueDate, frequency: '单次', precautions: '携带既往报告；检查准备以医生开单和检查机构要求为准',
     customerAction: `按确认安排先到${group.department || '对应专科'}就诊，由医生评估并开具需要的复查检查单；完成检查后上传报告，供医生回顾结果`,

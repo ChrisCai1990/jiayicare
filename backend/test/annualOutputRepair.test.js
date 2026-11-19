@@ -10,6 +10,15 @@ const rawPlan = () => ({ templateNodes: [], medical_treatment: [], abnormal_foll
   annual_checkup: { standardPlanId: 'annual_checkup', focus: ['检查乙'], date: '2027-05-01', basisSummary: '已审来源', sourceIds: ['missing:1'] },
   evidenceCoverage: evidence.map(x => ({ sourceId: x.id, status: 'included', reason: '已有事项' })),
 });
+test('复查生成把先就诊的临床专科写入开单科室，不冒充检查科室', () => {
+  const source = { id: 'management_issue:review', content: { problem: '脂肪肝', direction: 'abnormal_followup',
+    reviewPlan: { kind: 'recheck', intervalMonths: 3, anchorDate: '2026-11-05', items: ['腹部超声'], department: '消化内科' } } };
+  const normalized = normalizeConfirmedManagement({ ...rawPlan(), checkup_completion: [], annual_checkup: {} }, [source], catalog);
+  const review = normalized.abnormal_followup[0];
+  assert.equal(review.order_dept, '消化内科');
+  assert.equal(review.department, undefined);
+  assert.deepEqual(review.reviewItems, ['腹部超声']);
+});
 test('same-day daily followups for different confirmed problems combine without losing content', () => {
   const sources = [
     { id: 'management_issue:kidney', content: { problem: '肾结晶', direction: 'ongoing_management', advisorNote: '核对饮水记录' } },

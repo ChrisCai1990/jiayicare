@@ -186,7 +186,7 @@ function draftPlanActions(evidence = []) {
     actions.push({ key: 'abnormal_followup', record: {
       sourceIds: group.sourceIds, reviewGroupVersion: 1, reviewItems: group.items,
       items: `复查${group.items.length}项检查`,
-      reason: group.problems.join('、'), department: group.department,
+      reason: group.problems.join('、'), order_dept: group.department,
       time: group.dueDate, timingReason: `按已确认的${group.intervalMonths}个月复查间隔`, reviewStatus: 'pending_family_doctor_review',
     } });
   }
@@ -237,7 +237,8 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
       || row.items !== `复查${expectedItems.length}项检查`
       || row.reviewItems?.length !== expectedItems.length
       || !expectedItems.every(item => row.reviewItems.includes(item))
-      || (group.department && row.department !== group.department)) {
+      || (group.department && row.order_dept !== group.department
+        && !(row.reviewGroupVersion === 1 && !row.order_dept && row.department === group.department))) {
       return `约${group.intervalMonths}个月后${group.department || '待确认专科'}的复查没有归为一次完整就诊安排，请核对项目与来源`;
     }
   }

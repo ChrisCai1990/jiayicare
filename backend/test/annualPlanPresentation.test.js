@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildAnnualPlanDisplayItems, customerModuleData } = require('../src/utils/annualPlanPresentation');
+const { sharedVisitItems } = require('../src/utils/annualVisitGroups');
 
 test('年度方案生成统一的客户展示卡片字段', () => {
   const items = buildAnnualPlanDisplayItems({ abnormal_followup: { records: [{
@@ -17,6 +18,17 @@ test('年度方案生成统一的客户展示卡片字段', () => {
 test('内部备注不会进入客户展示结构', () => {
   const [item] = buildAnnualPlanDisplayItems({ vaccine: { records: [{ name: '流感疫苗', notes: '内部沟通记录' }] } });
   assert.equal(Object.values(item).includes('内部沟通记录'), false);
+});
+
+test('结构化复查对外显示先就诊的临床科室', () => {
+  const [item] = buildAnnualPlanDisplayItems({ abnormal_followup: { records: [{
+    reviewGroupVersion: 1, items: '腹部超声', order_dept: '消化内科', department: '超声科',
+  }] } });
+  assert.equal(item.careTarget.department, '消化内科');
+  const [visit] = sharedVisitItems({ abnormal_followup: { records: [{
+    reviewGroupVersion: 1, visitGroupId: '复查就诊', items: '腹部超声', order_dept: '消化内科', department: '超声科',
+  }] } }, '复查就诊');
+  assert.equal(visit.department, '消化内科');
 });
 
 test('营养师评估重点不作为客户年度方案事项', () => {

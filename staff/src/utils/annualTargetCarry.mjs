@@ -32,10 +32,18 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
     const retained = oldRows.filter(row => !row.screeningDraft || (row.sourceIds || []).some(id => activeDraftIds.has(String(id))))
     const dateKey = key === 'medical_treatment' ? 'visit_time' : 'time'
     const hydrated = retained.map(row => {
-      if (row[dateKey] || row.appointmentSchedulingVersion || row.datePending || row.timingStatus === 'pending_confirmation') return row
       const source = sourceDrafts.find(record => (record.sourceIds || []).some(id => row.sourceIds?.includes(id)))
-      return source?.[dateKey] ? { ...row, [dateKey]: source[dateKey], timingReason: row.timingReason || source.timingReason || '',
-        ...(source.appointmentSchedulingVersion === 1 ? { appointmentSchedulingVersion: 1 } : {}) } : row
+      let nextRow = row
+      // Earlier review drafts placed the clinical ordering specialty in the exam department.
+      if (key === 'abnormal_followup' && source?.reviewGroupVersion === 1 && source.order_dept
+        && row.reviewGroupVersion === 1 && !row.order_dept) {
+        nextRow = { ...row, order_dept: source.order_dept,
+          ...(row.department === source.order_dept ? { department: '' } : {}) }
+      }
+      if (!source?.[dateKey] || nextRow[dateKey] || nextRow.appointmentSchedulingVersion
+        || nextRow.datePending || nextRow.timingStatus === 'pending_confirmation') return nextRow
+      return { ...nextRow, [dateKey]: source[dateKey], timingReason: nextRow.timingReason || source.timingReason || '',
+        ...(source.appointmentSchedulingVersion === 1 ? { appointmentSchedulingVersion: 1 } : {}) }
     })
     const additions = sourceDrafts.filter(record =>
       !hydrated.some(row => (row.sourceIds || []).some(id => record.sourceIds?.includes(id))))

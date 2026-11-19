@@ -41,7 +41,11 @@ function normalizeItem(moduleKey, record, index) {
     interventionPlan: first(record.personalizedAdvice, record.personalization, record.standardContent, record.plan),
     reviewItems: Array.isArray(record.reviewItems) ? record.reviewItems : [],
     schedule, frequency: record.frequency || '',
-    careTarget: { hospital: record.hospital || record.institution || '', department: record.department || record.order_dept || '', expert: record.expert || record.order_expert || '' },
+    careTarget: { hospital: record.hospital || record.institution || '',
+      department: moduleKey === 'abnormal_followup' && record.reviewGroupVersion === 1
+        ? record.order_dept || record.department || '' : record.department || record.order_dept || '',
+      expert: moduleKey === 'abnormal_followup' && record.reviewGroupVersion === 1
+        ? record.order_expert || record.expert || '' : record.expert || record.order_expert || '' },
     customerAction: record.customerAction || '', precautions: record.precautions || '',
     service: { mode: record.serviceMode || 'reminder', modeLabel: SERVICE_MODE[record.serviceMode || 'reminder'], type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
     reviewStatus: record.reviewStatus || '',
