@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildAnnualPlanServiceTasks } = require('../src/utils/annualPlanServiceTasks');
+const { buildAnnualPlanServiceTasks, syncAnnualPlanServiceTasks } = require('../src/utils/annualPlanServiceTasks');
 const { validate } = require('../src/utils/annualPlanPublishValidation');
 
 test('仅提醒事项不生成服务需求单', () => {
@@ -71,4 +71,23 @@ test('一站式主服务汇总同院同日不同科室事项，不增加服务�
   assert.equal(rows.length, 1);
   assert.equal(rows[0].formData.serviceRequest.mode, 'managed');
   assert.equal(rows[0].formData.serviceRequest.itemSnapshot.visitItems.length, 2);
+});
+
+test('新版年度服务任务保留来源方案版本，旧版任务不补写版本', async t => {
+  const User = require('../src/models/User');
+  const FollowUp = require('../src/models/FollowUp');
+  const release = require('../src/utils/annualInternalTaskException');
+  const tasks = [];
+  t.mock.method(release, 'serviceReleased', () => true);
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthPlanner: 'planner-1' }) }) }));
+  t.mock.method(FollowUp, 'findOne', async () => null);
+  t.mock.method(FollowUp, 'create', async value => { tasks.push(value); return value; });
+  t.mock.method(FollowUp, 'updateMany', async () => ({}));
+  const base = { _id: 'plan-1', patientId: 'patient-1', createdBy: 'advisor-1', confirmedAt: new Date(),
+    moduleData: { abnormal_followup: { records: [{ items: '甲状腺超声', time: '2026-10-20', serviceMode: 'single', serviceType: 'proxy_booking' }] } } };
+  await syncAnnualPlanServiceTasks({ ...base, flowVersion: 2 });
+  await syncAnnualPlanServiceTasks({ ...base, flowVersion: 1 });
+  assert.equal(tasks.length, 2);
+  assert.equal(tasks[0].formData.annualFlowVersion, 2);
+  assert.equal(tasks[1].formData.annualFlowVersion, undefined);
 });

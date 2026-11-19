@@ -50,7 +50,7 @@ function buildTask(plan, patient, actor, attempt = 1, now = new Date()) {
     sourceScheduleKey: `nutrition-assessment:standalone:${attempt}`, workflowKey: 'annual_nutrition_assessment',
     deliveryMode: 'single', deliveryType: 'nutrition_assessment', taskRole: 'executor',
     aiStatus: 'approved', reviewRole: null, reviewAssignedTo: null,
-    formData: { annualNutritionMetrics: metrics, annualNutritionGoals: goals, annualNutritionAdvisorTargets: plan?.moduleData?.nutrition_assessment?.advisorTargets || [], annualNutritionSummary: require('../../../shared/nutritionComparisonMetrics.cjs').nutritionSummary(plan), annualYear: plan.year,
+    formData: { ...(require('./annualFlowPilot').enabledForPlan(plan) ? { annualFlowVersion: 2 } : {}), annualNutritionMetrics: metrics, annualNutritionGoals: goals, annualNutritionAdvisorTargets: plan?.moduleData?.nutrition_assessment?.advisorTargets || [], annualNutritionSummary: require('../../../shared/nutritionComparisonMetrics.cjs').nutritionSummary(plan), annualYear: plan.year,
       plannedAssessmentDate: plannedDate || '' },
   };
 }

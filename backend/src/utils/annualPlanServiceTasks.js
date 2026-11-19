@@ -77,7 +77,8 @@ async function syncAnnualPlanServiceTasks(plan) {
     if (['completed', 'cancelled'].includes(existing?.status) || existing?.serviceTracking?.linkId || existing?.annualDispatch || existing?.careFlowId) continue;
     const payload = { patientId: plan.patientId, staffId: plan.createdBy, assignedTo: row.assignedTo, date: row.date, remindAt: row.date,
       ...(require('./annualFlowPilot').enabledForPlan(plan) ? { managementIssueIds: row.managementIssueIds } : {}),
-      theme: row.theme, content: row.content, plannedContent: row.content, formData: row.formData,
+      theme: row.theme, content: row.content, plannedContent: row.content,
+      formData: { ...row.formData, ...(require('./annualFlowPilot').enabledForPlan(plan) ? { annualFlowVersion: 2 } : {}) },
       coordinationGroupId: `annual-plan:${plan._id}`, workflowKey: row.stage, taskRole: row.taskRole,
       status: existing?.status || 'planned', aiStatus: 'approved', reviewRole: null, isBlocked: false, activationEvent: '',
       deliveryMode: row.formData.serviceRequest.mode, deliveryType: row.formData.serviceRequest.serviceType };
