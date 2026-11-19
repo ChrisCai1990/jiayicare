@@ -29,11 +29,22 @@ test('a completed item with a withdrawn or missing report is not complete eviden
     '已标记完成，但未关联报告');
 });
 
-test('a skipped scheme item does not count as collected material', () => {
+test('an undocumented skip does not count as collected material or close review', () => {
   const result = summarizeCheckupPlan({ ...plan, items: [{ ...plan.items[0], status: 'skipped' }] },
     [{ _id: 'report-1', audit_status: 'audited' }]);
   assert.equal(result.ready, false);
   assert.equal(result.completed, 0);
+  assert.equal(result.skipped, 0);
+  assert.equal(result.pending.length, 1);
+});
+
+test('a partial self-arranged checkup is ready after omitted items are documented', () => {
+  const reviewed = { ...plan, items: [plan.items[0], { ...plan.items[1], status: 'skipped', completionSource: 'screening_skipped', completionNote: '客户本次未做' }] };
+  const result = summarizeCheckupPlan(reviewed, [{ _id: 'report-1', audit_status: 'audited' }]);
+  assert.equal(result.ready, true);
+  assert.equal(result.completed, 1);
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(result.pending, []);
 });
 
 test('all items require completed status and audited linked reports', () => {

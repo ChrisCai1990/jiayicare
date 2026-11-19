@@ -1,16 +1,19 @@
 function summarizeCheckupPlan(plan, reports = []) {
   if (!plan) return { applicable: false, ready: true };
   const items = (plan.items || []).filter(item => String(item.name || '').trim());
+  const { reviewedSkip } = require('./checkupWorkbenchProgress');
   const audited = new Set(reports.filter(report => report.audit_status === 'audited').map(report => String(report._id)));
-  const pending = items.filter(item => item.status !== 'completed' || !item.reportId || !audited.has(String(item.reportId)))
+  const pending = items.filter(item => !reviewedSkip(item) && (item.status !== 'completed' || !item.reportId || !audited.has(String(item.reportId))))
     .map(item => ({ id: String(item._id), name: item.name,
-      reason: item.status !== 'completed' ? '项目尚未核对完成'
+      reason: item.status === 'skipped' ? '本次未做尚未填写核对原因'
+        : item.status !== 'completed' ? '项目尚未核对完成'
         : !item.reportId ? '已标记完成，但未关联报告'
           : '关联报告未通过当前审核' }));
   return {
-    applicable: true, ready: items.length > 0 && pending.length === 0,
+    applicable: true, ready: items.length > 0 && pending.length === 0 && items.some(item => item.status === 'completed' && item.reportId && audited.has(String(item.reportId))),
     planId: String(plan._id), planTitle: plan.title,
-    total: items.length, completed: items.length - pending.length, pending,
+    total: items.length, completed: items.filter(item => item.status === 'completed' && item.reportId && audited.has(String(item.reportId))).length,
+    skipped: items.filter(reviewedSkip).length, pending,
   };
 }
 

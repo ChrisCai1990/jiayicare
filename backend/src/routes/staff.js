@@ -5349,10 +5349,15 @@ router.patch('/plans/:id/items/:itemId', staffAuth, checkupReviewOrPlanEdit, asy
   if (!item) return res.status(404).json({ success: false, message: '项目不存在' });
   const { status, reportId, completedAt } = req.body;
   if (plan.type === 'annual_checkup') {
-    if (!['completed', 'pending'].includes(status)) return res.status(400).json({ success: false, message: '项目状态无效' });
+    if (!['completed', 'pending', 'skipped'].includes(status)) return res.status(400).json({ success: false, message: '项目状态无效' });
+    const reviewReason = String(req.body.reason || '').trim();
+    if (status === 'skipped' && (reviewReason.length < 2 || reviewReason.length > 1000))
+      return res.status(400).json({ success: false, message: '请填写本次未做的原因（2至1000字）' });
+    if (status === 'skipped' && item.status === 'completed')
+      return res.status(409).json({ success: false, message: '该项目已关联报告；如需更正，请先撤销原核对' });
     if (status === 'completed') {
       if (!/^[a-f\d]{24}$/i.test(String(reportId || ''))) return res.status(400).json({ success: false, message: '请先选择对应的已审核报告' });
-      if (!String(req.body.reason || '').trim()) return res.status(400).json({ success: false, message: '请填写人工核对说明' });
+      if (!reviewReason) return res.status(400).json({ success: false, message: '请填写人工核对说明' });
       const report = await MedicalReport.findOne({ _id: reportId, user: plan.patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
         .select('checkDate date documentCategory').lean();
       const screening = require('../utils/checkupScreeningReconcile');
@@ -5364,10 +5369,10 @@ router.patch('/plans/:id/items/:itemId', staffAuth, checkupReviewOrPlanEdit, asy
       items: { $elemMatch: { _id: item._id, status: item.status, reportId: originalReport } } },
     { $set: { 'items.$.status': status, 'items.$.reportId': status === 'completed' ? reportId : null,
       'items.$.completedAt': status === 'completed' ? new Date() : null,
-      'items.$.completionSource': status === 'completed' ? 'screening_manual' : '',
-      'items.$.completionNote': status === 'completed' ? String(req.body.reason || '').trim().slice(0, 1000) : '',
-      'items.$.completionReviewedBy': status === 'completed' ? req.staff._id : null,
-      'items.$.completionReviewedAt': status === 'completed' ? new Date() : null } });
+      'items.$.completionSource': status === 'completed' ? 'screening_manual' : status === 'skipped' ? 'screening_skipped' : '',
+      'items.$.completionNote': status === 'pending' ? '' : reviewReason.slice(0, 1000),
+      'items.$.completionReviewedBy': status === 'pending' ? null : req.staff._id,
+      'items.$.completionReviewedAt': status === 'pending' ? null : new Date() } });
     if (!changed.modifiedCount) return res.status(409).json({ success: false, message: '项目状态已变化，请刷新后重新核对' });
     return res.json({ success: true, data: await HealthPlan.findById(plan._id) });
   }

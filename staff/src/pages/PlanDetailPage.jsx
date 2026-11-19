@@ -45,7 +45,7 @@ function getAssistTemplateMeta(templateName) {
   if (!templateName) return DEFAULT_ASSIST_META
   return MEDICAL_ASSIST_TEMPLATE_META.find(m => m.match.test(templateName)) || DEFAULT_ASSIST_META
 }
-const ITEM_STATUS = { pending:'待完成', completed:'已完成', skipped:'已跳过' }
+const ITEM_STATUS = { pending:'待完成', completed:'已完成', skipped:'本次未做' }
 const ITEM_STATUS_COLOR = { pending:'#D97706', completed:'#22A06B', skipped:'#aaa' }
 const IMPORTANT_CHECKUP_RE = /(碳|尿素)?\s*13\s*[cC]?\s*(尿素)?呼气|[cC]\s*13\s*呼气|胃肠镜|胃镜|肠镜|冠(状动脉|脉).*(CTA|CT血管)|冠脉\s*CTA/i
 function isImportantCheckupItem(item) { return !!item?.isImportantPrecaution || IMPORTANT_CHECKUP_RE.test(item?.name || '') }
@@ -337,6 +337,20 @@ export default function PlanDetailPage() {
     finally { setScreeningBusy(false) }
   }
 
+  const skipCheckupItem = async item => {
+    const reason = window.prompt(`请填写「${item.name}」本次未做的原因；确认后该项结束核对，仍保留在方案记录中：`, '')
+    if (reason === null) return
+    if (reason.trim().length < 2) { toast('请填写本次未做的原因'); return }
+    setScreeningBusy(true)
+    try {
+      await staffAPI.updatePlanItem(id, item._id, { status: 'skipped', reason: reason.trim() })
+      toast('已记录本次未做原因，项目核对结束')
+      await load()
+      await loadScreeningEvidence()
+    } catch (err) { toast(err.message) }
+    finally { setScreeningBusy(false) }
+  }
+
   const handleDeleteItem = async (itemId, name) => {
     if (plan.type === 'annual_checkup' && plan.items?.some(item => item._id === itemId && item.itemGroup === 'base')) {
       toast('基础套餐项目由体检中心确定，不能删减')
@@ -481,10 +495,13 @@ export default function PlanDetailPage() {
   const canDelete = !!plan.canDelete
   const completedCount = plan.type === 'annual_checkup' && screeningEvidence?.progress
     ? screeningEvidence.progress.completed : plan.items?.filter(i => i.status === 'completed').length || 0
-  const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
+  const skippedCount = plan.type === 'annual_checkup' ? screeningEvidence?.progress?.skipped ?? plan.items?.filter(i => i.status === 'skipped').length ?? 0 : 0
+  const progress = plan.items?.length ? Math.round(((completedCount + skippedCount) / plan.items.length) * 100) : 0
   const legacyCheckupCompletion = plan.type === 'annual_checkup' && plan.status === 'completed'
+  const checkupReviewClosed = plan.type === 'annual_checkup' && screeningEvidence?.progress?.total > 0
+    && screeningEvidence.progress.pending.length === 0
   const checkupCompletionLabel = screeningEvidence?.progress
-    ? screeningEvidence.progress.ready ? '项目已全部核对' : '项目待核对（曾手动标记完成）'
+    ? checkupReviewClosed ? screeningEvidence.progress.completed > 0 ? '本次项目已核对' : '本次项目均未做（已备注）' : '仍有项目待核对或缺少已审核报告'
     : '项目核对状态加载中'
   const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null
 
@@ -546,9 +563,9 @@ export default function PlanDetailPage() {
           {canEdit && plan.status === 'active' && plan.type !== 'annual_checkup' && (
             <button className="btn btn-primary" style={{ background: '#22A06B', borderColor: '#22A06B' }} onClick={handleComplete}>✔️ 标记完成</button>
           )}
-          {plan.status === 'completed' && (
-            <span style={{ fontSize: 12, color: legacyCheckupCompletion && !screeningEvidence?.progress?.ready ? '#B45309' : '#22A06B', alignSelf: 'center', background: legacyCheckupCompletion && !screeningEvidence?.progress?.ready ? '#FFF8ED' : '#E8F5EF', border: '1px solid currentColor', padding: '3px 10px', borderRadius: 6 }}>
-              {legacyCheckupCompletion ? checkupCompletionLabel : '✔️ 服务已完成'}
+          {(plan.status === 'completed' || checkupReviewClosed) && (
+            <span style={{ fontSize: 12, color: legacyCheckupCompletion && !checkupReviewClosed ? '#B45309' : '#22A06B', alignSelf: 'center', background: legacyCheckupCompletion && !checkupReviewClosed ? '#FFF8ED' : '#E8F5EF', border: '1px solid currentColor', padding: '3px 10px', borderRadius: 6 }}>
+              {plan.type === 'annual_checkup' ? checkupCompletionLabel : '✔️ 服务已完成'}
             </span>
           )}
           {canEdit && legacyCheckupCompletion && screeningEvidence?.progress && !screeningEvidence.progress.ready && (
@@ -683,7 +700,7 @@ export default function PlanDetailPage() {
                 {[
                   ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
                   ['类型', TYPE_LABEL[plan.type]],
-                  ['状态', legacyCheckupCompletion ? checkupCompletionLabel : plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
+                  ['状态', plan.type === 'annual_checkup' && (checkupReviewClosed || legacyCheckupCompletion) ? checkupCompletionLabel : plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
                   ['年度', plan.year + ' 年'],
                   ['制定人', plan.staffId?.name],
                   ...(plan.type === 'annual_checkup' ? [['制定时间', plan.createdAt ? new Date(plan.createdAt).toLocaleString('zh-CN') : '未记录']] : []),
@@ -741,8 +758,8 @@ export default function PlanDetailPage() {
             <div style={{ height: 8, background: '#f0f0f0', borderRadius: 4, marginBottom: 12 }}>
               <div style={{ width: `${progress}%`, height: '100%', background: '#1E6B50', borderRadius: 4, transition: 'width 0.3s' }} />
             </div>
-            <div style={{ fontSize: 14, color: '#666' }}>{completedCount} / {plan.items?.length || 0} 项已完成</div>
-            {plan.type === 'annual_checkup' && <p style={{ marginTop: 8, fontSize: 12, color: '#6B7F75' }}>项目关联已审核报告并全部核对后，工作台会自动显示为已完成。</p>}
+            <div style={{ fontSize: 14, color: '#666' }}>{plan.type === 'annual_checkup' ? `已完成 ${completedCount} 项 · 本次未做 ${skippedCount} 项 · 待核对 ${screeningEvidence?.progress?.pending?.length ?? Math.max(0, (plan.items?.length || 0) - completedCount - skippedCount)} 项` : `${completedCount} / ${plan.items?.length || 0} 项已完成`}</div>
+            {plan.type === 'annual_checkup' && <p style={{ marginTop: 8, fontSize: 12, color: '#6B7F75' }}>已做项目关联已审核报告；本次未做项目填写原因后结束核对，记录保留在方案中。</p>}
             {plan.description && <p style={{ marginTop: 12, fontSize: 13, color: '#4A6558', lineHeight: 1.6 }}>{plan.description}</p>}
           </div>
         </div>
@@ -832,6 +849,7 @@ export default function PlanDetailPage() {
                           </span>
                           {item.completionSource === 'screening_auto' && <div style={{ fontSize: 11, color: '#527466' }}>自动核对记录</div>}
                           {item.completionSource === 'screening_manual' && <div style={{ fontSize: 11, color: '#527466' }}>人工核对记录</div>}
+                          {item.status === 'skipped' && item.completionNote && <div style={{ fontSize: 11, color: '#92610F', whiteSpace: 'pre-wrap' }}>原因：{item.completionNote}</div>}
                           {plan.type === 'annual_checkup' && screeningEvidence?.progress?.pending?.find(row => row.id === String(item._id))?.reason &&
                             <div style={{ fontSize: 11, color: '#B45309' }}>{screeningEvidence.progress.pending.find(row => row.id === String(item._id)).reason}</div>}
                           {item.completedAt && <div style={{ fontSize: 11, color: '#aaa' }}>{new Date(item.completedAt).toLocaleDateString('zh-CN')}</div>}
@@ -846,6 +864,7 @@ export default function PlanDetailPage() {
                             </select>
                             <button className="btn btn-secondary btn-sm" disabled={screeningBusy || !selectedReportIds[item._id]}
                               onClick={() => confirmCheckupItem(item)}>确认核对</button>
+                            <button className="btn btn-secondary btn-sm" disabled={screeningBusy} onClick={() => skipCheckupItem(item)}>本次未做</button>
                           </span>}
                           {plan.type !== 'annual_checkup' && item.status === 'pending' && (
                             <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'completed')}>✓ 完成</button>
@@ -853,6 +872,7 @@ export default function PlanDetailPage() {
                           {item.status === 'completed' && (
                             <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'pending')}>撤销</button>
                           )}
+                          {canReviewCheckup && item.status === 'skipped' && <button className="btn btn-secondary btn-sm" disabled={screeningBusy} style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'pending')}>重新核对</button>}
                           {canEdit && <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => startEditItem(item)}>编辑</button>}
                           {canEdit && !(plan.type === 'annual_checkup' && item.itemGroup === 'base') && (
                             <button className="btn btn-sm" style={{ color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer' }}

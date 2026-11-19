@@ -1,12 +1,14 @@
 // Catalog linkage must not determine whether an unfinished plan remains visible.
-// A skipped item does not establish that the examination was completed.
+// A documented annual-checkup skip closes review, not the examination.
+const reviewedSkip = item => item?.status === 'skipped' && item.completionSource === 'screening_skipped'
+  && !!String(item.completionNote || '').trim();
 function summarizeCheckupItems(items = [], auditedReports = null) {
   const rows = Array.isArray(items) ? items : [];
   const audited = auditedReports === null ? null : new Set(auditedReports.map(report => String(report._id)));
   const complete = item => item?.status === 'completed' && (audited === null || (item.reportId && audited.has(String(item.reportId))));
   const completedCount = rows.filter(complete).length;
-  const skippedCount = rows.filter(item => item?.status === 'skipped').length;
-  const pendingItems = rows.filter(item => !complete(item));
+  const skippedCount = rows.filter(reviewedSkip).length;
+  const pendingItems = rows.filter(item => !reviewedSkip(item) && !complete(item));
   const missingReportCount = pendingItems.filter(item => item?.status === 'completed' && !item.reportId).length;
   const unapprovedReportCount = pendingItems.filter(item => item?.status === 'completed' && item.reportId).length;
   return {
@@ -14,7 +16,7 @@ function summarizeCheckupItems(items = [], auditedReports = null) {
     pendingCount: pendingItems.length,
     missingReportCount, unapprovedReportCount,
     pendingNames: pendingItems.map(item => item?.name || ''),
-    progressStatus: rows.length > 0 && completedCount === rows.length ? 'completed'
+    progressStatus: rows.length > 0 && pendingItems.length === 0 ? 'completed'
       : completedCount > 0 || skippedCount > 0 ? 'in_progress' : 'pending',
   };
 }
@@ -53,4 +55,4 @@ function buildCheckupWorkbenchRows(plans, patients, includeCompleted = false, au
     || String(a.planId).localeCompare(String(b.planId)));
 }
 
-module.exports = { summarizeCheckupItems, checkupWorkStage, buildCheckupWorkbenchRows };
+module.exports = { summarizeCheckupItems, checkupWorkStage, buildCheckupWorkbenchRows, reviewedSkip };

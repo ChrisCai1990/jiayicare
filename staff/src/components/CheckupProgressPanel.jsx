@@ -8,7 +8,7 @@ const PAGE_SIZE = 5
 const STATUS = {
   pending: { label: '未完成', color: '#D97706', background: '#FEF3E2' },
   in_progress: { label: '核对中', color: '#0077B6', background: '#E7F4FB' },
-  completed: { label: '已完成', color: '#1E6B50', background: '#E8F5ED' },
+  completed: { label: '核对已结束', color: '#1E6B50', background: '#E8F5ED' },
 }
 
 export function CheckupProgressList({ rows = [], loading = false, error = '', onRetry, onOpen, taskMode = false }) {
@@ -32,7 +32,7 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
       <div className="card-title">{taskMode ? '体检方案核对任务' : '体检方案进度'}（{patients}位客户 · {filtered.length}份方案）</div>
       <div role="group" aria-label="体检方案状态筛选" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {(taskMode ? [['pending', '待处理', pending.length], ['booking', '预约体检', booking.length], ['waiting', '已预约·待体检', waiting.length], ['review', '体检后核对', review.length], ['unknown', '阶段待确认', unknown.length], ['completed', '核对已处理', completed.length], ['all', '全部', rows.length]]
-          : [['pending', '待完成', pending.length], ['completed', '已完成', completed.length], ['all', '全部', rows.length]]).map(([key, label, count]) =>
+          : [['pending', '待完成', pending.length], ['completed', '核对已结束', completed.length], ['all', '全部', rows.length]]).map(([key, label, count]) =>
           <button key={key} type="button" className={filter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
             aria-pressed={filter === key} onClick={() => { setFilter(key); setPage(1) }}>{label} {count}</button>)}
       </div>
@@ -43,7 +43,7 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
         体检方案进度加载失败{rows.length ? '，显示上次结果' : ''}：{error} <button type="button" className="btn btn-secondary btn-sm" onClick={onRetry}>重试</button>
       </div>}
       {!loading && !error && filtered.length === 0 && <div style={{ padding: '16px 0', color: '#667085', textAlign: 'center' }}>
-        {filter === 'completed' ? '暂无全部项目已完成的方案' : filter === 'booking' ? '暂无待预约体检的方案' : filter === 'waiting' ? '暂无已预约、待体检的方案' : filter === 'review' ? '暂无待体检后核对的方案' : filter === 'unknown' ? '暂无阶段待确认的方案' : taskMode ? '暂无待处理的体检方案' : '暂无待完成的体检方案'}
+        {filter === 'completed' ? '暂无项目核对已结束的方案' : filter === 'booking' ? '暂无待预约体检的方案' : filter === 'waiting' ? '暂无已预约、待体检的方案' : filter === 'review' ? '暂无待体检后核对的方案' : filter === 'unknown' ? '暂无阶段待确认的方案' : taskMode ? '暂无待处理的体检方案' : '暂无待完成的体检方案'}
       </div>}
       {visible.map(row => {
         const status = STATUS[row.progressStatus] || STATUS.pending
@@ -62,7 +62,7 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
             <span style={{ color: '#52685D' }}>项目核对 {row.completedCount}/{row.totalItems} 项{row.pendingCount > 0 ? ` · 待核对 ${row.pendingCount} 项` : ''}</span>
             {row.missingReportCount > 0 && <span style={{ color: '#B45309' }}>{row.missingReportCount} 项虽标记完成，但未关联报告</span>}
             {row.unapprovedReportCount > 0 && <span style={{ color: '#B45309' }}>{row.unapprovedReportCount} 项关联报告未通过当前审核</span>}
-            {row.skippedCount > 0 && <span style={{ color: '#92610F' }}>其中 {row.skippedCount} 项已跳过，仍需核对</span>}
+            {row.skippedCount > 0 && <span style={{ color: '#92610F' }}>本次未做 {row.skippedCount} 项（已备注）</span>}
             {taskMode && <strong style={{ color: '#1E6B50' }}>{row.pendingCount === 0 ? '查看核对记录 →' : row.workStage === 'unknown' ? '核实当前阶段 →' : ['booking', 'waiting_exam'].includes(row.workStage) ? '查看体检安排 →' : '进入逐项核对 →'}</strong>}
           </span>
         </button>

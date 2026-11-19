@@ -27,14 +27,20 @@ test('partial completion stays visible until every item is completed, then reope
   assert.equal(buildCheckupWorkbenchRows([current], patients)[0].pendingCount, 1);
 });
 
-test('missing statuses and skipped items never count as completed, and plan-level completed cannot hide unfinished items', () => {
+test('missing statuses remain pending; skipped items close review without counting as completed exams', () => {
   const items = [{ status: 'completed' }, { status: 'skipped' }, {}];
   const progress = summarizeCheckupItems(items);
   assert.equal(progress.pendingCount, 2);
   assert.equal(progress.completedCount, 1);
-  assert.equal(progress.skippedCount, 1);
+  assert.equal(progress.skippedCount, 0);
   assert.equal(progress.progressStatus, 'in_progress');
   assert.equal(buildCheckupWorkbenchRows([{ ...plan, status: 'completed', items }], patients).length, 1);
+  const documentedSkip = { status: 'skipped', completionSource: 'screening_skipped', completionNote: '客户本次未做' };
+  const closed = summarizeCheckupItems([{ status: 'completed' }, documentedSkip]);
+  assert.equal(closed.pendingCount, 0);
+  assert.equal(closed.completedCount, 1);
+  assert.equal(closed.progressStatus, 'completed');
+  assert.equal(buildCheckupWorkbenchRows([{ ...plan, items: [{ status: 'completed' }, documentedSkip] }], patients).length, 0);
   assert.equal(summarizeCheckupItems([]).progressStatus, 'pending');
 });
 
