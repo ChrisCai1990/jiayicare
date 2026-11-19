@@ -12,7 +12,7 @@ const ProjectCategory = require('../models/ProjectCategory');
 const LabTestOrder = require('../models/LabTestOrder');
 const LabTestItem = require('../models/LabTestItem');
 const SpecialExam = require('../models/SpecialExam');
-const { compatibleNode, confirmedRuleMatches, contextualNames } = require('./reportMatchContext');
+const { compatibleNode, confirmedRuleMatches, contextualNames, plateletActivationPanelName } = require('./reportMatchContext');
 
 // 归一化：转小写、全角转半角、去标点空格、去常见检查后缀词
 function norm(s) {
@@ -340,6 +340,10 @@ function authoritativePanelClassificationName(item) {
   const name = String(item?.name || '').trim();
   const context = `${String(item?.orderName || '')} ${String(item?.sourceSection || '')}`.trim();
   const all = `${name} ${context}`;
+  // CD45 is also used by other flow-cytometry panels. Only these four markers
+  // under the printed platelet panel can select the matching Admin leaf.
+  const plateletPanel = plateletActivationPanelName(item);
+  if (plateletPanel) return plateletPanel;
   if (/(?:碳|C)\s*1[34].{0,8}呼气|尿素.{0,8}呼气|呼气.{0,8}试验/i.test(all)) {
     return /(?:碳|C)\s*14/i.test(all) ? '碳14呼气试验' : '碳13呼气试验';
   }

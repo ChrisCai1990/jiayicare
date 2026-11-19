@@ -31,6 +31,14 @@ test('same lab name uses its own panel, never falls into blood when urine panel 
   assert.deepEqual(selectMatchesForItem({ name: '白细胞', sourceSection: '尿常规' }, [index[0]]), []);
 });
 
+test('platelet activation markers use the explicit panel, while CD45 elsewhere stays unclassified', () => {
+  const index = [entry('血常规', ['血小板']), entry('血小板活化四项', ['血小板活化检测'])];
+  for (const name of ['CD61', 'CD62P', 'CD61抗体(PAC-1)', 'CD45']) {
+    assert.equal(selectMatchesForItem({ name, sourceSection: '血小板活化四项', itemType: 'lab' }, index)[0]?.node.id, '血小板活化四项');
+  }
+  assert.deepEqual(selectMatchesForItem({ name: 'CD45', sourceSection: '免疫分型', itemType: 'lab' }, index), []);
+});
+
 test('stool-specific rows resolve ambiguous names only on a consistent page', () => {
   const index = [entry('血常规', ['红细胞']), entry('尿常规', ['性状']), entry('粪便常规')];
   const rows = [
