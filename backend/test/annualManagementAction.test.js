@@ -39,6 +39,14 @@ test('安排就医可从起算日按月计算建议日期并保留计算依据',
   assert.throws(() => normalizeAction({ ...base, direction: 'vaccine', actionTiming: { mode: 'single', dateBasis: 'interval', anchorDate: '2026-10-31', intervalMonths: 6 } }), /仅适用于安排就医/);
 });
 
+test('就医与复查同时选中时分别保留就医日期和复查计划', () => {
+  const result = normalizeAction({ direction: 'abnormal_followup', directions: ['abnormal_followup', 'medical_treatment', 'nutrition_assessment'],
+    goal: '明确风险', action: '就医、复查并完成营养评估', actionTiming: { mode: 'single', dateBasis: 'interval', anchorDate: '2026-11-19', intervalMonths: 2 } },
+  { kind: 'recheck', anchorDate: '2026-11-19', intervalMonths: 3 });
+  assert.equal(result.actionTiming.firstDueDate, '2027-01-19');
+  assert.equal(result.actionTiming.dateBasis, 'interval');
+});
+
 test('按月计算的就医日期进入年度方案后，预约随访提前七天', async t => {
   const User = require('../src/models/User'), Admin = require('../src/models/Admin');
   const manager = 'aaaaaaaaaaaaaaaaaaaaaaaa';

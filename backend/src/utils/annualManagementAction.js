@@ -8,7 +8,7 @@ function normalizeAction(input = {}, reviewPlan = { kind: 'none' }) {
   const action = String(input.action || '').trim();
   if (!goal || goal.length > 240) fail('请填写240字以内的管理目标');
   if (!action || action.length > 400) fail('请填写400字以内的下一步行动');
-  if (reviewPlan.kind === 'recheck') {
+  if (reviewPlan.kind === 'recheck' && !(input.directions || [input.direction]).includes('medical_treatment')) {
     return { goal, action, actionTiming: {
       mode: 'rolling', firstDueDate: addMonths(reviewPlan.anchorDate, reviewPlan.intervalMonths),
       frequency: '完成本轮检查和专家评估后，由健康顾问确认下一轮',
@@ -18,7 +18,7 @@ function normalizeAction(input = {}, reviewPlan = { kind: 'none' }) {
   const mode = String(timing.mode || 'pending');
   if (!['pending', 'single', 'rolling'].includes(mode)) fail('请选择有效的执行方式');
   const intervalBased = timing.dateBasis === 'interval';
-  if (intervalBased && input.direction !== 'medical_treatment') fail('按间隔计算就医时间仅适用于安排就医');
+  if (intervalBased && !(input.directions || [input.direction]).includes('medical_treatment')) fail('按间隔计算就医时间仅适用于安排就医');
   if (intervalBased && mode === 'pending') fail('请先选择单次行动或持续跟进');
   const anchorDate = String(timing.anchorDate || '').trim();
   const intervalMonths = Number(timing.intervalMonths);

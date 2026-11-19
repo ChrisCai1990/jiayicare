@@ -44,3 +44,12 @@ test('已有空日期草稿补入来源建议日期，顾问明确调整或清�
   assert.equal(carryAnnualTargets({ ...old, medical_treatment: { records: [{ ...old.medical_treatment.records[0], visit_time: '2027-05-08' }] } }, target, draft).modules.medical_treatment.records[0].visit_time, '2027-05-08')
   assert.equal(carryAnnualTargets({ ...old, medical_treatment: { records: [{ ...old.medical_treatment.records[0], appointmentSchedulingVersion: 1 }] } }, target, draft).modules.medical_treatment.records[0].visit_time, undefined)
 })
+
+test('营养评估与就医同选时仍保留就医草稿', () => {
+  const target = [{ issueId: 'management_issue:both', sourceGoal: '安排就医、营养评估', sourceGoals: ['安排就医', '营养评估'], nutritionRelevant: true }]
+  const draft = [{ key: 'medical_treatment', record: { sourceIds: ['management_issue:both'], reason: '同一问题', visit_time: '2027-01-19' } }]
+  const first = carryAnnualTargets({}, target, draft)
+  assert.equal(first.modules.nutrition_assessment.enabled, true)
+  assert.equal(first.modules.medical_treatment.records.length, 1)
+  assert.equal(carryAnnualTargets(first.modules, target, draft).modules.medical_treatment.records.length, 1)
+})

@@ -1,3 +1,5 @@
+const directionsOf = value => Array.isArray(value?.directions) && value.directions.length ? value.directions : [value?.direction].filter(Boolean);
+
 function effectiveDecisions(decisions = []) {
   const sameIssue = value => String(value || '').replace(/\s+/g, '').trim();
   return decisions.filter(legacy => {
@@ -6,7 +8,7 @@ function effectiveDecisions(decisions = []) {
     // 顾问已在同份报告的具体检查项重新保存同一问题和方向时，旧报告级归属只保留为历史，不再阻断年度方案。
     return !decisions.some(item => item !== legacy && String(item.reportId || '') === reportId
       && item.itemId && item.sourceKey === `screening:${reportId}:${item.itemId}`
-      && sameIssue(item.title) === sameIssue(legacy.title) && item.direction === legacy.direction);
+      && sameIssue(item.title) === sameIssue(legacy.title) && directionsOf(legacy).every(value => directionsOf(item).includes(value)));
   });
 }
 
@@ -88,7 +90,7 @@ async function load(patientId, year, dependencies = {}) {
         stale.push(`${decision.title}（主诉来源已变化）`); staleDecisionIds.push(String(decision._id)); continue;
       }
       evidence.push({ id: `management_issue:${decision._id}`, content: {
-        problem: decision.title, direction: decision.direction, advisorNote: decision.note,
+        problem: decision.title, direction: decision.direction, directions: directionsOf(decision), advisorNote: decision.note,
         goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
         reportTitle: '已处理不适主诉', sourceKind: 'symptom', source: { name: '主诉', value: record.value },
         sourceRecordId: record._id, checkDate: record.recordedAt, reviewedAt: decision.reviewedAt,
@@ -108,7 +110,7 @@ async function load(patientId, year, dependencies = {}) {
       ? decision.reviewPlan : reviewRules.legacyReviewPlan(decision, report) || decision.reviewPlan || null;
     evidence.push({ id: `management_issue:${decision._id}`, content: {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
-      problem: decision.title, direction: decision.direction, advisorNote: decision.note,
+      problem: decision.title, direction: decision.direction, directions: directionsOf(decision), advisorNote: decision.note,
       goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
       reviewPlan, legacyReviewNote: reviewPlan?.kind !== 'recheck' && reviewRules.legacyReviewNote(decision.note),
       source: decision.sourceSnapshot?.item || null,
@@ -130,7 +132,7 @@ async function load(patientId, year, dependencies = {}) {
       } });
     } else if (review.disposition === 'already_managed') {
       const linked = decisions.find(row => String(row._id) === String(review.linkedDecisionId));
-      if (!linked || linked.direction !== 'checkup_completion' || !evidence.some(row => row.id === `management_issue:${linked._id}`)) {
+      if (!linked || !directionsOf(linked).includes('checkup_completion') || !evidence.some(row => row.id === `management_issue:${linked._id}`)) {
         stale.push(`${item.text}（关联的年度管理事项已变化，请重新核对）`);
       }
     }
@@ -153,22 +155,24 @@ const DEFAULT_MANAGEMENT_GOALS = {
 function managementTargets(evidence = [], pilot = true) {
   return evidence.slice(0, 32).map(item => {
     const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming, source } = item.content;
-    const directionLabel = DIRECTION_LABELS[direction] || '持续管理';
+    const selected = directionsOf(item.content);
+    const directionLabels = selected.map(value => DIRECTION_LABELS[value] || '持续管理');
+    const directionLabel = directionLabels.join('、');
     if (!pilot) return { issueId: item.id, goal: `${problem} · ${directionLabel}`,
       focus: [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
-      nutritionRelevant: ['ongoing_management', 'nutrition_assessment'].includes(direction), sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+      nutritionRelevant: selected.some(value => ['ongoing_management', 'nutrition_assessment'].includes(value)), sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel, sourceGoals: directionLabels };
     return { issueId: item.id, goal: goal || DEFAULT_MANAGEMENT_GOALS[direction] || `${problem} · ${directionLabel}`,
       focus: action || [reportTitle && `依据已审核${reportTitle}`, advisorNote || `核对${problem}的执行结果与后续需要`].filter(Boolean).join('；'),
       goalDimension: '', baseline: source && typeof source === 'object' && ['string', 'number'].includes(typeof source.value)
         ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
       sourceStatus: source?.status || '',
       ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
-      nutritionRelevant: direction === 'nutrition_assessment' || direction === 'ongoing_management' && item.content.sourceKind !== 'symptom', sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel };
+      nutritionRelevant: selected.includes('nutrition_assessment') || selected.includes('ongoing_management') && item.content.sourceKind !== 'symptom', sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel, sourceGoals: directionLabels };
   });
 }
 
 function generationActionEvidence(evidence = []) {
-  return evidence.filter(item => item.content.direction !== 'nutrition_assessment');
+  return evidence.filter(item => directionsOf(item.content).some(value => value !== 'nutrition_assessment'));
 }
 
 // Project confirmed screening decisions into editable annual-plan actions. This
@@ -189,8 +193,8 @@ function draftPlanActions(evidence = []) {
   };
   for (const item of evidence) {
     const content = item.content || {};
-    const direction = content.direction;
-    if (content.reviewPlan?.kind === 'recheck' || !fields[direction]) continue;
+    for (const direction of directionsOf(content)) {
+    if (content.reviewPlan?.kind === 'recheck' && direction === 'abnormal_followup' || !fields[direction]) continue;
     const suggestedDate = ['single', 'rolling'].includes(content.actionTiming?.mode) && require('../../../shared/annualAppointment.cjs').validDay(content.actionTiming?.firstDueDate)
       ? content.actionTiming.firstDueDate : '';
     const dateKey = direction === 'medical_treatment' ? 'visit_time' : 'time';
@@ -206,6 +210,7 @@ function draftPlanActions(evidence = []) {
       goal: content.goal || DEFAULT_MANAGEMENT_GOALS[direction] || '',
       reviewStatus: 'pending_family_doctor_review',
     } });
+    }
   }
   return actions;
 }
@@ -233,24 +238,27 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
     }
   }
   for (const source of evidence) {
-    if (source.content.direction === 'nutrition_assessment') {
+    for (const direction of directionsOf(source.content)) {
+    if (source.content.reviewPlan?.kind === 'recheck' && direction === 'ongoing_management') continue;
+    if (direction === 'nutrition_assessment') {
       const goals = moduleData.management_targets?.records || [];
       if (moduleData.nutrition_assessment?.enabled === false || !moduleData.nutrition_assessment
         || !goals.some(row => row.issueId === source.id && row.nutritionRelevant === true))
         return `“${source.content.problem}”尚未进入营养评估与对应管理目标，请核对方案`;
       continue;
     }
-    const key = source.content.reviewPlan?.kind === 'recheck' ? 'abnormal_followup'
-      : source.content.direction === 'ongoing_management' ? 'personalized_followups' : source.content.direction;
+    const isReview = source.content.reviewPlan?.kind === 'recheck' && direction === 'abnormal_followup';
+    const key = direction === 'ongoing_management' ? 'personalized_followups' : direction;
     const module = moduleData[key];
     const rows = module?.enabled === false ? [] : Array.isArray(module?.records) ? module.records : module ? [module] : [];
     if (!rows.some(row => Array.isArray(row.sourceIds) && row.sourceIds.includes(source.id)
-      && (source.content.reviewPlan?.kind === 'recheck' ? source.content.reviewPlan.items.every(item => row.reviewItems?.includes(item))
-        : source.content.direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {
+      && (isReview ? source.content.reviewPlan.items.every(item => row.reviewItems?.includes(item))
+        : direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {
       return `“${source.content.problem}”尚未按顾问选定的管理方向进入方案，请重新生成或补齐对应事项`;
+    }
     }
   }
   return '';
 }
 
-module.exports = { load, managementTargets, draftPlanActions, generationActionEvidence, validatePlanCoverage, effectiveDecisions, reportSourceItems };
+module.exports = { load, managementTargets, draftPlanActions, generationActionEvidence, validatePlanCoverage, effectiveDecisions, reportSourceItems, directionsOf };

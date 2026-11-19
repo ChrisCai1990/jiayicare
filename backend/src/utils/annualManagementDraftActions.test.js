@@ -32,3 +32,26 @@ test('纳入管理时确认的首次日期进入对应方案日期，待确认�
   assert.equal(actions[1].record.time, '2027-06-01');
   assert.equal(actions[2].record.visit_time, undefined);
 });
+
+test('同一问题多选复查、就医和营养评估，分别形成行动且逐项校验', () => {
+  const evidence = [{ id: 'management_issue:combined', content: {
+    direction: 'medical_treatment', directions: ['medical_treatment', 'abnormal_followup', 'nutrition_assessment'],
+    problem: '脂蛋白磷脂酶A2升高', goal: '明确风险及后续处理', action: '就医并复查，完成营养评估',
+    actionTiming: { mode: 'single', dateBasis: 'interval', anchorDate: '2026-11-19', intervalMonths: 2, firstDueDate: '2027-01-19' },
+    reviewPlan: { kind: 'recheck', anchorDate: '2026-11-19', intervalMonths: 3, items: ['脂蛋白磷脂酶A2'], department: '心内科' },
+  } }];
+  const actions = draftPlanActions(evidence);
+  assert.deepEqual(actions.map(row => row.key).sort(), ['abnormal_followup', 'medical_treatment']);
+  assert.equal(actions.find(row => row.key === 'medical_treatment').record.visit_time, '2027-01-19');
+  assert.equal(actions.find(row => row.key === 'abnormal_followup').record.time, '2027-02-19');
+  const targets = managementTargets(evidence);
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].nutritionRelevant, true);
+  assert.deepEqual(targets[0].sourceGoals, ['安排就医', '定期复查', '营养评估']);
+  const modules = { management_targets: { records: targets }, nutrition_assessment: { enabled: true },
+    medical_treatment: { records: [actions.find(row => row.key === 'medical_treatment').record] },
+    abnormal_followup: { records: [actions.find(row => row.key === 'abnormal_followup').record] } };
+  assert.equal(validatePlanCoverage(modules, evidence), '');
+  assert.match(validatePlanCoverage({ ...modules, medical_treatment: { records: [] } }, evidence), /管理方向/);
+  assert.match(validatePlanCoverage({ ...modules, nutrition_assessment: { enabled: false } }, evidence), /营养评估/);
+});

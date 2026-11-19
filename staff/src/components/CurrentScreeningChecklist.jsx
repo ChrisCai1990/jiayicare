@@ -63,7 +63,8 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
   const planSourceIds = new Set(Object.values(state.plan?.moduleData || {}).flatMap(module => (module?.records || []).flatMap(row => row.sourceIds || [])))
   const pendingSources = [
     ...state.decisions.filter(row => !planSourceIds.has(`management_issue:${row._id}`)).map(row => ({ kind: 'decision', id: row._id, title: row.title,
-      direction: row.reviewPlan?.kind === 'recheck' ? 'abnormal_followup' : row.direction, note: row.note,
+      direction: row.reviewPlan?.kind === 'recheck' ? 'abnormal_followup' : row.direction,
+      directions: row.directions?.length ? row.directions : [row.direction], note: row.note,
       reviewPlan: row.reviewPlan })),
     ...reviewed.filter(row => row.disposition === 'needs_exam' && !planSourceIds.has(`management_issue:${row._id}`)).map(row => ({ kind: 'ai_checkup', id: row._id, title: row.title, direction: 'checkup_completion', note: row.itemText })),
   ]
@@ -91,9 +92,11 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
         {!state.plan && <p style={{ fontSize: 12 }}>本年度方案尚未确认。<a href={`/patients/${patientId}/annual-health?year=${year}#annual-plan-content`}>打开年度方案</a>核对已纳入的问题、目标和执行安排。</p>}
         {!pendingSources.length && <p style={{ fontSize: 12 }}>目前没有待补入事项。</p>}
         {pendingSources.map(source => <div key={`${source.kind}:${source.id}`} style={{ borderTop: '1px solid #E4ECE7', marginTop: 8, paddingTop: 8, fontSize: 13 }}>
-          <b>{source.title}</b> · {directionLabel[source.direction] || '待确认去向'}
+          <b>{source.title}</b> · {(source.directions || [source.direction]).map(value => directionLabel[value] || '待确认去向').join('、')}
           {state.plan && possibleExisting(source) && <span style={{ color: '#925F20' }}> · 方案已有同名事项，请核对关联来源</span>}
-          {state.plan && !possibleExisting(source) && actionable.has(source.direction) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => openAmendment(source)}>补入方案</button>}
+          {state.plan && !possibleExisting(source) && actionable.has(source.direction) && (source.directions?.length > 1
+            ? <span style={{ color: '#925F20' }}> · 多个方向请在年度方案修订入口逐项核对</span>
+            : <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => openAmendment(source)}>补入方案</button>)}
           {state.plan && !actionable.has(source.direction) && <span style={{ color: '#925F20' }}> · 请在方案中安排对应服务</span>}
         </div>)}
         {state.plan && !!pendingSources.length && <div style={{ fontSize: 12, marginTop: 10 }}><a href={`/patients/${patientId}/annual-health?year=${year}`}>查看现有年度方案</a></div>}
@@ -130,7 +133,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
       </details>
     </>}
     {editing && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 560 }}><div className="modal-header"><h3>补入已确认年度方案</h3><button type="button" className="modal-close" onClick={() => setEditing(null)}>×</button></div><div className="modal-body" style={{ display: 'grid', gap: 8 }}>
-      <div>{editing.title} · {directionLabel[editing.direction]}</div>
+      <div>{editing.title} · {(editing.directions || [editing.direction]).map(value => directionLabel[value] || '待确认去向').join('、')}</div>
       <label>事项名称<input className="form-input" value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} /></label>
       <label>资料依据<textarea className="form-input" rows={2} value={form.reason} onChange={event => setForm({ ...form, reason: event.target.value })} /></label>
       <label>处理建议<textarea className="form-input" rows={3} value={form.advice} onChange={event => setForm({ ...form, advice: event.target.value })} /></label>
