@@ -140,6 +140,14 @@ async function send(group, senderType, sender, content, rawMentions = [], audioF
 }
 
 customerRouter.use(customerAuth);
+customerRouter.get('/:groupId/messages/:messageId/file', wrap(async (req, res) => {
+  const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId, true);
+  if (!canCustomerAccess({ ...group, status: 'active' }, req.user)) fail('无权查看服务群');
+  const message = await Message.findOne({ _id: validId(req.params.messageId), groupId: group._id,
+    tenantId: group.tenantId, fileUrl: { $nin: ['', null] } }).select('fileUrl fileName').lean();
+  if (!message) fail('文件不存在', 404);
+  await require('../utils/chatFileDownload').sendChatFile(res, message);
+}));
 customerRouter.post('/:groupId/materials', wrap(async (req,res) => {
   const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId);
   if (!canCustomerAccess(group,req.user)) fail('无权上传此服务群资料');
