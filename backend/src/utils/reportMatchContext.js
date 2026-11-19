@@ -46,4 +46,11 @@ function contextualNames(item) {
   }
   return [];
 }
-module.exports = { compatibleNode, confirmedRuleMatches, contextualNames };
+function plateletActivationPanelName(item) {
+  const context = `${String(item?.orderName || '')} ${String(item?.sourceSection || '')}`;
+  const marker = String(item?.name || '').replace(/\s/g, '').replace(/（/g, '(').replace(/）/g, ')').toUpperCase();
+  return /血小板活化(?:四项|4项|检测|功能检测)?/.test(context)
+    && /^(?:CD61|CD62P|CD61抗体\(PAC-?1\)|PAC-?1|CD45)$/.test(marker)
+    ? '血小板活化四项' : '';
+}
+module.exports = { compatibleNode, confirmedRuleMatches, contextualNames, plateletActivationPanelName };

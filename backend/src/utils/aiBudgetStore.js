@@ -23,7 +23,10 @@ async function prepareUsageIndexes() {
 }
 const store = {
   async counter(id) { return (await collection('ai_budget_counters').findOne({ _id: id })) || {}; },
-  async policy() { return { ...DEFAULT_POLICY, ...(await collection('ai_control').findOne({ _id: 'policy' })) }; },
+  async policy() {
+    const { reportCalls, pageCalls, ...stored } = (await collection('ai_control').findOne({ _id: 'policy' })) || {};
+    return { ...DEFAULT_POLICY, ...stored };
+  },
   async tenantPolicy(tenantId) { return collection('ai_control').findOne({ _id: `tenant:${String(tenantId).toLowerCase()}` }); },
   async reserve(scope, tokens, micros) {
     await ensure('ai_budget_counters', scope.id, { tokens: 0, calls: 0, micros: 0, extraTokens: 0, extraCalls: 0 });
@@ -31,7 +34,7 @@ const store = {
     if (scope.tokens != null) checks.push({ $lte: [{ $add: ['$tokens', tokens] }, { $add: [scope.tokens, '$extraTokens'] }] });
     if (scope.calls) checks.push({ $lte: [{ $add: ['$calls', 1] }, { $add: [scope.calls, '$extraCalls'] }] });
     if (scope.micros) checks.push({ $lte: [{ $add: ['$micros', micros] }, scope.micros] });
-    const result = await collection('ai_budget_counters').updateOne({ _id: scope.id, $expr: { $and: checks } }, { $inc: { tokens, calls: 1, micros }, $set: { updatedAt: new Date() } });
+    const result = await collection('ai_budget_counters').updateOne({ _id: scope.id, ...(checks.length ? { $expr: { $and: checks } } : {}) }, { $inc: { tokens, calls: 1, micros }, $set: { updatedAt: new Date() } });
     return result.modifiedCount === 1;
   },
   async adjust(id, tokens, micros, calls = 0) {

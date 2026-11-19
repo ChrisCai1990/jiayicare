@@ -1,26 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { DEFAULT_POLICY, budgetRefusalReason } = require('../src/utils/aiBudgetPolicy');
+const { DEFAULT_POLICY, budgetRefusalReason, budgetScopes } = require('../src/utils/aiBudgetPolicy');
 const { assertSupplementCallCapacity } = require('../src/utils/aiBudget');
 const { mergeSupplementItems } = require('../src/utils/reportPageSupplement');
 
-test('page call limit remains while large page tokens do not trigger a separate ceiling', () => {
-  const scope = { label: '第 1 页调用保护', calls: 8 };
-  assert.match(budgetRefusalReason(scope, { calls: 8, tokens: 24922 }, 27912), /调用次数不足.*8\/8/);
-  assert.equal(budgetRefusalReason(scope, { calls: 1, tokens: 159000 }, 27912), '');
-  assert.equal(budgetRefusalReason(scope, { calls: 8, extraCalls: 3, tokens: 24922 }, 27912, 0, 3), '');
+test('report and page usage stay counted without cumulative call ceilings', () => {
+  const scopes = budgetScopes(DEFAULT_POLICY, { business: 'ocr', reportId: 'r', page: 1 }, new Date());
+  for (const scope of scopes.slice(-2)) {
+    assert.equal(scope.calls, undefined);
+    assert.equal(budgetRefusalReason(scope, { calls: 1000, tokens: 24922 }, 27912, 0, 8), '');
+  }
 });
 
-test('supplement refuses before starting when independent verification cannot fit', async () => {
-  let extraCalls = 0;
-  const db = { policy: async () => DEFAULT_POLICY, counter: async id => id.startsWith('page:') ? { calls: 7, tokens: 24922, extraCalls } : {} };
-  await assert.rejects(assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db), error => error.code === 'AI_PAGE_BUDGET_PAUSED' && /需要 3 次/.test(error.message));
-  extraCalls = 2;
-  await assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db);
-  await assert.rejects(assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db, 6), error => error.code === 'AI_PAGE_BUDGET_PAUSED' && /需要 6 次/.test(error.message));
-  extraCalls = 5;
-  await assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db, 6);
-  assert.equal(extraCalls, 5); // Preflight never resets or increases the allowance.
+test('supplement preflight ignores accumulated page calls but keeps daily protection', async () => {
+  const db = { policy: async () => DEFAULT_POLICY, counter: async id => ({ calls: id.startsWith('page:') ? 1000 : 0 }) };
+  await assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db, 8);
+  db.counter = async id => ({ calls: id.startsWith('day:') ? DEFAULT_POLICY.dailyCalls - 4 : 1000 });
+  await assert.rejects(assertSupplementCallCapacity({ reportId: 'r', page: 1 }, db, 8), /今日总预算调用次数不足/);
 });
 
 test('supplement fills a missing field without replacing existing or reviewed prose', () => {
