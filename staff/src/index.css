@@ -748,7 +748,7 @@ textarea.form-control { resize: vertical; }
   .staff-android-app .staff-thread-mobile-composer textarea,
   .staff-android-app .staff-thread-record-button { flex: 1; min-width: 0; width: 0; min-height: 44px; height: 44px; margin: 0; box-sizing: border-box; border: 1px solid #d8e2dc; border-radius: 8px; background: #fff; font-size: 14px; }
   .staff-android-app .staff-thread-mobile-composer textarea { padding: 10px; resize: none; line-height: 22px; }
-  .staff-android-app .staff-thread-mobile-composer .staff-thread-record-button { width: auto; font-weight: 600; color: #24483d; }
+  .staff-android-app .staff-thread-mobile-composer .staff-thread-record-button { width: auto; font-weight: 600; color: #24483d; touch-action: none; user-select: none; }
   .staff-android-app .staff-thread-mobile-composer .staff-thread-record-button.is-recording { background: #20745d; color: #fff; }
   .staff-android-app .staff-thread-mobile-composer .staff-thread-mobile-send { flex-basis: 52px; width: 52px; min-width: 52px; border-radius: 8px; background: #1e6b50; color: #fff; font-size: 13px; }
   .staff-android-app .staff-thread-emoji-control { position: relative; flex: 0 0 40px; }

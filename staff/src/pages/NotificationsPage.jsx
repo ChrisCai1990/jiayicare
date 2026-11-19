@@ -1016,6 +1016,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const recorderRef = useRef(null)
   const recordStreamRef = useRef(null)
   const recordStartedRef = useRef(0)
+  const cancelledRecordingRef = useRef(false)
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师', planner: '健康规划师', medicalAssistant: '就医专员' }
@@ -1077,6 +1078,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
 
   const startVoice = async () => {
     if (recording || submitting) return
+    cancelledRecordingRef.current = false
     try {
       if (nativeRecorderAvailable()) {
         const native = nativeRecorder(async audio => {
@@ -1090,7 +1092,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           } catch (e) { setErr(e.message || '语音发送失败') }
           finally { setSubmitting(false) }
         })
-        recorderRef.current = { state: 'recording', stop: () => native.stop(false) }
+        recorderRef.current = { state: 'recording', stop: () => native.stop(false), cancel: () => native.stop(true) }
         recordStartedRef.current = Date.now()
         setRecording(true)
         setTimeout(() => { if (recorderRef.current?.state === 'recording') stopVoice() }, 60000)
@@ -1102,6 +1104,9 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
       const chunks = []
       recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data) }
       recorder.onstop = () => {
+        stream.getTracks().forEach(track => track.stop())
+        setRecording(false)
+        if (cancelledRecordingRef.current) return
         const duration = Math.max(1, Math.min(60, Math.ceil((Date.now() - recordStartedRef.current) / 1000)))
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
         const reader = new FileReader()
@@ -1115,8 +1120,6 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           finally { setSubmitting(false) }
         }
         reader.readAsDataURL(blob)
-        stream.getTracks().forEach(track => track.stop())
-        setRecording(false)
       }
       recorderRef.current = recorder; recordStreamRef.current = stream; recordStartedRef.current = Date.now()
       recorder.start(); setRecording(true)
@@ -1128,9 +1131,18 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
     if (recorderRef.current?.state === 'recording') {
       const recorder = recorderRef.current
       recorderRef.current = null
-      recorder.stop()
+      Promise.resolve(recorder.stop()).catch(error => setErr(error.message || '语音发送失败'))
       setRecording(false)
     }
+  }
+
+  const cancelVoice = () => {
+    if (recorderRef.current?.state !== 'recording') return
+    const recorder = recorderRef.current
+    recorderRef.current = null
+    cancelledRecordingRef.current = true
+    Promise.resolve(recorder.cancel ? recorder.cancel() : recorder.stop()).catch(() => {})
+    setRecording(false)
   }
 
   const toggleHumanMode = async () => {
@@ -1240,7 +1252,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           {androidStaff && <div className="staff-thread-mobile-composer">
             <button type="button" aria-label={voiceMode ? '切换到文字' : '切换到语音'} onClick={() => { if (!recording) { setVoiceMode(value => !value); setEmojiOpen(false) } }}>{voiceMode ? '⌨' : '🎙'}</button>
             {voiceMode
-              ? <button type="button" className={`staff-thread-record-button${recording ? ' is-recording' : ''}`} disabled={submitting} onClick={() => recording ? stopVoice() : startVoice()}>{recording ? '点击发送语音' : '点击开始录音'}</button>
+              ? <button type="button" className={`staff-thread-record-button${recording ? ' is-recording' : ''}`} disabled={submitting} onPointerDown={event => { try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* gesture can continue without capture */ } void startVoice() }} onPointerUp={stopVoice} onPointerCancel={cancelVoice}>{recording ? '松开发送' : '按住说话'}</button>
               : <textarea className="form-input" rows={1} aria-label="输入回复" value={content} onChange={event => { setContent(event.target.value); setErr('') }} placeholder="输入回复…" />}
             <div className="staff-thread-emoji-control"><button type="button" aria-label="选择表情" onClick={() => { setVoiceMode(false); setEmojiOpen(value => !value) }}>☺</button>
               {emojiOpen && <div className="staff-thread-emoji-list">{['😊','🙂','🙏','👍','❤️','🌹','💪','✅'].map(emoji => <button key={emoji} type="button" onClick={() => { setContent(value => value + emoji); setEmojiOpen(false) }}>{emoji}</button>)}</div>}
