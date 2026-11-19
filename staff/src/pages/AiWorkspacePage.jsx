@@ -108,6 +108,24 @@ function AiWorkspaceContent({ staff }) {
     selectFile(e.dataTransfer.files[0])
   }
 
+  const onPaste = e => {
+    const pastedFiles = Array.from(e.clipboardData?.items || [])
+      .filter(item => item.kind === 'file')
+      .map(item => item.getAsFile())
+      .filter(Boolean)
+    if (!pastedFiles.length) return
+    e.preventDefault()
+    if (pastedFiles.length > 1) { setError('每次只能添加一个附件'); return }
+    const pastedText = e.clipboardData.getData('text/plain')
+    if (pastedText && e.target === composerRef.current) {
+      const { selectionStart, selectionEnd } = e.target
+      setDraft(value => value.slice(0, selectionStart) + pastedText + value.slice(selectionEnd))
+    }
+    const file = pastedFiles[0]
+    const fallbackName = { 'image/png': '粘贴图片.png', 'image/jpeg': '粘贴图片.jpg', 'image/webp': '粘贴图片.webp', 'application/pdf': '粘贴文件.pdf' }[file.type]
+    selectFile(!file.name && fallbackName ? new File([file], fallbackName, { type: file.type }) : file)
+  }
+
   const copy = async content => {
     try { await navigator.clipboard.writeText(content); setError('内容已复制') }
     catch { setError('复制失败，请手动选择内容') }
@@ -129,11 +147,11 @@ function AiWorkspaceContent({ staff }) {
       {selectedMode === 'free' && <label className="aiw-search-option"><input type="checkbox" checked={webSearch} disabled={busy} onChange={e => setWebSearch(e.target.checked)} /> 联网查最新信息 <small>默认开启；可能增加调用费用。请勿输入真实客户信息。</small></label>}
       {attachment && selectedMode === 'free' && webSearch && <p className="aiw-attachment-note">本次附带文件或图片，联网检索将暂时关闭。</p>}
       <div className="aiw-messages" ref={messagesRef}>{active?.messages.length ? active.messages.map((message, index) => <div key={`${active.id}-${index}`} className={`aiw-message ${message.role === 'user' ? 'user' : 'assistant'}`}><div className="aiw-avatar">{message.role === 'user' ? '我' : '✦'}</div><div className="aiw-bubble">{message.role === 'assistant' && <b>通义千问 · {message.webSearch ? '联网模式' : 'AI 回答'}</b>}<div>{message.content}</div>{message.role === 'assistant' && <button type="button" onClick={() => copy(message.content)}>复制内容</button>}</div></div>) : <div className="aiw-welcome"><span>✦ 嘉医汇 AI 助手</span><h2>{active ? '新讨论已创建，输入第一个问题。' : selectedMode === 'reply' ? '先用模拟客户消息试试起草。' : '和 AI 一起梳理思路。'}</h2><p>从一个问题开始。模型会结合本次讨论连续回答，内容仅供员工核对。</p><div className="aiw-ideas">{IDEAS[selectedMode].map(idea => <button type="button" key={idea} onClick={() => { setDraft(idea); composerRef.current?.focus() }}>{idea} ↗</button>)}</div></div>}{busy && <div className="aiw-working">通义千问正在生成回答…</div>}</div>
-      <div className={`aiw-composer ${dragging ? 'dragging' : ''}`} onDragEnter={e => { e.preventDefault(); setDragging(true) }} onDragOver={e => e.preventDefault()} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }} onDrop={onDrop}>
+      <div className={`aiw-composer ${dragging ? 'dragging' : ''}`} onPaste={onPaste} onDragEnter={e => { e.preventDefault(); setDragging(true) }} onDragOver={e => e.preventDefault()} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false) }} onDrop={onDrop}>
         {dragging && <div className="aiw-drop-hint">松开即可添加附件</div>}
         <textarea ref={composerRef} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} disabled={!ready || busy} placeholder={ready ? selectedMode === 'reply' ? '输入模拟客户消息，生成待审核回复草稿…' : '输入您想讨论的问题…' : unavailableMessage} />
         {attachment && <div className="aiw-attachment"><span>{attachment.kind === 'image' ? '🖼' : '📄'} {attachment.name} · {(attachment.size / 1024).toFixed(0)} KB</span><button type="button" disabled={busy} onClick={() => setAttachment(null)} aria-label="移除附件">×</button></div>}
-        <div className="aiw-compose-foot"><div className="aiw-compose-tools"><input ref={fileRef} type="file" hidden accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.csv,image/png,image/jpeg,image/webp,application/pdf" onChange={e => selectFile(e.target.files?.[0])} /><button type="button" className="aiw-upload" disabled={!ready || busy || readingFile} onClick={() => fileRef.current?.click()}>＋ 上传图片或文件</button><span>{error || unavailableMessage || (readingFile ? '正在读取文件…' : `支持拖拽；每次 1 个附件，仅用模拟内容；今日已调用 ${status.dailyUsed}/${status.dailyLimit} 次。`)}</span></div><button type="button" className="aiw-primary" disabled={(!draft.trim() && !attachment) || !ready || busy || readingFile} onClick={send}>{busy ? '生成中…' : '发送 ↗'}</button></div>
+        <div className="aiw-compose-foot"><div className="aiw-compose-tools"><input ref={fileRef} type="file" hidden accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.csv,image/png,image/jpeg,image/webp,application/pdf" onChange={e => selectFile(e.target.files?.[0])} /><button type="button" className="aiw-upload" disabled={!ready || busy || readingFile} onClick={() => fileRef.current?.click()}>＋ 上传图片或文件</button><span>{error || unavailableMessage || (readingFile ? '正在读取文件…' : `支持粘贴或拖拽；每次 1 个附件，仅用模拟内容；今日已调用 ${status.dailyUsed}/${status.dailyLimit} 次。`)}</span></div><button type="button" className="aiw-primary" disabled={(!draft.trim() && !attachment) || !ready || busy || readingFile} onClick={send}>{busy ? '生成中…' : '发送 ↗'}</button></div>
       </div>
     </section>
   </div>
