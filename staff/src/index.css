@@ -457,6 +457,9 @@ textarea.form-control { resize: vertical; }
 @media (max-width: 768px) {
   /* 顶部栏显示 */
   .mobile-header { display: flex; }
+  .mobile-message-nav { display: flex; flex: 1; justify-content: center; gap: 8px; margin-right: 32px; }
+  .mobile-message-nav button { min-width: 90px; height: 34px; padding: 0 14px; border-radius: 17px; color: #fff; font-size: 14px; font-weight: 700; }
+  .mobile-message-nav button[aria-current="page"] { background: #326e57; }
   .sidebar-overlay { display: block; }
 
   /* 侧边栏变抽屉 */
@@ -703,8 +706,16 @@ textarea.form-control { resize: vertical; }
 @media (max-width: 600px) { .referral-record-heading time { width: 100%; margin-left: 0; } .referral-record-body { padding: 12px; } }
 
 @media (max-width: 768px) {
-  .staff-android-app:has(.notifications-page) .mobile-header { display: none; }
-  .staff-android-app .main-content:has(.notifications-page) { padding: 0; }
+  .staff-android-app:has(.notifications-page) .mobile-header,
+  .staff-android-app:has(.in-app-service-groups) .mobile-header { height: 44px; padding: 0 10px; background: #fff; border-bottom: 1px solid #e1e9e3; }
+  .staff-android-app:has(.notifications-page) .mobile-menu-btn span,
+  .staff-android-app:has(.in-app-service-groups) .mobile-menu-btn span { background: #1e6b50; }
+  .staff-android-app:has(.notifications-page) .main-content,
+  .staff-android-app:has(.in-app-service-groups) .main-content { padding-top: 44px; }
+  .staff-android-app .mobile-message-nav { display: flex; flex: 1; justify-content: center; gap: 8px; margin-right: 32px; }
+  .staff-android-app .mobile-message-nav button { min-width: 90px; height: 34px; padding: 0 14px; border-radius: 17px; color: #376052; font-size: 14px; font-weight: 700; }
+  .staff-android-app .mobile-message-nav button[aria-current="page"] { background: #e8f5ed; color: #176b4d; }
+  .staff-android-app .main-content:has(.notifications-page) { padding-right: 0; padding-bottom: 0; padding-left: 0; }
   .staff-android-app .notifications-page { padding: 10px; }
   .staff-android-app .notifications-page .page-header,
   .staff-android-app .notifications-page .notification-stats { display: none; }

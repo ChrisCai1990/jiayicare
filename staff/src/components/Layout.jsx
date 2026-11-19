@@ -106,6 +106,8 @@ function LayoutContent() {
   }
 
   const initials = staff?.name?.slice(0, 1) || 'S'
+  const isDirectMessages = loc.pathname === '/notifications'
+  const isServiceGroups = loc.pathname === '/in-app-service-groups'
 
   const renderNavItem = (item) => {
     const isActive = isCurrentPath(setupView, item.path)
@@ -141,8 +143,15 @@ function LayoutContent() {
           <span /><span /><span />
           {(workbench.pending || workbench.error) && <i className={`sidebar-workbench-dot${workbench.pending ? '' : ' is-unknown'}`} aria-hidden="true" />}
         </button>
-        <div className="mobile-header-title">{staff?.tenantName || '机构医护端'}</div>
-        <div className="mobile-header-avatar">{initials}</div>
+        {isDirectMessages || isServiceGroups ? (
+          <nav className="mobile-message-nav" aria-label="消息切换">
+            <button type="button" aria-current={isDirectMessages ? 'page' : undefined} onClick={() => nav('/notifications?tab=userMsgs')}>一对一</button>
+            <button type="button" aria-current={isServiceGroups ? 'page' : undefined} onClick={() => nav('/in-app-service-groups')}>服务群</button>
+          </nav>
+        ) : <>
+          <div className="mobile-header-title">{staff?.tenantName || '机构医护端'}</div>
+          <div className="mobile-header-avatar">{initials}</div>
+        </>}
       </header>
 
       {/* 遮罩层 */}

@@ -234,8 +234,7 @@
 }
 
 @media (max-width: 800px) {
-  .staff-android-app:has(.in-app-service-groups) .mobile-header { display: none; }
-  .staff-android-app .main-content:has(.in-app-service-groups) { padding: 0; }
+  .staff-android-app .main-content:has(.in-app-service-groups) { padding-right: 0; padding-bottom: 0; padding-left: 0; }
   .staff-android-app .in-app-service-groups:not(.sg-chat-open) { padding: 10px; }
   .staff-android-app .in-app-service-groups:not(.sg-chat-open) > h1,
   .staff-android-app .in-app-service-groups:not(.sg-chat-open) .sg-lifecycle.is-empty,
@@ -251,7 +250,7 @@
   .staff-android-app .in-app-service-groups:not(.sg-chat-open) .sg-group-list { padding: 0; border-radius: 8px; }
   .staff-android-app .in-app-service-groups:not(.sg-chat-open) .sg-group-item { margin: 0; border: 0; border-bottom: 1px solid #e3eae5; border-radius: 0; padding: 12px; }
   .staff-android-app .in-app-service-groups:not(.sg-chat-open) .sg-group-staff { display: none; }
-  .staff-android-app .in-app-service-groups.sg-chat-open { height: 100dvh; min-height: 0; }
+  .staff-android-app .in-app-service-groups.sg-chat-open { height: calc(100dvh - 44px); min-height: 0; }
   .staff-android-app .in-app-service-groups.sg-chat-open .sg-workspace { height: 100%; }
   .staff-android-app .in-app-service-groups.sg-chat-open .sg-chat-panel { height: 100%; }
   .staff-android-app .in-app-service-groups.sg-chat-open .sg-chat-panel { border: 0; border-radius: 0; }

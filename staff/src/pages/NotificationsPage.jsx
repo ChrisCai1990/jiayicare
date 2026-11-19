@@ -69,6 +69,9 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(new URLSearchParams(location.search).get('tab') === 'userMsgs'
     ? 'userMsgs' : (location.state?.tab || 'referrals'))
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('tab') === 'userMsgs') setTab('userMsgs')
+  }, [location.search])
   const [metabolicPage,setMetabolicPage]=useState(1)
   const [respondModal, setRespondModal] = useState(null)
   const [memberModal, setMemberModal] = useState(null)
