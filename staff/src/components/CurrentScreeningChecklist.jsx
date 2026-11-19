@@ -40,6 +40,8 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
   }
   useEffect(() => { refresh() }, [patientId, year])
   const reviewed = state.checkup?.reviews || []
+  const pendingAICheckups = (state.checkup?.items || []).filter(item =>
+    !reviewed.some(row => row.sourceKey === item.sourceKey && row.itemText === item.text)).length
   const currentReports = useMemo(() => reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly), [reports])
   const hepatitisVaccinePrompt = useMemo(() => hepatitisAllNegative(currentReports), [currentReports])
   const covered = useMemo(() => {
@@ -84,7 +86,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><div><strong style={{ color: '#1E6B50' }}>筛查事项去向</strong><div style={{ fontSize: 12, color: '#52675D', marginTop: 4 }}>顾问核对异常与遗漏，决定是否纳入年度方案。</div></div><button type="button" className="btn btn-secondary btn-sm" onClick={refresh} disabled={state.loading}>刷新</button></div>
     {state.error && <div role="alert" style={{ color: '#B42318', marginTop: 8 }}>{state.error}</div>}
     {state.loading ? <p>正在核对来源…</p> : <>
-      <p style={{ fontSize: 13, margin: '10px 0' }}>需确认去向 {pendingSources.length} 项 · AI 待完善检查 {state.checkup?.items?.length || 0} 项</p>
+      <p style={{ fontSize: 13, margin: '10px 0' }}>需确认去向 {pendingSources.length} 项 · AI 待核对 {pendingAICheckups} 项</p>
       <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>需确认方案去向</b>
         {!state.plan && <p style={{ fontSize: 12 }}>未找到已确认的本年度方案；请先核对年度方案。</p>}
         {!pendingSources.length && <p style={{ fontSize: 12 }}>目前没有待补入事项。</p>}

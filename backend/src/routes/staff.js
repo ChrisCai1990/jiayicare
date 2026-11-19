@@ -10785,32 +10785,6 @@ router.get('/patients/:id/annual-workflow', staffAuth, async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: '读取年度管理流程失败' }); }
 });
 
-router.post('/patients/:id/annual-workflow/confirm-screening', staffAuth, async (req, res) => {
-  try {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '会员 ID 无效' });
-    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可确认筛查核对' });
-    const visibleIds = await getVisiblePlanPatientIds(req.staff);
-    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
-    const note = String(req.body.note || '').trim();
-    if (note.length < 4 || note.length > 500) return res.status(400).json({ success: false, message: '请填写本次核对结论（4至500字）' });
-    const rows = await require('../utils/annualManagementWorkflow').load(req.staff, new Date(), {}, req.params.id);
-    const flow = rows[0];
-    if (!flow || flow.step !== 'screening') return res.status(409).json({ success: false, message: '当前不在筛查核对步骤，请刷新流程' });
-    const patient = await User.findById(req.params.id).select('aiHealthSummary').lean();
-    const checkup = require('../utils/aiHealthCheckupItems').approvedItems(patient?.aiHealthSummary, flow.year);
-    if (checkup.approved && checkup.items.length) {
-      const reviews = await require('../models/AIHealthCheckupReview').find({ patientId: req.params.id, year: flow.year,
-        sourceVersion: checkup.version }).select('sourceKey itemText').lean();
-      if (checkup.items.some(item => !reviews.some(row => row.sourceKey === item.sourceKey && row.itemText === item.text)))
-        return res.status(409).json({ success: false, message: 'AI 提出的待完善检查尚未逐项核对，请先处理' });
-    }
-    await AnnualPlanPreparation.findOneAndUpdate({ patientId: req.params.id, year: flow.year },
-      { $set: { screeningConfirmedAt: new Date(), screeningConfirmedBy: req.staff._id, screeningConfirmedNote: note } },
-      { upsert: true, new: true, setDefaultsOnInsert: true });
-    res.json({ success: true, message: '已记录筛查核对结论，请继续确认管理目标' });
-  } catch (error) { res.status(500).json({ success: false, message: '保存筛查核对失败，请重试' }); }
-});
-
 router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   const visibleIds = await getVisiblePlanPatientIds(req.staff);
   if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度管理方案' });

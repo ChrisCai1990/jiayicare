@@ -2,10 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { load, project, stepLink, steps, workflowYear } = require('../src/utils/annualManagementWorkflow');
 const reviewPolicy = require('../src/utils/managementReviewPolicy');
-const router = require('../src/routes/staff');
 const workflow = require('../src/utils/annualManagementWorkflow');
-const AnnualPlanPreparation = require('../src/models/AnnualPlanPreparation');
-const User = require('../src/models/User');
+const { approvedItems } = require('../src/utils/aiHealthCheckupItems');
 
 const now = new Date('2026-11-17T04:00:00Z');
 const patient = { _id: 'p1', name: '测试客户', serviceStartDate: '2026-06-01' };
@@ -27,11 +25,8 @@ test('工作台一张主卡指向准确步骤，七个步骤都有可直达的�
     '/patients/p1?tab=aiReview&workflowStep=assessment&annualWorkflowYear=2026#annual-workflow-assessment');
   for (const step of steps) assert.ok(stepLink('p1', 2026, step).startsWith('/patients/p1'));
   const interpreted = { ...report, advisorInterpretationConfirmedAt: now };
-  assert.equal(project(patient, 2026, [], [interpreted], now).step, 'screening');
-  assert.equal(project(patient, 2026, [], [interpreted], now, [{ patientId: 'p1', year: 2026,
-    screeningConfirmedAt: new Date('2026-11-17T05:00:00Z') }]).step, 'goals');
-  assert.equal(project(patient, 2026, [], [{ ...interpreted, updatedAt: new Date('2026-11-17T06:00:00Z') }], now,
-    [{ patientId: 'p1', year: 2026, screeningConfirmedAt: new Date('2026-11-17T05:00:00Z') }]).step, 'screening');
+  assert.equal(project(patient, 2026, [], [interpreted], now).step, 'goals');
+  assert.equal(project(patient, 2026, [], [interpreted], now).steps.find(row => row.key === 'screening').status, 'complete');
 });
 
 test('服务起始年与当年已发布方案不同，流程使用正式方案年度', () => {
@@ -102,6 +97,7 @@ test('只给所属顾问的有效年度客户投影一张流程卡', async () =>
     AnnualPlan: { find: () => ({ select: () => ({ lean: async () => planRows }) }) },
     ServicePackage: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
     AnnualPlanPreparation: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+    AIHealthCheckupReview: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
     MedicalReport: { find: () => ({ select: () => ({ lean: async () => reportRows }) }) },
     resolveServiceAccess: async () => ({ active: true, startDate: '2026-06-01' }),
   };
@@ -115,25 +111,16 @@ test('只给所属顾问的有效年度客户投影一张流程卡', async () =>
   assert.equal((await load({ _id: 'advisor', role: 'familyDoctor' }, now, deps, 'p1', true))[0].step, 'execution');
 });
 
-test('筛查核对完成必须由顾问留结论，其他阶段不得重复确认', async t => {
-  const patientId = '6a4ef1980f2291549b4ffd8d';
-  const handler = router.stack.find(layer => layer.route?.path === '/patients/:id/annual-workflow/confirm-screening')?.route.stack.at(-1).handle;
-  assert.equal(typeof handler, 'function');
-  let currentStep = 'screening', saved = null;
-  t.mock.method(workflow, 'load', async () => [{ year: 2026, step: currentStep }]);
-  t.mock.method(AnnualPlanPreparation, 'findOneAndUpdate', async (query, update) => { saved = { query, update }; });
-  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }));
-  const run = async (role, note) => {
-    const req = { params: { id: patientId }, staff: { _id: 'advisor', role }, body: { note } };
-    const result = { code: 200 };
-    const res = { status(code) { result.code = code; return this; }, json(value) { result.value = value; return this; } };
-    await handler(req, res); return result;
-  };
-  assert.equal((await run('nutritionist', '已核对原始资料')).code, 403);
-  assert.equal((await run('superadmin', '短')).code, 400);
-  assert.equal((await run('superadmin', '已核对原始资料与待补检查')).code, 200);
-  assert.equal(saved.query.year, 2026);
-  assert.equal(saved.update.$set.screeningConfirmedNote, '已核对原始资料与待补检查');
-  currentStep = 'plan';
-  assert.equal((await run('superadmin', '已核对原始资料与待补检查')).code, 409);
+test('报告解读完成且 AI 待核对为零时自动进入目标，新版 AI 提示重新待核对', () => {
+  const summary = { sections: { checkup_completeness: { missing: ['骨密度检查'] } }, approvedAt: now };
+  const withAI = { ...patient, aiHealthSummary: summary };
+  const interpreted = { ...report, advisorInterpretationConfirmedAt: now };
+  const item = approvedItems(summary, 2026).items[0];
+  assert.equal(project(withAI, 2026, [], [interpreted], now).step, 'screening');
+  const review = { patientId: 'p1', year: 2026, sourceVersion: approvedItems(summary, 2026).version,
+    sourceKey: item.sourceKey, itemText: item.text };
+  assert.equal(project(withAI, 2026, [], [interpreted], now, [review]).step, 'goals');
+  const changed = { ...summary, sections: { checkup_completeness: { missing: ['骨密度检查', '肺功能检查'] } } };
+  assert.equal(project({ ...patient, aiHealthSummary: changed }, 2026, [], [interpreted], now, [review]).step, 'screening');
+  assert.equal(project(withAI, 2026, [], [report], now, [review]).step, 'interpretation');
 });

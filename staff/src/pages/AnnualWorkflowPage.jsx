@@ -8,22 +8,12 @@ export default function AnnualWorkflowPage() {
   const { id } = useParams()
   const nav = useNavigate()
   const [state, setState] = useState({ loading: true, error: '', data: null })
-  const [screeningNote, setScreeningNote] = useState('')
-  const [saving, setSaving] = useState(false)
   const refresh = () => {
     setState(old => ({ ...old, loading: true, error: '' }))
     staffAPI.getAnnualWorkflow(id).then(result => setState({ loading: false, error: '', data: result.data }))
       .catch(error => setState({ loading: false, error: error.message || '读取流程失败', data: null }))
   }
   useEffect(refresh, [id])
-  const confirmScreening = async () => {
-    setSaving(true)
-    try {
-      await staffAPI.confirmAnnualWorkflowScreening(id, screeningNote)
-      setScreeningNote(''); refresh()
-    } catch (error) { setState(old => ({ ...old, error: error.message || '确认失败' })) }
-    finally { setSaving(false) }
-  }
   const flow = state.data
   return <div style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 20px' }}>
     <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}`)}>返回客户档案</button>
@@ -42,11 +32,6 @@ export default function AnnualWorkflowPage() {
           <button className={step.key === flow.step ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} onClick={() => nav(step.link)}>进入{step.label}</button>
         </section>)}
       </div>
-      {flow.step === 'screening' && <section style={{ padding: 14, marginTop: 14, border: '1px solid #D9E9E1', borderRadius: 10 }}>
-        <strong>完成当前筛查核对</strong><p style={{ fontSize: 13 }}>核对本年度已审核报告、AI 提示和管理去向后，记录本次结论。若无新增需处理事项，写明“已核对，暂无新增事项”即可，无需建立空白问题。</p>
-        <textarea className="form-input" rows={2} maxLength={500} style={{ width: '100%' }} placeholder="记录已核对的重点、需要补充的资料或暂不纳入的原因" value={screeningNote} onChange={event => setScreeningNote(event.target.value)} />
-        <button className="btn btn-primary btn-sm" disabled={saving || screeningNote.trim().length < 4} onClick={confirmScreening}>{saving ? '保存中…' : '确认筛查核对并继续'}</button>
-      </section>}
       {flow.step === 'execution' && <p style={{ fontSize: 12, color: '#607469', marginTop: 12 }}>具体就医、营养、运动和随访任务由原负责岗位办理；阶段性评估在客户档案中核对结果。</p>}
     </>}
   </div>

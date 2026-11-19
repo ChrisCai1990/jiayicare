@@ -2,7 +2,8 @@ const User = require('../models/User');
 const AnnualPlan = require('../models/AnnualPlan');
 const ServicePackage = require('../models/ServicePackage');
 const MedicalReport = require('../models/MedicalReport');
-const AnnualPlanPreparation = require('../models/AnnualPlanPreparation');
+const AIHealthCheckupReview = require('../models/AIHealthCheckupReview');
+const { approvedItems } = require('./aiHealthCheckupItems');
 const { matchesAnnualCustomer } = require('./researchAnnualCustomer');
 const { resolveServiceAccess, chinaDay } = require('./serviceAccess');
 const { planYear } = require('./annualPlanCreationTodos');
@@ -31,7 +32,7 @@ function workflowYear(patientId, access, now, plans) {
   return planYear(access, now);
 }
 
-function project(patient, year, plans, reports, now = new Date(), preparations = []) {
+function project(patient, year, plans, reports, now = new Date(), aiReviews = []) {
   const id = String(patient._id);
   const plan = plans.filter(row => String(row.patientId) === id && Number(row.year) === Number(year))
     .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))[0];
@@ -42,9 +43,10 @@ function project(patient, year, plans, reports, now = new Date(), preparations =
   const hasCurrentExam = require('./annualReviewEligibility').eligibility(currentReports, now, { lookbackMonths: 12 }).allowed;
   const planConfirmed = Boolean(plan?.confirmedAt);
   const planReleased = Boolean(plan?.pushedAt || planConfirmed);
-  const preparation = preparations.find(row => String(row.patientId) === id && Number(row.year) === Number(year));
-  const screeningConfirmed = Boolean(preparation?.screeningConfirmedAt) && currentReports.every(row =>
-    new Date(row.updatedAt || row.audited_at || row.createdAt || 0) <= new Date(preparation.screeningConfirmedAt));
+  const checkup = approvedItems(patient.aiHealthSummary, year);
+  const screeningConfirmed = !pending.length && checkup.items.every(item => aiReviews.some(row =>
+    String(row.patientId) === id && Number(row.year) === Number(year)
+    && row.sourceVersion === checkup.version && row.sourceKey === item.sourceKey && row.itemText === item.text));
   const hasGoals = Boolean((plan?.moduleData?.management_targets?.records || []).length
     || require('./annualStandardGoals').fromPlan(plan).length);
   const missingPilotGoals = planConfirmed && require('./annualFlowPilot').enabledForPlan(plan) && !hasGoals;
@@ -83,14 +85,12 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '', incl
     ...(staff.role === 'familyDoctor' ? { assignedFamilyDoctor: staff._id } : {}),
     ...(staff.tenantId ? { tenantId: staff.tenantId } : {}) };
   const users = await (deps.User || User).find(filter)
-    .select('_id name membershipTier servicePackage clientBrand enterpriseId serviceStartDate serviceExpiry createdAt tenantId assignedFamilyDoctor').lean();
+    .select('_id name membershipTier servicePackage clientBrand enterpriseId serviceStartDate serviceExpiry createdAt tenantId assignedFamilyDoctor aiHealthSummary').lean();
   if (!users.length) return [];
-  const [plans, packages, preparations] = await Promise.all([
+  const [plans, packages] = await Promise.all([
     (deps.AnnualPlan || AnnualPlan).find({ patientId: { $in: users.map(user => user._id) } })
       .select('patientId year flowVersion createdAt updatedAt pushedAt confirmedAt formalizedAt reviewStatus moduleData.management_targets.records moduleData.medical_treatment moduleData.specialist_collab moduleData.checkup_completion moduleData.abnormal_followup moduleData.vaccine moduleData.annual_checkup').lean(),
     (deps.ServicePackage || ServicePackage).find({ 'configuration.membershipTier': 'annual' }).select('name clientBrand').lean(),
-    (deps.AnnualPlanPreparation || AnnualPlanPreparation).find({ patientId: { $in: users.map(user => user._id) } })
-      .select('patientId year screeningConfirmedAt').lean(),
   ]);
   const withPlan = new Set(plans.map(plan => String(plan.patientId)));
   const eligible = [];
@@ -106,8 +106,11 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '', incl
   const reports = await (deps.MedicalReport || MedicalReport).find({ user: { $in: eligible.map(item => item.user._id) },
     audit_status: 'audited', archiveOnly: { $ne: true } })
     .select('user _id title type status documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt advisorCorrection.status audited_at updatedAt createdAt').lean();
+  const reviews = await (deps.AIHealthCheckupReview || AIHealthCheckupReview).find({
+    patientId: { $in: eligible.map(item => item.user._id) }, year: { $in: [...new Set(eligible.map(item => item.year))] },
+  }).select('patientId year sourceVersion sourceKey itemText').lean();
   // A confirmed plan is already past the advisor's plan-building task. Execution has its own tasks.
-  return eligible.map(({ user, year }) => project(user, year, plans, reports, now, preparations))
+  return eligible.map(({ user, year }) => project(user, year, plans, reports, now, reviews))
     .filter(flow => includeExecution || flow.step !== 'execution');
 }
 
