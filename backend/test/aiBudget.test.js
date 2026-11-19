@@ -81,9 +81,10 @@ test('OCR output failures retain distinct safe codes and messages', async () => 
 
 test('policy rejects disabled token limits, malformed prices and invalid warning thresholds', () => {
   assert.deepEqual(validatePolicy(DEFAULT_POLICY), DEFAULT_POLICY);
-  for (const patch of [{ pageCalls: 0 }, { dailyTokens: '100' }, { prices: { 'bad.model': { input: 1, output: 1 } } }, { warningPercent: 100 }, { prices: { qwen: { input: 1, output: '' } } }]) {
+  for (const patch of [{ dailyTokens: '100' }, { prices: { 'bad.model': { input: 1, output: 1 } } }, { warningPercent: 100 }, { prices: { qwen: { input: 1, output: '' } } }]) {
     assert.throws(() => validatePolicy({ ...DEFAULT_POLICY, ...patch }));
   }
+  assert.equal('pageCalls' in validatePolicy({ ...DEFAULT_POLICY, pageCalls: 8, reportCalls: 400 }), false);
   assert.equal(actualUsage({ total_tokens: 100 }), null);
   assert.equal(actualUsage({ prompt_tokens: 20, completion_tokens: 30 }).total, 50);
 });
@@ -94,7 +95,7 @@ test('budget periods use Shanghai time and report/page budgets survive day and j
   const a = budgetScopes(DEFAULT_POLICY, ctx, new Date('2026-09-01'));
   const b = budgetScopes(DEFAULT_POLICY, { ...ctx, attemptId: 'new' }, new Date('2026-10-01'));
   assert.deepEqual(a.slice(-2), b.slice(-2));
-  assert.ok(a.slice(-2).every(scope => scope.tokens == null && scope.calls > 0));
+  assert.ok(a.slice(-2).every(scope => scope.tokens == null && scope.calls == null));
   assert.ok(estimateTokens([{ content: [{ type: 'image_url' }, { type: 'text', text: '中文' }] }], 100).total > 16384);
 });
 
@@ -115,17 +116,17 @@ test('Mongo integration: concurrent reservations, timeout accounting, circuits a
     await collection('ai_control').insertOne({ _id: 'policy', ...DEFAULT_POLICY, revision: 0, ...patch });
   };
   try {
-    await t.test('twenty simultaneous calls cannot overspend a page call limit', async () => {
+    await t.test('twenty simultaneous calls remain counted without a page call limit', async () => {
       await reset({ pageCalls: 3 });
       let sent = 0;
       const results = await Promise.allSettled(Array.from({ length: 20 }, () => run(options, async () => { sent++; return success(); })));
-      assert.equal(sent, 3);
-      assert.equal(results.filter(r => r.status === 'fulfilled').length, 3);
+      assert.equal(sent, 20);
+      assert.equal(results.filter(r => r.status === 'fulfilled').length, 20);
       const page = await collection('ai_budget_counters').findOne({ _id: `page:${options.context.reportId}:1` });
       const day = await collection('ai_budget_counters').findOne({ _id: 'day:2026-09-12' });
-      assert.equal(page.calls, 3); assert.equal(page.tokens, 150);
-      assert.equal(day.calls, 3); assert.equal(day.tokens, 150);
-      assert.equal(await collection('ai_usage').countDocuments(), 3);
+      assert.equal(page.calls, 20); assert.equal(page.tokens, 1000);
+      assert.equal(day.calls, 20); assert.equal(day.tokens, 1000);
+      assert.equal(await collection('ai_usage').countDocuments(), 20);
     });
     await t.test('timeouts retain reservations and trip persistent model circuit', async () => {
       await reset({ failureThreshold: 2 });

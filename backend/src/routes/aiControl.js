@@ -213,15 +213,6 @@ router.post('/circuits/reset', async (req, res) => {
   res.json({ success: true });
 });
 
-router.post('/reports/:id/allowance', async (req, res) => {
-  if (!/^[a-f\d]{24}$/i.test(req.params.id) || !Number.isSafeInteger(req.body.tokens) || req.body.tokens < 1 || req.body.tokens > 10000000 || !Number.isSafeInteger(req.body.calls) || req.body.calls < 1 || req.body.calls > 500 || (req.body.page != null && (!Number.isInteger(req.body.page) || req.body.page < 1 || req.body.page > 10000))) return res.status(400).json({ success: false, message: '请输入有效的报告 ID、追加 Token、调用次数及页码' });
-  const scope = req.body.page ? `page:${req.params.id}:${req.body.page}` : `report:${req.params.id}`;
-  await ensure('ai_budget_counters', scope, { tokens: 0, calls: 0, micros: 0, extraTokens: 0, extraCalls: 0 });
-  await collection('ai_control_audit').insertOne({ _id: randomUUID(), action: 'allowance', target: scope, tokens: req.body.tokens, calls: req.body.calls, at: new Date(), actorId: String(req.admin._id) });
-  await collection('ai_budget_counters').updateOne({ _id: scope }, { $inc: { extraTokens: req.body.tokens, extraCalls: req.body.calls } });
-  res.json({ success: true, message: '追加额度已生效；全局与业务上限仍然有效' });
-});
-
 router.post('/reports/:id/resume', async (req, res) => {
   if (!/^[a-f\d]{24}$/i.test(req.params.id)) return res.status(400).json({ success: false, message: '报告 ID 格式无效' });
   const MedicalReport = require('../models/MedicalReport');

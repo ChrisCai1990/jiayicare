@@ -1,7 +1,7 @@
 const DEFAULT_POLICY = Object.freeze({
   paused: false, ocrPaused: false, dailyTokens: 2000000, monthlyTokens: 30000000,
   ocrDailyTokens: 1500000, otherDailyTokens: 500000,
-  reportTokens: 1500000, pageTokens: 160000, reportCalls: 400, pageCalls: 8,
+  reportTokens: 1500000, pageTokens: 160000,
   // A visual-report job can include a number of independent pages and optional
   // quality checks. Eight confirmed failures on the *same page* is a strong
   // signal of an unavailable upstream service; five was too easy to reach
@@ -87,10 +87,10 @@ function budgetScopes(policy, context, now) {
     { id: `business:${context.business}:${day}`, label: context.business === 'ocr' ? 'OCR 今日预算' : '其他 AI 今日预算', tokens: context.business === 'ocr' ? policy.ocrDailyTokens : policy.otherDailyTokens },
   ];
   if (context.reportId) {
-    // Large legitimate reports may exceed a fixed token ceiling. Keep call-count
-    // guards against repeated parsing; daily/monthly scopes bound total spend.
-    scopes.push({ id: `report:${context.reportId}`, label: '报告累计调用保护', calls: policy.reportCalls });
-    if (context.page) scopes.push({ id: `page:${context.reportId}:${context.page}`, label: `第 ${context.page} 页调用保护`, calls: policy.pageCalls });
+    // Keep report/page usage counters for audit without imposing a cumulative
+    // call ceiling. Daily and monthly limits still bound new provider requests.
+    scopes.push({ id: `report:${context.reportId}`, label: '报告累计用量' });
+    if (context.page) scopes.push({ id: `page:${context.reportId}:${context.page}`, label: `第 ${context.page} 页累计用量` });
   }
   return scopes;
 }
