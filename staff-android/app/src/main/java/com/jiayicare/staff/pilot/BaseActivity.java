@@ -1,6 +1,8 @@
 package com.jiayicare.staff.pilot;
 
 import android.app.Activity;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -9,6 +11,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -22,8 +25,10 @@ public class BaseActivity extends Activity {
     private static final String HOME = "https://staff.jiaycare.com/notifications?tab=userMsgs";
     private static final String STAFF_HOST = "staff.jiaycare.com";
     private static final int FILE_REQUEST = 42;
+    private static final int AUDIO_REQUEST = 43;
     protected WebView webView;
     private ValueCallback<Uri[]> fileCallback;
+    private PermissionRequest audioPermission;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -66,6 +71,27 @@ public class BaseActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> {
+                    if (!isTrustedPage() || !"https".equals(request.getOrigin().getScheme())
+                            || !STAFF_HOST.equals(request.getOrigin().getHost())
+                            || request.getResources().length != 1
+                            || !PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(request.getResources()[0])) {
+                        request.deny();
+                        return;
+                    }
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                        return;
+                    }
+                    if (audioPermission != null) audioPermission.deny();
+                    audioPermission = request;
+                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, AUDIO_REQUEST);
+                });
+            }
+            @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (audioPermission == request) audioPermission = null;
+            }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
                                                        FileChooserParams params) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
@@ -112,12 +138,24 @@ public class BaseActivity extends Activity {
         }
     }
 
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == AUDIO_REQUEST && audioPermission != null) {
+            PermissionRequest request = audioPermission;
+            audioPermission = null;
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED && isTrustedPage())
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            else request.deny();
+        }
+    }
+
     @Override public void onBackPressed() {
         if (webView != null && webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }
 
     @Override protected void onDestroy() {
+        if (audioPermission != null) { audioPermission.deny(); audioPermission = null; }
         if (fileCallback != null) fileCallback.onReceiveValue(null);
         if (webView != null) webView.destroy();
         super.onDestroy();
