@@ -996,6 +996,7 @@ function ReplyModal({ userId, userName, onClose, onSent }) {
 
 // ── 对话线程弹窗 ──
 function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate }) {
+  const androidStaff = navigator.userAgent.includes('JiayiCareStaffAndroid/')
   const tapVoice = window.matchMedia?.('(pointer: coarse)').matches || false
   const toast = useToast()
   const [previewImageUrl, setPreviewImageUrl] = useState('')
@@ -1007,6 +1008,9 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const [err, setErr] = useState('')
   const [replyImages, setReplyImages] = useState([])
   const [recording, setRecording] = useState(false)
+  const [voiceMode, setVoiceMode] = useState(false)
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const [threadMenuOpen, setThreadMenuOpen] = useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const scrollRef = useRef(null)
   const recorderRef = useRef(null)
@@ -1015,6 +1019,14 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const presenceSessionRef = useRef(`staff-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师', planner: '健康规划师', medicalAssistant: '就医专员' }
+  const selectReplyImages = event => {
+    Array.from(event.target.files || []).slice(0, 9 - replyImages.length).forEach(file => {
+      const reader = new FileReader()
+      reader.onload = () => setReplyImages(value => [...value, { data: reader.result, mimeType: file.type || 'image/jpeg' }].slice(0, 9))
+      reader.readAsDataURL(file)
+    })
+    event.target.value = ''
+  }
 
   useEffect(() => {
     if (roleKey !== 'planner') return
@@ -1156,7 +1168,16 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal staff-thread-modal" style={{ width: 'min(860px, 94vw)', maxWidth: 860, height: '78vh', display: 'flex', flexDirection: 'column' }}>
-        <div className="modal-header" style={{ flexShrink: 0 }}>
+        {androidStaff && <div className="staff-thread-mobile-header">
+          <button type="button" className="staff-thread-back" aria-label="返回用户留言" onClick={onClose}>‹</button>
+          <div className="staff-thread-mobile-heading"><strong>与 {userName} 的对话</strong><small>{ROLE_LABEL[roleKey] || roleKey} · {humanActive ? '人工沟通' : 'AI助理承接'}</small></div>
+          <button type="button" className="staff-thread-more" aria-label="更多会话操作" onClick={() => setThreadMenuOpen(value => !value)}>…</button>
+          {threadMenuOpen && <div className="staff-thread-menu">
+            {onNavigate && <button type="button" onClick={() => { onNavigate(`/patients/${userId}?tab=reports`); onClose() }}>查看原始资料</button>}
+            {proxyOrders.map(order => onNavigate && <button key={order._id} type="button" onClick={() => { onNavigate(`/patients/${userId}?openChat=1`, { state: { serviceBooking: { sourceOrderId: order } } }); onClose() }}>确认代诊订单{proxyOrders.length > 1 ? ` ${order.orderNo || String(order._id).slice(-6)}` : ''}</button>)}
+          </div>}
+        </div>}
+        <div className="modal-header staff-thread-desktop-header" style={{ flexShrink: 0 }}>
           <div>
             <h3 className="modal-title">与 {userName} 的对话</h3>
             <div style={{ fontSize: 12, color: humanActive ? '#D97706' : '#22A06B', marginTop: 2 }}>频道：{ROLE_LABEL[roleKey] || roleKey} · {roleKey === 'medicalAssistant' ? '人工沟通' : humanActive ? '人工已接手，AI静默' : 'AI助理承接中'}</div>
@@ -1216,7 +1237,18 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
 
         <div className="staff-thread-composer-wrap" style={{ flexShrink: 0, padding: '12px 20px', borderTop: '1px solid #f0ede8', background: '#fff' }}>
           {replyImages.length > 0 && <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>{replyImages.map((img,i)=><div key={i} style={{position:'relative'}}><img src={img.data} alt="待发送" style={{width:58,height:58,objectFit:'cover',borderRadius:8}}/><button type="button" onClick={()=>setReplyImages(v=>v.filter((_,x)=>x!==i))} style={{position:'absolute',right:-4,top:-4,border:0,borderRadius:10,background:'#DC3545',color:'#fff'}}>×</button></div>)}</div>}
-          <div className="staff-thread-composer" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          {androidStaff && <div className="staff-thread-mobile-composer">
+            <button type="button" aria-label={voiceMode ? '切换到文字' : '切换到语音'} onClick={() => { if (!recording) { setVoiceMode(value => !value); setEmojiOpen(false) } }}>{voiceMode ? '⌨' : '🎙'}</button>
+            {voiceMode
+              ? <button type="button" className={`staff-thread-record-button${recording ? ' is-recording' : ''}`} disabled={submitting} onClick={() => recording ? stopVoice() : startVoice()}>{recording ? '点击发送语音' : '点击开始录音'}</button>
+              : <textarea className="form-input" rows={1} aria-label="输入回复" value={content} onChange={event => { setContent(event.target.value); setErr('') }} placeholder="输入回复…" />}
+            <div className="staff-thread-emoji-control"><button type="button" aria-label="选择表情" onClick={() => { setVoiceMode(false); setEmojiOpen(value => !value) }}>☺</button>
+              {emojiOpen && <div className="staff-thread-emoji-list">{['😊','🙂','🙏','👍','❤️','🌹','💪','✅'].map(emoji => <button key={emoji} type="button" onClick={() => { setContent(value => value + emoji); setEmojiOpen(false) }}>{emoji}</button>)}</div>}
+            </div>
+            {!voiceMode && (content.trim() || replyImages.length) ? <button type="button" className="staff-thread-mobile-send" disabled={submitting} onClick={handleSend}>{submitting ? '…' : '发送'}</button>
+              : <label className="staff-thread-attach" aria-label="添加图片">＋<input type="file" accept="image/*" multiple hidden onChange={selectReplyImages} /></label>}
+          </div>}
+          {!androidStaff && <div className="staff-thread-composer" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>图片<input type="file" accept="image/*" multiple hidden onChange={e=>{Array.from(e.target.files||[]).slice(0,9-replyImages.length).forEach(file=>{const reader=new FileReader();reader.onload=()=>setReplyImages(v=>[...v,{data:reader.result,mimeType:file.type||'image/jpeg'}].slice(0,9));reader.readAsDataURL(file)});e.target.value='' }}/></label>
             <button type="button" className={recording ? 'btn btn-danger staff-thread-voice' : 'btn btn-secondary staff-thread-voice'} onClick={tapVoice ? () => recording ? stopVoice() : startVoice() : undefined} onMouseDown={tapVoice ? undefined : startVoice} onMouseUp={tapVoice ? undefined : stopVoice} onMouseLeave={tapVoice ? undefined : stopVoice} disabled={submitting} style={{ alignSelf: 'stretch' }}>{recording ? (tapVoice ? '点此发送语音' : '松开发送') : (tapVoice ? '点此录音' : '按住说话')}</button>
             <textarea className="form-input" rows={2} value={content}
@@ -1227,8 +1259,8 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
             <button className="btn btn-primary" onClick={handleSend} disabled={submitting} style={{ alignSelf: 'stretch' }}>
               {submitting ? '…' : '发送'}
             </button>
-          </div>
-          {err && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{err}</div>}
+          </div>}
+          {err && <div className="staff-thread-error" role="alert" style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{err}</div>}
         </div>
       </div>
       {previewImageUrl && <div role="dialog" aria-label="查看会话图片" onClick={() => setPreviewImageUrl('')} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}><img src={previewImageUrl} alt="会话原图" onClick={event => event.stopPropagation()} style={{ maxWidth: '94vw', maxHeight: '88vh', objectFit: 'contain' }} /><button type="button" onClick={() => setPreviewImageUrl('')} aria-label="关闭图片" style={{ position: 'absolute', top: 16, right: 20, fontSize: 28, color: '#fff', background: 'none', border: 0, cursor: 'pointer' }}>×</button></div>}

@@ -222,6 +222,10 @@
   .in-app-service-groups.sg-chat-open .sg-chat-actions button:not(:first-child) { display: none; }
   .in-app-service-groups.sg-chat-open .sg-chat-actions button { min-width: 38px; width: 38px; padding: 0; }
   .in-app-service-groups.sg-chat-open .sg-composer { gap: 6px; padding: 6px; align-items: center; }
+  .in-app-service-groups.sg-chat-open .sg-composer > button:first-child { order: 0; }
+  .in-app-service-groups.sg-chat-open .sg-composer-field { order: 1; }
+  .in-app-service-groups.sg-chat-open .sg-mention-picker { order: 2; }
+  .in-app-service-groups.sg-chat-open .sg-composer > .sa-primary { order: 3; }
   .in-app-service-groups.sg-chat-open .sg-composer > button:first-child,
   .in-app-service-groups.sg-chat-open .sg-mention-picker > button { min-width: 40px; width: 40px; height: 44px; padding: 0; }
   .in-app-service-groups.sg-chat-open .sg-composer > .sa-primary { min-width: 60px; width: 60px; padding: 0 6px; height: 44px; }
@@ -251,6 +255,7 @@
   .staff-android-app .in-app-service-groups.sg-chat-open .sg-chat-panel { height: 100%; }
   .staff-android-app .in-app-service-groups.sg-chat-open .sg-chat-panel { border: 0; border-radius: 0; }
 }
+
 .sg-mention-picker>div button {display:block;width:100%;}
 .sg-configuration {max-height:35vh;overflow:auto;flex-shrink:0;}
 
