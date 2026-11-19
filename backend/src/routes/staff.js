@@ -13728,6 +13728,51 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 手动转写一对一语音；仅当前可见客户的对应频道可操作，结果只作展示。
+router.post('/user-messages/:userId/messages/:messageId/transcribe', staffAuth, async (req, res) => {
+  try {
+    const { userId, messageId } = req.params;
+    const role = String(req.body?.role || '');
+    if (!mongoose.isValidObjectId(userId) || !require('../utils/conversationRoles').getConversationRole(role))
+      return res.status(400).json({ success: false, message: '会话无效' });
+    if (!assertRoleMatchesChannel(req.staff.role, role))
+      return res.status(403).json({ success: false, message: '无权查看该频道的语音' });
+    const assignmentField = {
+      familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist', healthPlanner: 'assignedHealthPlanner',
+      healthManager: 'assignedHealthManager', medicalAssistant: 'assignedMedicalAssistant',
+    }[req.staff.role];
+    if (!assignmentField && req.staff.role !== 'superadmin')
+      return res.status(403).json({ success: false, message: '无权查看该客户语音' });
+    const assigned = assignmentField ? { [assignmentField]: { $in: await getVisibleStaffIds(req.staff) } } : {};
+    const patient = await User.findOne({ _id: userId, tenantId: req.staff.tenantId, isDeleted: { $ne: true }, ...assigned }).select('_id').lean();
+    if (!patient) return res.status(403).json({ success: false, message: '无权查看该客户语音' });
+
+    const legacyId = /^chat-user:([a-f\d]{24})$/i.exec(messageId)?.[1];
+    if (legacyId && role !== 'planner') return res.status(404).json({ success: false, message: '语音不存在' });
+    const Model = legacyId ? ChatLog : Message;
+    const query = legacyId
+      ? { _id: legacyId, user: patient._id, recalled: { $ne: true } }
+      : { _id: messageId, user: patient._id, recalled: { $ne: true },
+          $or: [{ conversationId: `${userId}_${role}` }, { conversationId: null, type: role }] };
+    if (!legacyId && !mongoose.isValidObjectId(messageId)) return res.status(400).json({ success: false, message: '语音消息无效' });
+    const message = await Model.findOne(query).select('audioUrl audioMimeType audioTranscript').lean();
+    if (!message?.audioUrl) return res.status(404).json({ success: false, message: '语音不存在或已撤回' });
+    if (message.audioTranscript?.trim()) return res.json({ success: true, data: { text: message.audioTranscript } });
+    const audio = await require('../utils/messageTranscription').readAudio(require('../utils/oss'), message.audioUrl);
+    if (!await Model.exists({ ...query, audioUrl: message.audioUrl }))
+      return res.status(404).json({ success: false, message: '语音已撤回' });
+    const extension = /\.([a-z0-9]+)(?:\?|$)/i.exec(message.audioUrl)?.[1]?.toLowerCase();
+    const mimeType = message.audioMimeType || ({ wav: 'audio/wav', webm: 'audio/webm', m4a: 'audio/mp4', mp4: 'audio/mp4', ogg: 'audio/ogg', aac: 'audio/aac' }[extension] || 'audio/mpeg');
+    const text = (await require('../utils/groupAudio').transcribe(patient._id, audio, mimeType)).slice(0, 1000);
+    const saved = await Model.findOneAndUpdate({ ...query, audioUrl: message.audioUrl }, { $set: { audioTranscript: text } }, { new: true }).select('audioTranscript');
+    if (!saved) return res.status(404).json({ success: false, message: '语音已撤回' });
+    return res.json({ success: true, data: { text: saved.audioTranscript } });
+  } catch (error) {
+    const status = [400, 403, 404, 422, 503].includes(error.status) ? error.status : 502;
+    return res.status(status).json({ success: false, message: status === 502 ? '转文字未完成，请稍后重试；原语音仍可播放' : error.message });
+  }
+});
+
 // 医护接手/退出只影响自己的角色频道；人工接手期间 AI 助理保持静默。
 router.patch('/user-messages/:userId/ai-mode', staffAuth, async (req, res) => {
   try {

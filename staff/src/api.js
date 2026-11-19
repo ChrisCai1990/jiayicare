@@ -721,6 +721,7 @@ export const staffAPI = {
   replyToUser: (userId, content, images = [], audio = null) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, images, audio }) }),
   // 获取用户对话线程
   getUserMessageThread: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
+  transcribeUserVoice: (userId, messageId, role) => req(`/staff/user-messages/${encodeURIComponent(userId)}/messages/${encodeURIComponent(messageId)}/transcribe`, { method: 'POST', timeout: 60000, body: JSON.stringify({ role }) }),
   reviewNutritionAIMessage: (messageId, action, content) => req(`/staff/user-messages/${messageId}/ai-review`, { method: 'PATCH', body: JSON.stringify({ action, content }) }),
   // 标记某用户留言为已读
   markUserMessagesRead: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/read`, { method: 'PATCH', body: JSON.stringify({ role }) }),

@@ -739,7 +739,8 @@ textarea.form-control { resize: vertical; }
   .staff-android-app .staff-thread-mobile-heading strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 1.4; }
   .staff-android-app .staff-thread-mobile-heading small { display: none; }
   .staff-android-app .staff-thread-menu { position: absolute; top: 100%; right: 8px; z-index: 10; min-width: 160px; padding: 5px; border: 1px solid #d8e2dc; border-radius: 8px; background: #fff; box-shadow: 0 5px 16px #0002; }
-  .staff-android-app .staff-thread-menu button { display: block; width: 100%; padding: 9px; border: 0; background: transparent; text-align: left; }
+  .staff-android-app .staff-thread-menu button,
+  .staff-android-app .staff-thread-menu-upload { display: block; width: 100%; box-sizing: border-box; padding: 9px; border: 0; background: transparent; text-align: left; color: #24483d; font-size: 14px; }
   .staff-android-app .staff-thread-composer-wrap { position: relative; padding: 7px 8px !important; }
   .staff-android-app .staff-thread-mobile-composer { display: flex; align-items: center; gap: 7px; }
   .staff-android-app .staff-thread-mobile-composer > button,
@@ -750,9 +751,18 @@ textarea.form-control { resize: vertical; }
   .staff-android-app .staff-thread-mobile-composer textarea { padding: 10px; resize: none; line-height: 22px; }
   .staff-android-app .staff-thread-mobile-composer .staff-thread-record-button { flex: 1 1 auto; width: auto; min-width: 0; white-space: nowrap; font-size: 14px; font-weight: 600; color: #24483d; touch-action: none; user-select: none; }
   .staff-android-app .staff-thread-mobile-composer .staff-thread-record-button.is-recording { background: #20745d; color: #fff; }
-  .staff-android-app .staff-thread-mobile-composer .staff-thread-mobile-send { flex-basis: 52px; width: 52px; min-width: 52px; border-radius: 8px; background: #1e6b50; color: #fff; font-size: 13px; }
+  .staff-android-app .staff-thread-mobile-composer .staff-thread-mobile-send { flex: 0 0 60px; width: 60px; min-width: 60px; border-radius: 8px; background: #1e6b50; color: #fff; font-size: 13px; }
+  .staff-android-app .staff-thread-voice-status { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 30; min-width: 160px; padding: 10px 14px; border-radius: 12px; background: #243e36; color: #fff; text-align: center; box-shadow: 0 4px 16px #0003; pointer-events: none; }
+  .staff-android-app .staff-thread-voice-status.is-cancelling { background: #b42318; }
+  .staff-android-app .staff-thread-voice-status strong,
+  .staff-android-app .staff-thread-voice-status span { display: block; }
   .staff-android-app .staff-thread-emoji-control { position: relative; flex: 0 0 40px; }
   .staff-android-app .staff-thread-emoji-list { position: absolute; bottom: 100%; right: -40px; width: 210px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 7px; background: #fff; box-shadow: 0 4px 14px #0002; }
   .staff-android-app .staff-thread-emoji-list button { border: 0; background: #fff; font-size: 22px; }
   .staff-android-app .staff-thread-error { position: absolute; bottom: calc(100% + 8px); left: 8px; right: 8px; z-index: 10; margin: 0 !important; padding: 9px; border-radius: 8px; background: #fff0ed; }
 }
+
+.staff-thread-voice-message audio { display: block; width: 230px; max-width: 100%; margin: 5px 0; }
+.staff-thread-voice-message > button { border: 0; border-radius: 6px; padding: 5px 8px; background: #fff; color: #1e6b50; font-size: 12px; }
+.staff-thread-voice-message p { margin: 6px 0 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.staff-thread-transcript { padding-top: 6px; border-top: 1px solid #ffffff66; }

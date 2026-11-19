@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -33,7 +34,14 @@ public class MainActivity extends BaseActivity {
     }
 
     private void setPushStatus(String label, String reason) {
-        if (enableButton != null) enableButton.setText(label);
+        if (enableButton != null) {
+            boolean connected = "提醒已连接".equals(label);
+            enableButton.setText(connected ? "● 已连接" : "○ " + ("连接中…".equals(label) ? "连接中" : "未连接"));
+            enableButton.setContentDescription(label + "，点击检查提醒连接");
+            enableButton.setTextColor(connected ? Color.rgb(26, 105, 75) : Color.rgb(154, 89, 30));
+            enableButton.setBackground(statusPill(connected ? Color.rgb(234, 246, 238) : Color.rgb(255, 248, 237),
+                connected ? Color.rgb(190, 221, 199) : Color.rgb(237, 211, 168)));
+        }
         if (reason == null || reason.isEmpty()) lastFailure = null;
         else if (!reason.equals(lastFailure)) {
             lastFailure = reason;
@@ -87,7 +95,9 @@ public class MainActivity extends BaseActivity {
 
     @Override protected void addExtraActions(LinearLayout bar) {
         if (!getResources().getBoolean(R.bool.push_configured)) return;
-        enableButton = barButton("开启提醒");
+        enableButton = barButton("○ 开提醒");
+        enableButton.setTextSize(12);
+        enableButton.setBackground(statusPill(Color.rgb(255, 248, 237), Color.rgb(237, 211, 168)));
         enableButton.setOnClickListener(view -> {
             if (getPreferences(MODE_PRIVATE).getBoolean("pushConsent", false)) {
                 pushStarted = false;
@@ -105,7 +115,7 @@ public class MainActivity extends BaseActivity {
                 startPushIfAllowed();
             }).show();
         });
-        bar.addView(enableButton);
+        bar.addView(enableButton, new LinearLayout.LayoutParams(dp(80), dp(34)));
     }
 
     @Override protected void configureWebView(WebView view) {

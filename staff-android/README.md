@@ -6,6 +6,8 @@
 
 0.1.5 起，医护手机内的一对一和服务群语音使用原生麦克风录成 16 kHz 单声道 WAV，再由现有接口发送；录音仅在受信任的医护网页且已获系统麦克风权限时启动。首次安装或覆盖安装后，需在华为真机验证实际录音、发送和播放。手机页面也压缩了一对一输入栏与服务群列表。
 
+0.1.6 将顶部原生工具栏改成紧凑布局，保留“消息”“刷新”和推送连接状态。与现有试用包使用相同签名，可覆盖安装 `build/jiayicare-staff-huawei-pilot-debug.apk`；聊天输入栏及一对一手动语音转文字由医护网页提供，安装后需在 App 内刷新验收。
+
 使用 Android SDK 36 和 JDK 17，在本目录运行 `powershell -File build-pilot.ps1`。默认使用本机 `D:\JiayicareBuild` 中的工具，也可通过 `ANDROID_HOME` 和 `JAVA_HOME` 指定其他位置。调试包输出为 `build/jiayicare-staff-pilot-debug.apk`，仅供内部试用，不是正式签名发布包。
 
 Gradle 另有 `assembleDemoDebug` 和 `assemblePushDebug` 两种构建。后者包含华为 Push Kit；没有独立医护应用的 `app/agconnect-services.json` 和应用 ID 时隐藏“开启提醒”按钮。正式接通条件见 `../docs/STAFF_ANDROID_PUSH_20261118.md`。

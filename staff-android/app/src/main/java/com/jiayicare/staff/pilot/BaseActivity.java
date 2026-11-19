@@ -8,6 +8,7 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
@@ -139,24 +140,30 @@ public class BaseActivity extends Activity {
 
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(16), 0, dp(8), 0);
+        bar.setPadding(dp(12), dp(4), dp(10), dp(4));
         bar.setBackgroundColor(Color.WHITE);
         ImageView logo = new ImageView(this);
         logo.setImageResource(getResources().getIdentifier("logo", "drawable", getPackageName()));
         logo.setScaleType(ImageView.ScaleType.FIT_START);
-        bar.addView(logo, new LinearLayout.LayoutParams(0, dp(48), 1));
+        bar.addView(logo, new LinearLayout.LayoutParams(dp(92), dp(30)));
+        bar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
         Button home = barButton("消息");
         home.setOnClickListener(v -> webView.loadUrl(HOME));
-        bar.addView(home);
-        Button refresh = barButton("刷新");
+        bar.addView(home, new LinearLayout.LayoutParams(dp(46), dp(38)));
+        Button refresh = barButton("↻");
+        refresh.setContentDescription("刷新页面");
+        refresh.setTextSize(24);
         refresh.setOnClickListener(v -> webView.reload());
-        bar.addView(refresh);
+        bar.addView(refresh, new LinearLayout.LayoutParams(dp(40), dp(38)));
         addExtraActions(bar);
-        root.addView(bar);
+        root.addView(bar, new LinearLayout.LayoutParams(-1, dp(48)));
+        View divider = new View(this);
+        divider.setBackgroundColor(Color.rgb(226, 235, 230));
+        root.addView(divider, new LinearLayout.LayoutParams(-1, dp(1)));
 
         webView = new WebView(this);
         WebSettings settings = webView.getSettings();
-        settings.setUserAgentString(settings.getUserAgentString() + " JiayiCareStaffAndroid/0.1.5");
+        settings.setUserAgentString(settings.getUserAgentString() + " JiayiCareStaffAndroid/0.1.6");
         settings.setJavaScriptEnabled(true);
         webView.addJavascriptInterface(nativeAudio, "StaffNativeAudio");
         settings.setDomStorageEnabled(true);
@@ -232,13 +239,27 @@ public class BaseActivity extends Activity {
     protected Button barButton(String label) {
         Button button = new Button(this);
         button.setText(label);
+        button.setTextSize(13);
         button.setTextColor(Color.rgb(30, 107, 80));
         button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setPadding(0, 0, 0, 0);
         button.setBackgroundColor(Color.TRANSPARENT);
         return button;
     }
 
-    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    protected GradientDrawable statusPill(int background, int border) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(background);
+        shape.setCornerRadius(dp(10));
+        shape.setStroke(dp(1), border);
+        return shape;
+    }
+
+    protected int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
