@@ -13,11 +13,18 @@ export function annualItemLayout(key, def, managerName, nutritionName, nutrition
   }
   if (!simpleAnnualModules.includes(key)) return def
   const hidden = new Set(['standardPlanName', 'standardContent', 'standardSchedule', 'coordinator', 'followUpStaff', 'frequency', 'ownerRole', 'serviceMode', 'serviceType'])
+  const notesField = def.fields.find(f => f.key === 'notes')
+  const dateKeys = new Set(['visit_time', 'time', 'date'])
+  const fields = def.fields.filter(f => !hidden.has(f.key) && f.key !== 'notes').flatMap(f => dateKeys.has(f.key)
+    ? [{ ...f, label: '建议就医/检查日期', appointmentDate: true }, { key: 'timingReason', label: '时间评估依据', type: 'textarea', internal: true },
+      ...(notesField ? [{ ...notesField, label: '备注', placeholder: '填写本项安排需要补充说明的内容（选填）' }] : [])]
+    : [f])
+  if (notesField && !def.fields.some(f => dateKeys.has(f.key))) fields.push({ ...notesField, label: '备注', placeholder: '填写本项安排需要补充说明的内容（选填）' })
   return { ...def, reviewDriven: true, annualServiceArrangement: true, visitGrouping: ['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key), managerName: managerName || '未分配健管专员，请先完善客户归属',
-    fields: def.fields.filter(f => !hidden.has(f.key)).flatMap(f => ['visit_time', 'time', 'date'].includes(f.key) ? [{ ...f, label: '建议就医/检查日期', appointmentDate: true }, { key: 'timingReason', label: '时间评估依据', type: 'textarea', internal: true }] : [f]),
+    fields,
     serviceFields: [
       ...def.fields.filter(f => ['serviceMode', 'serviceType'].includes(f.key)).map(f => f.key === 'serviceMode' && ['medical_treatment', 'checkup_completion', 'abnormal_followup'].includes(key)
-        ? { ...f, options: [...f.options, { value: 'shared', label: '随同本次就诊（不重复派单）' }] } : f),
+        ? { ...f, options: [...(f.options || []), { value: 'shared', label: '随同本次就诊（不重复派单）' }] } : f),
     ],
   }
 }

@@ -335,9 +335,12 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
     try { const res = await staffAPI.deleteAiCaseReviewMessage(patientId, active._id, message._id); replaceTopic(res.data); setConclusionText(''); toast('讨论记录已删除，阶段性结论已失效，请重新整理') }
     catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
-  const uploadSelected = async event => {
-    const selected = Array.from(event.target.files || []).slice(0, 6 - files.length)
+  const uploadFiles = async incoming => {
+    const selected = Array.from(incoming || [])
     if (!selected.length) return
+    if (busy) return
+    if (selected.some(file => !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type))) return toast('研判附件只支持 JPG、PNG、WEBP、GIF 图片', 'error')
+    if (selected.length > 6 - files.length) return toast('每轮最多添加 6 张图片', 'error')
     setBusy(true)
     try {
       const uploaded = []
@@ -346,7 +349,25 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
         uploaded.push({ name: file.name, url: res.data.url, mimeType: file.type })
       }
       setFiles(list => [...list, ...uploaded].slice(0, 6))
-    } catch (err) { toast(err.message, 'error') } finally { setBusy(false); event.target.value = '' }
+    } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
+  }
+  const uploadSelected = event => {
+    const input = event.target
+    void uploadFiles(input.files).finally(() => { input.value = '' })
+  }
+  const pasteAttachment = event => {
+    const pastedFiles = Array.from(event.clipboardData?.items || [])
+      .filter(item => item.kind === 'file')
+      .map(item => item.getAsFile())
+      .filter(Boolean)
+    if (!pastedFiles.length) return
+    event.preventDefault()
+    const pastedText = event.clipboardData.getData('text/plain')
+    if (pastedText) {
+      const { selectionStart, selectionEnd } = event.target
+      setDraft(value => value.slice(0, selectionStart) + pastedText + value.slice(selectionEnd))
+    }
+    void uploadFiles(pastedFiles.map(file => file.name ? file : new File([file], `粘贴图片.${({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' })[file.type] || 'png'}`, { type: file.type })))
   }
   const send = async (retryMessage = null, explicitContent = '', attachmentOverride = null) => {
     if (busy || sendingRef.current || !active || (active.generation?.status === 'running' && !(retryMessage && sendStalled))) return
@@ -618,8 +639,8 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           return message && String(message.staff) === String(staff?._id) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => send(message)}>重试AI回复</button>
         })()}</div>}
         {sendNotice?.topicId === active._id && <div role="alert" style={{ color: '#B42318', marginBottom: 8 }}>{sendNotice.text}</div>}
-        <textarea className="form-input" rows={3} value={draft} onChange={e => setDraft(e.target.value)} placeholder="补充本轮新信息或修订意见，AI将只分析新增变化，不再从头重复…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); send() } }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>添加图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden disabled={busy} onChange={uploadSelected} /></label><button className="btn btn-primary btn-sm" disabled={busy || active.generation?.status === 'running' || (!draft.trim() && !files.length)} onClick={() => send()}>{busy ? '处理中…' : active.generation?.status === 'running' ? 'AI回复中…' : '发送给AI'}</button></div>
+        <textarea className="form-input" rows={3} value={draft} onChange={e => setDraft(e.target.value)} onPaste={pasteAttachment} placeholder="补充本轮新信息或修订意见，AI将只分析新增变化，不再从头重复…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); send() } }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}><label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>添加图片<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden disabled={busy} onChange={uploadSelected} /></label><span style={{ fontSize: 12, color: '#65776F', alignSelf: 'center' }}>可在输入框直接粘贴图片</span><button className="btn btn-primary btn-sm" disabled={busy || active.generation?.status === 'running' || (!draft.trim() && !files.length)} onClick={() => send()}>{busy ? '处理中…' : active.generation?.status === 'running' ? 'AI回复中…' : '发送给AI'}</button></div>
       </div></div>
 
       {!!active.messages?.length && <div className="card"><div className="card-header"><div className="card-title">{active.annualPlanYear ? '年度管理项目（来自已纳入的问题）' : '阶段性结论（当前有效信息）'}</div><button className="btn btn-secondary btn-sm" disabled={busy} onClick={generateConclusion}>{active.annualPlanYear ? 'AI起草并标准化目标' : 'AI整理结论'}</button></div><div className="card-body">
