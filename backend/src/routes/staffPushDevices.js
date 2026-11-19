@@ -5,19 +5,13 @@ const Device = require('../models/StaffPushDevice');
 const User = require('../models/User');
 const Message = require('../models/Message');
 const { CHANNELS, pushReady, destination } = require('../utils/staffPushCore');
+const { unreadCount } = require('../utils/staffPushUnreadCount');
 
 router.use(staffAuth);
 router.get('/capabilities', (_req, res) => res.json({ success: true, data: { enabled: !!pushReady() } }));
 router.get('/unread-count', async (req, res) => {
   try {
-    const entry = Object.entries(CHANNELS).find(([, channel]) => channel.role === req.staff.role);
-    if (!entry) return res.json({ success: true, data: { count: 0 } });
-    const [recipient, channel] = entry;
-    const patients = await User.find({ tenantId: req.staff.tenantId, [channel.field]: req.staff._id })
-      .select('_id').lean();
-    const count = await Message.countDocuments({ user: { $in: patients.map(patient => patient._id) },
-      type: 'user', recipient, staffReadAt: null, recalled: { $ne: true } });
-    return res.json({ success: true, data: { count: Math.min(99, count) } });
+    return res.json({ success: true, data: { count: await unreadCount(req.staff) } });
   } catch { return res.status(500).json({ success: false, message: '未读消息读取失败' }); }
 });
 

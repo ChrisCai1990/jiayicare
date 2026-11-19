@@ -119,7 +119,7 @@ async function send(group, senderType, sender, content, rawMentions = [], audioF
   if (!body || body.length > 2000) fail('请输入不超过2000字的消息', 400);
   if (mentions.some(m=>m.kind==='ai')) await require('../utils/aiDataConsent').assertPermission(patient._id,'assistant','qwen');
   if(quotedMessageId&&!await Message.exists({_id:validId(quotedMessageId),groupId:group._id,tenantId:group.tenantId}))fail('引用的消息不在此群内',400);
-  const message = await Message.create({ ...audioFields, quotedMessageId:quotedMessageId||undefined,wecomAlertEligible:senderType==='customer', tenantId: group.tenantId, groupId: group._id,
+  const message = await Message.create({ ...audioFields, quotedMessageId:quotedMessageId||undefined,wecomAlertEligible:senderType==='customer',staffPushEligible:senderType==='customer', tenantId: group.tenantId, groupId: group._id,
     patientId: group.patientId, senderType, senderId: sender._id,
     senderName: sender.name || '服务成员', content: body, mentions });
   const at = message.createdAt;
@@ -171,7 +171,7 @@ customerRouter.post('/:groupId/materials', wrap(async (req,res) => {
       }
       const message=await Message.findOneAndUpdate({eventKey:key},{$setOnInsert:{tenantId:group.tenantId,groupId:group._id,
         patientId:patient._id,senderType:'customer',senderId:patient._id,senderName:patient.name || '客户',
-        content:`已提交${label}`,materialReportId:existing._id,wecomAlertEligible:true,eventKey:key}}, {upsert:true,new:true});
+        content:`已提交${label}`,materialReportId:existing._id,wecomAlertEligible:true,staffPushEligible:true,eventKey:key}}, {upsert:true,new:true});
       await Group.updateOne({_id:group._id},{$max:{lastMessageAt:message.createdAt,lastCustomerMessageAt:message.createdAt}});
       return {id:message._id,reportId:existing._id};
     });

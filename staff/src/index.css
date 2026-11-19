@@ -701,3 +701,22 @@ textarea.form-control { resize: vertical; }
 .referral-record-card[open] > summary .referral-record-close { display: inline-block; }
 .referral-record-body { padding: 20px; border-top: 1px solid #DCE8E1; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .referral-record-heading time { width: 100%; margin-left: 0; } .referral-record-body { padding: 12px; } }
+
+@media (max-width: 768px) {
+  .staff-android-app .notifications-page { padding: 10px; }
+  .staff-android-app .notifications-page .page-header,
+  .staff-android-app .notifications-page .notification-stats { display: none; }
+  .staff-android-app .notifications-page .group-reminder-link { display: block; width: 100%; padding: 9px 10px; font-size: 13px; line-height: 1.4; white-space: normal; }
+  .staff-android-app .notifications-page .notification-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  .staff-android-app .notifications-page .notification-tabs .tab-btn { flex: 0 0 auto; min-height: 40px; padding: 7px 12px; white-space: nowrap; }
+  .staff-android-app .notification-conversations { padding: 0; overflow: hidden; }
+  .staff-android-app .notification-conversation-row { flex-direction: column; align-items: stretch !important; gap: 6px !important; padding: 12px !important; }
+  .staff-android-app .notification-conversation-main { width: 100%; }
+  .staff-android-app .notification-conversation-meta { min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+  .staff-android-app .notification-conversation-meta > span:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .staff-android-app .notification-conversation-phone,
+  .staff-android-app .notification-conversation-role,
+  .staff-android-app .notification-conversation-record { display: none; }
+  .staff-android-app .notification-conversation-actions { justify-content: space-between; margin-left: 52px; }
+  .staff-android-app .notification-conversation-actions .btn { min-height: 36px; }
+}

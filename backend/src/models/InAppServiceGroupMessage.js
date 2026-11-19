@@ -8,6 +8,8 @@ const schema = new mongoose.Schema({
   quotedMessageId: { type: mongoose.Schema.Types.ObjectId, default: undefined },
   wecomAlertEligible: { type:Boolean, default:false },
   wecomAlertQueuedAt: Date,
+  staffPushEligible: { type: Boolean, default: false },
+  staffPushQueuedAt: Date,
   replyTo: { type: mongoose.Schema.Types.ObjectId, default: undefined },
   senderId: { type: mongoose.Schema.Types.ObjectId, required: true },
   senderName: { type: String, required: true, maxlength: 120 },
@@ -23,6 +25,7 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 schema.index({ groupId: 1, createdAt: -1 });
 schema.index({ wecomAlertEligible: 1, wecomAlertQueuedAt: 1, createdAt: 1 });
+schema.index({ staffPushEligible: 1, staffPushQueuedAt: 1, createdAt: 1 });
 schema.index({ replyTo: 1 }, { unique: true, sparse: true });
 schema.index({ eventKey: 1 }, { unique: true, sparse: true });
 schema.index({ tenantId: 1, 'mentions.id': 1, createdAt: -1 });

@@ -55,6 +55,7 @@ public class BaseActivity extends Activity {
 
         webView = new WebView(this);
         WebSettings settings = webView.getSettings();
+        settings.setUserAgentString(settings.getUserAgentString() + " JiayiCareStaffAndroid/0.1.4");
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);

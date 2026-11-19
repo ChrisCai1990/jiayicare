@@ -180,7 +180,7 @@ export default function NotificationsPage() {
         )}
       </div>
 
-      {groupReminders.total > 0 && <button className="btn btn-secondary" style={{ color: '#B42318', borderColor: '#DC3545', marginBottom: 16 }} onClick={() => nav('/in-app-service-groups?scope=pending')}>● 服务群待人工回复 {groupReminders.total} 个（我的服务 {groupReminders.pending} · 团队监管 {groupReminders.supervised}） · 查看</button>}
+      {groupReminders.total > 0 && <button className="btn btn-secondary group-reminder-link" style={{ color: '#B42318', borderColor: '#DC3545', marginBottom: 16 }} onClick={() => nav('/in-app-service-groups?scope=pending')}>● 服务群待人工回复 {groupReminders.total} 个（我的服务 {groupReminders.pending} · 团队监管 {groupReminders.supervised}） · 查看</button>}
       {groupReminders.error && <p role="alert">服务群提醒更新失败，保留上次结果</p>}
       {/* 汇总徽章 */}
       <div className="notification-stats">
@@ -512,7 +512,7 @@ export default function NotificationsPage() {
 
       {/* ── 用户留言（会话模式）── */}
       {tab === 'userMsgs' && (
-        <div className="card">
+        <div className="card notification-conversations">
           {userMessageGroups.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用户留言</div>
           ) : (
@@ -520,14 +520,14 @@ export default function NotificationsPage() {
               {userMessageGroups.map((m, i, arr) => {
                 const roleKey = m.roleKey
                 return (
-                  <div key={`${m.user}_${roleKey}`} style={{ padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid #f5f2ec' : 'none',
+                  <div key={`${m.user}_${roleKey}`} className="notification-conversation-row" style={{ padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid #f5f2ec' : 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
                     cursor: 'pointer', transition: 'background 0.1s',
                     background: m.hasUnread ? '#FFFBF5' : '' }}
                     onClick={() => setThreadModal({ userId: m.user, userName: m.patientName, roleKey })}
                     onMouseEnter={e => e.currentTarget.style.background = '#faf9f6'}
                     onMouseLeave={e => e.currentTarget.style.background = m.hasUnread ? '#FFFBF5' : ''}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                    <div className="notification-conversation-main" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
                       <div style={{ position: 'relative', flexShrink: 0 }}>
                         <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1E6B5018', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
                           {m.patientName?.[0] || '?'}
@@ -535,21 +535,21 @@ export default function NotificationsPage() {
                         {m.hasUnread && <div style={{ position: 'absolute', top: 0, right: 0, width: 10, height: 10, borderRadius: '50%', background: '#DC3545', border: '2px solid #fff' }} />}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                        <div className="notification-conversation-meta" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                           <span style={{ fontWeight: m.hasUnread ? 700 : 600, fontSize: 14 }}>{m.patientName}</span>
-                          <span style={{ fontSize: 11, color: '#aaa' }}>{m.patientPhone}</span>
+                          <span className="notification-conversation-phone" style={{ fontSize: 11, color: '#aaa' }}>{m.patientPhone}</span>
                           <span style={{ fontSize: 11, color: '#0077B6', background: '#E8F4FB', padding: '1px 7px', borderRadius: 99 }}>共 {m.messageCount} 条{m.unreadCount > 0 ? ` · ${m.unreadCount} 条未读` : ''}</span>
-                          <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '1px 7px', borderRadius: 99 }}>
+                          <span className="notification-conversation-role" style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '1px 7px', borderRadius: 99 }}>
                             {roleKey === 'doctor' ? '健康顾问' : roleKey === 'nutritionist' ? '营养师' : roleKey === 'planner' ? '健康规划师' : roleKey === 'medicalAssistant' ? '就医专员' : '健管师'}
                           </span>
                         </div>
                         <div style={{ fontSize: 13, color: '#4A6558', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    <div className="notification-conversation-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <span style={{ fontSize: 11, color: '#aaa' }}>{new Date(m.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                       <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); setThreadModal({ userId: m.user, userName: m.patientName, roleKey }) }}>查看对话</button>
-                      <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/patients/${m.user}`) }}>档案</button>
+                      <button className="btn btn-secondary btn-sm notification-conversation-record" onClick={e => { e.stopPropagation(); nav(`/patients/${m.user}`) }}>档案</button>
                     </div>
                   </div>
                 )

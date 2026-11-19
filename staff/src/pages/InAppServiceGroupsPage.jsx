@@ -184,7 +184,7 @@ export default function InAppServiceGroupsPage() {
     scope === 'supervised' && group.supervised ||
     scope === 'pending' && group.waitingForStaff);
 
-  return <main className="service-assistant in-app-service-groups">
+  return <main className={`service-assistant in-app-service-groups${selected ? ' sg-chat-open' : ''}`}>
     <h1>系统服务群</h1>
     <details className="sg-lifecycle">
       <summary>小嘉服务群待确认（{tasks.length}）</summary>
