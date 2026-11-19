@@ -229,8 +229,8 @@
 }
 
 @media (max-width: 800px) {
-  .staff-android-app .mobile-header { display: none; }
-  .staff-android-app .main-content { padding: 0; }
+  .staff-android-app:has(.in-app-service-groups.sg-chat-open) .mobile-header { display: none; }
+  .staff-android-app .main-content:has(.in-app-service-groups.sg-chat-open) { padding: 0; }
   .staff-android-app .in-app-service-groups.sg-chat-open { height: 100dvh; min-height: 0; }
   .staff-android-app .in-app-service-groups.sg-chat-open .sg-workspace { height: 100%; }
   .staff-android-app .in-app-service-groups.sg-chat-open .sg-chat-panel { height: 100%; }

@@ -703,6 +703,8 @@ textarea.form-control { resize: vertical; }
 @media (max-width: 600px) { .referral-record-heading time { width: 100%; margin-left: 0; } .referral-record-body { padding: 12px; } }
 
 @media (max-width: 768px) {
+  .staff-android-app:has(.notifications-page) .mobile-header { display: none; }
+  .staff-android-app .main-content:has(.notifications-page) { padding: 0; }
   .staff-android-app .notifications-page { padding: 10px; }
   .staff-android-app .notifications-page .page-header,
   .staff-android-app .notifications-page .notification-stats { display: none; }
