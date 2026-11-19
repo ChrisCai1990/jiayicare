@@ -53,3 +53,32 @@ test('营养评估与就医同选时仍保留就医草稿', () => {
   assert.equal(first.modules.medical_treatment.records.length, 1)
   assert.equal(carryAnnualTargets(first.modules, target, draft).modules.medical_treatment.records.length, 1)
 })
+
+test('多个营养评估问题归总后采用最早建议日期，顾问改期不被覆盖', () => {
+  const targets = [
+    { issueId: 'issue:1', sourceGoals: ['营养评估'], nutritionRelevant: true,
+      directionTimings: { nutrition_assessment: { mode: 'single', firstDueDate: '2027-02-01' } } },
+    { issueId: 'issue:2', sourceGoals: ['营养评估'], nutritionRelevant: true,
+      directionTimings: { nutrition_assessment: { mode: 'single', firstDueDate: '2027-01-10' } } },
+  ]
+  const first = carryAnnualTargets({}, targets)
+  assert.equal(first.modules.nutrition_assessment.executionDate, '2027-01-10')
+  assert.equal(carryAnnualTargets(first.modules, targets).changed, false)
+  const advisor = { ...first.modules, nutrition_assessment: { ...first.modules.nutrition_assessment, executionDate: '2027-01-20' } }
+  assert.equal(carryAnnualTargets(advisor, targets).modules.nutrition_assessment.executionDate, '2027-01-20')
+})
+
+test('AI 已生成同方向行动但日期空白时承接顾问逐方向确认的日期', () => {
+  const target = [{ issueId: 'issue:timed', sourceGoals: ['安排就医', '完善检查'] }]
+  const drafts = [
+    { key: 'medical_treatment', record: { sourceIds: ['issue:timed'], visit_time: '2027-01-19', appointmentSchedulingVersion: 1 } },
+    { key: 'checkup_completion', record: { sourceIds: ['issue:timed'], time: '2027-02-20' } },
+  ]
+  const modules = { medical_treatment: { records: [{ sourceIds: ['issue:timed'], reason: 'AI 草稿' }] },
+    checkup_completion: { records: [{ sourceIds: ['issue:timed'], items: 'AI 草稿' }] } }
+  const carried = carryAnnualTargets(modules, target, drafts).modules
+  assert.equal(carried.medical_treatment.records[0].visit_time, '2027-01-19')
+  assert.equal(carried.checkup_completion.records[0].time, '2027-02-20')
+  assert.equal(carried.medical_treatment.records.length, 1)
+  assert.equal(carried.checkup_completion.records.length, 1)
+})

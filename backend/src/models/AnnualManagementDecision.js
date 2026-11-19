@@ -11,6 +11,7 @@ const schema = new mongoose.Schema({
   goal: { type: String, default: '' },
   action: { type: String, default: '' },
   actionTiming: { type: mongoose.Schema.Types.Mixed, default: { mode: 'pending', firstDueDate: '', frequency: '' } },
+  directionTimings: { type: mongoose.Schema.Types.Mixed, default: {} },
   direction: { type: String, enum: ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'ongoing_management', 'nutrition_assessment'], required: true },
   directions: [{ type: String, enum: ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'monitoring', 'ongoing_management', 'nutrition_assessment'] }],
   note: { type: String, default: '' },

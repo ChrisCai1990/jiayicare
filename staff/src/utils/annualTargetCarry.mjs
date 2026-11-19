@@ -17,7 +17,14 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
   const records = [...mergeManagementTargetEdits(confirmed, existing), ...existing.filter(row => !ids.has(row.issueId))]
   const next = { ...modules, management_targets: { ...(modules.management_targets || {}), enabled: true, records } }
   const nutritionIssues = confirmed.filter(row => row.sourceGoals?.includes('营养评估') || row.sourceGoal === '营养评估')
-  if (nutritionIssues.length) next.nutrition_assessment = { ...(modules.nutrition_assessment || {}), enabled: true }
+  if (nutritionIssues.length) {
+    const suggested = nutritionIssues.map(row => row.directionTimings?.nutrition_assessment?.firstDueDate)
+      .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value || '')).sort()[0] || ''
+    const existingNutrition = modules.nutrition_assessment || {}
+    const dateFromSource = !existingNutrition.executionDate || existingNutrition.executionDate === existingNutrition.screeningSuggestedDate
+    next.nutrition_assessment = { ...existingNutrition, enabled: true,
+      ...(dateFromSource ? { executionDate: suggested, screeningSuggestedDate: suggested } : {}) }
+  }
   for (const key of ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine']) {
     const sourceDrafts = draftActions.filter(action => action.key === key).map(action => action.record)
     const activeDraftIds = new Set(sourceDrafts.flatMap(record => record?.sourceIds || []).map(String))
@@ -25,7 +32,7 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
     const retained = oldRows.filter(row => !row.screeningDraft || (row.sourceIds || []).some(id => activeDraftIds.has(String(id))))
     const dateKey = key === 'medical_treatment' ? 'visit_time' : 'time'
     const hydrated = retained.map(row => {
-      if (!row.screeningDraft || row[dateKey] || row.appointmentSchedulingVersion || row.datePending || row.timingStatus === 'pending_confirmation') return row
+      if (row[dateKey] || row.appointmentSchedulingVersion || row.datePending || row.timingStatus === 'pending_confirmation') return row
       const source = sourceDrafts.find(record => (record.sourceIds || []).some(id => row.sourceIds?.includes(id)))
       return source?.[dateKey] ? { ...row, [dateKey]: source[dateKey], timingReason: row.timingReason || source.timingReason || '',
         ...(source.appointmentSchedulingVersion === 1 ? { appointmentSchedulingVersion: 1 } : {}) } : row

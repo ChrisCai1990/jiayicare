@@ -55,3 +55,18 @@ test('同一问题多选复查、就医和营养评估，分别形成行动且�
   assert.match(validatePlanCoverage({ ...modules, medical_treatment: { records: [] } }, evidence), /管理方向/);
   assert.match(validatePlanCoverage({ ...modules, nutrition_assessment: { enabled: false } }, evidence), /营养评估/);
 });
+
+test('多选方向的独立日期只进入各自行动', () => {
+  const evidence = [{ id: 'management_issue:timed', content: {
+    direction: 'medical_treatment', directions: ['medical_treatment', 'checkup_completion', 'nutrition_assessment'],
+    problem: '脂肪肝', goal: '改善指标', directionTimings: {
+      medical_treatment: { mode: 'single', firstDueDate: '2027-01-19' },
+      checkup_completion: { mode: 'single', firstDueDate: '2027-02-20' },
+      nutrition_assessment: { mode: 'single', firstDueDate: '2026-12-01' },
+    },
+  } }];
+  const actions = draftPlanActions(evidence);
+  assert.equal(actions.find(row => row.key === 'medical_treatment').record.visit_time, '2027-01-19');
+  assert.equal(actions.find(row => row.key === 'checkup_completion').record.time, '2027-02-20');
+  assert.equal(managementTargets(evidence)[0].directionTimings.nutrition_assessment.firstDueDate, '2026-12-01');
+});

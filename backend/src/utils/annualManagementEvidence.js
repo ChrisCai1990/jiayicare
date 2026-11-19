@@ -92,6 +92,7 @@ async function load(patientId, year, dependencies = {}) {
       evidence.push({ id: `management_issue:${decision._id}`, content: {
         problem: decision.title, direction: decision.direction, directions: directionsOf(decision), advisorNote: decision.note,
         goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
+        directionTimings: decision.directionTimings || {},
         reportTitle: '已处理不适主诉', sourceKind: 'symptom', source: { name: '主诉', value: record.value },
         sourceRecordId: record._id, checkDate: record.recordedAt, reviewedAt: decision.reviewedAt,
       } });
@@ -112,6 +113,7 @@ async function load(patientId, year, dependencies = {}) {
       reportId: report._id, reportTitle: report.title, checkDate: report.checkDate,
       problem: decision.title, direction: decision.direction, directions: directionsOf(decision), advisorNote: decision.note,
       goal: decision.goal || '', action: decision.action || '', actionTiming: decision.actionTiming || null,
+      directionTimings: decision.directionTimings || {},
       reviewPlan, legacyReviewNote: reviewPlan?.kind !== 'recheck' && reviewRules.legacyReviewNote(decision.note),
       source: decision.sourceSnapshot?.item || null,
       sourceItems: decision.sourceSnapshot?.items || null, reviewedAt: decision.reviewedAt,
@@ -154,7 +156,7 @@ const DEFAULT_MANAGEMENT_GOALS = {
 };
 function managementTargets(evidence = [], pilot = true) {
   return evidence.slice(0, 32).map(item => {
-    const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming, source } = item.content;
+    const { problem, direction, reportTitle, advisorNote, goal, action, actionTiming, directionTimings, source } = item.content;
     const selected = directionsOf(item.content);
     const directionLabels = selected.map(value => DIRECTION_LABELS[value] || '持续管理');
     const directionLabel = directionLabels.join('、');
@@ -167,6 +169,7 @@ function managementTargets(evidence = [], pilot = true) {
         ? [source.name || problem, source.value, source.unit].filter(value => value !== undefined && value !== null && value !== '').join(' ') : '',
       sourceStatus: source?.status || '',
       ...(actionTiming?.mode && actionTiming.mode !== 'pending' ? { actionTiming } : {}),
+      ...(directionTimings && Object.keys(directionTimings).length ? { directionTimings } : {}),
       nutritionRelevant: selected.includes('nutrition_assessment') || selected.includes('ongoing_management') && item.content.sourceKind !== 'symptom', sourceTitle: problem || reportTitle || '已审核专项筛查', sourceGoal: directionLabel, sourceGoals: directionLabels };
   });
 }
@@ -195,15 +198,16 @@ function draftPlanActions(evidence = []) {
     const content = item.content || {};
     for (const direction of directionsOf(content)) {
     if (content.reviewPlan?.kind === 'recheck' && direction === 'abnormal_followup' || !fields[direction]) continue;
-    const suggestedDate = ['single', 'rolling'].includes(content.actionTiming?.mode) && require('../../../shared/annualAppointment.cjs').validDay(content.actionTiming?.firstDueDate)
-      ? content.actionTiming.firstDueDate : '';
+    const timing = content.directionTimings?.[direction] || (!Object.keys(content.directionTimings || {}).length && direction === content.direction ? content.actionTiming : null);
+    const suggestedDate = ['single', 'rolling'].includes(timing?.mode) && require('../../../shared/annualAppointment.cjs').validDay(timing?.firstDueDate)
+      ? timing.firstDueDate : '';
     const dateKey = direction === 'medical_treatment' ? 'visit_time' : 'time';
     actions.push({ key: direction, record: {
       sourceIds: [item.id], [fields[direction]]: content.problem || content.reportTitle || '待核对事项',
       ...(direction === 'medical_treatment' ? {} : { reason: content.action || content.advisorNote || content.problem || '' }),
       ...(suggestedDate ? { [dateKey]: suggestedDate,
-        timingReason: content.actionTiming?.dateBasis === 'interval'
-          ? `按顾问确认的从${content.actionTiming.anchorDate}起${content.actionTiming.intervalMonths}个月后就医`
+        timingReason: timing?.dateBasis === 'interval'
+          ? `按顾问确认的从${timing.anchorDate}起${timing.intervalMonths}个月后就医`
           : '按顾问纳入年度管理时确认的首次执行日期',
         ...(direction === 'medical_treatment' ? { appointmentSchedulingVersion: 1 } : {}),
       } : {}),

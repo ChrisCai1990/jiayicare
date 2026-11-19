@@ -47,6 +47,29 @@ test('就医与复查同时选中时分别保留就医日期和复查计划', ()
   assert.equal(result.actionTiming.dateBasis, 'interval');
 });
 
+test('同一目标下各管理方向保存独立时间，不需要重复填写下一步行动', () => {
+  const result = normalizeAction({ direction: 'medical_treatment', directions: ['medical_treatment', 'nutrition_assessment', 'checkup_completion'],
+    goal: '明确风险并改善指标', directionTimings: {
+      medical_treatment: { mode: 'single', dateBasis: 'interval', anchorDate: '2026-11-19', intervalMonths: 2 },
+      nutrition_assessment: { mode: 'single', firstDueDate: '2026-12-01' },
+      checkup_completion: { mode: 'pending' },
+    } });
+  assert.equal(result.action, '');
+  assert.equal(result.directionTimings.medical_treatment.firstDueDate, '2027-01-19');
+  assert.equal(result.directionTimings.nutrition_assessment.firstDueDate, '2026-12-01');
+  assert.equal(result.directionTimings.checkup_completion.firstDueDate, '');
+  assert.throws(() => normalizeAction({ direction: 'nutrition_assessment', directions: ['nutrition_assessment'], goal: '明确风险',
+    directionTimings: { nutrition_assessment: { mode: 'single', dateBasis: 'interval', anchorDate: '2026-11-19', intervalMonths: 2 } } }), /仅适用于安排就医/);
+});
+
+test('复查间隔与就医日期各自保存，互不覆盖', () => {
+  const result = normalizeAction({ direction: 'abnormal_followup', directions: ['abnormal_followup', 'medical_treatment'],
+    goal: '明确风险', directionTimings: { medical_treatment: { mode: 'single', firstDueDate: '2027-01-19' } } },
+  { kind: 'recheck', anchorDate: '2026-11-19', intervalMonths: 3 });
+  assert.equal(result.directionTimings.medical_treatment.firstDueDate, '2027-01-19');
+  assert.equal(result.actionTiming.firstDueDate, '2027-02-19');
+});
+
 test('按月计算的就医日期进入年度方案后，预约随访提前七天', async t => {
   const User = require('../src/models/User'), Admin = require('../src/models/Admin');
   const manager = 'aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -66,4 +89,5 @@ test('AI草稿只接受目标和行动，不接收其自行推断的排期', () 
   assert.deepEqual(parseDraft('{"goal":"核实基线","action":"安排资料核对","firstDueDate":"2027-01-01"}'),
     { goal: '核实基线', action: '安排资料核对' });
   assert.throws(() => parseDraft('{"goal":"","action":"安排资料核对"}'), /缺少有效/);
+  assert.deepEqual(parseDraft('{"goal":"明确风险"}'), { goal: '明确风险', action: '' });
 });

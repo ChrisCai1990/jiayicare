@@ -31,9 +31,8 @@ function load(patientId, year) {
 export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast, onSaved }) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [drafting, setDrafting] = useState(false)
   const [title, setTitle] = useState(''), [directions, setDirections] = useState([]), [note, setNote] = useState('')
-  const [goal, setGoal] = useState(''), [action, setAction] = useState('')
-  const [timingMode, setTimingMode] = useState('pending'), [firstDueDate, setFirstDueDate] = useState(''), [frequency, setFrequency] = useState('')
-  const [timingBasis, setTimingBasis] = useState('interval'), [visitMonths, setVisitMonths] = useState(''), [visitAnchorDate, setVisitAnchorDate] = useState('')
+  const [goal, setGoal] = useState('')
+  const [directionTimings, setDirectionTimings] = useState({})
   const [reviewKind, setReviewKind] = useState('none'), [reviewMonths, setReviewMonths] = useState('3'), [reviewItems, setReviewItems] = useState('')
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
   const [reviewDepartment, setReviewDepartment] = useState('')
@@ -62,13 +61,19 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const direction = directions[0] || ''
   const hasDirection = value => directions.includes(value)
   const directionText = values => (values || []).map(value => DIRECTIONS.find(([key]) => key === value)?.[1] || value).join('、')
+  const timingFor = value => directionTimings[value]
+    ? { dateBasis: directionTimings[value].dateBasis || 'date', ...directionTimings[value] }
+    : { mode: 'pending', dateBasis: value === 'medical_treatment' ? 'interval' : 'date' }
+  const updateTiming = (value, patch) => setDirectionTimings(previous => ({ ...previous, [value]: {
+    mode: 'pending', dateBasis: previous[value] ? previous[value].dateBasis || 'date' : value === 'medical_treatment' ? 'interval' : 'date',
+    ...(previous[value] || {}), ...patch,
+  } }))
   const savedDirections = saved?.directions?.length ? saved.directions : [saved?.direction].filter(Boolean)
   const toggleDirection = value => {
     const next = directions.includes(value) ? directions.filter(item => item !== value) : DIRECTIONS.map(([key]) => key).filter(key => key === value || directions.includes(key))
     setDirections(next)
     if (value === 'abnormal_followup' && next.includes(value)) setReviewKind('recheck')
     if (!next.includes('abnormal_followup') && !next.includes('ongoing_management')) setReviewKind('none')
-    if (!next.includes('medical_treatment')) { setTimingMode('pending'); setFirstDueDate(''); setFrequency(''); setVisitMonths(''); setVisitAnchorDate('') }
   }
   useEffect(() => {
     if (!patientId || !year || (!reportSource && !symptomSource)) return
@@ -89,15 +94,18 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     if (!pilot && planCheck.plan && (!amendment.reason.trim() || !amendment.advice.trim() || amendment.changeReason.trim().length < 2 || amendment.date && !amendment.timingReason.trim())) {
       setError('请填写资料依据、处理建议和修订原因；填写日期时还需时间依据'); return
     }
-    if (title.trim().length < 2 || !directions.length || pilot && (!goal.trim() || !action.trim())) { setError(pilot ? '请填写具体问题、管理方向、目标和下一步行动' : '请填写具体问题和管理方向'); return }
+    if (title.trim().length < 2 || !directions.length || pilot && !goal.trim()) { setError(pilot ? '请填写具体问题、管理方向和整体目标' : '请填写具体问题和管理方向'); return }
     setBusy(true); setError('')
     try {
       const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, directions, note: note.trim(),
-        ...(pilot ? { goal: goal.trim(), action: action.trim(), actionTiming: {
-          mode: timingMode, firstDueDate: hasDirection('medical_treatment') && timingMode !== 'pending' && timingBasis === 'interval' ? '' : firstDueDate,
-          frequency: frequency.trim(), ...(hasDirection('medical_treatment') && timingMode !== 'pending' && timingBasis === 'interval'
-            ? { dateBasis: 'interval', anchorDate: visitAnchorDate, intervalMonths: Number(visitMonths) } : {}),
-        } } : {}),
+        ...(pilot ? { goal: goal.trim(), action: '', directionTimings: Object.fromEntries(directions
+          .filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value)))
+          .map(value => { const timing = timingFor(value); return [value, { mode: timing.mode || 'pending',
+            firstDueDate: value === 'medical_treatment' && timing.mode !== 'pending' && timing.dateBasis === 'interval' ? '' : timing.firstDueDate || '',
+            frequency: timing.mode === 'rolling' ? timing.frequency || '' : '',
+            ...(value === 'medical_treatment' && timing.mode !== 'pending' && timing.dateBasis === 'interval'
+              ? { dateBasis: 'interval', anchorDate: timing.anchorDate || '', intervalMonths: Number(timing.intervalMonths) } : {}),
+          }] })) } : {}),
         reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
         ...(adoptLegacy && legacy?._id ? { legacyDecisionId: legacy._id } : {}) })
       setSaved(result.data); if (adoptLegacy) setLegacy(null)
@@ -122,23 +130,21 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     try {
       const result = await staffAPI.draftAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, directions })
       setGoal(current => current.trim() || result.data.goal)
-      setAction(current => current.trim() || result.data.action)
     } catch (e) { setError(e.message || 'AI草稿暂不可用，请手动填写') }
     finally { setDrafting(false) }
   }
   return <>
     <button type="button" className={`btn ${saved ? 'btn-primary' : 'btn-secondary'} btn-sm`} title={saved ? `已纳入年度管理：${directionText(savedDirections) || '管理方向待核对'}；点击可查看或调整` : '点击确认是否纳入年度管理'} onClick={event => {
       event.stopPropagation(); setTitle(saved?.title || suggestedIssue || suggestions[0] || '');
-      setDirections(savedDirections); setNote(saved?.note || ''); setGoal(saved?.goal || ''); setAction(saved?.action || '')
-      setTimingMode(saved?.actionTiming?.mode === 'rolling' && saved?.reviewPlan?.kind === 'recheck' && !savedDirections.includes('medical_treatment') ? 'pending' : saved?.actionTiming?.mode || 'pending')
-      setFirstDueDate(saved?.reviewPlan?.kind === 'recheck' && !savedDirections.includes('medical_treatment') ? '' : saved?.actionTiming?.firstDueDate || '')
-      setFrequency(saved?.reviewPlan?.kind === 'recheck' && !savedDirections.includes('medical_treatment') ? '' : saved?.actionTiming?.frequency || '')
-      setTimingBasis(saved?.actionTiming?.dateBasis === 'interval' ? 'interval' : saved ? 'date' : 'interval')
-      setVisitMonths(saved?.actionTiming?.dateBasis === 'interval' ? String(saved.actionTiming.intervalMonths || '') : '')
-      setVisitAnchorDate(saved?.actionTiming?.dateBasis === 'interval' ? saved.actionTiming.anchorDate || '' : '')
+      setDirections(savedDirections); setNote(saved?.note || ''); setGoal(saved?.goal || '')
+      const legacyTimingDirection = saved?.reviewPlan?.kind === 'recheck' && savedDirections.includes('medical_treatment')
+        ? 'medical_treatment' : savedDirections[0]
+      setDirectionTimings(saved?.directionTimings && Object.keys(saved.directionTimings).length ? saved.directionTimings
+        : saved?.actionTiming && legacyTimingDirection && !(saved?.reviewPlan?.kind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(legacyTimingDirection))
+          ? { [legacyTimingDirection]: saved.actionTiming } : {})
       setAdoptLegacy(false); setError(''); setOpen(true)
       setAmendment({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
-      setReviewKind(saved?.reviewPlan?.kind === 'recheck' ? 'recheck' : 'none')
+      setReviewKind(savedDirections.includes('abnormal_followup') || saved?.reviewPlan?.kind === 'recheck' ? 'recheck' : 'none')
       setReviewMonths(String(saved?.reviewPlan?.intervalMonths || 3))
       setReviewItems((saved?.reviewPlan?.items || []).join('、'))
       setReviewAnchorDate(saved?.reviewPlan?.anchorDate || new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))
@@ -153,18 +159,16 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         <div role="group" aria-label="管理方向（可多选）" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>{DIRECTIONS.filter(([value]) => (value !== 'ongoing_management' || savedDirections.includes(value)) && (!symptomSource || ['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(value))).map(([value, label]) => <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 8px', border: `1px solid ${hasDirection(value) ? '#17694D' : '#DDE6E0'}`, borderRadius: 7, cursor: 'pointer', background: hasDirection(value) ? '#F1F8F3' : '#FFF' }}><input type="checkbox" checked={hasDirection(value)} disabled={drafting} onChange={() => toggleDirection(value)} />{label}</label>)}</div>
         {pilot && <><label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
         <textarea className="form-input" rows={2} maxLength={240} value={goal} onChange={e => setGoal(e.target.value)} placeholder="写出本年度要达到或明确的可核对结果；缺少基线时先以建立基线为目标" />
-        <label className="form-label" style={{ marginTop: 12 }}>下一步行动</label>
-        <textarea className="form-input" rows={2} maxLength={400} value={action} onChange={e => setAction(e.target.value)} placeholder="写明需要安排的就医、检查、资料核对或专业评估" />
         <button type="button" className="btn btn-secondary btn-sm" disabled={drafting || busy || !direction || !title.trim()} onClick={draft} style={{ marginTop: 8 }}>
-          {drafting ? 'AI 起草中…' : 'AI 起草空白目标和行动'}
+          {drafting ? 'AI 起草中…' : 'AI 起草空白目标'}
         </button>
         <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>只填入空白字段；顾问核对原始资料后修改确认。</div></>}
         <label className="form-label" style={{ marginTop: 12 }}>顾问补充说明（可选）</label>
         <textarea className="form-input" rows={2} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="如已确认的复查时限、就医意向或待核实事项" />
-        {!symptomSource && (hasDirection('ongoing_management') || hasDirection('abnormal_followup')) && <><label className="form-label" style={{ marginTop: 12 }}>是否需要定期复查</label>
-        <select className="form-input" value={reviewKind} onChange={e => setReviewKind(e.target.value)}>
+        {!symptomSource && (hasDirection('ongoing_management') || hasDirection('abnormal_followup')) && <><label className="form-label" style={{ marginTop: 12 }}>定期复查 · 时间安排</label>
+        {!hasDirection('abnormal_followup') && <select className="form-input" value={reviewKind} onChange={e => setReviewKind(e.target.value)}>
           <option value="none">不单独安排复查</option><option value="recheck">安排一次复查</option>
-        </select>
+        </select>}
         {reviewKind === 'recheck' && <div style={{ marginTop: 10, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
           <label className="form-label">约几个月后复查</label>
           <input className="form-input" type="number" min="1" max="24" value={reviewMonths} onChange={e => setReviewMonths(e.target.value)} />
@@ -176,27 +180,31 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <input className="form-input" maxLength={100} value={reviewDepartment} onChange={e => setReviewDepartment(e.target.value)} placeholder="例如：消化内科；不同专科请分别归属" />
           <div style={{ fontSize: 12, color: '#65776F' }}>同一月份、同一专科的项目归为一次就诊复查；先由专科医生评估并开单，再完成检查及结果回顾。</div>
         </div>}</>}
-        {pilot && (reviewKind !== 'recheck' || hasDirection('medical_treatment')) && <div style={{ marginTop: 10, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
-          <label className="form-label">执行安排</label>
-          <select className="form-input" value={timingMode} onChange={e => { setTimingMode(e.target.value); setFirstDueDate(''); setFrequency('') }}>
-            <option value="pending">时间待确认</option><option value="single">单次行动</option><option value="rolling">持续跟进，完成本轮后安排下一轮</option>
-          </select>
-          {timingMode !== 'pending' && hasDirection('medical_treatment') && <><label className="form-label" style={{ marginTop: 8 }}>建议就医日期的确定方式</label>
-            <select className="form-input" value={timingBasis} onChange={e => setTimingBasis(e.target.value)}>
-              <option value="interval">按起算日期和间隔计算</option><option value="date">直接选择日期</option>
-            </select></>}
-          {timingMode !== 'pending' && hasDirection('medical_treatment') && timingBasis === 'interval' && <>
-            <label className="form-label" style={{ marginTop: 8 }}>几个月后就医</label>
-            <input className="form-input" type="number" min="1" max="24" value={visitMonths} onChange={e => setVisitMonths(e.target.value)} />
-            <label className="form-label" style={{ marginTop: 8 }}>从哪一天起算</label>
-            <DateField type="date" className="form-input" value={visitAnchorDate} onChange={e => setVisitAnchorDate(e.target.value)} />
-            <div style={{ fontSize: 12, color: '#365E4C', marginTop: 7 }}>建议就医日期：{visitMonths && annualAppointment.addMonths(visitAnchorDate, Number(visitMonths)) || '填写间隔与起算日期后自动计算'}；方案确认后按建议日期提前 7 天安排预约随访。</div>
-          </>}
-          {timingMode !== 'pending' && (!hasDirection('medical_treatment') || timingBasis === 'date') && <><label className="form-label" style={{ marginTop: 8 }}>首次执行日期</label>
-            <DateField type="date" className="form-input" value={firstDueDate} onChange={e => setFirstDueDate(e.target.value)} /></>}
-          {timingMode === 'rolling' && <><label className="form-label" style={{ marginTop: 8 }}>下一轮如何确定</label>
-            <input className="form-input" maxLength={100} value={frequency} onChange={e => setFrequency(e.target.value)} placeholder="例如：根据本轮结果由负责人确定" /></>}
-        </div>}
+        {pilot && directions.filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value))).map(value => {
+          const timing = timingFor(value)
+          const isMedical = value === 'medical_treatment'
+          return <div key={value} style={{ marginTop: 10, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
+            <label className="form-label">{DIRECTIONS.find(([key]) => key === value)?.[1]} · 时间安排</label>
+            <select className="form-input" value={timing.mode || 'pending'} onChange={e => updateTiming(value, { mode: e.target.value, firstDueDate: '', frequency: '' })}>
+              <option value="pending">时间待确认</option><option value="single">单次安排</option><option value="rolling">持续跟进，完成本轮后安排下一轮</option>
+            </select>
+            {timing.mode !== 'pending' && isMedical && <><label className="form-label" style={{ marginTop: 8 }}>建议就医日期的确定方式</label>
+              <select className="form-input" value={timing.dateBasis || 'interval'} onChange={e => updateTiming(value, { dateBasis: e.target.value, firstDueDate: '' })}>
+                <option value="interval">按起算日期和间隔计算</option><option value="date">直接选择日期</option>
+              </select></>}
+            {timing.mode !== 'pending' && isMedical && (timing.dateBasis || 'interval') === 'interval' && <>
+              <label className="form-label" style={{ marginTop: 8 }}>几个月后就医</label>
+              <input className="form-input" type="number" min="1" max="24" value={timing.intervalMonths || ''} onChange={e => updateTiming(value, { intervalMonths: e.target.value })} />
+              <label className="form-label" style={{ marginTop: 8 }}>从哪一天起算</label>
+              <DateField type="date" className="form-input" value={timing.anchorDate || ''} onChange={e => updateTiming(value, { anchorDate: e.target.value })} />
+              <div style={{ fontSize: 12, color: '#365E4C', marginTop: 7 }}>建议就医日期：{timing.intervalMonths && annualAppointment.addMonths(timing.anchorDate, Number(timing.intervalMonths)) || '填写间隔与起算日期后自动计算'}；方案确认后按建议日期提前 7 天安排预约随访。</div>
+            </>}
+            {timing.mode !== 'pending' && (!isMedical || (timing.dateBasis || 'interval') === 'date') && <><label className="form-label" style={{ marginTop: 8 }}>{isMedical ? '建议就医日期' : '首次执行日期'}</label>
+              <DateField type="date" className="form-input" value={timing.firstDueDate || ''} onChange={e => updateTiming(value, { firstDueDate: e.target.value })} /></>}
+            {timing.mode === 'rolling' && <><label className="form-label" style={{ marginTop: 8 }}>下一轮如何确定</label>
+              <input className="form-input" maxLength={100} value={timing.frequency || ''} onChange={e => updateTiming(value, { frequency: e.target.value })} placeholder="例如：根据本轮结果由负责人确定" /></>}
+          </div>
+        })}
         {!saved && legacy && <label style={{ display: 'block', marginTop: 12, padding: 10, background: '#FFF9ED', borderRadius: 6, fontSize: 13 }}>
           <input type="checkbox" checked={adoptLegacy} onChange={e => {
             setAdoptLegacy(e.target.checked)
