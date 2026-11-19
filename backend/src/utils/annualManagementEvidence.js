@@ -171,6 +171,36 @@ function generationActionEvidence(evidence = []) {
   return evidence.filter(item => item.content.direction !== 'nutrition_assessment');
 }
 
+// Project confirmed screening decisions into editable annual-plan actions. This
+// never schedules an appointment or writes a plan; the advisor reviews the draft.
+function draftPlanActions(evidence = []) {
+  const actions = [];
+  for (const group of require('./annualReviewPlan').reviewGroups(evidence)) {
+    actions.push({ key: 'abnormal_followup', record: {
+      sourceIds: group.sourceIds, reviewGroupVersion: 1, reviewItems: group.items,
+      items: `复查${group.items.length}项检查`,
+      reason: group.problems.join('、'), department: group.department,
+      time: group.dueDate, reviewStatus: 'pending_family_doctor_review',
+    } });
+  }
+  const fields = {
+    medical_treatment: 'reason', checkup_completion: 'items',
+    abnormal_followup: 'items', vaccine: 'name',
+  };
+  for (const item of evidence) {
+    const content = item.content || {};
+    const direction = content.direction;
+    if (content.reviewPlan?.kind === 'recheck' || !fields[direction]) continue;
+    actions.push({ key: direction, record: {
+      sourceIds: [item.id], [fields[direction]]: content.problem || content.reportTitle || '待核对事项',
+      ...(direction === 'medical_treatment' ? {} : { reason: content.action || content.advisorNote || content.problem || '' }),
+      goal: content.goal || DEFAULT_MANAGEMENT_GOALS[direction] || '',
+      reviewStatus: 'pending_family_doctor_review',
+    } });
+  }
+  return actions;
+}
+
 function validatePlanCoverage(moduleData = {}, evidence = []) {
   const reviewGroups = require('./annualReviewPlan').reviewGroups(evidence);
   for (const group of reviewGroups) {
@@ -214,4 +244,4 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
   return '';
 }
 
-module.exports = { load, managementTargets, generationActionEvidence, validatePlanCoverage, effectiveDecisions, reportSourceItems };
+module.exports = { load, managementTargets, draftPlanActions, generationActionEvidence, validatePlanCoverage, effectiveDecisions, reportSourceItems };

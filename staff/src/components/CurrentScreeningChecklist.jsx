@@ -88,7 +88,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
     {state.loading ? <p>正在核对来源…</p> : <>
       <p style={{ fontSize: 13, margin: '10px 0' }}>待年度方案承接 {pendingSources.length} 项 · AI 待核对 {pendingAICheckups} 项</p>
       <div style={{ marginTop: 12, padding: 10, background: '#fff', borderRadius: 8 }}><b>待承接的管理事项</b>
-        {!state.plan && <p style={{ fontSize: 12 }}>本年度方案尚未确认。<a href={`/patients/${patientId}/annual-health?year=${year}#annual-management-sources`}>打开年度方案</a>核对已纳入的问题、目标和执行安排。</p>}
+        {!state.plan && <p style={{ fontSize: 12 }}>本年度方案尚未确认。<a href={`/patients/${patientId}/annual-health?year=${year}#annual-plan-content`}>打开年度方案</a>核对已纳入的问题、目标和执行安排。</p>}
         {!pendingSources.length && <p style={{ fontSize: 12 }}>目前没有待补入事项。</p>}
         {pendingSources.map(source => <div key={`${source.kind}:${source.id}`} style={{ borderTop: '1px solid #E4ECE7', marginTop: 8, paddingTop: 8, fontSize: 13 }}>
           <b>{source.title}</b> · {directionLabel[source.direction] || '待确认去向'}

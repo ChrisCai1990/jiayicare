@@ -10761,7 +10761,7 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
       const unresolvedSymptoms = await HealthRecord.find({ user: req.params.id, type: 'symptom', 'symptomWorkflow.status': 'pending_doctor',
         recordedAt: { $lt: new Date(`${year + 1}-01-01T00:00:00+08:00`) } })
         .select('_id value recordedAt').sort({ recordedAt: -1 }).limit(20).lean();
-      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
+      return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), draftActions: require('../utils/annualManagementEvidence').draftPlanActions(management.evidence), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
         unresolvedSymptoms: unresolvedSymptoms.map(row => ({ id: row._id, value: String(row.value || '').slice(0, 120), recordedAt: row.recordedAt })) });
     }
     const confirmed = await AiCaseReview.find({

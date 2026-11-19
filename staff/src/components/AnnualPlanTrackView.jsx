@@ -19,7 +19,7 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
+export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -31,6 +31,7 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
       {title !== '年度体检' && <><strong style={{ fontSize: 16, color: '#183E30' }}>{title}</strong><span style={{ marginLeft: 8, fontSize: 12, color: '#71877B' }}>{itemCount ? `${itemCount} 项` : '待安排'}</span></>}
       {nutrition && <details style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC', fontSize: 13, lineHeight: 1.7 }}>
         <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>营养干预<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>目标：明确异常指标与症状，按顾问确认的目标实施干预</span></summary>
+        {nutritionScreeningIssues.length > 0 && <div style={{ color: '#365E4C', margin: '8px 0' }}>本次合并评估：{nutritionScreeningIssues.map(row => row.sourceTitle).filter(Boolean).join('、')}</div>}
         {nutritionAdvisorTargets.length ? <div className="annual-nutrition-advisor-summary">{[['metric', '异常指标'], ['symptom', '症状']].map(([kind, label]) => {
           const rows = nutritionAdvisorTargets.filter(row => (row.kind || nutritionCatalog.kindFor(row.metric)) === kind)
           return rows.length ? <div key={kind}><strong className="annual-nutrition-group-title">{label}</strong>{rows.map((row, index) => <div className="annual-nutrition-summary-row" key={`${row.metric}:${index}`}><strong>{row.metric}{nutritionCatalog.isInternalNutritionMetric(row.metric) && <small> · 仅内部</small>}</strong><span>当前：{row.baseline || '待核对'}</span><span>目标：{row.target}</span></div>)}</div> : null

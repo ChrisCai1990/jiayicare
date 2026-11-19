@@ -401,6 +401,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
   const [confirmedReviewTargets, setConfirmedReviewTargets] = useState([])
+  const [screeningDraftActions, setScreeningDraftActions] = useState([])
   const [unresolvedAiCheckups, setUnresolvedAiCheckups] = useState([])
   const [unresolvedSymptoms, setUnresolvedSymptoms] = useState([])
   const [staleManagementSources, setStaleManagementSources] = useState([])
@@ -622,13 +623,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           : (queryPlanType ? map[strategyOf(queryPlanType)] || null : list.find(p => p.servicePlanCode || p.planType))
         const confirmedTargets = targetsRes.data || []
         setConfirmedReviewTargets(confirmedTargets)
+        const incomingDraftActions = targetsRes.draftActions || []
+        setScreeningDraftActions(incomingDraftActions)
         setUnresolvedAiCheckups(targetsRes.unresolved || [])
         setUnresolvedSymptoms(targetsRes.unresolvedSymptoms || [])
         setStaleManagementSources(targetsRes.stale || [])
         setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
           (targetsRes.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
         const targetModules = target?.moduleData || {}
-        const carried = !target?.pushedAt ? carryAnnualTargets(targetModules, confirmedTargets) : { modules: targetModules, changed: false }
+        const carried = !target?.pushedAt ? carryAnnualTargets(targetModules, confirmedTargets, incomingDraftActions) : { modules: targetModules, changed: false }
         setModuleData(carried.modules)
         setContinuitySource(target?.continuitySource || preparationData?.continuity?.source || null)
         if (target) {
@@ -695,7 +698,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setPlanType(key)
     setSelectedTemplateId(template?._id || p?.templateId || '')
     const existingModules = p?.moduleData || {}
-    const carried = !p?.pushedAt ? carryAnnualTargets(existingModules, confirmedReviewTargets) : { modules: existingModules, changed: false }
+    const carried = !p?.pushedAt ? carryAnnualTargets(existingModules, confirmedReviewTargets, screeningDraftActions) : { modules: existingModules, changed: false }
     setModuleData(carried.modules)
     setPhaseAssessmentFrequency(p?.phaseAssessmentFrequency || '')
     setPushedAt(p?.pushedAt || null)
@@ -906,7 +909,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           if (!Array.isArray(merged[key]?.records) || key === 'management_targets') return
           merged[key] = { ...merged[key], records: merged[key].records.map(record => { const issueId = displayIssueId(record, targets) || record.issueId || ''; const target = targets.find((row, index) => targetIssueId(row, index) === issueId); return { ...record, issueId, ...(target ? { goal: target.goal } : {}) } }) }
         })
-        return merged
+        return carryAnnualTargets(merged, confirmedReviewTargets, screeningDraftActions).modules
       })
       setDirty(true)
       const appliedCount = BASIC_STANDARD_MODULE_KEYS.reduce((total, key) => {
@@ -1057,9 +1060,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
   const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
-  const templateModuleEntries = selectedAdminTemplate
+  const configuredModuleEntries = selectedAdminTemplate
     ? templateEntries(selectedAdminTemplate)
     : (PLAN_TYPE_MODULES[strategyOf(planType)] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
+  const templateModuleEntries = annualPilot ? [...configuredModuleEntries, ...BASIC_STANDARD_MODULE_KEYS
+    .filter(key => !configuredModuleEntries.some(entry => entry.key === key) && (moduleData[key]?.records || []).length)
+    .map(key => ({ key, def: MODULE_DEFS[key] }))] : configuredModuleEntries
   const pendingExecutionChanges = (executionReviewData?.reviews || []).filter(review => review.status === 'pending').flatMap(review => review.changes || [])
   const visibleModuleEntries = templateModuleEntries.filter(entry => {
     if (pendingExecutionChanges.some(change => change.key === entry.key)) return true
@@ -1068,6 +1074,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return entry.def.multi ? (data.records || []).length > 0 : data.enabled !== false && entry.def.fields.some(field => data[field.key] !== undefined && data[field.key] !== '' && data[field.key] !== false)
   })
   const managementTargets = moduleData.management_targets?.records || []
+  const nutritionScreeningIssues = managementTargets.filter(row => row.sourceGoal === '营养评估')
   const nutritionSummary = nutritionMetricRules.nutritionSummary({ moduleData })
   const planActions = visibleModuleEntries.flatMap(entry => {
     const data = moduleData[entry.key] || {}
@@ -1144,6 +1151,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     </div>
   }
   const pilotOverview = annualPilot && patientMode && planType && <AnnualPlanTrackView actions={integratedActions} targets={managementTargets} renderAction={renderPlanAction} goalForAction={goalForAction}
+    nutritionScreeningIssues={nutritionScreeningIssues}
     nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted ? moduleData.nutrition_assessment?.advisorTargets || [] : nutritionAdvisorTargets.mergeAdvisorTargets(moduleData.nutrition_assessment?.advisorTargets || [], managementTargets)} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
     nutritionExecutionDate={moduleData.nutrition_assessment?.executionDate || ''} nutritionExecutorName={staffList.find(staff => String(staff._id) === String(moduleData.nutrition_assessment?.executorId || patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''))?.name || patient?.assignedNutritionist?.name || ''}
     nutritionAdvisorEditor={<AnnualNutritionAdvisorTargets patientId={id} plan={plansByType[planType]} rows={moduleData.nutrition_assessment?.advisorTargets || []}
@@ -1299,22 +1307,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       )}
 
       {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
-      {patientMode && confirmedReviewTargets.length > 0 && <section id="annual-management-sources" style={{ padding: 16, marginBottom: 18, background: '#F5FAF7', border: '1px solid #CFE3D7', borderRadius: 12 }} aria-label="筛查已纳入年度管理的事项">
-        <strong style={{ color: '#1E6B50' }}>筛查已纳入年度管理 · {confirmedReviewTargets.length} 项</strong>
-        <p style={{ fontSize: 13, color: '#52675D', margin: '7px 0 12px' }}>{!planType ? '这些是顾问已确认的管理来源。请先选择下方方案类型，再核对目标和执行安排。' : !plansByType[planType] ? '这些事项已带入待建立的方案草稿；保存草稿后才成为方案内容。' : pushedAt ? '下列来源与已发布方案逐项核对；新增来源需要通过方案修订承接。' : '下列来源已带入目标草稿；请核对并保存方案。'}</p>
-        {confirmedReviewTargets.filter(row => row.sourceGoal === '营养评估').length > 0 && <div style={{ padding: '9px 0', borderTop: '1px solid #DCE9E0', fontSize: 13 }}>
-          <b>营养评估 · {confirmedReviewTargets.filter(row => row.sourceGoal === '营养评估').length} 项问题合并为一项评估</b>
-          <div style={{ color: '#52675D', marginTop: 4 }}>{confirmedReviewTargets.filter(row => row.sourceGoal === '营养评估').map(row => row.sourceTitle).join('、')}</div>
-          <div style={{ color: '#9A5B13', marginTop: 4 }}>逐项保留管理目标和来源，由同一年度营养评估承接。</div>
-        </div>}
-        {confirmedReviewTargets.filter(row => row.sourceGoal !== '营养评估').map((row, index) => {
-          const saved = (plansByType[planType]?.moduleData?.management_targets?.records || []).some(target => target.issueId === row.issueId)
-          return <div key={row.issueId || index} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderTop: '1px solid #DCE9E0', fontSize: 13 }}>
-            <div><b>{row.sourceTitle || `管理问题 ${index + 1}`}</b><div style={{ color: '#52675D', marginTop: 3 }}>{row.sourceGoal || '管理方向待核对'} · {row.goal || '目标待确认'}</div></div>
-            <span style={{ color: saved ? '#1E6B50' : '#9A5B13', whiteSpace: 'nowrap' }}>{saved ? '方案已有目标' : '待保存到方案'}</span>
-          </div>
-        })}
-      </section>}
       {patientMode && staleManagementSources.length > 0 && !pushedAt && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', border: '1px solid #F4C995', borderRadius: 10, color: '#713F12' }}>
         <b>管理来源待核对</b><div style={{ marginTop: 5, fontSize: 13 }}>{staleManagementSources.join('、')}</div>
         {staleLegacyDecisions.map(row => <div key={row._id} style={{ marginTop: 10, padding: 10, background: '#fff', borderRadius: 8 }}>
