@@ -177,7 +177,7 @@ function MedicalExpertPicker({ field, value, onChange }) {
   const resources = useContext(MedicalResourcesContext)
   const selected = Array.isArray(value) ? value.map(String) : []
   const hospital = String(field.record?.hospital || '').trim().replace(/\s/g, '')
-  const department = String(field.record?.department || '').trim().replace(/\s/g, '')
+  const department = String(field.record?.[field.departmentKey || 'department'] || '').trim().replace(/\s/g, '')
   const normalizedDepartment = name => String(name || '').replace(/\s|医学|检查/g, '')
   const institutions = resources.institutions || []
   const departments = resources.departments || []
@@ -211,10 +211,10 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
   }, [def.visitGrouping, record.serviceMode, record.visitGroupId, record.scheduleSeparationReason, soleVisitLeaderKey, visitCandidates[0]?.row.scheduleSeparationReason])
   const directNutrition = def.personalizedAssignment && annualNutrition.isRow(record)
   const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
-  const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['notes','basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
+  const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
   const optionalEmpty = field => supplementalKeys.includes(field.key)
-  const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'内部备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
-    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'expertIds' && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
+  const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
+    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(['expertIds', 'orderExpertIds'].includes(field.key) && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
   </FieldRow>
   return (
     <div style={{ border: '1px solid #E8E3DC', borderRadius: 8, marginBottom: 8, background: '#FAFAF8' }}>

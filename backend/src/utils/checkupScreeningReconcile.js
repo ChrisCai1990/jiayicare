@@ -6,6 +6,9 @@ function reportYear(report) {
   const date = String(report.checkDate || report.date || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? Number(date.slice(0, 4)) : null;
 }
+function samePlanYear(plan, report) {
+  return reportYear(report) === Number(plan.year);
+}
 function sameCheckupRound(plan, report) {
   const target = plan.checkupDate && new Date(plan.checkupDate);
   const actual = new Date(String(report.checkDate || '').slice(0, 10));
@@ -68,11 +71,12 @@ function suggest(plan, reports, catalog = new Map()) {
 
 async function loadEvidence(plan, models) {
   const { MedicalReport, LabTestOrder, SpecialExam, FunctionalMedicineTest, ProjectCategory } = models;
-  const target = new Date(plan.checkupDate);
-  if (!plan.checkupDate || !Number.isFinite(target.getTime())) return { reports: [], catalog: new Map() };
-  const windowMs = 45 * 86400000;
-  const from = new Date(Math.max(target.getTime() - windowMs, Date.UTC(Number(plan.year), 0, 1))).toISOString().slice(0, 10);
-  const through = new Date(Math.min(target.getTime() + windowMs, Date.UTC(Number(plan.year) + 1, 0, 1) - 86400000)).toISOString().slice(0, 10);
+  const year = Number(plan.year);
+  if (!Number.isInteger(year) || year < 2020 || year > 2100) return { reports: [], catalog: new Map() };
+  // Manual review can use any audited exam from the plan year. The 45-day
+  // check belongs only to suggest(), which handles automatic completion.
+  const from = `${year}-01-01`;
+  const through = `${year}-12-31`;
   const reports = await MedicalReport.find({ user: plan.patientId, audit_status: 'audited', archiveOnly: { $ne: true },
     documentCategory: { $nin: NON_EXAM_CATEGORIES },
     checkDate: { $gte: from, $lte: through } })
@@ -107,4 +111,4 @@ async function reconcile(plan, models) {
     reports: reports.map(report => ({ id: id(report), title: report.title, checkDate: report.checkDate })) };
 }
 
-module.exports = { normalize, reportYear, sameCheckupRound, categoryKeys, suggest, loadEvidence, reconcile, NON_EXAM_CATEGORIES };
+module.exports = { normalize, reportYear, samePlanYear, sameCheckupRound, categoryKeys, suggest, loadEvidence, reconcile, NON_EXAM_CATEGORIES };

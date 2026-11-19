@@ -23,3 +23,19 @@ test('仅需代约的年度随访进入健管预约，并记录实际约到的�
   assert.equal(result.entries[0].expertId, 'expert-2');
   assert.equal(result.entries[0].status, 'booked');
 });
+
+test('开单门诊和检查预约分别使用各自的候选专家', () => {
+  const task = {
+    sourceType: 'scheduled', sourceScheduleKey: 'abnormal_followup:2026-12-01:心脏超声',
+    plannedContent: '就医/会诊医院：邵逸夫医院\n科室：超声科\n开单科室：心内科\n项目：心脏超声',
+    formData: { bookingRequest: {
+      experts: [{ id: 'exam-1', name: '检查医生' }],
+      orderExperts: [{ id: 'order-1', name: '开单医生' }],
+    } },
+  };
+  const slots = bookingSlots(task);
+  assert.equal(slots[0].type, 'outpatient');
+  assert.deepEqual(slots[0].candidates.map(item => item.name), ['开单医生']);
+  assert.equal(slots[1].type, 'exam');
+  assert.deepEqual(slots[1].candidates.map(item => item.name), ['检查医生']);
+});

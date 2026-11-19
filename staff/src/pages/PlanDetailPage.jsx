@@ -757,6 +757,11 @@ export default function PlanDetailPage() {
           {canEdit && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(!showAddItem)}>＋ 添加项目</button>}
         </div>
 
+        {canReviewCheckup && screeningEvidence && !screeningEvidence.reports?.length && screeningEvidence.progress?.pending?.length > 0 &&
+          <div role="status" style={{ padding: '10px 20px', color: '#8A5314', background: '#FFF8EA', fontSize: 13 }}>
+            本方案年度暂无可核对的已审核检查报告。请先在报告解读完成审核，并核对报告检查日期是否属于 {plan.year} 年。
+          </div>}
+
         {canEdit && showAddItem && (
           <AddItemPanel plan={plan} onAdded={() => { setShowAddItem(false); load() }} onCancel={() => setShowAddItem(false)} />
         )}
@@ -836,7 +841,7 @@ export default function PlanDetailPage() {
                             <select className="form-input" aria-label={`选择${item.name}对应的已审核报告`}
                               value={selectedReportIds[item._id] || ''} onChange={event => setSelectedReportIds(previous => ({ ...previous, [item._id]: event.target.value }))}
                               style={{ maxWidth: 210, fontSize: 12 }}>
-                              <option value="">选择已审核报告</option>
+                              <option value="">{screeningEvidence.reports?.length ? '选择已审核报告' : '本年度暂无已审核检查报告'}</option>
                               {(screeningEvidence?.reports || []).map(report => <option key={report.id} value={report.id}>{report.checkDate} · {report.title}</option>)}
                             </select>
                             <button className="btn btn-secondary btn-sm" disabled={screeningBusy || !selectedReportIds[item._id]}
