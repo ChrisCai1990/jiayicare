@@ -38,16 +38,18 @@ public class MainActivity extends BaseActivity {
     private final Runnable bindDevice = new Runnable() {
         @Override public void run() {
             String token = pushToken;
-            if (pushStarted && token != null && isTrustedPage()) {
-                String quoted = JSONObject.quote(token);
-                webView.evaluateJavascript("(function(){const t=localStorage.getItem('jy_staff_token');"
-                    + "if(!t)return;const id=" + quoted + ";const marker=t.slice(-16)+':'+id;"
-                    + "if(localStorage.getItem('jy_staff_push_marker')===marker)return;"
-                    + "fetch('https://jiaycare.com/api/staff/push-devices',{method:'PUT',"
-                    + "headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},"
-                    + "body:JSON.stringify({token:id})}).then(r=>{if(r.ok){"
-                    + "localStorage.setItem('jy_staff_push_marker',marker);"
-                    + "localStorage.setItem('jy_staff_push_token',id);}}).catch(()=>{});})()", null);
+            if (isTrustedPage()) {
+                if (pushStarted && token != null) {
+                    String quoted = JSONObject.quote(token);
+                    webView.evaluateJavascript("(function(){const t=localStorage.getItem('jy_staff_token');"
+                        + "if(!t)return;const id=" + quoted + ";const marker=t.slice(-16)+':'+id;"
+                        + "if(localStorage.getItem('jy_staff_push_marker')===marker)return;"
+                        + "fetch('https://jiaycare.com/api/staff/push-devices',{method:'PUT',"
+                        + "headers:{'Content-Type':'application/json',Authorization:'Bearer '+t},"
+                        + "body:JSON.stringify({token:id})}).then(r=>{if(r.ok){"
+                        + "localStorage.setItem('jy_staff_push_marker',marker);"
+                        + "localStorage.setItem('jy_staff_push_token',id);}}).catch(()=>{});})()", null);
+                }
                 webView.evaluateJavascript("(function(){const t=localStorage.getItem('jy_staff_token');"
                     + "if(!t){StaffPushBadge.onUnread(0);return;}"
                     + "fetch('https://jiaycare.com/api/staff/push-devices/unread-count',"
