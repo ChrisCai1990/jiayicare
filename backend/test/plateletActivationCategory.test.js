@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 // The planner is pure; testing it needs no production database or account.
 const { selectPath, ALIASES } = require('../src/scripts/ensurePlateletActivationCategory');
 const { plateletActivationPanelName } = require('../src/utils/reportMatchContext');
-const root = { _id: 'root', name: '其他常规检查', status: 'active' };
+const root = { _id: 'root', name: '其他常规筛查', status: 'active' };
 const group = { _id: 'group', parent: 'root', name: '血小板功能', status: 'active' };
 const leaf = { _id: 'leaf', parent: 'group', name: '血小板活化四项', status: 'active', aliases: [ALIASES[0]] };
 

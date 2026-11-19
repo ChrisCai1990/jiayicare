@@ -3,7 +3,7 @@
  * Preview by default. Run with --apply after checking the selected tenant.
  * Existing report items and manually confirmed classifications are untouched.
  */
-const ROOT = '其他常规检查';
+const ROOT = '其他常规筛查';
 const GROUP = '血小板功能';
 const LEAF = '血小板活化四项';
 const ALIASES = ['血小板活化4项', '血小板活化检测', '血小板活化功能检测'];
