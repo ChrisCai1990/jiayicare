@@ -5357,7 +5357,7 @@ router.patch('/plans/:id/items/:itemId', staffAuth, checkupReviewOrPlanEdit, asy
         .select('checkDate date documentCategory').lean();
       const screening = require('../utils/checkupScreeningReconcile');
       if (!report || screening.NON_EXAM_CATEGORIES.includes(report.documentCategory)
-        || !screening.sameCheckupRound(plan, report)) return res.status(409).json({ success: false, message: '请选择本客户、体检年度内且体检日期前后45天的已审核检查报告' });
+        || !screening.samePlanYear(plan, report)) return res.status(409).json({ success: false, message: '请选择本客户、方案年度内已审核的检查报告' });
     }
     const originalReport = item.reportId || null;
     const changed = await HealthPlan.updateOne({ _id: plan._id, status: { $ne: 'cancelled' },

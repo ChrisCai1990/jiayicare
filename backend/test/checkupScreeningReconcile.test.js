@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { suggest, categoryKeys, loadEvidence, sameCheckupRound, reconcile } = require('../src/utils/checkupScreeningReconcile');
+const { suggest, categoryKeys, loadEvidence, samePlanYear, sameCheckupRound, reconcile } = require('../src/utils/checkupScreeningReconcile');
 
 const plan = { year: 2026, checkupDate: '2026-05-15', items: [
   { _id: 'p1', name: '血常规', status: 'pending' },
@@ -69,7 +69,7 @@ test('a nearby prior-year exam is not linked automatically to a January checkup'
   assert.equal(sameCheckupRound(nextYearPlan, near), false);
 });
 
-test('evidence lookup excludes reports outside the plan year even when dates are nearby', async () => {
+test('manual candidates cover the plan year even without a checkup date; automatic matching remains date-bound', async () => {
   let reportFilter;
   const empty = { find: () => ({ select: () => ({ lean: async () => [] }) }) };
   const models = { MedicalReport: { find: filter => {
@@ -78,10 +78,16 @@ test('evidence lookup excludes reports outside the plan year even when dates are
   } }, LabTestOrder: empty, SpecialExam: empty, FunctionalMedicineTest: empty, ProjectCategory: empty };
   await loadEvidence({ ...plan, patientId: 'patient', year: 2027, checkupDate: '2027-01-15' }, models);
   assert.equal(reportFilter.checkDate.$gte, '2027-01-01');
-  assert.equal(reportFilter.checkDate.$lte, '2027-03-01');
+  assert.equal(reportFilter.checkDate.$lte, '2027-12-31');
   reportFilter = null;
   await loadEvidence({ ...plan, checkupDate: null }, models);
-  assert.equal(reportFilter, null);
+  assert.equal(reportFilter.checkDate.$gte, '2026-01-01');
+  assert.equal(reportFilter.checkDate.$lte, '2026-12-31');
+  const prior = { _id: 'prior', audit_status: 'audited', checkDate: '2026-01-15', reportItems: [{ name: '血常规', value: '已检' }] };
+  assert.equal(samePlanYear(plan, prior), true);
+  assert.equal(samePlanYear({ ...plan, year: 2027 }, prior), false);
+  assert.equal(suggest({ ...plan, checkupDate: null }, [prior])[0].reportId, null);
+  assert.equal(suggest({ ...plan, checkupDate: '2026-11-15' }, [prior])[0].reportId, null);
 });
 
 test('a category key is based on the full active tree path', () => {
