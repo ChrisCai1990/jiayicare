@@ -11677,7 +11677,17 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     }).select('_id templateName').lean();
     if (otherFormal) return res.status(409).json({ success: false, message: `本年度已有正式年度方案${otherFormal.templateName ? `“${otherFormal.templateName}”` : ''}，不能重复发布` });
     }
-    plan.moduleData = require('../utils/annualPlanDates').normalize(plan.moduleData);
+    const normalized = require('../utils/annualPlanDates').normalize(plan.moduleData);
+    const reviews = normalized.abnormal_followup;
+    if (reviews?.records?.some(row => row.screeningDraft && row.sourceIds?.length)) {
+      const withdrawn = await require('../models/AnnualManagementDecision').find({
+        patientId: plan.patientId, year: plan.year, status: 'withdrawn',
+      }).select('_id').lean();
+      const removed = new Set(withdrawn.map(row => `management_issue:${row._id}`));
+      normalized.abnormal_followup = { ...reviews, records: reviews.records.filter(row =>
+        !(row.screeningDraft && row.sourceIds?.length && row.sourceIds.every(id => removed.has(String(id))))) };
+    }
+    plan.moduleData = normalized;
     plan.markModified('moduleData');
     const issue = require('../utils/annualPlanPublishValidation').validate(plan.moduleData);
     if (issue) return res.status(400).json({ success:false, message:issue });

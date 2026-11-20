@@ -10,10 +10,18 @@ function effectiveDecisions(decisions = []) {
       && item.itemId && [`screening:${reportId}:${item.itemId}`, `report_item:${reportId}:${item.itemId}`].includes(item.sourceKey)
       && sameIssue(item.title) === sameIssue(earlier.title) && directionsOf(earlier).every(value => directionsOf(item).includes(value))
       && (earlier.sourceKey === `screening_report:${reportId}` || item.sourceKey !== earlier.sourceKey
-        && earlier.sourceSnapshot?.item?.name && item.sourceSnapshot?.item?.name
-        && sameIssue(earlier.sourceSnapshot.item.name) === sameIssue(item.sourceSnapshot.item.name)
+        && (earlier.sourceSnapshot?.item?.name && item.sourceSnapshot?.item?.name
+          && sameIssue(earlier.sourceSnapshot.item.name) === sameIssue(item.sourceSnapshot.item.name)
+          || isNarrowerScreeningGroup(earlier, item))
         && new Date(item.reviewedAt || 0).getTime() > new Date(earlier.reviewedAt || 0).getTime()));
   });
+}
+
+function isNarrowerScreeningGroup(previous, latest) {
+  const before = previous.sourceSnapshot?.items;
+  const after = latest.sourceSnapshot?.items;
+  return Array.isArray(before) && Array.isArray(after) && after.length > 0 && after.length < before.length
+    && after.every(row => row.itemId && before.some(old => old.itemId === row.itemId));
 }
 
 // 报告补图、归类审核等保存也会更新整份报告的 updatedAt，不能据此撤销顾问对检查项的决定。
