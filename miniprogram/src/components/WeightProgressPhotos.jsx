@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { weightProgressPhotosAPI } from '../services/api';
-import { chooseImageWithPrivacy, showImagePickerError } from '../utils/imagePicker';
+import { chooseImageWithPrivacy, readSelectedImages, showImagePickerError, uploadErrorMessage } from '../utils/imagePicker';
 import { useLanguage } from '../i18n';
 
 const stages = [['before', '管理前'], ['progress', '阶段记录'], ['after', '管理后']];
@@ -23,12 +23,11 @@ export default function WeightProgressPhotos() {
     if (!path || !consent || busy) return;
     setBusy(true); setError('');
     try {
-      const content = Taro.getFileSystemManager().readFileSync(path, 'base64');
-      const ext = path.split('.').pop()?.toLowerCase();
-      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ['heic', 'heif'].includes(ext) ? 'image/heic' : 'image/jpeg';
+      const [{ data, mimeType }] = await readSelectedImages({ tempFilePaths: [path] });
+      const content = data.split(',')[1];
       await weightProgressPhotosAPI.add({ content, mimeType, planId, stage, view, takenOn, consentConfirmed: 'true' });
       setPath(''); setConsent(false); await load();
-    } catch (e) { setError(e.message || '保存失败'); } finally { setBusy(false); }
+    } catch (e) { setError(uploadErrorMessage(e, '照片上传失败，请重试')); } finally { setBusy(false); }
   };
   const remove = async row => { const result = await Taro.showModal({ title: t('移除照片'), content: t('确认移除这张照片？') }); if (!result.confirm) return;
     try { await weightProgressPhotosAPI.remove(row.id); await load(); } catch (e) { setError(e.message || '移除失败'); } };

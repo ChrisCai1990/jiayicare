@@ -3,7 +3,7 @@ import React, { useRef, useState } from 'react';
 import { View, Text, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { recordsAPI } from '../services/api';
-import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePicker';
+import { chooseImageWithPrivacy, readSelectedImages, isImagePickerCancelled, uploadErrorMessage } from '../utils/imagePicker';
 
 const box = { padding: '12px', margin: '12px 0', background: '#edf6f1', borderRadius: '12px' };
 const field = { background: '#fff', padding: '10px', margin: '8px 0', border: '1px solid #cedbd3', borderRadius: '6px' };
@@ -34,16 +34,13 @@ export default function BloodPressurePhoto({ onSaved }) {
       const consent = await Taro.showModal({ title: '血压照片识别', content: '将所选血压计照片发送至阿里云通义千问识别。请仅拍摄屏幕，避免包含姓名等无关信息。识别仅辅助录入，核对确认后才保存原图和数据。', confirmText: '同意选图' });
       if (!consent.confirm) return;
       const selected = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const path = selected.tempFilePaths[0];
-      const data = Taro.getFileSystemManager().readFileSync(path, 'base64');
-      if (data.length > 8 * 1024 * 1024) throw new Error('图片超过6MB，请压缩或重新拍摄');
-      const mime = /\.png$/i.test(path) ? 'png' : /\.webp$/i.test(path) ? 'webp' : 'jpeg';
-      const image = 'data:image/' + mime + ';base64,' + data;
+      const { path, data: image } = (await readSelectedImages(selected))[0];
+      if (image.length > 8 * 1024 * 1024) throw new Error('图片过大，请压缩或重新拍摄');
       setDraft(null); setConfirmed(false); setValues({}); setPhoto({ path, image }); setWhen(localTime()); setManualTime(false);
       const result = await recordsAPI.recognizeBloodPressure(image);
       setDraft(result.data);
       setValues(Object.fromEntries(['sys', 'dia', 'pulse'].map(k => [k, result.data[k] == null ? '' : String(result.data[k])])));
-    } catch (err) { if (!isImagePickerCancelled(err)) setError(err.message || err.errMsg || '无法识别，请重试或在下方手工录入'); }
+    } catch (err) { if (!isImagePickerCancelled(err)) setError(uploadErrorMessage(err, '无法识别，请重试或在下方手工录入')); }
     finally { lock.current = false; setBusy(false); }
   };
   const submit = async () => {
@@ -66,7 +63,7 @@ export default function BloodPressurePhoto({ onSaved }) {
       setDraft(null); setPhoto(null); setConfirmed(false);
       Taro.showToast({ title: '记录已保存', icon: 'success' });
       onSaved?.();
-    } catch (err) { setError(err.message || '保存失败，请重试'); }
+    } catch (err) { setError(uploadErrorMessage(err, '保存失败，请重试')); }
     finally { lock.current = false; setBusy(false); }
   };
   return <View style={box}>

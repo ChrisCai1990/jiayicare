@@ -7,6 +7,39 @@ export async function chooseImageWithPrivacy(options) {
   return Taro.chooseImage(options);
 }
 
+// H5 chooseImage returns browser URLs, while WeChat returns local file paths.
+// The browser has no getFileSystemManager; read its Blob with FileReader instead.
+export async function readSelectedImages(result) {
+  const paths = result.tempFilePaths || [];
+  return Promise.all(paths.map(async (path, index) => {
+    if (process.env.TARO_ENV === 'h5') {
+      try {
+        const blob = await (await fetch(path)).blob();
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error || new Error('图片读取失败'));
+          reader.readAsDataURL(blob);
+        });
+        const mimeType = blob.type || result.tempFiles?.[index]?.type || 'image/jpeg';
+        return { path, mimeType, data };
+      } catch {
+        throw new Error('图片读取失败，请重试');
+      }
+    }
+    const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+    const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp'
+      : ext === 'heic' || ext === 'heif' ? 'image/heic' : 'image/jpeg';
+    return { path, mimeType, data: `data:${mimeType};base64,${base64}` };
+  }));
+}
+
+export function uploadErrorMessage(error, fallback = '上传失败，请重试') {
+  const message = error?.message || error?.errMsg || '';
+  return message && !/[A-Za-z]/.test(message) ? message : fallback;
+}
+
 export function isImagePickerCancelled(error) {
   return /cancel/i.test(error?.errMsg || error?.message || '');
 }

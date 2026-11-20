@@ -4,7 +4,7 @@ import { View, Text, Image, Input, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAuth } from '../context/AuthContext';
 import { recordsAPI } from '../services/api';
-import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePicker';
+import { chooseImageWithPrivacy, readSelectedImages, isImagePickerCancelled, uploadErrorMessage } from '../utils/imagePicker';
 
 const box = { padding: '12px', margin: '12px 0', background: '#edf6f1', borderRadius: '12px' };
 const field = { background: '#fff', padding: '10px', margin: '8px 0', border: '1px solid #cedbd3', borderRadius: '6px' };
@@ -41,18 +41,15 @@ export default function WaistPhoto({ onSaved }) {
       if (consentKey) { try { Taro.setStorageSync(consentKey, true); } catch {} }
       }
       const selected = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const path = selected.tempFilePaths[0];
-      const data = Taro.getFileSystemManager().readFileSync(path, 'base64');
-      if (data.length > 8 * 1024 * 1024) throw new Error('图片超过6MB，请压缩或重新拍摄');
-      const mime = /\.png$/i.test(path) ? 'png' : /\.webp$/i.test(path) ? 'webp' : 'jpeg';
-      const image = 'data:image/' + mime + ';base64,' + data;
+      const { path, data: image } = (await readSelectedImages(selected))[0];
+      if (image.length > 8 * 1024 * 1024) throw new Error('图片过大，请压缩或重新拍摄');
       setDraft(null); setConfirmed(false); setValue(''); setUnit('cm'); setPhoto({ path, image }); setWhen(localTime());
       const result = await recordsAPI.recognizeWaist(image);
       setDraft(result.data);
       if (result.data.value == null || String(result.data.value).trim() === '') setError('未识别出腰围，请重新拍摄清晰的腰围测量读数，或手动补填。');
       setValue(result.data.value == null ? '' : String(result.data.value));
       setUnit('cm');
-    } catch (err) { if (!isImagePickerCancelled(err)) setError(err.message || err.errMsg || '无法识别，请重试或在下方手工录入'); }
+    } catch (err) { if (!isImagePickerCancelled(err)) setError(uploadErrorMessage(err, '无法识别，请重试或在下方手工录入')); }
     finally { lock.current = false; setBusy(false); }
   };
 
@@ -73,7 +70,7 @@ export default function WaistPhoto({ onSaved }) {
       if(saved.feedback) await Taro.showModal({title:saved.feedback.title,content:saved.feedback.text,showCancel:false,confirmText:'知道了'});
       Taro.showToast({ title: '记录已保存', icon: 'success' });
       onSaved?.();
-    } catch (err) { setError(err.message || '保存失败，请重试'); }
+    } catch (err) { setError(uploadErrorMessage(err, '保存失败，请重试')); }
     finally { lock.current = false; setBusy(false); }
   };
 
