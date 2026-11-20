@@ -47,3 +47,25 @@ test('已推送方案等待客户确认时不能撤销旧来源', async () => {
   assert.equal(res.code, 409);
   assert.match(res.body.message, /等待客户确认/);
 });
+
+test('按来源键撤销单项，拒绝使用同一报告其他项目的来源键', async () => {
+  const row = { _id: 'decision', patientId: 'patient', year: 2026, sourceKey: 'screening:report:platelets' };
+  let writes = 0;
+  const run = handler({ getVisiblePlanPatientIds: async () => ['patient'], mongoose: { isValidObjectId: () => true },
+    AnnualPlan: { exists: async () => false }, require: () => ({
+      findOne: async () => row, findOneAndUpdate: async filter => {
+        assert.equal(filter._id, row._id);
+        assert.equal(filter.sourceKey, row.sourceKey);
+        assert.equal(filter.updatedAt, '2026-11-20');
+        writes++;
+        return row;
+      }
+    }) });
+  for (const [sourceKey, code] of [['screening:report:other', 409], [row.sourceKey, 200]]) {
+    const res = response();
+    await run({ staff: { role: 'familyDoctor' }, params: { id: 'patient', decisionId: 'decision' },
+      body: { sourceKey, expectedUpdatedAt: '2026-11-20', reason: '本次不再纳入' } }, res);
+    assert.equal(res.code, code);
+  }
+  assert.equal(writes, 1);
+});

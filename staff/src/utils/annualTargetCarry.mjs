@@ -10,6 +10,20 @@ export function mergeManagementTargetEdits(incoming, existing = []) {
   })
 }
 
+export function removeWithdrawnDraftSources(modules, withdrawnIssueIds = []) {
+  if (!withdrawnIssueIds.length) return modules
+  const withdrawn = new Set(withdrawnIssueIds)
+  const next = { ...modules }
+  for (const [key, data] of Object.entries(modules)) {
+    if (!Array.isArray(data?.records)) continue
+    const records = data.records.filter(row => key === 'management_targets'
+      ? !withdrawn.has(row.issueId)
+      : !(row.screeningDraft && row.sourceIds?.some(id => withdrawn.has(id))))
+    if (records.length !== data.records.length) next[key] = { ...data, records }
+  }
+  return next
+}
+
 export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = []) {
   if (!confirmed.length) return { modules, changed: false }
   const existing = modules.management_targets?.records || []

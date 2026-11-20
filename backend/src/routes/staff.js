@@ -10183,9 +10183,9 @@ router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员' });
     const year = Number(req.query.year);
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
-    const decisions = await require('../models/AnnualManagementDecision').find({ patientId: req.params.id, year, status: { $ne: 'withdrawn' } }).lean();
-    const data = require('../utils/annualManagementEvidence').effectiveDecisions(decisions);
-    res.json({ success: true, data });
+    const decisions = await require('../models/AnnualManagementDecision').find({ patientId: req.params.id, year }).lean();
+    const data = require('../utils/annualManagementEvidence').effectiveDecisions(decisions.filter(row => row.status !== 'withdrawn'));
+    res.json({ success: true, data, withdrawnIssueIds: decisions.filter(row => row.status === 'withdrawn').map(row => `management_issue:${row._id}`) });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -10352,7 +10352,7 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// 仅撤销旧版整份报告级决定；保留原记录和撤销原因供追溯。
+// 按原决定精确撤销，保留撤销依据。
 router.post('/patients/:id/annual-management-decisions/:decisionId/withdraw', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可撤销管理决定' });
@@ -10363,11 +10363,11 @@ router.post('/patients/:id/annual-management-decisions/:decisionId/withdraw', st
     if (reason.length < 4 || reason.length > 500) return res.status(400).json({ success: false, message: '请填写4至500字的撤销原因' });
     const Decision = require('../models/AnnualManagementDecision');
     const decision = await Decision.findOne({ _id: req.params.decisionId, patientId: req.params.id, status: { $ne: 'withdrawn' } });
-    if (!decision || decision.sourceKey !== `screening_report:${decision.reportId}`) return res.status(409).json({ success: false, message: '旧版整份报告决定已变化，请刷新' });
+    if (!decision || (req.body.sourceKey ? decision.sourceKey !== req.body.sourceKey : decision.sourceKey !== `screening_report:${decision.reportId}`)) return res.status(409).json({ success: false, message: '该管理决定已变化，请刷新后核对' });
     const formal = await AnnualPlan.exists({ patientId: req.params.id, year: decision.year,
       $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] });
-    if (formal) return res.status(409).json({ success: false, message: '方案已发布并进入执行，不能撤销其来源；如需调整请走局部修订' });
-    const row = await Decision.findOneAndUpdate({ _id: decision._id, sourceKey: decision.sourceKey, status: { $ne: 'withdrawn' } },
+    if (formal) return res.status(409).json({ success: false, message: '方案已推送（等待客户确认或已确认），请在年度方案中局部修订该安排' });
+    const row = await Decision.findOneAndUpdate({ _id: decision._id, sourceKey: decision.sourceKey, ...(req.body.expectedUpdatedAt ? { updatedAt: req.body.expectedUpdatedAt } : {}), status: { $ne: 'withdrawn' } },
       { $set: { status: 'withdrawn', withdrawnAt: new Date(), withdrawnBy: req.staff._id, withdrawalReason: reason } }, { new: true });
     if (!row) return res.status(409).json({ success: false, message: '管理决定已变化，请刷新' });
     res.json({ success: true, data: row });

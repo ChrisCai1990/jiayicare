@@ -38,6 +38,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
   const [reviewDepartment, setReviewDepartment] = useState('')
   const [saved, setSaved] = useState(null), [legacy, setLegacy] = useState(null), [adoptLegacy, setAdoptLegacy] = useState(false), [error, setError] = useState('')
+  const [withdrawReason, setWithdrawReason] = useState(null)
   const [pilot, setPilot] = useState(false)
   const [planCheck, setPlanCheck] = useState({ loading: false, formal: false, plan: null, error: '' })
   const [amendment, setAmendment] = useState({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
@@ -79,14 +80,17 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   useEffect(() => {
     if (!patientId || !year || (!reportSource && !symptomSource)) return
     let active = true
-    load(patientId, year).then(result => {
+    const refresh = () => load(patientId, year).then(result => {
       if (!active) return
       setSaved(findAnnualManagementDecision(result.data || [], source))
       setLegacy(source.kind === 'screening'
         ? (result.data || []).find(item => item.sourceKey === `screening_report:${source.reportId}`) || null
         : null)
     }).catch(() => {})
-    return () => { active = false }
+    refresh()
+    const eventName = `annual-decisions:${patientId}:${year}`
+    window.addEventListener(eventName, refresh)
+    return () => { active = false; window.removeEventListener(eventName, refresh) }
   }, [patientId, year, key])
   if (!['familyDoctor', 'superadmin'].includes(staff?.role) || (!reportSource && !symptomSource)
     || !pilot && (symptomSource || source.kind === 'report_item')) return null
@@ -125,6 +129,17 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     } catch (e) { setError(e.message || '保存失败，请重试') }
     finally { setBusy(false) }
   }
+  const withdraw = async () => {
+    setBusy(true); setError('')
+    try {
+      await staffAPI.withdrawAnnualManagementDecision(patientId, saved._id, withdrawReason.trim(), key, saved.updatedAt)
+      setSaved(null); setOpen(false)
+      window.dispatchEvent(new Event(`annual-decisions:${patientId}:${year}`))
+      toast('已撤销该项管理决定')
+      onSaved?.()
+    } catch (e) { setError(e.message || '撤销失败，请刷新后核对') }
+    finally { setBusy(false) }
+  }
   const draft = async () => {
     if (title.trim().length < 2 || !directions.length) { setError('请先填写具体问题并选择管理方向'); return }
     setDrafting(true); setError('')
@@ -143,7 +158,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setDirectionTimings(saved?.directionTimings && Object.keys(saved.directionTimings).length ? saved.directionTimings
         : saved?.actionTiming && legacyTimingDirection && !(saved?.reviewPlan?.kind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(legacyTimingDirection))
           ? { [legacyTimingDirection]: saved.actionTiming } : {})
-      setAdoptLegacy(false); setError(''); setOpen(true)
+      setWithdrawReason(null); setAdoptLegacy(false); setError(''); setOpen(true)
       setAmendment({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
       setReviewKind(savedDirections.includes('abnormal_followup') || saved?.reviewPlan?.kind === 'recheck' ? 'recheck' : 'none')
       setReviewMonths(String(saved?.reviewPlan?.intervalMonths || 3))
@@ -153,7 +168,12 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     }}>{saved ? `✓ 已纳入管理 · ${directionText(savedDirections) || '待核对'}` : '＋ 纳入管理'}</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 520 }}>
       <div className="modal-header"><div className="modal-title">纳入年度管理</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
-      <div className="modal-body">
+      {withdrawReason !== null ? <div className="modal-body">
+        <strong>撤销{source.kind === 'screening_report' ? '报告级' : '本项'}管理决定</strong>
+        <p>{sourceLabel} · {saved?.title} · {directionText(savedDirections)}</p>
+        <label className="form-label">撤销原因（4 至 500 字）<textarea autoFocus className="form-input" value={withdrawReason} maxLength={500} onChange={e => setWithdrawReason(e.target.value)} /></label>
+        {error && <p role="alert">{error}</p>}
+      </div> : <div className="modal-body">
         <div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核专项筛查'}。请选择对应现有方案的管理方向。</div>
         <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
@@ -232,8 +252,8 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           {amendment.date && <><label className="form-label" style={{ marginTop: 8 }}>时间依据</label><input className="form-input" value={amendment.timingReason} onChange={e => setAmendment({ ...amendment, timingReason: e.target.value })} /></>}
         </div>}
         <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>团队专项研判可另行开展，不影响本项进入年度方案。</div>
-      </div>
-      <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy || drafting || !pilot && (planCheck.loading || !!planCheck.error || planCheck.formal && !planCheck.plan)} onClick={submit}>{busy ? '保存中…' : planCheck.plan && !pilot ? '确认纳入并补入方案' : '确认纳入管理'}</button></div>
+      </div>}
+      <div className="modal-footer">{withdrawReason !== null ? <><button className="btn btn-secondary" disabled={busy} onClick={() => { setWithdrawReason(null); setError('') }}>返回</button><button className="btn btn-primary" disabled={busy || withdrawReason.trim().length < 4} onClick={withdraw}>确认撤销</button></> : <>{saved && <button className="btn btn-secondary" disabled={busy || drafting} onClick={() => { setWithdrawReason(''); setError('') }}>撤销纳入管理</button>}<button className="btn btn-secondary" onClick={() => setOpen(false)}>取消</button><button className="btn btn-primary" disabled={busy || drafting || !pilot && (planCheck.loading || !!planCheck.error || planCheck.formal && !planCheck.plan)} onClick={submit}>{busy ? '保存中…' : planCheck.plan && !pilot ? '确认纳入并补入方案' : '确认纳入管理'}</button></>}</div>
     </div></div>}
   </>
 }

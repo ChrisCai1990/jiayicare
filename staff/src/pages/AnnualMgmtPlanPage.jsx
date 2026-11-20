@@ -29,7 +29,7 @@ import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
 import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
-import { mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
+import { removeWithdrawnDraftSources, mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
 const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
 function GoalMetricEditor({ value, onChange, disabled }) {
@@ -615,7 +615,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const list = (Array.isArray(planRes.data) ? planRes.data : (planRes.data ? [planRes.data] : []))
           .map(plan => plan.revisionDraft?.moduleData ? { ...plan, moduleData: plan.revisionDraft.moduleData, hasUnpublishedRevision: true } : plan)
         const map = {}
-        list.forEach(p => { const key = p.servicePlanCode || p.planType; if (key) map[key] = p })
+        list.forEach(p => {
+          if (!p.pushedAt && !p.confirmedAt) p.moduleData = removeWithdrawnDraftSources(p.moduleData || {}, decisionsRes.withdrawnIssueIds)
+          const key = p.servicePlanCode || p.planType
+          if (key) map[key] = p
+        })
         setPlansByType(map)
         // 从"管理方案"tab点"✨ AI年度管理方案"按钮跳转过来时会带 ?planType=xxx，
         // 优先选择对应类型；服务版本尚无方案时展示同策略的已保存旧版，避免误显示空方案。
@@ -776,7 +780,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!withdrawalTarget || withdrawalReason.trim().length < 4) return toast('请填写至少4字的撤销依据')
     setWithdrawalBusy(true)
     try {
-      await staffAPI.withdrawLegacyAnnualManagementDecision(id, withdrawalTarget._id, withdrawalReason.trim())
+      await staffAPI.withdrawAnnualManagementDecision(id, withdrawalTarget._id, withdrawalReason.trim())
       const [targetsRes, decisionsRes] = await Promise.all([staffAPI.getAnnualManagementTargets(id, year), staffAPI.getAnnualManagementDecisions(id, year)])
       setConfirmedReviewTargets(targetsRes.data || [])
       setNutritionEvidence(targetsRes.nutritionEvidence || {})
