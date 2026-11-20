@@ -28,8 +28,8 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
         const items = view.items.filter(item => item.moduleKey !== 'management_targets' && annualSectionFor(item.moduleKey) === section)
         const recommendations = section === 'medical' ? view.recommendations : []
         return <AnnualPlanSection key={section} section={section}>
-          {section === 'medical' && medicalGroups.map(group => <div key={group.title} style={{ borderTop: '1px solid #E1EAE4', padding: '14px 0' }}>
-            <h4 style={{ margin: '0 0 10px' }}>{group.title}</h4>
+          {section === 'medical' && medicalGroups.map(group => <div key={group.title} className="annual-medical-group">
+            <h4 className="annual-medical-group-heading">{group.title}</h4>
             {items.filter(item => group.keys.includes(item.moduleKey)).map(renderItem)}
             {!items.some(item => group.keys.includes(item.moduleKey)) && <p>待安排</p>}
           </div>)}

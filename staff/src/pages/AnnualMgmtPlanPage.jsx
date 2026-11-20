@@ -1683,8 +1683,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {!annualPilot && <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />}
           {annualPilot ? <div className="annual-track-stack">
             <AnnualPlanSection section="medical">
-              {medicalGroups.map(group => <div key={group.title} style={{ borderTop: '1px solid #E1EAE4', padding: '14px 0' }}>
-                <h4 style={{ margin: '0 0 10px' }}>{group.title}</h4>
+              {medicalGroups.map(group => <div key={group.title} className="annual-medical-group">
+                <h4 className="annual-medical-group-heading">{group.title}</h4>
                 {regularActions.filter(action => group.keys.includes(action.key)).map(renderGroupedAction)}
                 {!regularActions.some(action => group.keys.includes(action.key)) && <p>待安排</p>}
               </div>)}
