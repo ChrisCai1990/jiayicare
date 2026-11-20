@@ -10846,7 +10846,8 @@ router.get('/patients/:id/annual-plan/:planId/preview', staffAuth, async (req, r
     const items = buildAnnualPlanDisplayItems(customerModuleData(plan.moduleData));
     const byPlan = plan.pushedAt ? await require('../utils/publishedAnnualRecommendations')(req.params.id, [plan]) : new Map();
     const recommendations = byPlan.get(String(plan._id)) || [];
-    res.json({ success: true, data: { items, pushedAt: plan.pushedAt || null, recommendations } });
+    res.json({ success: true, data: { items, pushedAt: plan.pushedAt || null, recommendations,
+      nutritionAssessment: plan.moduleData?.nutrition_assessment?.enabled === false ? null : plan.moduleData?.nutrition_assessment || null } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

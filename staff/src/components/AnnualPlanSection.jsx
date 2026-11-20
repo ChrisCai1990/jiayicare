@@ -12,6 +12,12 @@ export function annualSectionFor(moduleKey) {
   return 'management'
 }
 
+export const medicalGroups = [
+  { title: '安排就医', keys: ['medical_treatment', 'specialist_collab'] },
+  { title: '完善检查', keys: ['checkup_completion', 'functional_medicine'] },
+  { title: '定期复查', keys: ['abnormal_followup'] },
+]
+
 export default function AnnualPlanSection({ section, children }) {
   const [number, title] = sections[section]
   return <section className={`annual-track-panel annual-track-panel--${section}`}>

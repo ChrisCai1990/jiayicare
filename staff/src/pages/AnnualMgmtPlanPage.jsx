@@ -15,7 +15,7 @@ import PublishedAnnualGoals from '../components/PublishedAnnualGoals'
 import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 import AnnualServiceRecommendations from '../components/AnnualServiceRecommendations'
 import AnnualVisitScheduleReview from '../components/AnnualVisitScheduleReview'
-import AnnualPlanSection, { annualSectionFor } from '../components/AnnualPlanSection'
+import AnnualPlanSection, { annualSectionFor, medicalGroups } from '../components/AnnualPlanSection'
 import AnnualPlanPreview from '../components/AnnualPlanPreview'
 import AnnualPlanTrackView from '../components/AnnualPlanTrackView'
 import AnnualNutritionAdvisorTargets from '../components/AnnualNutritionAdvisorTargets'
@@ -1683,8 +1683,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {!annualPilot && <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />}
           {annualPilot ? <div className="annual-track-stack">
             <AnnualPlanSection section="medical">
-              {regularActions.filter(action => annualSectionFor(action.key) === 'medical').map(renderGroupedAction)}
-              {!regularActions.some(action => annualSectionFor(action.key) === 'medical') && <p>暂无已纳入的医疗安排。</p>}
+              {medicalGroups.map(group => <div key={group.title} style={{ borderTop: '1px solid #E1EAE4', padding: '14px 0' }}>
+                <h4 style={{ margin: '0 0 10px' }}>{group.title}</h4>
+                {regularActions.filter(action => group.keys.includes(action.key)).map(renderGroupedAction)}
+                {!regularActions.some(action => group.keys.includes(action.key)) && <p>待安排</p>}
+              </div>)}
+              {regularActions.filter(action => annualSectionFor(action.key) === 'medical' && !medicalGroups.some(group => group.keys.includes(action.key))).map(renderGroupedAction)}
             </AnnualPlanSection>
             <AnnualPlanSection section="management">
               {patientMode && renderNutrition()}
@@ -1720,7 +1724,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
       {annualPilot && planType && !pushedAt && currentPlanId && <AnnualVisitScheduleReview data={moduleData} editable={canEdit} nearbyOnly onChange={handleVisitScheduleChange} onError={toast} />}
-      {annualPilot && planType && <AnnualPlanPreview patientId={id} planId={currentPlanId} version={plansByType[planType]?.updatedAt} />}
+      {annualPilot && planType && <AnnualPlanPreview patientId={id} planId={currentPlanId} version={plansByType[planType]?.updatedAt} staffList={staffList} assignedNutritionist={patient?.assignedNutritionist} />}
 
 {annualPilot && planType && <details style={{ marginBottom: 16, padding: '14px 16px', background: '#F5FAF7', border: '1px solid #CFE3D7', borderRadius: 12 }} aria-label="年度管理目标">
             <summary style={{ cursor: 'pointer', fontWeight: 700 }}>查看本年度管理目标</summary>
