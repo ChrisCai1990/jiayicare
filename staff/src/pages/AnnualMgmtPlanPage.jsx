@@ -15,6 +15,7 @@ import PublishedAnnualGoals from '../components/PublishedAnnualGoals'
 import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 import AnnualServiceRecommendations from '../components/AnnualServiceRecommendations'
 import AnnualVisitScheduleReview from '../components/AnnualVisitScheduleReview'
+import AnnualPlanSection, { annualSectionFor } from '../components/AnnualPlanSection'
 import AnnualPlanPreview from '../components/AnnualPlanPreview'
 import AnnualPlanTrackView from '../components/AnnualPlanTrackView'
 import AnnualNutritionAdvisorTargets from '../components/AnnualNutritionAdvisorTargets'
@@ -1232,8 +1233,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     })
   }
   const optionalSections = [['vaccine','疫苗接种'], ['health_consensus','健康认知与共识'], ['monitoring','日常监测'], ['annual_checkup','下一年度体检']]
-  const medicalActions = integratedActions.filter(action => action.key !== 'nutrition_assessment' && !optionalSections.some(([key]) => key === action.key))
-  const dentalAction = medicalActions.find(action => action.key === 'medical_treatment' &&
+  const regularActions = integratedActions.filter(action => action.key !== 'nutrition_assessment' && !optionalSections.some(([key]) => key === action.key))
+  const dentalAction = regularActions.find(action => action.key === 'medical_treatment' &&
     /牙结石|洁牙|洗牙/.test([action.title, action.record.reason, action.record.items, ...managementTargets.filter(t => action.record.sourceIds?.includes(t.issueId)).map(t => t.sourceTitle)].join(' ')))
   const SecondaryPlanSection = annualPilot ? 'details' : 'div'
   const activePlanType = selectedAdminTemplate
@@ -1266,6 +1267,61 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
+
+  const renderGroupedAction = action => <details key={`${action.key}:${action.index}`} id={`annual-operation-${action.key}-${action.index}`} style={{ border: '1px solid #DCE9E1', borderRadius: 10, marginBottom: 8, padding: '10px 12px' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{action.key === 'annual_checkup' ? '下一年度体检随访' : action.title || action.moduleName} · {action.date || '日期待确认'}</summary>
+              {renderPlanAction(action, true)}
+              {dentalAction === action && <AnnualServiceRecommendations patient={patient} staffList={staffList} planId={currentPlanId} pushedAt={pushedAt} canEdit={canEdit} toast={toast} />}
+            </details>
+  const renderNutrition = () => <details id="annual-nutrition-assessment" style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
+            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估与干预 · {moduleData.nutrition_assessment?.enabled === false ? '已从本次方案移除' : `${nutritionSummary.metrics.length} 项对比指标${nutritionTask ? ' · 已派发营养师' : ' · 顾问推送时派发'}`}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment') && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</summary>
+            {moduleData.nutrition_assessment?.enabled === false ? <div style={{ marginTop: 10, fontSize: 13, color: '#62776A' }}>本次方案不再重复派发营养评估。{canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setOptionalIncluded('nutrition_assessment', true)}>恢复此项</button>}</div> : <>
+            <div style={{ fontSize: 12, color: '#62776A', margin: '8px 0' }}>研判内容自动带入；顾问核对并推送方案时同步派发营养师。营养师评估后调整并形成方案。</div>
+            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" disabled={Boolean(nutritionTask)} onClick={() => {
+              if (!window.confirm('确认从本次年度方案移除营养评估与干预？已有的其他强化干预方案不会删除；本项将不再随年度方案派发。')) return
+              setOptionalIncluded('nutrition_assessment', false)
+            }}>移除本次营养评估与干预</button>}
+            {nutritionTask && !pushedAt && <div style={{ fontSize: 12, color: '#9A5B13', marginTop: 6 }}>营养师任务已派发，请先处理现有任务，再调整本次方案。</div>}
+            {annualPilot && nutritionEditor}
+            <div style={{fontSize:13,marginBottom:8}}>相关问题：{nutritionSummary.problems.join('、') || '按研判相关问题评估膳食与生活方式'}</div>
+            <div style={{fontSize:13,marginBottom:8}}>对比指标：{nutritionSummary.metrics.join('、') || '基础体成分评估'}；固定包含骨骼肌、体脂率、内脏脂肪。</div>
+            <div style={{fontSize:13,marginBottom:8}}>研判参考目标：{nutritionSummary.references.join('；') || '研判未给出明确数值目标，由营养师结合原报告参考范围及实际情况制定。'}{nutritionSummary.references.length > 0 && '（沿用研判，供营养师评估调整）'}</div>
+            <details style={{fontSize:12,color:'#62776A',marginBottom:12}}><summary style={{cursor:'pointer'}}>查看研判医疗背景</summary>{nutritionSummary.background.map((row,index)=><div key={index} style={{marginTop:6}}>{row.goal}</div>)}<div>就医、检查与用药评估由对应医疗安排执行。</div></details>
+            <label style={{ display: 'block', fontSize: 13, color: '#4A6558' }}>计划评估日期（可留空；单独派发时留空按当天安排）<DateField type="date" className="form-input" value={moduleData.nutrition_assessment?.executionDate || ''} disabled={!canEdit || Boolean(pushedAt)} onChange={e => handleModuleChange('nutrition_assessment', 'executionDate', e.target.value)} style={{ display: 'block', maxWidth: 240, marginTop: 5 }} /></label>
+            <div style={{ fontSize: 13, marginTop: 12, color: '#4A6558' }}>责任营养师：{patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name || '待分配'}</div>
+            <details style={{marginTop:12}}><summary style={{cursor:'pointer'}}>调整营养对比指标</summary>
+            <NutritionComparisonMetricPicker value={nutritionSummary.metrics} onChange={handleNutritionMetricChange} disabled={!canEdit} /></details>
+            {!!moduleData.nutrition_assessment?.records?.length && <div style={{ marginTop: 12 }}><strong>专项评估重点</strong>{moduleData.nutrition_assessment.records.map((row, index) => <div key={index} style={{ padding: '9px 0', borderBottom: '1px solid #E5ECE7' }}>
+              {canEdit && !pushedAt ? <>
+                <label style={{ display: 'block', fontSize: 12 }}>评估重点<input className="form-input" value={row.items || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, items: e.target.value } : item))} /></label>
+                <label style={{ display: 'block', fontSize: 12, marginTop: 6 }}>依据<textarea className="form-input" rows={2} value={row.basisSummary || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, basisSummary: e.target.value } : item))} /></label>
+                <label style={{ display: 'block', fontSize: 12, marginTop: 6 }}>评估建议<textarea className="form-input" rows={2} value={row.personalizedAdvice || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, personalizedAdvice: e.target.value } : item))} /></label>
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={() => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.filter((_, i) => i !== index))}>删除此重点</button>
+              </> : <><div>{row.items}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment' && change.after?.title === row.items) && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</div><div style={{ fontSize: 12, color: '#62776A', whiteSpace: 'pre-wrap' }}>依据：{row.basisSummary || row.reason || '待核对'}</div><div style={{ fontSize: 12, color: '#62776A', whiteSpace: 'pre-wrap' }}>评估建议：{row.personalizedAdvice || '待确认'}</div></>}
+            </div>)}</div>}
+            {pendingExecutionChanges.filter(change => change.key === 'nutrition_assessment').map((change, index) => <details key={`nutrition-review-${index}`} style={{ marginTop: 8, color: '#9A5B13', fontSize: 12 }}><summary style={{ cursor: 'pointer' }}>{change.action}：{change.title} · 查看本项修订</summary><div style={{ whiteSpace: 'pre-wrap' }}>原方案：{change.before?.title || '无'} · {change.before?.date || '日期待确认'} · {change.before?.advice || ''}</div><div style={{ whiteSpace: 'pre-wrap' }}>当前方案：{change.after?.title || '无'} · {change.after?.datePending ? '日期待确认' : change.after?.date || '日期待确认'} · {change.after?.advice || ''}</div></details>)}
+            {pushedAt && canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!metricSelectionDirty || metricSelectionSaving} onClick={savePublishedNutritionMetrics}>{metricSelectionSaving ? '保存中…' : '保存指标调整（留痕）'}</button>}
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {nutritionTask ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=followups&followUpId=${nutritionTask._id}`)}>营养师任务已派发 · 查看{nutritionTask.status === 'completed' ? '结果' : '任务'}</button>
+                : canEdit && <button type="button" className="btn btn-primary btn-sm" disabled={saving || (pushedAt && (dirty || metricSelectionDirty)) || remotePlanChanged || nutritionDispatching || nutritionTaskLoading || !patient?.assignedNutritionist} onClick={dispatchNutritionTask}>{nutritionDispatching ? (saving ? '保存中…' : '派发中…') : dirty || !currentPlanId ? '保存并派发给营养师' : '单独派发给营养师'}</button>}
+              <span style={{ fontSize: 12, color: '#62776A' }}>{nutritionTask ? '已有任务不会因年度方案确认再次派发。' : !patient?.assignedNutritionist ? '请先为客户分配责任营养师。' : remotePlanChanged ? '方案已更新，请先加载最新方案。' : (pushedAt && (dirty || metricSelectionDirty)) ? '请先保存上方指标调整。' : dirty || !currentPlanId ? '将先保存当前草稿及评估日期，再派发营养师任务。' : '无需推送整个年度方案，可单独派发营养师任务。'}</span>
+            </div>
+            {!!plansByType[planType]?.nutritionMetricHistory?.length && <details style={{ marginTop: 10, fontSize: 12, color: '#52675D' }}><summary>指标调整记录（{plansByType[planType].nutritionMetricHistory.length}次）</summary>{plansByType[planType].nutritionMetricHistory.map((entry, index) => <div key={index} style={{ padding: '6px 0' }}>{new Date(entry.changedAt).toLocaleString('zh-CN')} · {entry.changedByName || '健康顾问'}：{(entry.before || []).join('、') || '未选'} → {(entry.after || []).join('、') || '未选'}</div>)}</details>}
+            </>}
+          </details>
+  const renderOptional = ([key, label]) => {
+            const data = moduleData[key]
+            const removed = data?.enabled === false
+            const actions = integratedActions.filter(action => action.key === key)
+            return <details key={key} className="annual-plan-secondary"><summary>{label}{removed ? ' · 已移除' : ''}</summary>
+              {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOptionalIncluded(key, removed)}>{removed ? '恢复此项' : '移除本项'}</button>}
+              {!removed && <>{actions.map(action => <div key={action.index} id={`annual-operation-${key}-${action.index}`}>{renderPlanAction(action, true)}</div>)}
+                {canEdit && key === 'health_consensus' && <label><input type="checkbox" checked={data?.shareWithCustomer === true} onChange={event => handleModuleChange(key, 'shareWithCustomer', event.target.checked)} /> 将沟通主题和日期纳入客户方案</label>}
+                {canEdit && key === 'monitoring' && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
+                {canEdit && (key === 'vaccine' || !actions.length && key !== 'monitoring') && <button type="button" className="btn btn-secondary btn-sm" onClick={() => editDraftItem(key, actions.length)}>{key === 'annual_checkup' ? '安排体检日期、机构与服务方式' : key === 'vaccine' ? '添加疫苗接种' : '安排当前沟通主题'}</button>}
+              </>}
+            </details>
+          }
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>加载中...</div>
 
@@ -1624,64 +1680,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {progressEligible && <div style={{ marginBottom: 12, fontSize: 12 }}><button type="button" className="btn btn-secondary btn-sm" onClick={refreshIssueProgress}>刷新执行进展</button>{issueProgressError && <span role="alert" style={{ marginLeft: 8, color: '#B42318' }}>{issueProgressError}</span>}</div>}
             </section>
           </details>}
-          {annualPilot && !pushedAt && medicalActions.length > 0 && <section aria-label="执行事项设置" style={{ marginBottom: 14 }}>
-            <h3 style={{ fontSize: 16, margin: '4px 0 10px' }}>逐项设置执行安排</h3>
-            {medicalActions.map(action => <details key={`${action.key}:${action.index}`} id={`annual-operation-${action.key}-${action.index}`} style={{ border: '1px solid #DCE9E1', borderRadius: 10, marginBottom: 8, padding: '10px 12px' }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{action.key === 'annual_checkup' ? '下一年度体检随访' : action.title || action.moduleName} · {action.date || '日期待确认'}</summary>
-              {renderPlanAction(action, true)}
-              {dentalAction === action && <AnnualServiceRecommendations patient={patient} staffList={staffList} planId={currentPlanId} pushedAt={pushedAt} canEdit={canEdit} toast={toast} />}
-            </details>)}
-          </section>}
           {!annualPilot && <AnnualVisitScheduleReview data={moduleData} editable={canEdit && !pushedAt} onChange={handleVisitScheduleChange} onError={toast} />}
-          {patientMode && <details id="annual-nutrition-assessment" style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }} aria-label="年度标准营养评估">
-            <summary style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: '#1A2B24' }}>🥗 营养评估与干预 · {moduleData.nutrition_assessment?.enabled === false ? '已从本次方案移除' : `${nutritionSummary.metrics.length} 项对比指标${nutritionTask ? ' · 已派发营养师' : ' · 顾问推送时派发'}`}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment') && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</summary>
-            {moduleData.nutrition_assessment?.enabled === false ? <div style={{ marginTop: 10, fontSize: 13, color: '#62776A' }}>本次方案不再重复派发营养评估。{canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setOptionalIncluded('nutrition_assessment', true)}>恢复此项</button>}</div> : <>
-            <div style={{ fontSize: 12, color: '#62776A', margin: '8px 0' }}>研判内容自动带入；顾问核对并推送方案时同步派发营养师。营养师评估后调整并形成方案。</div>
-            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" disabled={Boolean(nutritionTask)} onClick={() => {
-              if (!window.confirm('确认从本次年度方案移除营养评估与干预？已有的其他强化干预方案不会删除；本项将不再随年度方案派发。')) return
-              setOptionalIncluded('nutrition_assessment', false)
-            }}>移除本次营养评估与干预</button>}
-            {nutritionTask && !pushedAt && <div style={{ fontSize: 12, color: '#9A5B13', marginTop: 6 }}>营养师任务已派发，请先处理现有任务，再调整本次方案。</div>}
-            {annualPilot && nutritionEditor}
-            <div style={{fontSize:13,marginBottom:8}}>相关问题：{nutritionSummary.problems.join('、') || '按研判相关问题评估膳食与生活方式'}</div>
-            <div style={{fontSize:13,marginBottom:8}}>对比指标：{nutritionSummary.metrics.join('、') || '基础体成分评估'}；固定包含骨骼肌、体脂率、内脏脂肪。</div>
-            <div style={{fontSize:13,marginBottom:8}}>研判参考目标：{nutritionSummary.references.join('；') || '研判未给出明确数值目标，由营养师结合原报告参考范围及实际情况制定。'}{nutritionSummary.references.length > 0 && '（沿用研判，供营养师评估调整）'}</div>
-            <details style={{fontSize:12,color:'#62776A',marginBottom:12}}><summary style={{cursor:'pointer'}}>查看研判医疗背景</summary>{nutritionSummary.background.map((row,index)=><div key={index} style={{marginTop:6}}>{row.goal}</div>)}<div>就医、检查与用药评估由对应医疗安排执行。</div></details>
-            <label style={{ display: 'block', fontSize: 13, color: '#4A6558' }}>计划评估日期（可留空；单独派发时留空按当天安排）<DateField type="date" className="form-input" value={moduleData.nutrition_assessment?.executionDate || ''} disabled={!canEdit || Boolean(pushedAt)} onChange={e => handleModuleChange('nutrition_assessment', 'executionDate', e.target.value)} style={{ display: 'block', maxWidth: 240, marginTop: 5 }} /></label>
-            <div style={{ fontSize: 13, marginTop: 12, color: '#4A6558' }}>责任营养师：{patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name || '待分配'}</div>
-            <details style={{marginTop:12}}><summary style={{cursor:'pointer'}}>调整营养对比指标</summary>
-            <NutritionComparisonMetricPicker value={nutritionSummary.metrics} onChange={handleNutritionMetricChange} disabled={!canEdit} /></details>
-            {!!moduleData.nutrition_assessment?.records?.length && <div style={{ marginTop: 12 }}><strong>专项评估重点</strong>{moduleData.nutrition_assessment.records.map((row, index) => <div key={index} style={{ padding: '9px 0', borderBottom: '1px solid #E5ECE7' }}>
-              {canEdit && !pushedAt ? <>
-                <label style={{ display: 'block', fontSize: 12 }}>评估重点<input className="form-input" value={row.items || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, items: e.target.value } : item))} /></label>
-                <label style={{ display: 'block', fontSize: 12, marginTop: 6 }}>依据<textarea className="form-input" rows={2} value={row.basisSummary || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, basisSummary: e.target.value } : item))} /></label>
-                <label style={{ display: 'block', fontSize: 12, marginTop: 6 }}>评估建议<textarea className="form-input" rows={2} value={row.personalizedAdvice || ''} onChange={e => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.map((item, i) => i === index ? { ...item, personalizedAdvice: e.target.value } : item))} /></label>
-                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 6 }} onClick={() => handleModuleChange('nutrition_assessment', 'records', moduleData.nutrition_assessment.records.filter((_, i) => i !== index))}>删除此重点</button>
-              </> : <><div>{row.items}{pendingExecutionChanges.some(change => change.key === 'nutrition_assessment' && change.after?.title === row.items) && <span style={{ marginLeft: 8, color: '#9A5B13', fontSize: 12 }}>执行待核对</span>}</div><div style={{ fontSize: 12, color: '#62776A', whiteSpace: 'pre-wrap' }}>依据：{row.basisSummary || row.reason || '待核对'}</div><div style={{ fontSize: 12, color: '#62776A', whiteSpace: 'pre-wrap' }}>评估建议：{row.personalizedAdvice || '待确认'}</div></>}
-            </div>)}</div>}
-            {pendingExecutionChanges.filter(change => change.key === 'nutrition_assessment').map((change, index) => <details key={`nutrition-review-${index}`} style={{ marginTop: 8, color: '#9A5B13', fontSize: 12 }}><summary style={{ cursor: 'pointer' }}>{change.action}：{change.title} · 查看本项修订</summary><div style={{ whiteSpace: 'pre-wrap' }}>原方案：{change.before?.title || '无'} · {change.before?.date || '日期待确认'} · {change.before?.advice || ''}</div><div style={{ whiteSpace: 'pre-wrap' }}>当前方案：{change.after?.title || '无'} · {change.after?.datePending ? '日期待确认' : change.after?.date || '日期待确认'} · {change.after?.advice || ''}</div></details>)}
-            {pushedAt && canEdit && <button type="button" className="btn btn-secondary btn-sm" disabled={!metricSelectionDirty || metricSelectionSaving} onClick={savePublishedNutritionMetrics}>{metricSelectionSaving ? '保存中…' : '保存指标调整（留痕）'}</button>}
-            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              {nutritionTask ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=followups&followUpId=${nutritionTask._id}`)}>营养师任务已派发 · 查看{nutritionTask.status === 'completed' ? '结果' : '任务'}</button>
-                : canEdit && <button type="button" className="btn btn-primary btn-sm" disabled={saving || (pushedAt && (dirty || metricSelectionDirty)) || remotePlanChanged || nutritionDispatching || nutritionTaskLoading || !patient?.assignedNutritionist} onClick={dispatchNutritionTask}>{nutritionDispatching ? (saving ? '保存中…' : '派发中…') : dirty || !currentPlanId ? '保存并派发给营养师' : '单独派发给营养师'}</button>}
-              <span style={{ fontSize: 12, color: '#62776A' }}>{nutritionTask ? '已有任务不会因年度方案确认再次派发。' : !patient?.assignedNutritionist ? '请先为客户分配责任营养师。' : remotePlanChanged ? '方案已更新，请先加载最新方案。' : (pushedAt && (dirty || metricSelectionDirty)) ? '请先保存上方指标调整。' : dirty || !currentPlanId ? '将先保存当前草稿及评估日期，再派发营养师任务。' : '无需推送整个年度方案，可单独派发营养师任务。'}</span>
-            </div>
-            {!!plansByType[planType]?.nutritionMetricHistory?.length && <details style={{ marginTop: 10, fontSize: 12, color: '#52675D' }}><summary>指标调整记录（{plansByType[planType].nutritionMetricHistory.length}次）</summary>{plansByType[planType].nutritionMetricHistory.map((entry, index) => <div key={index} style={{ padding: '6px 0' }}>{new Date(entry.changedAt).toLocaleString('zh-CN')} · {entry.changedByName || '健康顾问'}：{(entry.before || []).join('、') || '未选'} → {(entry.after || []).join('、') || '未选'}</div>)}</details>}
-            </>}
-          </details>}
-          {annualPilot && optionalSections.map(([key, label]) => {
-            const data = moduleData[key]
-            const removed = data?.enabled === false
-            const actions = integratedActions.filter(action => action.key === key)
-            return <details key={key} className="annual-plan-secondary"><summary>{label}{removed ? ' · 已移除' : ''}</summary>
-              {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOptionalIncluded(key, removed)}>{removed ? '恢复此项' : '移除本项'}</button>}
-              {!removed && <>{actions.map(action => <div key={action.index} id={`annual-operation-${key}-${action.index}`}>{renderPlanAction(action, true)}</div>)}
-                {canEdit && key === 'health_consensus' && <label><input type="checkbox" checked={data?.shareWithCustomer === true} onChange={event => handleModuleChange(key, 'shareWithCustomer', event.target.checked)} /> 将沟通主题和日期纳入客户方案</label>}
-                {canEdit && key === 'monitoring' && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
-                {canEdit && (key === 'vaccine' || !actions.length && key !== 'monitoring') && <button type="button" className="btn btn-secondary btn-sm" onClick={() => editDraftItem(key, actions.length)}>{key === 'annual_checkup' ? '安排体检日期、机构与服务方式' : key === 'vaccine' ? '添加疫苗接种' : '安排当前沟通主题'}</button>}
-              </>}
-            </details>
-          })}
+          {annualPilot ? <div className="annual-track-stack">
+            <AnnualPlanSection section="medical">
+              {regularActions.filter(action => annualSectionFor(action.key) === 'medical').map(renderGroupedAction)}
+              {!regularActions.some(action => annualSectionFor(action.key) === 'medical') && <p>暂无已纳入的医疗安排。</p>}
+            </AnnualPlanSection>
+            <AnnualPlanSection section="management">
+              {patientMode && renderNutrition()}
+              {regularActions.filter(action => annualSectionFor(action.key) === 'management').map(renderGroupedAction)}
+              {optionalSections.filter(([key]) => key !== 'annual_checkup').map(renderOptional)}
+            </AnnualPlanSection>
+            <AnnualPlanSection section="checkup">{optionalSections.filter(([key]) => key === 'annual_checkup').map(renderOptional)}</AnnualPlanSection>
+          </div> : patientMode && renderNutrition()}
           {!annualPilot && sharedActions.length > 0 && <section style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: 16, marginBottom: 12 }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>其他年度安排 · {sharedActions.length} 项</div>
             {sharedActions.map(renderPlanAction)}

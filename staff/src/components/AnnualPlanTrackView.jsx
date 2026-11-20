@@ -1,4 +1,5 @@
 import React from 'react'
+import AnnualPlanSection from './AnnualPlanSection'
 import nutritionCatalog from '../../../shared/annualNutritionAdvisorTargets.cjs'
 
 const medical = [
@@ -56,15 +57,15 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
   return <section id="annual-plan-content" aria-label="年度方案按服务线路查看" style={{ marginBottom: 16 }}>
     <h2 style={{ margin: '0 0 12px', fontSize: 21, color: '#1A2B24' }}>年度管理方案</h2>
     <div className="annual-track-stack">
-      <div className="annual-track-panel annual-track-panel--medical"><h3 className="annual-track-heading"><span className="annual-track-number">01</span>医疗服务</h3>{medical.map(renderGroup)}</div>
-      <div className="annual-track-panel annual-track-panel--management"><h3 className="annual-track-heading"><span className="annual-track-number">02</span>健康管理</h3>{management.map(group => group[0] === '疫苗接种' && !itemsFor(group[1]).length ? <div key="vaccine-review" style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0', fontSize: 13, color: '#62776A' }}><strong style={{ fontSize: 16, color: '#183E30' }}>疫苗接种</strong><div style={{ marginTop: 5 }}>当前方案未纳入接种事项；需核对接种史、检查结果和适宜性后决定。</div>{onEditItem && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditItem('vaccine')}>添加接种安排</button>}</div> : renderGroup(group))}
+      <AnnualPlanSection section="medical">{medical.map(renderGroup)}</AnnualPlanSection>
+      <AnnualPlanSection section="management">{management.map(group => group[0] === '疫苗接种' && !itemsFor(group[1]).length ? <div key="vaccine-review" style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0', fontSize: 13, color: '#62776A' }}><strong style={{ fontSize: 16, color: '#183E30' }}>疫苗接种</strong><div style={{ marginTop: 5 }}>当前方案未纳入接种事项；需核对接种史、检查结果和适宜性后决定。</div>{onEditItem && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditItem('vaccine')}>添加接种安排</button>}</div> : renderGroup(group))}
         <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · 按已有每周计划执行</strong>{manualMonitoringEditor}</div>
-      </div>
-      <div className="annual-track-panel annual-track-panel--checkup"><h3 className="annual-track-heading"><span className="annual-track-number">03</span>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A', lineHeight: 1.7 }}>
+      </AnnualPlanSection>
+      <AnnualPlanSection section="checkup">{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A', lineHeight: 1.7 }}>
         <div>本方案尚未纳入下一次年度体检安排。{latestCheckupDate ? `已审核的最近一次完整体检日期：${latestCheckupDate}。` : ''}</div>
         <div>下次体检日期：待安排 · 体检机构：待确认 · 服务方式：待选择</div>
         {onEditItem && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => onEditItem('annual_checkup')}>＋ 安排下一年度体检随访</button>}
-      </div>}</div>
+      </div>}</AnnualPlanSection>
     </div>
   </section>
 }
