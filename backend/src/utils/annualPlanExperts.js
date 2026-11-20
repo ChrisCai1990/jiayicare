@@ -6,11 +6,12 @@ const departmentName = value => compact(value).replace(/医学|检查/g, '');
 const matches = (left, right, min) => left && right && (left === right || (Math.min(left.length, right.length) >= min && (left.includes(right) || right.includes(left))));
 
 async function resolveAnnualPlanExperts(moduleData) {
-  for (const key of ['medical_treatment', 'specialist_collab', 'abnormal_followup']) {
+  const examModules = ['abnormal_followup', 'checkup_completion', 'functional_medicine'];
+  for (const key of ['medical_treatment', 'specialist_collab', ...examModules]) {
     for (const row of moduleData?.[key]?.records || []) {
       for (const { idsKey, snapshotsKey, departmentKey } of [
         { idsKey: 'expertIds', snapshotsKey: 'expertSnapshots', departmentKey: 'department' },
-        ...(key === 'abnormal_followup' ? [{ idsKey: 'orderExpertIds', snapshotsKey: 'orderExpertSnapshots', departmentKey: 'order_dept' }] : []),
+        ...(examModules.includes(key) ? [{ idsKey: 'orderExpertIds', snapshotsKey: 'orderExpertSnapshots', departmentKey: 'order_dept' }] : []),
       ]) {
         const ids = row[idsKey];
         if (ids === undefined) { delete row[snapshotsKey]; continue; }
@@ -25,7 +26,7 @@ async function resolveAnnualPlanExperts(moduleData) {
           const expert = experts.find(item => String(item._id) === String(id));
           const institution = expert?.institutionId;
           const department = expert?.departmentId;
-          if (!institution || !department || institution.status === 'inactive' || department.status === 'inactive' || ![institution.name, ...(institution.aliases || [])].some(name => matches(compact(name), compact(row.hospital), 4))
+          if (!institution || !department || institution.status === 'inactive' || department.status === 'inactive' || ![institution.name, ...(institution.aliases || [])].some(name => matches(compact(name), compact(row.hospital || row.institution), 4))
             || !matches(departmentName(department.name), departmentName(row[departmentKey]), 2)) {
             throw new Error('所选专家与当前医院或科室不匹配，请重新核对');
           }

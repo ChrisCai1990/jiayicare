@@ -556,7 +556,7 @@ export const staffAPI = {
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   getAnnualWorkflow:    patientId => req(`/staff/patients/${patientId}/annual-workflow`),
   appendCurrentScreeningAction: (patientId, planId, data) => req(`/staff/patients/${patientId}/annual-plan/${planId}/append-screening-action`, { method: 'POST', body: JSON.stringify(data) }),
-  getPublishedAnnualView: (patientId, planId) => req(`/staff/patients/${patientId}/annual-plan/${planId}/published-view`),
+  getAnnualPlanPreview: (patientId, planId) => req(`/staff/patients/${patientId}/annual-plan/${planId}/preview`),
   getAnnualIssueProgress: (patientId, planId) => req(`/staff/patients/${patientId}/annual-plan/${planId}/issue-progress`),
   updateDentalGift: (planId, data) => req(`/staff/annual-plans/${planId}/dental-gift`, {method:'POST', body:JSON.stringify(data)}),
   getAnnualExecutionReview: (patientId, planId) => req(`/staff/patients/${patientId}/annual-plan-execution-review/${planId}`),

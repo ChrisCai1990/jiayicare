@@ -15,7 +15,7 @@ import PublishedAnnualGoals from '../components/PublishedAnnualGoals'
 import ReportFollowUpDrafts from '../components/ReportFollowUpDrafts'
 import AnnualServiceRecommendations from '../components/AnnualServiceRecommendations'
 import AnnualVisitScheduleReview from '../components/AnnualVisitScheduleReview'
-import PublishedAnnualPlanView from '../components/PublishedAnnualPlanView'
+import AnnualPlanPreview from '../components/AnnualPlanPreview'
 import AnnualPlanTrackView from '../components/AnnualPlanTrackView'
 import AnnualNutritionAdvisorTargets from '../components/AnnualNutritionAdvisorTargets'
 import nutritionAdvisorTargets from '../../../shared/annualNutritionAdvisorTargets.cjs'
@@ -74,6 +74,15 @@ const SERVICE_MODE_FIELDS = [
 ]
 
 // ── 板块定义（key → { name, icon, fields }）──────────────────────────
+const EXAM_DEPARTMENT_FIELDS = [
+  { key: 'order_dept',      label: '先就诊／开单的临床科室', type: 'text' },
+  { key: 'orderExpertIds',  label: '开单资源库专家', type: 'medical-experts', departmentKey: 'order_dept' },
+  { key: 'order_expert',    label: '其他开单专家/原方案专家', type: 'text' },
+  { key: 'department',      label: '实际检查科室（待确认可留空）', type: 'text' },
+  { key: 'expertIds',       label: '检查资源库专家', type: 'medical-experts' },
+  { key: 'expert',          label: '其他检查专家/原方案专家', type: 'text' },
+]
+
 const MODULE_DEFS = {
   medical_treatment: {
     name: '需要安排就医', icon: '🏥', multi: true, summaryKey: 'hospital', summaryLabel: '就医医院',
@@ -121,12 +130,7 @@ const MODULE_DEFS = {
       { key: 'reason',          label: '复查原因',       type: 'textarea' },
       { key: 'hospital',        label: '复查医院',       type: 'text' },
       { key: 'time',            label: '复查时间',       type: 'date' },
-      { key: 'order_dept',      label: '先就诊／开单的临床科室', type: 'text' },
-      { key: 'orderExpertIds',  label: '开单资源库专家', type: 'medical-experts', departmentKey: 'order_dept' },
-      { key: 'order_expert',    label: '其他开单专家/原方案专家', type: 'text' },
-      { key: 'department',      label: '实际检查科室（待确认可留空）', type: 'text' },
-      { key: 'expertIds',       label: '检查资源库专家', type: 'medical-experts' },
-      { key: 'expert',          label: '其他检查专家/原方案专家', type: 'text' },
+      ...EXAM_DEPARTMENT_FIELDS,
       { key: 'bookingRequired', label: '需健管专员预约', type: 'yesno' },
       ...SERVICE_MODE_FIELDS,
       { key: 'coordinator',     label: '协调专员',       type: 'staff-select' },
@@ -189,6 +193,7 @@ const MODULE_DEFS = {
     fields: [
       { key: 'items',       label: '检测项目', type: 'text' },
       { key: 'institution', label: '检测机构', type: 'text' },
+      ...EXAM_DEPARTMENT_FIELDS,
       { key: 'reason',      label: '检测原因', type: 'textarea' },
       { key: 'time',        label: '检测时间', type: 'date' },
       { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
@@ -248,6 +253,7 @@ const MODULE_DEFS = {
       { key: 'reason', label: '完善依据', type: 'textarea' },
       { key: 'time', label: '计划日期', type: 'date' },
       { key: 'hospital', label: '计划医院', type: 'text', placeholder: '与同次就诊的医院一致' },
+      ...EXAM_DEPARTMENT_FIELDS,
       { key: 'followUpStaff', label: '执行人', type: 'staff-select' },
       ...SERVICE_MODE_FIELDS,
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
@@ -839,7 +845,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPushedAt(saved.pushedAt || null)
           setConfirmedAt(saved.confirmedAt || null)
         }
-        if (!options.quiet) toast('方案草稿已保存；审核并推送后才会生成正式执行任务')
+        if (!options.quiet) {
+          toast('方案草稿已保存')
+          if (annualPilot && saved) requestAnimationFrame(() => {
+            const preview = document.getElementById('annual-plan-preview')
+            if (preview) { preview.open = true; preview.scrollIntoView({ block: 'start' }) }
+          })
+        }
       } else {
         await staffAPI.updatePlan(id, { content: { planType, moduleData } })
         toast('方案已保存')
@@ -1223,7 +1235,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const medicalActions = integratedActions.filter(action => action.key !== 'nutrition_assessment' && !optionalSections.some(([key]) => key === action.key))
   const dentalAction = medicalActions.find(action => action.key === 'medical_treatment' &&
     /牙结石|洁牙|洗牙/.test([action.title, action.record.reason, action.record.items, ...managementTargets.filter(t => action.record.sourceIds?.includes(t.issueId)).map(t => t.sourceTitle)].join(' ')))
-  const TemplateSettings = annualPilot ? 'div' : 'details'
   const SecondaryPlanSection = annualPilot ? 'details' : 'div'
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === strategyOf(planType)) || PLAN_TYPES[3]), key: planType, name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
@@ -1365,23 +1376,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {!(annualPilot && pushedAt) && <SecondaryPlanSection id="annual-plan-tools" style={annualPilot ? { marginBottom: 20, padding: '14px 16px', border: '1px solid #C7DCCF', borderRadius: 12, background: '#fff' } : undefined}>
       {annualPilot && <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 18 }}>方案设置与详情</summary>}
 
-      {patientMode && staleManagementSources.length > 0 && !pushedAt && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', border: '1px solid #F4C995', borderRadius: 10, color: '#713F12' }}>
-        <b>管理来源待核对</b><div style={{ marginTop: 5, fontSize: 13 }}>{staleManagementSources.map((title,index) => <div key={index}>{title}{staleSourceNotes.find(row => row.title === title)?.reason && ` · ${staleSourceNotes.find(row => row.title === title).reason}`}</div>)}</div>
-        {staleLegacyDecisions.map(row => <div key={row._id} style={{ marginTop: 10, padding: 10, background: '#fff', borderRadius: 8 }}>
-          <div><b>{row.title}</b> · {row.sourceSnapshot?.reportTitle || '原报告'} · 旧版整份报告归属</div>
-          <div style={{ fontSize: 12, marginTop: 5 }}>若该问题确实来自报告中的某项检查，请到专项筛查的具体检查项重新归属；若旧纳入本身有误，可说明原因并撤销。删除年度方案不会自动删除管理来源。</div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=ai`)}>去专项筛查重新归属</button>
-            {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setWithdrawalTarget(row); setWithdrawalReason('') }}>撤销错误归属</button>}
-          </div>
-          {withdrawalTarget?._id === row._id && <div style={{ marginTop: 10 }}>
-            <label style={{ display: 'block', fontSize: 12 }}>撤销原因（保留原决定及本次操作记录）</label>
-            <textarea className="form-input" rows={2} maxLength={500} value={withdrawalReason} onChange={event => setWithdrawalReason(event.target.value)} placeholder="例如：脂肪肝已在其他检查项管理，原整份报告归属有误" style={{ width: '100%', boxSizing: 'border-box', marginTop: 5 }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 7 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => setWithdrawalTarget(null)}>取消</button><button type="button" className="btn btn-primary btn-sm" disabled={withdrawalBusy || withdrawalReason.trim().length < 4} onClick={withdrawLegacyDecision}>{withdrawalBusy ? '处理中…' : '确认撤销旧归属'}</button></div>
-          </div>}
-        </div>)}
-        {!staleLegacyDecisions.length && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看专项筛查来源</button>}
-      </div>}
       {patientMode && canEdit && pushedAt && plansByType[planType] && <AnnualPlanRevision patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />}
       {annualPilot && patientMode && canEdit && pushedAt && confirmedAt && plansByType[planType] && <div id="annual-management-goals"><PublishedAnnualGoals key={plansByType[planType]._id} patientId={id} plan={plansByType[planType]} toast={toast} onSaved={saved => { setPlansByType(prev => ({ ...prev, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} /></div>}
       {patientMode && plansByType[planType]?.internalTaskReleaseEligible && !confirmedAt && <section aria-label="郭学清年度方案内部任务启动" style={{ background: '#FFF9ED', border: '1px solid #E9D3A3', borderRadius: 10, padding: 14, marginBottom: 14 }}>
@@ -1495,7 +1489,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </details>
 
 
-      <TemplateSettings open={(!annualPilot && !selectedTemplateId) || undefined} style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: '12px 16px', marginBottom: 16 }}>
+      {!annualPilot && <details open={(!annualPilot && !selectedTemplateId) || undefined} style={{ background: '#fff', border: '1px solid #E0D9CE', borderRadius: 12, padding: '12px 16px', marginBottom: 16 }}>
         {!annualPilot && <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#4A6558' }}>方案设置 · {activePlanType?.name || '待选服务版本'}</summary>}
       {patientMode && planType && <details style={{ background: '#F4F8F5', border: '1px solid #DDEAE0', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
         <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#4A6558' }}>正式阶段评估：{{ biweekly: '每 2 周', monthly: '每月', quarterly: '每季度' }[phaseAssessmentFrequency] || '按服务包周期'}</summary>
@@ -1551,7 +1545,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           )})}
         </div>
       </details>}
-      </TemplateSettings>
+      </details>}
 
       {patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} onDataChange={setExecutionReviewData} />}
 
@@ -1569,6 +1563,24 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
           {patientMode && <details open={!annualPilot || window.location.hash === '#annual-management-goals'} style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
             <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>{annualPilot ? '管理问题、目标与来源 · 展开核对' : '按问题查看年度管理方案'}</summary>
+      {patientMode && staleManagementSources.length > 0 && !pushedAt && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF7ED', border: '1px solid #F4C995', borderRadius: 10, color: '#713F12' }}>
+        <b>管理来源待核对</b><div style={{ marginTop: 5, fontSize: 13 }}>{staleManagementSources.map((title,index) => <div key={index}>{title}{staleSourceNotes.find(row => row.title === title)?.reason && ` · ${staleSourceNotes.find(row => row.title === title).reason}`}</div>)}</div>
+        {staleLegacyDecisions.map(row => <div key={row._id} style={{ marginTop: 10, padding: 10, background: '#fff', borderRadius: 8 }}>
+          <div><b>{row.title}</b> · {row.sourceSnapshot?.reportTitle || '原报告'} · 旧版整份报告归属</div>
+          <div style={{ fontSize: 12, marginTop: 5 }}>若该问题确实来自报告中的某项检查，请到专项筛查的具体检查项重新归属；若旧纳入本身有误，可说明原因并撤销。删除年度方案不会自动删除管理来源。</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=ai`)}>去专项筛查重新归属</button>
+            {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setWithdrawalTarget(row); setWithdrawalReason('') }}>撤销错误归属</button>}
+          </div>
+          {withdrawalTarget?._id === row._id && <div style={{ marginTop: 10 }}>
+            <label style={{ display: 'block', fontSize: 12 }}>撤销原因（保留原决定及本次操作记录）</label>
+            <textarea className="form-input" rows={2} maxLength={500} value={withdrawalReason} onChange={event => setWithdrawalReason(event.target.value)} placeholder="例如：脂肪肝已在其他检查项管理，原整份报告归属有误" style={{ width: '100%', boxSizing: 'border-box', marginTop: 5 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 7 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => setWithdrawalTarget(null)}>取消</button><button type="button" className="btn btn-primary btn-sm" disabled={withdrawalBusy || withdrawalReason.trim().length < 4} onClick={withdrawLegacyDecision}>{withdrawalBusy ? '处理中…' : '确认撤销旧归属'}</button></div>
+          </div>}
+        </div>)}
+        {!staleLegacyDecisions.length && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看专项筛查来源</button>}
+      </div>}
+
             <section>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>已纳入的问题与对应方案</div>
             {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>同步最新纳入问题</button>}
@@ -1697,7 +1709,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
       {annualPilot && planType && !pushedAt && currentPlanId && <AnnualVisitScheduleReview data={moduleData} editable={canEdit} nearbyOnly onChange={handleVisitScheduleChange} onError={toast} />}
-      {annualPilot && planType && <PublishedAnnualPlanView patientId={id} planId={pushedAt ? currentPlanId : ''} version={plansByType[planType]?.updatedAt} />}
+      {annualPilot && planType && <AnnualPlanPreview patientId={id} planId={currentPlanId} version={plansByType[planType]?.updatedAt} />}
 
 {annualPilot && planType && <details style={{ marginBottom: 16, padding: '14px 16px', background: '#F5FAF7', border: '1px solid #CFE3D7', borderRadius: 12 }} aria-label="年度管理目标">
             <summary style={{ cursor: 'pointer', fontWeight: 700 }}>查看本年度管理目标</summary>

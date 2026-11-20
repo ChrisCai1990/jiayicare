@@ -100,6 +100,10 @@ test('组合专项筛查按归类键引用全部子项，并在其中一项变�
   report.reportItems.reverse();
   assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, []);
   report.reportItems.reverse();
+  report.reportItems[0].screeningKeys = [key];
+  report.reportItems[0].reviewIssues = [];
+  report.reportItems[0].conclusion = '';
+  assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, []);
   report.reportItems[1].value = '异常';
   assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, ['decision']);
   report.reportItems[1].value = '正常';

@@ -10836,18 +10836,17 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   }
 });
 
-router.get('/patients/:id/annual-plan/:planId/published-view', staffAuth, async (req, res) => {
+router.get('/patients/:id/annual-plan/:planId/preview', staffAuth, async (req, res) => {
   try {
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无权查看该会员' });
-    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id, pushedAt: { $ne: null } }).select('moduleData pushedAt year').lean();
-    if (!plan) return res.status(404).json({ success: false, message: '尚无已推送方案' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id }).select('moduleData pushedAt year').lean();
+    if (!plan) return res.status(404).json({ success: false, message: '未找到已保存的年度管理方案' });
     const { buildAnnualPlanDisplayItems, customerModuleData } = require('../utils/annualPlanPresentation');
     const items = buildAnnualPlanDisplayItems(customerModuleData(plan.moduleData));
-    const tasks = await FollowUp.find({ patientId: req.params.id, sourceAnnualPlanId: plan._id, clientVisible: { $ne: false }, status: { $ne: 'cancelled' } }).select('theme date status').sort({ date: 1 }).lean();
-    const byPlan = await require('../utils/publishedAnnualRecommendations')(req.params.id, [plan]);
+    const byPlan = plan.pushedAt ? await require('../utils/publishedAnnualRecommendations')(req.params.id, [plan]) : new Map();
     const recommendations = byPlan.get(String(plan._id)) || [];
-    res.json({ success: true, data: { items, tasks, recommendations } });
+    res.json({ success: true, data: { items, pushedAt: plan.pushedAt || null, recommendations } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

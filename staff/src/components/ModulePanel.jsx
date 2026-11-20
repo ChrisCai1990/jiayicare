@@ -176,7 +176,7 @@ export function FieldInput({ field, value, onChange }) {
 function MedicalExpertPicker({ field, value, onChange }) {
   const resources = useContext(MedicalResourcesContext)
   const selected = Array.isArray(value) ? value.map(String) : []
-  const hospital = String(field.record?.hospital || '').trim().replace(/\s/g, '')
+  const hospital = String(field.record?.hospital || field.record?.institution || '').trim().replace(/\s/g, '')
   const department = String(field.record?.[field.departmentKey || 'department'] || '').trim().replace(/\s/g, '')
   const normalizedDepartment = name => String(name || '').replace(/\s|医学|检查/g, '')
   const institutions = resources.institutions || []

@@ -46,6 +46,11 @@ function normalizeItem(moduleKey, record, index) {
         ? record.order_dept || record.department || '' : record.department || record.order_dept || '',
       expert: moduleKey === 'abnormal_followup' && record.reviewGroupVersion === 1
         ? record.order_expert || record.expert || '' : record.expert || record.order_expert || '' },
+    ...(['checkup_completion', 'abnormal_followup', 'functional_medicine'].includes(moduleKey) ? {
+      examArrangement: { orderDepartment: record.order_dept, examDepartment: record.department,
+        orderExperts: [...(record.orderExpertSnapshots || []).map(person => person.name), record.order_expert].filter(Boolean),
+        examExperts: [...(record.expertSnapshots || []).map(person => person.name), record.expert].filter(Boolean) },
+    } : {}),
     customerAction: record.customerAction || '', precautions: record.precautions || '',
     service: { mode: record.serviceMode || 'reminder', modeLabel: SERVICE_MODE[record.serviceMode || 'reminder'], type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
     reviewStatus: record.reviewStatus || '',

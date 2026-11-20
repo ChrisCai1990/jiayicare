@@ -19,7 +19,11 @@ const CLINICAL_ITEM_FIELDS = [
   'examDate', 'institution',
 ];
 function clinicalItem(item) {
-  return CLINICAL_ITEM_FIELDS.map(key => item?.[key] ?? null);
+  return CLINICAL_ITEM_FIELDS.map(key => {
+    const value = item?.[key];
+    if (value == null || value === '' || (Array.isArray(value) && !value.length)) return null;
+    return value;
+  });
 }
 function reportSourceItems(report, kind, sourceId) {
   const id = String(sourceId || '').trim();
@@ -48,8 +52,8 @@ function sourceChanged(report, decision) {
   const snapshot = decision.sourceSnapshot || {};
   if (Array.isArray(snapshot.items)) {
     const current = reportSourceItems(report, 'screening', decision.itemId);
-    const signatures = rows => rows.map(item => JSON.stringify([String(item.itemId || ''), item.screeningKey || '',
-      [...(item.screeningKeys || [])].sort(), clinicalItem(item)])).sort();
+    const signatures = rows => rows.map(item => JSON.stringify([String(item.itemId || ''),
+      [...new Set([item.screeningKey, ...(item.screeningKeys || [])].filter(Boolean))].sort(), clinicalItem(item)])).sort();
     return !current.length || String(report.checkDate || '') !== String(snapshot.checkDate || '')
       || JSON.stringify(signatures(current)) !== JSON.stringify(signatures(snapshot.items));
   }
