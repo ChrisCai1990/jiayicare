@@ -186,6 +186,7 @@ export default function CheckinPage() {
   const [checkinMealType, setCheckinMealType] = useState('');
   const [checkinTimeSlot, setCheckinTimeSlot] = useState('');
   const [checkinSaving, setCheckinSaving] = useState(false);
+  const [checkinSaveUncertain, setCheckinSaveUncertain] = useState(false);
   const [checkinImages, setCheckinImages] = useState([]);
 
   const [measureModal, setMeasureModal] = useState(null);
@@ -253,6 +254,7 @@ export default function CheckinPage() {
       setCheckinMealType('');
       setCheckinTimeSlot(item.key === 'exercise' ? '现在' : '');
       setCheckinImages([]);
+      setCheckinSaveUncertain(false);
       setCheckinDate(todayStr);
       setCheckinModal(item);
     }
@@ -332,7 +334,7 @@ export default function CheckinPage() {
   };
 
   const saveCheckin = async () => {
-    if (checkinSaving) return;
+    if (checkinSaving || checkinSaveUncertain) return;
     const item = checkinModal;
     if (item.key === 'diet' && !checkinMealType) {
       Taro.showToast({ title: '请选择餐次', icon: 'none' });
@@ -345,8 +347,9 @@ export default function CheckinPage() {
     setCheckinSaving(true);
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
+    let deadline;
     try {
-      await recordsAPI.create({
+      const saveRequest = recordsAPI.create({
         category: item.category || 'lifestyle',
         type: item.key,
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
@@ -362,12 +365,25 @@ export default function CheckinPage() {
         },
         recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
       });
+      await Promise.race([
+        saveRequest,
+        new Promise((_, reject) => {
+          deadline = setTimeout(() => reject(new Error('保存结果尚未确认')), checkinImages.length ? 65000 : 20000);
+        }),
+      ]);
     } catch (err) {
-      setCheckinSaving(false);
-      Taro.showToast({ title: uploadErrorMessage(err, '保存失败，请重试'), icon: 'none' });
+      const ambiguous = checkinImages.length && /超时|timeout|abort|network|fetch|load failed|结果尚未确认/i.test(err?.message || err?.errMsg || '');
+      if (ambiguous) {
+        setCheckinSaveUncertain(true);
+        Taro.showModal({ title: '保存结果待核对', content: '照片提交超时，请先到健康档案查看是否已有这条记录。确认没有后再重新打开本页提交，避免重复保存。', showCancel: false, confirmText: '我知道了' });
+      } else {
+        Taro.showToast({ title: uploadErrorMessage(err, '保存失败，请重试'), icon: 'none' });
+      }
       return;
+    } finally {
+      clearTimeout(deadline);
+      setCheckinSaving(false);
     }
-    setCheckinSaving(false);
     setCheckinModal(null);
     loadTodayStatus();
   };
@@ -375,7 +391,10 @@ export default function CheckinPage() {
   const chooseCheckinImage = async () => {
     try {
       const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - checkinImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const next = await readSelectedImages(result);
+      const next = await readSelectedImages(result, { maxDimension: 1600 });
+      if ([...checkinImages, ...next].reduce((total, image) => total + image.data.length, 0) > 15 * 1024 * 1024) {
+        throw new Error('照片总大小过大，请减少照片数量');
+      }
       setCheckinImages((prev) => [...prev, ...next].slice(0, 9));
     } catch (err) {
       showImagePickerError(err, '图片读取失败，请重试');
@@ -455,7 +474,10 @@ export default function CheckinPage() {
   const chooseImages = async (current, setter) => {
     try {
       const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - current.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const next = await readSelectedImages(result);
+      const next = await readSelectedImages(result, { maxDimension: 1600 });
+      if ([...current, ...next].reduce((total, image) => total + image.data.length, 0) > 15 * 1024 * 1024) {
+        throw new Error('照片总大小过大，请减少照片数量');
+      }
       setter([...current, ...next].slice(0, 9));
     } catch (err) { showImagePickerError(err, '图片读取失败，请重试'); }
   };
@@ -703,8 +725,8 @@ export default function CheckinPage() {
               <View onClick={() => setCheckinModal(null)} style={{ flex: 1, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: colors.border }}>
                 <Text style={{ fontSize: '15px', fontWeight: 600, color: colors.textSecondary }}>取消</Text>
               </View>
-              <View onClick={checkinSaving ? undefined : saveCheckin} style={{ flex: 2, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: checkinModal.color, opacity: checkinSaving ? 0.6 : 1 }}>
-                <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{checkinSaving ? '保存中...' : '保存记录'}</Text>
+              <View onClick={checkinSaving || checkinSaveUncertain ? undefined : saveCheckin} style={{ flex: 2, textAlign: 'center', padding: '13px 0', borderRadius: `${radius.md}px`, backgroundColor: checkinModal.color, opacity: checkinSaving || checkinSaveUncertain ? 0.6 : 1 }}>
+                <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff' }}>{checkinSaving ? '保存中...' : checkinSaveUncertain ? '请先核对记录' : '保存记录'}</Text>
               </View>
             </View>
           </View>

@@ -191,7 +191,10 @@ export const recordsAPI = {
     return request(`/records${q ? '?' + q : ''}`);
   },
   trend: (type) => request(`/records/trend/${type}`),
-  create: (data) => request('/records', { method: 'POST', body: JSON.stringify(data) }),
+  create: (data) => request('/records', {
+    method: 'POST', body: JSON.stringify(data),
+    timeout: data.images?.length || data.imageUrl ? 60000 : 15000,
+  }),
   update: (id, data) => request(`/records/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/records/${id}`, { method: 'DELETE' }),
   todayStatus: () => request('/records/today-status'),
