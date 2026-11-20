@@ -54,6 +54,13 @@ function sourceChanged(report, decision) {
     const current = reportSourceItems(report, 'screening', decision.itemId);
     const signatures = rows => rows.map(item => JSON.stringify([String(item.itemId || ''),
       [...new Set([item.screeningKey, ...(item.screeningKeys || [])].filter(Boolean))].sort(), clinicalItem(item)])).sort();
+    // A single screening item can be regrouped when a report is reclassified. Its
+    // stable itemId and clinical content still identify the original decision.
+    if (snapshot.items.length === 1 && snapshot.items[0]?.itemId) {
+      const matches = (report.reportItems || []).filter(item => String(item.itemId || '') === String(snapshot.items[0].itemId));
+      return matches.length !== 1 || String(report.checkDate || '') !== String(snapshot.checkDate || '')
+        || JSON.stringify(clinicalItem(matches[0])) !== JSON.stringify(clinicalItem(snapshot.items[0]));
+    }
     return !current.length || String(report.checkDate || '') !== String(snapshot.checkDate || '')
       || JSON.stringify(signatures(current)) !== JSON.stringify(signatures(snapshot.items));
   }
