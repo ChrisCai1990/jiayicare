@@ -11633,7 +11633,13 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     const targetYear = year ? parseInt(year) : new Date().getFullYear();
     const query = { patientId: req.params.id, year: targetYear };
     if (planType) query.planType = planType;
-    const plan = await AnnualPlan.findOne(query);
+    if (req.body.planId) {
+      if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '年度方案标识无效' });
+      query._id = req.body.planId;
+      // Version codes inferred for legacy plans may differ from stored planType.
+      delete query.planType;
+    }
+    const plan = await AnnualPlan.findOne(query).sort({ updatedAt: -1, _id: -1 });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
     if (plan.confirmedAt) return res.status(409).json({ success: false, message: '客户已确认本年度方案，新检查结果请走单项随访' });
     if (plan.pushedAt) {
@@ -12088,7 +12094,9 @@ router.delete('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const targetYear = Number(req.query.year) || new Date().getFullYear();
     const planType = String(req.query.planType || '').trim();
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
-    const plan = await AnnualPlan.findOne({ patientId: req.params.id, year: targetYear, planType });
+    if (req.body.planId && !mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '年度方案标识无效' });
+    const plan = await AnnualPlan.findOne({ patientId: req.params.id, year: targetYear,
+      ...(req.body.planId ? { _id: req.body.planId } : { planType }) }).sort({ updatedAt: -1, _id: -1 });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
     const dispatchedNutrition = await FollowUp.exists({ sourceAnnualPlanId: plan._id, sourceType: 'professional_assessment',
       workflowKey: 'annual_nutrition_assessment', status: { $in: ['planned', 'in_progress', 'missed'] } });

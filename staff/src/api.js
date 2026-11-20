@@ -604,7 +604,7 @@ export const staffAPI = {
   reviewPlanChoices: patientId => req(`/staff/patients/${patientId}/review-plan-amendment`),
   reviewPlanAmendment: (patientId, data) => req(`/staff/patients/${patientId}/review-plan-amendment`, { method:'POST', body:JSON.stringify(data) }),
   reviseAnnualPlan: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan-revision`, { method:'PATCH', body:JSON.stringify(data) }),
-  deleteAnnualPlan:     (patientId, year, planType, reason) => req(`/staff/patients/${patientId}/annual-plan?year=${year}&planType=${encodeURIComponent(planType)}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
+  deleteAnnualPlan:     (patientId, year, planType, reason, planId) => req(`/staff/patients/${patientId}/annual-plan?year=${year}&planType=${encodeURIComponent(planType)}`, { method: 'DELETE', body: JSON.stringify({ reason, planId }) }),
   getSupplyPlan:        (planId) => req(`/staff/supply-plans/${planId}`),
   submitSupplyIntake:   (planId, data) => req(`/staff/supply-plans/${planId}/intake`, { method: 'PATCH', body: JSON.stringify(data) }),
   generateSupplyRiskDraft: (planId) => req(`/staff/supply-plans/${planId}/ai-risk-draft`, { method: 'POST' }),
@@ -613,7 +613,7 @@ export const staffAPI = {
   confirmSupplyArrangement: (planId, data) => req(`/staff/supply-plans/${planId}/arrangement`, { method: 'PATCH', body: JSON.stringify(data) }),
   updateSupplyFulfillment: (planId, data) => req(`/staff/supply-plans/${planId}/fulfillment`, { method: 'PATCH', body: JSON.stringify(data) }),
   confirmSupplyReceipt: (planId, data) => req(`/staff/supply-plans/${planId}/receipt`, { method: 'PATCH', body: JSON.stringify(data) }),
-  pushAnnualPlan:       (patientId, year, planType) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH' }),
+  pushAnnualPlan:       (patientId, year, planType, planId) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH', body: JSON.stringify({ planId }) }),
   releaseAnnualInternalTasks: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan/internal-task-release`, { method: 'PATCH', body: JSON.stringify(data) }),
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),

@@ -523,6 +523,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const list = (Array.isArray(res.data) ? res.data : [res.data].filter(Boolean))
           .map(plan => plan.revisionDraft?.moduleData ? { ...plan, moduleData: plan.revisionDraft.moduleData, hasUnpublishedRevision: true } : plan)
         const latest = list.find(p => (p.servicePlanCode || p.planType) === planType)
+        if (!list.some(p => String(p._id) === String(currentPlanId))) {
+          setPlansByType(prev => { const next = { ...prev }; delete next[planType]; return next })
+          setModuleData({}); setPushedAt(null); setConfirmedAt(null); setDirty(false)
+          setRemotePlanChanged(true)
+          toast('当前方案已删除，请重新进入年度方案页面')
+          return
+        }
         if (!latest || latest.updatedAt === currentPlanVersion) return
         if (dirty || metricSelectionDirty) { setRemotePlanChanged(true); return }
         setPlansByType(prev => ({ ...prev, [planType]: latest }))
@@ -627,7 +634,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         list.forEach(p => {
           if (!p.pushedAt && !p.confirmedAt) p.moduleData = removeWithdrawnDraftSources(p.moduleData || {}, decisionsRes.withdrawnIssueIds)
           const key = p.servicePlanCode || p.planType
-          if (key) map[key] = p
+          if (key && !map[key]) map[key] = p
         })
         setPlansByType(map)
         // 从"管理方案"tab点"✨ AI年度管理方案"按钮跳转过来时会带 ?planType=xxx，
@@ -1039,8 +1046,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!window.confirm('确认已完成专业审核并推送给客户？推送后将生成正式执行任务。')) return
     setPushing(true)
     try {
-      if (annualPilot && !pushedAt && autoGroupAnnualVisits(moduleData) !== moduleData && !await handleSave({ quiet: true })) return
-      const res = await staffAPI.pushAnnualPlan(id, year, planType)
+      let pushPlanId = plansByType[planType]?._id
+      if (annualPilot && !pushedAt && autoGroupAnnualVisits(moduleData) !== moduleData) {
+        const saved = await handleSave({ quiet: true })
+        if (!saved) return
+        pushPlanId = saved._id
+      }
+      const res = await staffAPI.pushAnnualPlan(id, year, planType, pushPlanId)
       const pushedAtVal = res.data?.pushedAt || new Date().toISOString()
       setPushedAt(pushedAtVal)
       setPlansByType(prev => prev[planType]
@@ -1077,7 +1089,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!window.confirm('确定删除当前年度管理方案？该方案自动生成且尚未完成的随访计划也会一并删除。')) return
     try {
       const res = patientMode
-        ? await staffAPI.deleteAnnualPlan(id, year, planType, reason.trim())
+        ? await staffAPI.deleteAnnualPlan(id, year, planType, reason.trim(), plansByType[planType]?._id)
         : await staffAPI.deletePlan(id, reason.trim())
       if (!patientMode) { toast('方案已删除'); nav(backPath); return }
       setPlansByType(prev => { const next = { ...prev }; delete next[planType]; return next })
