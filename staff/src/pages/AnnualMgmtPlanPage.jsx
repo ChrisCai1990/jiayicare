@@ -765,7 +765,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       if (!res.data?.length) return toast('专项筛查及AI健康信息整理中暂无已纳入管理的问题')
       setConfirmedReviewTargets(res.data)
       setNutritionEvidence(res.nutritionEvidence || {})
-      setModuleData(prev => ({ ...prev, management_targets: { enabled: true, records: mergeManagementTargetEdits(res.data, prev.management_targets?.records) } }))
+      setScreeningDraftActions(res.draftActions || [])
+      setModuleData(prev => carryAnnualTargets(prev, res.data, res.draftActions || []).modules)
       setDirty(true)
       toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
     } catch (error) { toast(error.message || '读取管理方向失败') }
@@ -1086,7 +1087,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     return (entry.def.multi ? data.records || [] : [data]).map((record, index) => ({
       key: entry.key, index, record, moduleName: entry.def.name,
       title: actionTitle(record, entry.def.name),
-      date: record.executionDate || record.visit_time || record.plan_time || record.time || record.date || '',
+      date: (VISIT_DATE_FIELDS[entry.key] && record[VISIT_DATE_FIELDS[entry.key]]) || record.executionDate || record.visit_time || record.plan_time || record.time || record.date || '',
     }))
   })
   const defaultActionGoals = { medical_treatment: '及时完成就医，明确诊治方案', specialist_collab: '完成专家会诊，明确后续诊治方案', checkup_completion: '完成检查，明确结果与后续处理方向', abnormal_followup: '按计划完成复查，明确变化与后续管理措施', vaccine: '核实接种适宜性，按确认的方案完成接种', annual_checkup: '按计划完成年度体检，核对重点项目结果', rehab_assessment: '完成运动复健评估，明确干预方案', health_consensus: '完成本次主题沟通，确认客户理解与下一步安排' }

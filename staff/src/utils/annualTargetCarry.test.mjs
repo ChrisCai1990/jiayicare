@@ -96,3 +96,13 @@ test('既有复查草稿把临床专科从检查科室转到开单科室，保�
   assert.equal(retained.order_dept, '消化内科')
   assert.equal(retained.department, '超声科')
 })
+
+test('专项筛查再次改期会更新旧草稿，保留顾问独立调整的日期', () => {
+  const confirmed = [{ issueId: 'visit:1', sourceGoals: ['安排就医'] }]
+  const draft = date => [{ key: 'medical_treatment', record: { visit_time: date, sourceIds: ['visit:1'], appointmentSchedulingVersion: 1 } }]
+  const first = carryAnnualTargets({}, confirmed, draft('2026-12-03')).modules
+  const next = carryAnnualTargets(first, confirmed, draft('2027-01-05')).modules
+  assert.equal(next.medical_treatment.records[0].visit_time, '2027-01-05')
+  next.medical_treatment.records[0].visit_time = '2027-01-08'
+  assert.equal(carryAnnualTargets(next, confirmed, draft('2027-01-12')).modules.medical_treatment.records[0].visit_time, '2027-01-08')
+})

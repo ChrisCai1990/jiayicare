@@ -40,14 +40,22 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
         nextRow = { ...row, order_dept: source.order_dept,
           ...(row.department === source.order_dept ? { department: '' } : {}) }
       }
-      if (!source?.[dateKey] || nextRow[dateKey] || nextRow.appointmentSchedulingVersion
-        || nextRow.datePending || nextRow.timingStatus === 'pending_confirmation') return nextRow
-      return { ...nextRow, [dateKey]: source[dateKey], timingReason: nextRow.timingReason || source.timingReason || '',
+      const suggested = source?.[dateKey]
+      if (!suggested || row.visitGroupId || row.datePending || row.timingStatus === 'pending_confirmation') return nextRow
+      if (row[dateKey] === suggested && row.screeningSuggestedDate === suggested) return nextRow
+      const priorTarget = existing.find(target => row.sourceIds?.includes(target.issueId))
+      const priorDate = row.screeningSuggestedDate || priorTarget?.directionTimings?.[key]?.firstDueDate
+        || (priorTarget?.sourceGoals?.length === 1 ? priorTarget.actionTiming?.firstDueDate : '')
+      const sourceOwned = row[dateKey] === priorDate || (!priorDate && row.screeningDraft && /^按(顾问|已确认)/.test(row.timingReason || ''))
+      if (row[dateKey] && row[dateKey] !== suggested && !sourceOwned) return nextRow
+      if (!row[dateKey] && row.appointmentSchedulingVersion) return nextRow
+      return { ...nextRow, [dateKey]: suggested, screeningSuggestedDate: suggested,
+        timingReason: row[dateKey] === suggested ? row.timingReason || source.timingReason || '' : source.timingReason || '',
         ...(source.appointmentSchedulingVersion === 1 ? { appointmentSchedulingVersion: 1 } : {}) }
     })
     const additions = sourceDrafts.filter(record =>
       !hydrated.some(row => (row.sourceIds || []).some(id => record.sourceIds?.includes(id))))
-    if (JSON.stringify(hydrated) !== JSON.stringify(oldRows) || additions.length) next[key] = { ...(modules[key] || {}), enabled: true, records: [...hydrated, ...additions.map(record => ({ ...record, screeningDraft: true }))] }
+    if (JSON.stringify(hydrated) !== JSON.stringify(oldRows) || additions.length) next[key] = { ...(modules[key] || {}), enabled: true, records: [...hydrated, ...additions.map(record => ({ ...record, ...(record[dateKey] ? { screeningSuggestedDate: record[dateKey] } : {}), screeningDraft: true }))] }
   }
   const changed = JSON.stringify(next) !== JSON.stringify(modules)
   return { modules: changed ? next : modules, changed }
