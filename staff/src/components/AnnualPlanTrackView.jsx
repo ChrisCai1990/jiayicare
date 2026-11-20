@@ -19,7 +19,7 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor, latestCheckupDate = '', onArrangeAnnualCheckup }) {
+export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor, latestCheckupDate = '', onEditItem }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -41,9 +41,10 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
       </details>}
       {items.map(action => <details key={`${action.key}:${action.index}`} style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC' }}>
         <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600, lineHeight: 1.55 }} title={action.title}>
-          {conciseTitle(action)}<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>{action.key === 'specialist_collab' ? '多学科会诊 · ' : action.key === 'medical_treatment' ? '门诊／检查 · ' : ''}{displayDate(action.date)}</span>{goalForAction?.(action) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>目标：{goalForAction(action)}</span>}
+          {conciseTitle(action)}{action.key === 'annual_checkup' && <span style={{ display: 'block', fontWeight: 400 }}>体检机构：{action.record.institution || '待确认'} · 服务方式：{{ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' }[action.record.serviceMode || 'reminder'] || '待确认'}</span>}<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>{action.key === 'specialist_collab' ? '多学科会诊 · ' : action.key === 'medical_treatment' ? '门诊／检查 · ' : ''}{displayDate(action.date)}</span>{goalForAction?.(action) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>目标：{goalForAction(action)}</span>}
         </summary>
         {renderAction(action)}
+        {onEditItem && ['vaccine', 'health_consensus', 'annual_checkup'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditItem(action.key, action.index)}>修改安排</button>}
       </details>)}
       {consensus && <div style={{ marginTop: 9, fontSize: 13, color: '#52675D' }}>
         按客户关注点逐次沟通，完成后再定下一主题。
@@ -56,13 +57,13 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
     <h2 style={{ margin: '0 0 12px', fontSize: 21, color: '#1A2B24' }}>年度管理方案</h2>
     <div className="annual-track-stack">
       <div className="annual-track-panel annual-track-panel--medical"><h3 className="annual-track-heading"><span className="annual-track-number">01</span>医疗服务</h3>{medical.map(renderGroup)}</div>
-      <div className="annual-track-panel annual-track-panel--management"><h3 className="annual-track-heading"><span className="annual-track-number">02</span>健康管理</h3>{management.map(group => group[0] === '疫苗接种' && !itemsFor(group[1]).length ? <div key="vaccine-review" style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0', fontSize: 13, color: '#62776A' }}><strong style={{ fontSize: 16, color: '#183E30' }}>疫苗接种</strong><div style={{ marginTop: 5 }}>当前方案未纳入接种事项；需核对接种史、检查结果和适宜性后决定。</div></div> : renderGroup(group))}
+      <div className="annual-track-panel annual-track-panel--management"><h3 className="annual-track-heading"><span className="annual-track-number">02</span>健康管理</h3>{management.map(group => group[0] === '疫苗接种' && !itemsFor(group[1]).length ? <div key="vaccine-review" style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0', fontSize: 13, color: '#62776A' }}><strong style={{ fontSize: 16, color: '#183E30' }}>疫苗接种</strong><div style={{ marginTop: 5 }}>当前方案未纳入接种事项；需核对接种史、检查结果和适宜性后决定。</div>{onEditItem && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditItem('vaccine')}>添加接种安排</button>}</div> : renderGroup(group))}
         <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · 按已有每周计划执行</strong>{manualMonitoringEditor}</div>
       </div>
       <div className="annual-track-panel annual-track-panel--checkup"><h3 className="annual-track-heading"><span className="annual-track-number">03</span>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A', lineHeight: 1.7 }}>
         <div>本方案尚未纳入下一次年度体检安排。{latestCheckupDate ? `已审核的最近一次完整体检日期：${latestCheckupDate}。` : ''}</div>
-        <div>专项复查和完善检查已分别列在医疗服务；请确定下一年度体检时间、机构和服务方式，保存并确认方案后生成随访计划。</div>
-        {onArrangeAnnualCheckup && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={onArrangeAnnualCheckup}>＋ 安排下一年度体检随访</button>}
+        <div>下次体检日期：待安排 · 体检机构：待确认 · 服务方式：待选择</div>
+        {onEditItem && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => onEditItem('annual_checkup')}>＋ 安排下一年度体检随访</button>}
       </div>}</div>
     </div>
   </section>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import nutritionAdvisor from '../../../shared/annualNutritionAdvisorTargets.cjs'
 
@@ -11,12 +11,11 @@ export default function AnnualNutritionAdvisorTargets({ patientId, plan, rows = 
   const [date, setDate] = useState(executionDate)
   const [executor, setExecutor] = useState(executorId || assignedNutritionistId)
   const [saving, setSaving] = useState(false)
-  useEffect(() => { if (!editing) { setDraft(autoImport ? nutritionAdvisor.mergeAdvisorTargets(rows, managementTargets, nutritionEvidence) : rows); setDate(executionDate); setExecutor(executorId || assignedNutritionistId) } }, [rows, managementTargets, nutritionEvidence, autoImport, executionDate, executorId, assignedNutritionistId, editing])
   if (!canEdit) return null
   const update = (index, key, value) => setDraft(current => current.map((row, i) => i === index ? { ...row, [key]: value } : row))
   const save = async () => {
     if (draft.some(row => !row.metric.trim() || !row.target.trim())) { toast('请逐项核对异常指标、症状和期望目标'); return }
-    if (!date || !executor) { toast('请选择计划日期和执行营养师'); return }
+    if (plan?.pushedAt && (!date || !executor)) { toast('请选择计划日期和执行营养师'); return }
     if (!plan?.pushedAt) { onDraftChange({ advisorTargets: draft, advisorTargetsManuallyAdjusted: true, executionDate: date, executorId: executor }); setEditing(false); return }
     setSaving(true)
     try {
@@ -30,7 +29,7 @@ export default function AnnualNutritionAdvisorTargets({ patientId, plan, rows = 
     finally { setSaving(false) }
   }
   return <div style={{ marginTop: 8 }}>
-    {!editing ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setDraft(suggested); setDate(executionDate); setExecutor(executorId || assignedNutritionistId); setEditing(true) }}>核对营养指标与安排</button> : <div className="annual-nutrition-advisor-editor" onFocusCapture={event => {
+    {!editing ? <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setDraft(suggested); setDate(executionDate); setExecutor(executorId || assignedNutritionistId); setEditing(true) }}>修改纳入指标与症状</button> : <div className="annual-nutrition-advisor-editor" onFocusCapture={event => {
       document.querySelectorAll('[data-annual-save-active]').forEach(node => node.removeAttribute('data-annual-save-active'))
       event.currentTarget.setAttribute('data-annual-save-active', 'true')
     }}>
@@ -42,7 +41,7 @@ export default function AnnualNutritionAdvisorTargets({ patientId, plan, rows = 
         <label>{(row.kind || nutritionAdvisor.kindFor(row.metric)) === 'symptom' ? '当前表现' : '当前数据'}<input className="form-input" value={row.baseline} onChange={event => update(index, 'baseline', event.target.value)} placeholder="填写已核对的情况" maxLength={200} /></label>
         <label>期望目标<input className="form-input" value={row.target} onChange={event => update(index, 'target', event.target.value)} placeholder="填写顾问期望目标" maxLength={200} /></label>
         {nutritionAdvisor.isInternalNutritionMetric(row.metric) && <span className="annual-nutrition-internal-note">仅内部监测，客户不可见</span>}
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDraft(current => current.filter((_, i) => i !== index))}>删除</button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDraft(current => current.filter((_, i) => i !== index))}>不纳入本次评估</button>
       </div>)}
       <datalist id="annual-nutrition-indicators">{nutritionAdvisor.INDICATORS.map(name => <option key={name} value={name} />)}</datalist>
       <datalist id="annual-nutrition-symptoms">{nutritionAdvisor.SYMPTOMS.map(name => <option key={name} value={name} />)}</datalist>
