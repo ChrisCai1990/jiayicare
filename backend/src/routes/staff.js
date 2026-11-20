@@ -11321,6 +11321,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
     if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
+    moduleData = require('../utils/annualPlanDates').normalize(moduleData);
     moduleData = { ...(moduleData || {}), nutrition_assessment: require('../utils/annualNutritionDispatch').draftModule(moduleData) };
     try {
       const { isRow } = require('../../../shared/annualNutrition.cjs');
@@ -11670,6 +11671,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     }).select('_id templateName').lean();
     if (otherFormal) return res.status(409).json({ success: false, message: `本年度已有正式年度方案${otherFormal.templateName ? `“${otherFormal.templateName}”` : ''}，不能重复发布` });
     }
+    plan.moduleData = require('../utils/annualPlanDates').normalize(plan.moduleData);
+    plan.markModified('moduleData');
     const issue = require('../utils/annualPlanPublishValidation').validate(plan.moduleData);
     if (issue) return res.status(400).json({ success:false, message:issue });
     let nutritionPatient = null;

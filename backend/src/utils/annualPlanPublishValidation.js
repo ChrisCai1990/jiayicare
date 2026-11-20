@@ -1,4 +1,5 @@
 function validate(data = {}, today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0,10)) {
+  data = require('./annualPlanDates').normalize(data);
   const modules = Object.values(data || {}).filter(m => m && m.enabled !== false);
   const rows = modules.flatMap(m => Array.isArray(m.records) ? m.records : [m]);
   if (rows.some(r => r.serviceMode && !['reminder','single','managed','shared'].includes(r.serviceMode))) return '服务落地方式无效';
@@ -14,7 +15,12 @@ function validate(data = {}, today = new Date(Date.now() + 8 * 3600000).toISOStr
   ];
   for (const [key, field, label] of datedModules) {
     const records = data?.[key]?.enabled === false ? [] : data?.[key]?.records || [];
-    if (records.some(row => !validDate(row[field]))) return `推送前请补全${label}的执行日期（不早于今天）`;
+    const index = records.findIndex(row => !validDate(row[field]));
+    if (index >= 0) {
+      const row = records[index];
+      const title = row.reviewItems?.join('、') || row.items || row.reason || row.name || `第${index + 1}项`;
+      return `${label}“${title}”：执行日期${row[field] ? `为${row[field]}` : '未填写'}，请填写有效日期且不早于${today}；当前可保存草稿`;
+    }
   }
   const annualCheckup = data?.annual_checkup;
   if (annualCheckup?.enabled !== false && annualCheckup && (annualCheckup.enabled === true || annualCheckup.focus || annualCheckup.standardPlanId || annualCheckup.date)) {
