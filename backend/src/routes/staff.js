@@ -10781,7 +10781,7 @@ router.get('/patients/:id/annual-management-targets', staffAuth, async (req, res
         .select('_id value recordedAt').sort({ recordedAt: -1 }).limit(20).lean();
       return res.json({ success: true, data: require('../utils/annualManagementEvidence').managementTargets(management.evidence, await require('../utils/annualFlowPilot').enabledForYear(req.params.id, year)), draftActions: require('../utils/annualManagementEvidence').draftPlanActions(management.evidence), nutritionEvidence: Object.fromEntries(Object.entries(nutritionEvidence)
         .filter(([, row]) => row.status === 'abnormal' && !row.conflict && row.baseline)
-        .map(([metric, row]) => [metric, { baseline: row.baseline, status: row.status, conflict: false }])), stale: management.stale, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
+        .map(([metric, row]) => [metric, { baseline: row.baseline, status: row.status, conflict: false }])), stale: management.stale, staleSourceNotes: management.staleSourceNotes, staleDecisionIds: management.staleDecisionIds, unresolved: management.unresolved,
         unresolvedSymptoms: unresolvedSymptoms.map(row => ({ id: row._id, value: String(row.value || '').slice(0, 120), recordedAt: row.recordedAt })) });
     }
     const confirmed = await AiCaseReview.find({
@@ -10834,6 +10834,21 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+router.get('/patients/:id/annual-plan/:planId/published-view', staffAuth, async (req, res) => {
+  try {
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds && !visibleIds.some(id => String(id) === req.params.id)) return res.status(403).json({ success: false, message: '无权查看该会员' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: req.params.id, pushedAt: { $ne: null } }).select('moduleData pushedAt year').lean();
+    if (!plan) return res.status(404).json({ success: false, message: '尚无已推送方案' });
+    const { buildAnnualPlanDisplayItems, customerModuleData } = require('../utils/annualPlanPresentation');
+    const items = buildAnnualPlanDisplayItems(customerModuleData(plan.moduleData));
+    const tasks = await FollowUp.find({ patientId: req.params.id, sourceAnnualPlanId: plan._id, clientVisible: { $ne: false }, status: { $ne: 'cancelled' } }).select('theme date status').sort({ date: 1 }).lean();
+    const byPlan = await require('../utils/publishedAnnualRecommendations')(req.params.id, [plan]);
+    const recommendations = byPlan.get(String(plan._id)) || [];
+    res.json({ success: true, data: { items, tasks, recommendations } });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 router.get('/patients/:id/annual-plan/:planId/issue-progress', staffAuth, async (req, res) => {

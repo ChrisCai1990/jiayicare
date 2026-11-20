@@ -147,10 +147,17 @@ async function buildAnnualPlanFollowUps(plan) {
   // ① 有具体日期的多条记录模块：每条各生成一条，content拼该条记录的关键字段
   for (const mod of DATED_RECORD_MODULES) {
     const records = moduleData[mod.key]?.records;
-    if (!Array.isArray(records)) continue;
+    if (moduleData[mod.key]?.enabled === false || !Array.isArray(records)) continue;
     records.forEach((rec, i) => {
       // A shared item belongs to the leader's single visit; it must not create
       // another manager follow-up or store the unsupported deliveryMode=shared.
+      if (rec.visitGroupId && rec.visitResultFollowUp) {
+        const name = rec.items || rec.name || rec.reason || mod.theme;
+        const count = created.length;
+        push(rec[mod.dateField], `结果回顾 · ${name}`, [rec.reason, rec.goal, rec.completionStandard].filter(Boolean).join('；') || `核对${name}执行结果`,
+          rec.followUpStaff || patient?.assignedHealthManager, `visit-result:${mod.key}:${i}:${rec[mod.dateField]}`, { sourceIds: rec.sourceIds });
+        if (created.length > count) created.at(-1).clientVisible = false;
+      }
       if (rec.serviceMode === 'shared') return;
       const fallbackLabels = {
         medical_treatment: '就医安排', specialist_collab: '联合会诊', checkup_completion: '体检完善',
@@ -162,6 +169,8 @@ async function buildAnnualPlanFollowUps(plan) {
       const executor = require('./annualFlowPilot').enabledForPlan(plan) && require('mongoose').Types.ObjectId.isValid(rec.followUpStaff)
         ? rec.followUpStaff : patient?.assignedHealthManager;
       const visitItems = rec.visitGroupId ? sharedVisitItems(moduleData, rec.visitGroupId) : [];
+      if (rec.visitResultFollowUp && rec.serviceMode === 'reminder' && visitItems.length > 1 &&
+          (visitItems[0].moduleKey !== mod.key || visitItems[0].recordIndex !== i)) return;
       const details = [
         rec.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(rec[mod.dateField])}；建议就医/检查日期：${rec[mod.dateField]}。一周内完成预约安排，日期已过则立即处理；实际就医时间以预约确认为准。`,
         rec.standardPlanName && `执行方案：${rec.standardPlanName}`,

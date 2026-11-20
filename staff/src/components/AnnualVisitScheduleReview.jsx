@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import DateInput from './DateInput'
-import { nearbyVisitRows, changeVisitDate, changeVisitSeparationReason, groupVisitRows } from '../utils/annualVisitScheduling.mjs'
+import { nearDateCandidates, nearbyVisitRows, changeVisitDate, changeVisitSeparationReason, groupVisitRows } from '../utils/annualVisitScheduling.mjs'
 
 const serviceTypes = [
   ['proxy_booking', '代约 / 代办'], ['proxy_visit', '代诊'], ['escort_visit', '陪诊'],
   ['escort_exam', '陪检'], ['consult_coordination', '会诊协调'],
 ]
 
-export default function AnnualVisitScheduleReview({ data, editable, onChange, onError }) {
-  const rows = useMemo(() => nearbyVisitRows(data), [data])
+export default function AnnualVisitScheduleReview({ data, editable, onChange, onError, nearbyOnly = false }) {
+  const rows = useMemo(() => nearbyOnly ? nearDateCandidates(data) : nearbyVisitRows(data), [data, nearbyOnly])
   const [selected, setSelected] = useState([])
   const [date, setDate] = useState('')
   const [leaderKey, setLeaderKey] = useState('')
@@ -31,20 +31,21 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
   const groups = [...new Set(rows.map(row => row.cluster))].map(cluster => rows.filter(row => row.cluster === cluster))
   const apply = () => {
     try {
-      const next = groupVisitRows(data, selected, { date, leaderKey, serviceMode, serviceType })
+      const next = groupVisitRows(data, selected, { date, leaderKey, serviceMode, serviceType, trackResults: nearbyOnly })
       onChange(next)
       setSelected([])
     } catch (error) { onError(error.message) }
   }
   const inputStyle = { padding: '6px 8px', border: '1px solid #D6DED8', borderRadius: 6, maxWidth: '100%' }
   return <details id="annual-visit-schedule-review" style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>排期工具：合并多项同次就医与检查</summary>
+    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>{nearbyOnly ? '待核对 · 同院就诊日期相近' : '排期工具：合并多项同次就医与检查'}</summary>
     <p style={{ fontSize: 12, color: '#62776A' }}>下面是年度方案中已有的就医和检查事项，仅供核对是否能同次办理，不会另生成方案。相隔 14 天以内的日期相邻显示；核实医院、时限、准备要求后可统一日期和服务安排。</p>
     {groups.map((group, groupIndex) => <div key={group[0].cluster} style={{ borderTop: '1px solid #E5ECE7', paddingTop: 10, marginTop: 10 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 5 }}>排期段 {groupIndex + 1} · {group.length} 项{group.length > 1 ? '（相邻日期不代表必须同次就诊）' : ''}</div>
       {group.map(item => <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(180px,1fr) minmax(165px,auto)', gap: 9, alignItems: 'center', padding: '7px 0' }}>
         {editable ? <input type="checkbox" aria-label={`选择${item.title}`} checked={selected.includes(item.key)} onChange={event => setSelected(previous => event.target.checked ? [...previous, item.key] : previous.filter(key => key !== item.key))} /> : <span />}
         <div><strong style={{ fontSize: 13 }}>{item.title}</strong><div style={{ fontSize: 12, color: '#62776A' }}>{item.row.hospital || '医院待确认'}{item.row.department ? ` · ${item.row.department}` : ''}{item.row.visitGroupId ? ` · 已归类：${item.row.visitGroupId}` : ''}</div></div>
+        {nearbyOnly && editable && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange(changeVisitSeparationReason(data, item.moduleKey, item.index, '顾问已确认按原日期分开安排'))}>保持分开</button>}
         {editable ? <DateInput value={item.date} onChange={value => onChange(changeVisitDate(data, item.moduleKey, item.index, value))} label={`${item.title}建议日期`} style={inputStyle} /> : <span style={{ fontSize: 13 }}>{item.date || '日期待确认'}</span>}
         {(group.length > 1 || item.row.scheduleSeparationReason) && <details style={{ gridColumn: '2 / -1', fontSize: 12, color: '#62776A' }}><summary style={{ cursor: 'pointer' }}>分开安排的原因或待核实条件{item.row.scheduleSeparationReason ? ' · 已填写' : ''}</summary>{editable ? <textarea value={item.row.scheduleSeparationReason || ''} onChange={event => onChange(changeVisitSeparationReason(data, item.moduleKey, item.index, event.target.value))} rows={2} placeholder="如医嘱时限、准备要求、先后顺序；核实可同次就诊后清空" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginTop: 5 }} /> : <div style={{ marginTop: 5 }}>{item.row.scheduleSeparationReason || '暂无说明'}</div>}</details>}
       </div>)}

@@ -41,7 +41,7 @@ function reminderTime(value, fallback = '08:00') {
 // 体重：所有已建档客户每周提醒；有体重/代谢风险时每周两次。
 // 血压：已建档且同意的客户每周；有高血压或130/80以上读数每周两次；近30天出现140/90以上则每日。
 function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPressure = []) {
-  const records = Array.isArray(moduleData.monitoring?.records) ? moduleData.monitoring.records : [];
+  const records = moduleData.monitoring?.enabled !== false && Array.isArray(moduleData.monitoring?.records) ? moduleData.monitoring.records : [];
   const text = patientText(patient);
   const hasHypertension = HYPERTENSION_RE.test(text);
   const bpValues = recentBloodPressure.map(row => ({

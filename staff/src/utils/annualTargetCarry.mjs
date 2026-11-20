@@ -31,7 +31,7 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
   const records = [...mergeManagementTargetEdits(confirmed, existing), ...existing.filter(row => !ids.has(row.issueId))]
   const next = { ...modules, management_targets: { ...(modules.management_targets || {}), enabled: true, records } }
   const nutritionIssues = confirmed.filter(row => row.sourceGoals?.includes('营养评估') || row.sourceGoal === '营养评估')
-  if (nutritionIssues.length) {
+  if (nutritionIssues.length && modules.nutrition_assessment?.enabled !== false) {
     const suggested = nutritionIssues.map(row => row.directionTimings?.nutrition_assessment?.firstDueDate)
       .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value || '')).sort()[0] || ''
     const existingNutrition = modules.nutrition_assessment || {}
@@ -40,6 +40,7 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
       ...(dateFromSource ? { executionDate: suggested, screeningSuggestedDate: suggested } : {}) }
   }
   for (const key of ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine']) {
+    if (modules[key]?.enabled === false) continue
     const sourceDrafts = draftActions.filter(action => action.key === key).map(action => action.record)
     const activeDraftIds = new Set(sourceDrafts.flatMap(record => record?.sourceIds || []).map(String))
     const oldRows = modules[key]?.records || []

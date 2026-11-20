@@ -78,7 +78,7 @@ export function assignSharedVisit(data, moduleKey, index, leaderKey) {
   return next
 }
 
-export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, serviceType = '' }) {
+export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, serviceType = '', trackResults = false }) {
   const rows = visitRows(data)
   const selected = rows.filter(row => keys.includes(row.key))
   if (selected.length < 2) throw new Error('请至少选择两项确属同一次就诊的事项')
@@ -100,11 +100,40 @@ export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, servi
     if (!next[row.moduleKey] || next[row.moduleKey] === data[row.moduleKey]) next[row.moduleKey] = { ...data[row.moduleKey], records: [...data[row.moduleKey].records] }
     const leader = row.key === leaderKey
     next[row.moduleKey].records[row.index] = {
-      ...row.row, [row.dateKey]: date, visitGroupId: groupId, appointmentSchedulingVersion: 1,
+      ...row.row, [row.dateKey]: date, visitGroupId: groupId, appointmentSchedulingVersion: 1, ...(trackResults ? { visitResultFollowUp: true } : {}),
       serviceMode: serviceMode === 'reminder' ? 'reminder' : leader ? serviceMode : 'shared',
       serviceType: leader && serviceMode === 'single' ? serviceType : '',
       managedServiceType: leader && serviceMode === 'managed' ? 'outpatient' : '',
     }
   }
   return next
+}
+export function autoGroupAnnualVisits(data) {
+  const buckets = new Map()
+  for (const item of visitRows(data)) {
+    if (!item.hospital || /待定|待确认|待核|或|就近/.test(item.hospital) || !/^\d{4}-\d{2}-\d{2}$/.test(item.date) || !Number.isFinite(Date.parse(item.date)) || new Date(item.date).toISOString().slice(0,10) !== item.date ||
+        item.row.visitGroupId || item.row.datePending || item.row.scheduleSeparationReason?.trim()) continue
+    const key = JSON.stringify([item.date, item.hospital])
+    if (!buckets.has(key)) buckets.set(key, [])
+    buckets.get(key).push(item)
+  }
+  let next = data
+  for (const items of buckets.values()) {
+    if (items.length < 2) continue
+    const leaders = items.filter(item => ['single','managed'].includes(item.row.serviceMode))
+    const leader = leaders[0] || items[0]
+    const mode = leader.row.serviceMode || 'reminder'
+    if (items.some(item => !['reminder','single','managed'].includes(item.row.serviceMode || 'reminder')) ||
+        leaders.some(item => item.row.serviceMode !== mode || item.row.serviceType !== leader.row.serviceType ||
+          (mode === 'managed' && item.row.managedServiceType !== 'outpatient')) ||
+        (mode === 'single' && !leader.row.serviceType)) continue
+    next = groupVisitRows(next, items.map(item => item.key), { date: leader.date, leaderKey: leader.key, serviceMode: mode, serviceType: leader.row.serviceType, trackResults: true })
+  }
+  return next
+}
+
+export function nearDateCandidates(data) {
+  const rows = nearbyVisitRows(data).filter(item => item.hospital && item.date && !item.row.scheduleSeparationReason?.trim() && !item.row.datePending)
+  return rows.filter(item => rows.some(other => other.hospital === item.hospital && other.date !== item.date &&
+    Math.abs(Date.parse(other.date) - Date.parse(item.date)) <= 14 * 86400000))
 }

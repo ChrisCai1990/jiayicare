@@ -53,7 +53,7 @@ test('年度体检只向客户提供日期、机构和服务方式', () => {
   assert.equal(item.title, '年度体检');
   assert.equal(item.schedule, '2027-05-01');
   assert.equal(item.careTarget.hospital, '邵逸夫医院');
-  assert.equal(item.service.modeLabel, '单项服务');
+  assert.equal(item.service.modeLabel, '方案定制＋机构安排');
   assert.equal(item.service.typeLabel, '陪检');
   assert.equal(JSON.stringify({ publicData, item }).includes('内部体检关注清单'), false);
   assert.equal(JSON.stringify({ publicData, item }).includes('吴医生'), false);

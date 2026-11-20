@@ -48,12 +48,10 @@ function sourceChanged(report, decision) {
   const snapshot = decision.sourceSnapshot || {};
   if (Array.isArray(snapshot.items)) {
     const current = reportSourceItems(report, 'screening', decision.itemId);
-    return !current.length || current.length !== snapshot.items.length
-      || String(report.checkDate || '') !== String(snapshot.checkDate || '')
-      || current.some((item, index) => String(item.itemId || '') !== String(snapshot.items[index].itemId || '')
-        || item.screeningKey !== snapshot.items[index].screeningKey
-        || JSON.stringify(item.screeningKeys || []) !== JSON.stringify(snapshot.items[index].screeningKeys || [])
-        || JSON.stringify(clinicalItem(item)) !== JSON.stringify(clinicalItem(snapshot.items[index])));
+    const signatures = rows => rows.map(item => JSON.stringify([String(item.itemId || ''), item.screeningKey || '',
+      [...(item.screeningKeys || [])].sort(), clinicalItem(item)])).sort();
+    return !current.length || String(report.checkDate || '') !== String(snapshot.checkDate || '')
+      || JSON.stringify(signatures(current)) !== JSON.stringify(signatures(snapshot.items));
   }
   if (decision.sourceKey === `report_item:${decision.reportId}:${decision.itemId}`) {
     if (!report.advisorInterpretationConfirmedAt || report.archiveOnly || report.duplicateOf
@@ -77,7 +75,7 @@ async function load(patientId, year, dependencies = {}) {
   const HealthRecord = dependencies.HealthRecord || require('../models/HealthRecord');
   const User = dependencies.User || require('../models/User');
   const decisions = effectiveDecisions(await Decision.find({ patientId, year, status: { $ne: 'withdrawn' } }).sort({ reviewedAt: 1 }).lean());
-  const evidence = [], stale = [], staleDecisionIds = [];
+  const evidence = [], stale = [], staleDecisionIds = [], staleSourceNotes = [];
   for (const decision of decisions) {
     if (decision.sourceKey === `symptom:${decision.symptomRecordId}` && decision.symptomRecordId) {
       const record = await HealthRecord.findOne({ _id: decision.symptomRecordId, user: patientId, type: 'symptom' })
@@ -101,7 +99,18 @@ async function load(patientId, year, dependencies = {}) {
     const report = await Report.findOne({ _id: decision.reportId, user: patientId, audit_status: 'audited' })
       .select('_id title checkDate updatedAt reportItems advisorInterpretationConfirmedAt archiveOnly duplicateOf documentCategory').lean();
     const changed = sourceChanged(report, decision);
-    if (changed) { stale.push(decision.title); staleDecisionIds.push(String(decision._id)); continue; }
+    if (changed) {
+      const snapshot = decision.sourceSnapshot || {};
+      const current = report && currentSourceItem(report, decision);
+      const labels = { value: '检验结果', unit: '单位', referenceRange: '参考范围', status: '异常标记', name: '项目名称', findings: '检查所见', conclusion: '结论' };
+      const fields = current && snapshot.item ? Object.keys(labels).filter(key => (current[key] ?? '') !== (snapshot.item[key] ?? '')) : [];
+      const reason = !report ? '原报告当前无法作为已审核来源'
+        : String(report.checkDate || '') !== String(snapshot.checkDate || '') ? '报告日期与纳入时不同'
+        : fields.length ? fields.map(key => labels[key]).join('、') + '与纳入时不同'
+        : '请核对原报告的检查项目、归属及审核状态';
+      staleSourceNotes.push({ title: decision.title, reason });
+      stale.push(decision.title); staleDecisionIds.push(String(decision._id)); continue;
+    }
     if (decision.sourceKey === `screening_report:${report._id}`) {
       const groups = new Set((report.reportItems || []).map(item => item.screeningKey || item.screeningKeys?.[0]).filter(Boolean));
       if (groups.size > 1) { stale.push(`${decision.title}（旧版整份报告纳入，请在对应检查项重新归属）`); staleDecisionIds.push(String(decision._id)); continue; }
@@ -139,7 +148,7 @@ async function load(patientId, year, dependencies = {}) {
       }
     }
   }
-  return { evidence, stale, staleDecisionIds, unresolved };
+  return { evidence, stale, staleDecisionIds, staleSourceNotes, unresolved };
 }
 
 const DIRECTION_LABELS = {
@@ -244,6 +253,8 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
   }
   for (const source of evidence) {
     for (const direction of directionsOf(source.content)) {
+    if (['nutrition_assessment','vaccine','monitoring'].includes(direction) &&
+        moduleData[direction]?.enabled === false && moduleData[direction]?.advisorExcluded === true) continue;
     if (source.content.reviewPlan?.kind === 'recheck' && direction === 'ongoing_management') continue;
     if (direction === 'nutrition_assessment') {
       const goals = moduleData.management_targets?.records || [];

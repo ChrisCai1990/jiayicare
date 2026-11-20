@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { groupVisitRows } from './annualVisitScheduling.mjs'
+import { autoGroupAnnualVisits, nearDateCandidates, groupVisitRows } from './annualVisitScheduling.mjs'
 
 test('合并就诊选择仅提醒时各事项保持提醒且统一日期', () => {
   const data = { abnormal_followup: { records: [{ items: '肺结节', time: '2026-12-03', serviceMode: 'single', serviceType: 'proxy_booking' },
@@ -12,4 +12,18 @@ test('合并就诊选择仅提醒时各事项保持提醒且统一日期', () =>
   assert.deepEqual(grouped.map(row => row.serviceType), ['', ''])
   assert.equal(grouped[0].visitGroupId, grouped[1].visitGroupId)
   assert.deepEqual(grouped.map(row => row.time), ['2026-12-03', '2026-12-03'])
+})
+
+test('同院同日保存后归并，异日只提示，保留手动分开的安排', () => {
+  const row = { hospital: '浙二医院', serviceMode: 'reminder', time: '2027-01-04' }
+  const input = { abnormal_followup: { records: [row, { ...row, hospital: '浙大二院' }, { ...row, time: '2027-01-10' },
+    { ...row, hospital: '另一家医院' }, { ...row, scheduleSeparationReason: '需单独安排' }] } }
+  const result = autoGroupAnnualVisits(input)
+  const rows = result.abnormal_followup.records
+  assert.ok(rows[0].visitGroupId)
+  assert.equal(rows[1].visitGroupId, rows[0].visitGroupId)
+  assert.equal(rows[2].time, '2027-01-10')
+  assert.deepEqual(rows.slice(2).map(r => r.visitGroupId), [undefined, undefined, undefined])
+  assert.equal(autoGroupAnnualVisits(result), result)
+  assert.deepEqual(nearDateCandidates(result).map(e => e.index).sort(), [0, 1, 2])
 })

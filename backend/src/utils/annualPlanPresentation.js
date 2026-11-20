@@ -15,7 +15,7 @@ function normalizeItem(moduleKey, record, index) {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: MODULE_NAME[moduleKey],
     schedule: record.date || '',
     careTarget: { hospital: record.institution || '', department: '', expert: '' },
-    service: { mode: record.serviceMode || 'reminder', modeLabel: SERVICE_MODE[record.serviceMode || 'reminder'],
+    service: { mode: record.serviceMode || 'reminder', modeLabel: ({ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' })[record.serviceMode || 'reminder'],
       type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
   };
   if (moduleKey === 'health_consensus') return {
@@ -56,7 +56,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   const items = [];
   Object.entries(moduleData).forEach(([moduleKey, module]) => {
     // 营养师的评估重点及标准随访模板在各自执行流程中呈现，不作为客户年度方案事项。
-    if (moduleKey === 'nutrition_assessment' || moduleKey === 'personalized_followups' || moduleKey === 'health_consensus') return;
+    if (moduleKey === 'nutrition_assessment' || moduleKey === 'personalized_followups' || (moduleKey === 'health_consensus' && !module?.shareWithCustomer)) return;
     if (!module || module.enabled === false) return;
     const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records) && module.records.length
       ? module.records
@@ -66,20 +66,20 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items;
 }
 
-const internalFields = new Set(['logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
+const internalFields = new Set(['advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
   if (!value || typeof value !== 'object' || value.constructor !== Object) return value;
   return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !internalFields.has(key) && key !== 'nutrition_assessment' && key !== 'personalized_followups' && key !== 'health_consensus')
+    .filter(([key]) => !internalFields.has(key) && key !== 'nutrition_assessment' && key !== 'personalized_followups' && (key !== 'health_consensus' || value[key]?.shareWithCustomer === true))
     .map(([key, child]) => [key, key === 'management_targets'
       ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
       : key === 'annual_checkup'
       ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '',
           serviceMode: child?.serviceMode || 'reminder', serviceType: child?.serviceType || '' }
       : key === 'health_consensus'
-      ? { enabled: child?.enabled !== false, records: (child?.records || []).map(row => ({ question: row.question || '', method: row.method || '', frequency: row.frequency || '', firstDate: row.firstDate || '' })) }
+      ? { enabled: child?.enabled !== false, shareWithCustomer: true, records: (child?.records || []).map(row => ({ question: row.question || '', method: row.method || '', frequency: row.frequency || '', firstDate: row.firstDate || '' })) }
       : customerModuleData(child)]));
 }
 module.exports = { buildAnnualPlanDisplayItems, normalizeItem, customerModuleData, internalDaily };

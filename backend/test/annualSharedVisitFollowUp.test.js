@@ -22,3 +22,13 @@ test('同次就诊只生成一条健管随访和一条服务需求，附带全�
   assert.equal(services.length, 1);
   assert.equal(services[0].formData.serviceRequest.itemSnapshot.visitItems.length, 2);
 });
+
+test('自动合并仅提醒时生成一次客户提醒，每个项目单独保留内部结果回顾', async t => {
+  const team = { assignedHealthManager: '000000000000000000000001' };
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => team }) }));
+  t.mock.method(Admin, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  const base = { visitGroupId: '同院同日', visitResultFollowUp: true, serviceMode: 'reminder', hospital: '医院', time: '2027-01-04', appointmentSchedulingVersion: 1 };
+  const tasks = await buildAnnualPlanFollowUps({ _id: '000000000000000000000003', patientId: '000000000000000000000004', confirmedAt: new Date(), moduleData: { abnormal_followup: { records: [{ ...base, items:'检查一' }, { ...base, items:'检查二' }] } } });
+  assert.equal(tasks.filter(row => row.clientVisible !== false).length, 1);
+  assert.equal(tasks.filter(row => row.clientVisible === false && row.theme.startsWith('结果回顾')).length, 2);
+});

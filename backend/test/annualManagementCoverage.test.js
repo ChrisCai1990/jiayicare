@@ -14,8 +14,8 @@ test('日常跟进保留在员工方案中，客户方案项目和原始板块�
     { standardPlanName: '【日常跟进】', executionDate: '2026-11-10' },
     { standardPlanName: '定期复评', executionDate: '2026-11-11' },
   ] } };
-  assert.equal(buildAnnualPlanDisplayItems(source).length, 1);
-  assert.equal(customerModuleData(source).personalized_followups.records.length, 1);
+  assert.deepEqual(buildAnnualPlanDisplayItems(source), []);
+  assert.equal(customerModuleData(source).personalized_followups, undefined);
   assert.equal(source.personalized_followups.records.length, 2);
 });
 
@@ -97,6 +97,9 @@ test('组合专项筛查按归类键引用全部子项，并在其中一项变�
     CheckupReview: { find: () => ({ lean: async () => [] }) },
   };
   assert.equal((await load('patient', 2026, dependencies)).evidence[0].content.sourceItems.length, 3);
+  report.reportItems.reverse();
+  assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, []);
+  report.reportItems.reverse();
   report.reportItems[1].value = '异常';
   assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, ['decision']);
   report.reportItems[1].value = '正常';
