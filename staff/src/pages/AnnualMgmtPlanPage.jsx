@@ -28,7 +28,7 @@ import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
-import { VISIT_DATE_FIELDS, visitRows, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
+import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
 import { mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
 const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
@@ -1553,12 +1553,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {pendingExecutionChanges.length > 0 && <button type="button" onClick={() => { const panel = document.getElementById('annual-plan-preparation'); if (panel) { panel.open = true; document.getElementById('annual-execution-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }} style={{ marginLeft: 10, padding: 0, border: 0, background: 'none', color: '#9A5B13', cursor: 'pointer', textDecoration: 'underline', fontSize: 13 }}>{pendingExecutionChanges.length} 项执行待核对 · 处理</button>}
             </div>
           </div>
-          {annualPilot && <section style={{ marginBottom: 16, padding: '14px 16px', background: '#F5FAF7', border: '1px solid #CFE3D7', borderRadius: 12 }} aria-label="年度管理目标">
-            <strong style={{ color: '#1E6B50' }}>本年度管理目标</strong>
-            {displayedGoals.length ? displayedGoals.map(row => <div key={row.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 220px) 1fr', gap: 10, paddingTop: 9, marginTop: 9, borderTop: '1px solid #E2EDE6', fontSize: 13 }}>
-              <b>{row.title}</b><span>{row.goal}</span>
-            </div>) : <p style={{ margin: '8px 0 0', fontSize: 13, color: '#9A5B13' }}>尚无管理目标，请先确认需要纳入的年度事项。</p>}
-          </section>}
+
           {patientMode && <details open={!annualPilot || window.location.hash === '#annual-management-goals'} style={{ marginBottom: 16 }} aria-label="按问题查看年度管理方案">
             <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>{annualPilot ? '管理问题、目标与来源 · 展开核对' : '按问题查看年度管理方案'}</summary>
             <section>
@@ -1673,6 +1668,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
       {pilotOverview && <details className="annual-plan-secondary" style={{ marginBottom: 16 }}><summary>查看年度管理方案</summary>{pilotOverview}</details>}
 
+{annualPilot && planType && <details style={{ marginBottom: 16, padding: '14px 16px', background: '#F5FAF7', border: '1px solid #CFE3D7', borderRadius: 12 }} aria-label="年度管理目标">
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>查看本年度管理目标</summary>
+            {displayedGoals.length ? displayedGoals.map(row => <div key={row.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 220px) 1fr', gap: 10, paddingTop: 9, marginTop: 9, borderTop: '1px solid #E2EDE6', fontSize: 13 }}>
+              <b>{row.title}</b><span>{row.goal}</span>
+            </div>) : <p style={{ margin: '8px 0 0', fontSize: 13, color: '#9A5B13' }}>尚无管理目标，请先确认需要纳入的年度事项。</p>}
+          </details>}
       <div className="annual-plan-footer">
         {canEdit && !pushedAt && planType && <button type="button" className="btn btn-primary" disabled={saving} onClick={() => handleSave()}>{saving ? '保存中…' : '保存方案草稿'}</button>}
         {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary" onClick={saveCurrentPublishedItem}>暂存当前项</button>}
