@@ -207,9 +207,9 @@ function draftPlanActions(evidence = []) {
       ...(direction === 'medical_treatment' ? {} : { reason: content.action || content.advisorNote || content.problem || '' }),
       ...(suggestedDate ? { [dateKey]: suggestedDate,
         timingReason: timing?.dateBasis === 'interval'
-          ? `按顾问确认的从${timing.anchorDate}起${timing.intervalMonths}个月后就医`
+          ? `按顾问确认的从${timing.anchorDate}起${timing.intervalMonths}个月后${direction === 'checkup_completion' ? '检查' : '就医'}`
           : '按顾问纳入年度管理时确认的首次执行日期',
-        ...(direction === 'medical_treatment' ? { appointmentSchedulingVersion: 1 } : {}),
+        ...(direction === 'medical_treatment' || direction === 'checkup_completion' && timing?.dateBasis === 'interval' ? { appointmentSchedulingVersion: 1 } : {}),
       } : {}),
       goal: content.goal || DEFAULT_MANAGEMENT_GOALS[direction] || '',
       reviewStatus: 'pending_family_doctor_review',

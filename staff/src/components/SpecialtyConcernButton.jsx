@@ -5,6 +5,7 @@ import { annualManagementSourceKey, findAnnualManagementDecision } from '../util
 import DateField from '../../../shared/DateField.jsx'
 import annualAppointment from '../../../shared/annualAppointment.cjs'
 
+const supportsInterval = direction => ['medical_treatment', 'checkup_completion'].includes(direction)
 const DIRECTIONS = [
   ['checkup_completion', '完善检查'], ['medical_treatment', '安排就医'],
   ['abnormal_followup', '定期复查'], ['nutrition_assessment', '营养评估'],
@@ -63,9 +64,9 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const directionText = values => (values || []).map(value => DIRECTIONS.find(([key]) => key === value)?.[1] || value).join('、')
   const timingFor = value => directionTimings[value]
     ? { dateBasis: directionTimings[value].dateBasis || 'date', ...directionTimings[value] }
-    : { mode: 'pending', dateBasis: value === 'medical_treatment' ? 'interval' : 'date' }
+    : { mode: 'pending', dateBasis: supportsInterval(value) ? 'interval' : 'date' }
   const updateTiming = (value, patch) => setDirectionTimings(previous => ({ ...previous, [value]: {
-    mode: 'pending', dateBasis: previous[value] ? previous[value].dateBasis || 'date' : value === 'medical_treatment' ? 'interval' : 'date',
+    mode: 'pending', dateBasis: previous[value] ? previous[value].dateBasis || 'date' : supportsInterval(value) ? 'interval' : 'date',
     ...(previous[value] || {}), ...patch,
   } }))
   const savedDirections = saved?.directions?.length ? saved.directions : [saved?.direction].filter(Boolean)
@@ -101,9 +102,9 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         ...(pilot ? { goal: goal.trim(), action: '', directionTimings: Object.fromEntries(directions
           .filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value)))
           .map(value => { const timing = timingFor(value); return [value, { mode: timing.mode || 'pending',
-            firstDueDate: value === 'medical_treatment' && timing.mode !== 'pending' && timing.dateBasis === 'interval' ? '' : timing.firstDueDate || '',
+            firstDueDate: supportsInterval(value) && timing.mode !== 'pending' && timing.dateBasis === 'interval' ? '' : timing.firstDueDate || '',
             frequency: timing.mode === 'rolling' ? timing.frequency || '' : '',
-            ...(value === 'medical_treatment' && timing.mode !== 'pending' && timing.dateBasis === 'interval'
+            ...(supportsInterval(value) && timing.mode !== 'pending' && timing.dateBasis === 'interval'
               ? { dateBasis: 'interval', anchorDate: timing.anchorDate || '', intervalMonths: Number(timing.intervalMonths) } : {}),
           }] })) } : {}),
         reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
@@ -174,6 +175,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <input className="form-input" type="number" min="1" max="24" value={reviewMonths} onChange={e => setReviewMonths(e.target.value)} />
           <label className="form-label" style={{ marginTop: 8 }}>从哪一天起算</label>
           <DateField type="date" className="form-input" value={reviewAnchorDate} onChange={e => setReviewAnchorDate(e.target.value)} />
+          <div>建议复查日期：{Number(reviewMonths) >= 1 && Number(reviewMonths) <= 24 && annualAppointment.addMonths(reviewAnchorDate, Number(reviewMonths)) || '填写间隔与起算日期后自动计算'}</div>
           <label className="form-label" style={{ marginTop: 8 }}>需复查项目（用顿号或换行分隔）</label>
           <textarea className="form-input" rows={2} value={reviewItems} onChange={e => setReviewItems(e.target.value)} placeholder="逐项填写具体检查名称，由顾问确认" />
           <label className="form-label" style={{ marginTop: 8 }}>先就诊的专科</label>
@@ -182,24 +184,25 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         </div>}</>}
         {pilot && directions.filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value))).map(value => {
           const timing = timingFor(value)
-          const isMedical = value === 'medical_treatment'
+          const intervalAction = supportsInterval(value)
+          const actionLabel = value === 'medical_treatment' ? '就医' : '检查'
           return <div key={value} style={{ marginTop: 10, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
             <label className="form-label">{DIRECTIONS.find(([key]) => key === value)?.[1]} · 时间安排</label>
             <select className="form-input" value={timing.mode || 'pending'} onChange={e => updateTiming(value, { mode: e.target.value, firstDueDate: '', frequency: '' })}>
               <option value="pending">时间待确认</option><option value="single">单次安排</option><option value="rolling">持续跟进，完成本轮后安排下一轮</option>
             </select>
-            {timing.mode !== 'pending' && isMedical && <><label className="form-label" style={{ marginTop: 8 }}>建议就医日期的确定方式</label>
+            {timing.mode !== 'pending' && intervalAction && <><label className="form-label" style={{ marginTop: 8 }}>建议{actionLabel}日期的确定方式</label>
               <select className="form-input" value={timing.dateBasis || 'interval'} onChange={e => updateTiming(value, { dateBasis: e.target.value, firstDueDate: '' })}>
                 <option value="interval">按起算日期和间隔计算</option><option value="date">直接选择日期</option>
               </select></>}
-            {timing.mode !== 'pending' && isMedical && (timing.dateBasis || 'interval') === 'interval' && <>
-              <label className="form-label" style={{ marginTop: 8 }}>几个月后就医</label>
+            {timing.mode !== 'pending' && intervalAction && (timing.dateBasis || 'interval') === 'interval' && <>
+              <label className="form-label" style={{ marginTop: 8 }}>几个月后{actionLabel}</label>
               <input className="form-input" type="number" min="1" max="24" value={timing.intervalMonths || ''} onChange={e => updateTiming(value, { intervalMonths: e.target.value })} />
               <label className="form-label" style={{ marginTop: 8 }}>从哪一天起算</label>
               <DateField type="date" className="form-input" value={timing.anchorDate || ''} onChange={e => updateTiming(value, { anchorDate: e.target.value })} />
-              <div style={{ fontSize: 12, color: '#365E4C', marginTop: 7 }}>建议就医日期：{timing.intervalMonths && annualAppointment.addMonths(timing.anchorDate, Number(timing.intervalMonths)) || '填写间隔与起算日期后自动计算'}；方案确认后按建议日期提前 7 天安排预约随访。</div>
+              <div style={{ fontSize: 12, color: '#365E4C', marginTop: 7 }}>建议{actionLabel}日期：{timing.intervalMonths && annualAppointment.addMonths(timing.anchorDate, Number(timing.intervalMonths)) || '填写间隔与起算日期后自动计算'}；方案确认后按建议日期提前 7 天安排预约随访。</div>
             </>}
-            {timing.mode !== 'pending' && (!isMedical || (timing.dateBasis || 'interval') === 'date') && <><label className="form-label" style={{ marginTop: 8 }}>{isMedical ? '建议就医日期' : '首次执行日期'}</label>
+            {timing.mode !== 'pending' && (!intervalAction || (timing.dateBasis || 'interval') === 'date') && <><label className="form-label" style={{ marginTop: 8 }}>{intervalAction ? `建议${actionLabel}日期` : '首次执行日期'}</label>
               <DateField type="date" className="form-input" value={timing.firstDueDate || ''} onChange={e => updateTiming(value, { firstDueDate: e.target.value })} /></>}
             {timing.mode === 'rolling' && <><label className="form-label" style={{ marginTop: 8 }}>下一轮如何确定</label>
               <input className="form-input" maxLength={100} value={timing.frequency || ''} onChange={e => updateTiming(value, { frequency: e.target.value })} placeholder="例如：根据本轮结果由负责人确定" /></>}

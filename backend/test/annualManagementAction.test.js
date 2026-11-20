@@ -91,3 +91,15 @@ test('AI草稿只接受目标和行动，不接收其自行推断的排期', () 
   assert.throws(() => parseDraft('{"goal":"","action":"安排资料核对"}'), /缺少有效/);
   assert.deepEqual(parseDraft('{"goal":"明确风险"}'), { goal: '明确风险', action: '' });
 });
+
+test('完善检查按起算日和间隔排期，月底取目标月最后一天', () => {
+  const direction = 'checkup_completion';
+  const action = normalizeAction({ direction, goal: '完成检查', directionTimings: {
+    [direction]: { mode: 'single', dateBasis: 'interval', anchorDate: '2027-01-31', intervalMonths: 1 },
+  } });
+  const [draft] = draftPlanActions([{ id: 'management_issue:1', content: { direction, problem: '检查', ...action } }]);
+  assert.equal(draft.record.time, '2027-02-28');
+  assert.equal(draft.record.appointmentSchedulingVersion, 1);
+  assert.match(draft.record.timingReason, /1个月后检查/);
+  assert.equal(require('../../shared/annualAppointment.cjs').appointmentDay(draft.record.time), '2027-02-21');
+});

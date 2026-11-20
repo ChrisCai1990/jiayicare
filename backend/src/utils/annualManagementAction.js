@@ -7,15 +7,15 @@ function normalizeTiming(timing = {}, direction = '') {
   const mode = String(timing.mode || 'pending');
   if (!['pending', 'single', 'rolling'].includes(mode)) fail('请选择有效的执行方式');
   const intervalBased = timing.dateBasis === 'interval';
-  if (intervalBased && direction !== 'medical_treatment') fail('按间隔计算就医时间仅适用于安排就医');
+  if (intervalBased && !['medical_treatment', 'checkup_completion'].includes(direction)) fail('按间隔计算执行日期仅适用于安排就医和完善检查');
   if (intervalBased && mode === 'pending') fail('请先选择单次行动或持续跟进');
   const anchorDate = String(timing.anchorDate || '').trim();
   const intervalMonths = Number(timing.intervalMonths);
   if (intervalBased && (!validDay(anchorDate) || !Number.isInteger(intervalMonths) || intervalMonths < 1 || intervalMonths > 24))
-    fail('请填写有效的起算日期和1至24个月的就医间隔');
+    fail('请填写有效的起算日期和1至24个月的安排间隔');
   const calculatedDate = intervalBased ? addMonths(anchorDate, intervalMonths) : '';
   const suppliedDate = String(timing.firstDueDate || '').trim();
-  if (intervalBased && suppliedDate && suppliedDate !== calculatedDate) fail('建议日期与起算日期和就医间隔不一致');
+  if (intervalBased && suppliedDate && suppliedDate !== calculatedDate) fail('建议日期与起算日期和安排间隔不一致');
   const firstDueDate = intervalBased ? calculatedDate : suppliedDate;
   const frequency = String(timing.frequency || '').trim();
   if (mode === 'pending' && (firstDueDate || frequency)) fail('时间待确认时请勿填写执行日期或频率');
