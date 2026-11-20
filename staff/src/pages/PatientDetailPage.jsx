@@ -16742,11 +16742,18 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   ))
 
   const [vals, setVals] = React.useState(initVals)
-  // 归属日期：支持老客户历史数据补录（默认今天，可选任意过去日期）（2026-07-10 金娟）
-  const todayISO = new Date().toISOString().slice(0, 10)
+  // 测量日期和时间按北京时间填写，与历史补录及医护端记录修正的时区保持一致。
+  const beijingNow = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16)
+  const todayISO = beijingNow().slice(0, 10)
   const [recordDate, setRecordDate] = React.useState(todayISO)
+  const [recordTime, setRecordTime] = React.useState(() => beijingNow().slice(11, 16))
   const setField = (field, v) => setVals(p => ({ ...p, [type]: { ...p[type], [field]: v } }))
-  const reset = () => { setVals(initVals()); setRecordDate(todayISO) }
+  const reset = () => {
+    const now = beijingNow()
+    setVals(initVals())
+    setRecordDate(now.slice(0, 10))
+    setRecordTime(now.slice(11, 16))
+  }
 
   const curType = TYPES.find(t => t.key === type)
 
@@ -16795,9 +16802,17 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
       toastFn('请输入大于0的腰围数值（cm）')
       return
     }
+    const measuredAt = new Date(`${recordDate}T${recordTime}:00+08:00`)
+    if (!recordDate || !/^\d{2}:\d{2}$/.test(recordTime) || Number.isNaN(measuredAt.getTime())) {
+      toastFn('请选择有效的测量日期和时间')
+      return
+    }
+    if (measuredAt.getTime() > Date.now()) {
+      toastFn('测量时间不能晚于当前时间')
+      return
+    }
     setSaving(true)
-    // 归属日期非今天时传 recordedAt（补录历史数据），设为当天中午避免时区错算一天
-    const recordedAt = recordDate === todayISO ? undefined : `${recordDate}T12:00:00`
+    const recordedAt = measuredAt.toISOString()
     const succeeded = []
     const failed = []
     for (const { t, payload } of toSubmit) {
@@ -16810,7 +16825,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
     }
     setSaving(false)
     if (failed.length === 0) {
-      toastFn(`已录入 ${succeeded.length} 项健康数据（${recordDate === todayISO ? '今日' : recordDate}），已同步到用户端`)
+      toastFn(`已录入 ${succeeded.length} 项健康数据（${recordDate} ${recordTime}），已同步到用户端`)
       reset(); onSaved()
     } else if (succeeded.length === 0) {
       toastFn(`录入全部失败：${failed.join('；')}`)
@@ -16829,7 +16844,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
             <div style={{ fontWeight: 600, fontSize: 14 }}>健康监测数据补录</div>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>查看日常监测，也可补录单次测量</div>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}>+ 录入数据</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { reset(); setOpen(true) }}>+ 录入数据</button>
         </div>
       </div>
     )
@@ -16846,16 +16861,23 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           罗列全部记录项，填写哪些就录入哪些（留空的不提交），一次性作为首次建档基础数据同步到用户端。
         </div>
 
-        {/* 归属日期：老客户历史数据补录用，默认今天，可选任意过去日期（2026-07-10 金娟） */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '10px 12px', background: '#F0FAF5', borderRadius: 8 }}>
-          <span style={{ fontSize: 13, color: '#1A2B24', fontWeight: 600 }}>数据归属日期</span>
+        {/* 同一批录入项共用实际测量时间；睡眠的入睡/起床时间仍单独填写。 */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14, padding: '10px 12px', background: '#F0FAF5', borderRadius: 8 }}>
+          <span style={{ fontSize: 13, color: '#1A2B24', fontWeight: 600 }}>测量日期和时间</span>
           <DateField type="date" value={recordDate} max={todayISO}
             onChange={e => e.target.value && setRecordDate(e.target.value)}
+            aria-label="测量日期"
+            style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #D0E0D8', fontSize: 13 }} />
+          <input type="time" value={recordTime} onChange={e => setRecordTime(e.target.value)} aria-label="测量时间"
             style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #D0E0D8', fontSize: 13 }} />
           {recordDate !== todayISO && (
             <span style={{ fontSize: 12, color: '#D97706' }}>补录历史数据（{recordDate}）</span>
           )}
-          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => setRecordDate(todayISO)}>今天</button>
+          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => {
+            const now = beijingNow()
+            setRecordDate(now.slice(0, 10))
+            setRecordTime(now.slice(11, 16))
+          }}>现在</button>
         </div>
 
         {/* 2026-07-09：所有记录项平铺，各自独立填写，一次确认批量提交，不再单选逐条录入 */}
