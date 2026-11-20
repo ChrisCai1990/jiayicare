@@ -128,6 +128,28 @@ test('单项专项筛查重新归类后仍识别原检查项，临床值改变�
   assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, ['decision']);
 });
 
+test('报告重新解析更换检查项内部ID，不重复阻断同名同结果的专项筛查决定', async () => {
+  const original = { itemId: 'old-cd61', name: 'CD61抗体(PAC-1)', value: '异常', status: 'abnormal', screeningKey: '旧分类' };
+  const report = { _id: 'report', checkDate: '2026-11-04', reportItems: [
+    { ...original, itemId: 'new-cd61', screeningKey: '新分类' },
+  ] };
+  const decision = { _id: 'decision', title: 'CD61抗体(PAC-1)异常', direction: 'medical_treatment',
+    reportId: 'report', itemId: '旧分类', sourceKey: 'screening:report:旧分类',
+    sourceSnapshot: { checkDate: report.checkDate, item: original, items: [original] } };
+  const dependencies = {
+    Decision: { find: () => ({ sort: () => ({ lean: async () => [decision] }) }) },
+    Report: { findOne: () => ({ select: () => ({ lean: async () => report }) }) },
+    User: { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) },
+    CheckupReview: { find: () => ({ lean: async () => [] }) },
+  };
+  assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, []);
+  report.reportItems.push({ ...report.reportItems[0], itemId: 'duplicate' });
+  assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, ['decision']);
+  report.reportItems.pop();
+  report.reportItems[0].value = '正常';
+  assert.deepEqual((await load('patient', 2026, dependencies)).staleDecisionIds, ['decision']);
+});
+
 test('顾问已处理主诉可作为独立来源，来源修改后阻止旧目标继续带入', async () => {
   const at = new Date('2026-10-20T02:00:00Z');
   const decidedAt = new Date('2026-10-21T02:00:00Z');
@@ -210,6 +232,7 @@ test('同报告同问题同方向已归到检查项时，旧整份报告归属�
   assert.deepEqual(effectiveDecisions([legacy, current]).map(row => row._id), ['item']);
   assert.equal(effectiveDecisions([legacy, { ...current, title: '肾结晶' }]).length, 2);
   assert.equal(effectiveDecisions([legacy, { ...current, direction: 'abnormal_followup' }]).length, 2);
+  assert.deepEqual(effectiveDecisions([legacy, { ...current, sourceKey: 'report_item:report:liver-ultrasound' }]).map(row => row._id), ['item']);
   const Decision = { find: () => ({ sort: () => ({ lean: async () => [legacy, current] }) }) };
   const Report = { findOne: () => ({ select: () => ({ lean: async () => ({ _id: 'report', title: '体检报告', updatedAt, reportItems: [
     { itemId: 'liver-ultrasound', screeningKey: 'liver', name: '肝脏超声' }, { screeningKey: 'kidney', name: '肾脏超声' },
@@ -218,6 +241,17 @@ test('同报告同问题同方向已归到检查项时，旧整份报告归属�
   const result = await load('patient', 2026, { Decision, Report, User });
   assert.deepEqual(result.stale, []);
   assert.deepEqual(result.evidence.map(row => row.id), ['management_issue:item']);
+});
+
+test('同一检查项重新归属并经顾问再次确认后，旧归属不再阻断方案', () => {
+  const old = { _id: 'old', reportId: 'report', itemId: 'old-key', sourceKey: 'screening:report:old-key',
+    title: 'CD61抗体(PAC-1)异常', directions: ['medical_treatment'], reviewedAt: '2026-11-19T00:00:00Z',
+    sourceSnapshot: { item: { itemId: 'old-id', name: 'CD61抗体(PAC-1)', value: '异常' } } };
+  const current = { ...old, _id: 'new', itemId: 'new-key', sourceKey: 'screening:report:new-key',
+    reviewedAt: '2026-11-20T00:00:00Z', sourceSnapshot: { item: { itemId: 'new-id', name: 'CD61抗体(PAC-1)', value: '异常' } } };
+  assert.deepEqual(effectiveDecisions([old, current]).map(row => row._id), ['new']);
+  assert.deepEqual(effectiveDecisions([old, { ...current, title: '另一问题' }]).map(row => row._id), ['old', 'new']);
+  assert.deepEqual(effectiveDecisions([old, { ...current, sourceSnapshot: { item: { name: '另一项检查' } } }]).map(row => row._id), ['old', 'new']);
 });
 
 test('已审核 AI 缺口必须逐项处理，确需检查进入完善检查且不能被复查替代', async () => {

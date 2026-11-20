@@ -2,13 +2,17 @@ const directionsOf = value => Array.isArray(value?.directions) && value.directio
 
 function effectiveDecisions(decisions = []) {
   const sameIssue = value => String(value || '').replace(/\s+/g, '').trim();
-  return decisions.filter(legacy => {
-    const reportId = String(legacy.reportId || '');
-    if (legacy.sourceKey !== `screening_report:${reportId}`) return true;
+  return decisions.filter(earlier => {
+    const reportId = String(earlier.reportId || '');
+    if (!reportId || !/^(screening_report|screening|report_item):/.test(earlier.sourceKey || '')) return true;
     // 顾问已在同份报告的具体检查项重新保存同一问题和方向时，旧报告级归属只保留为历史，不再阻断年度方案。
-    return !decisions.some(item => item !== legacy && String(item.reportId || '') === reportId
-      && item.itemId && item.sourceKey === `screening:${reportId}:${item.itemId}`
-      && sameIssue(item.title) === sameIssue(legacy.title) && directionsOf(legacy).every(value => directionsOf(item).includes(value)));
+    return !decisions.some(item => item !== earlier && String(item.reportId || '') === reportId
+      && item.itemId && [`screening:${reportId}:${item.itemId}`, `report_item:${reportId}:${item.itemId}`].includes(item.sourceKey)
+      && sameIssue(item.title) === sameIssue(earlier.title) && directionsOf(earlier).every(value => directionsOf(item).includes(value))
+      && (earlier.sourceKey === `screening_report:${reportId}` || item.sourceKey !== earlier.sourceKey
+        && earlier.sourceSnapshot?.item?.name && item.sourceSnapshot?.item?.name
+        && sameIssue(earlier.sourceSnapshot.item.name) === sameIssue(item.sourceSnapshot.item.name)
+        && new Date(item.reviewedAt || 0).getTime() > new Date(earlier.reviewedAt || 0).getTime()));
   });
 }
 
@@ -42,7 +46,16 @@ function reportSourceItems(report, kind, sourceId) {
 function currentSourceItem(report, decision) {
   const snapshot = decision.sourceSnapshot?.item;
   const items = report.reportItems || [];
-  if (snapshot?.itemId) return items.find(item => String(item.itemId) === String(snapshot.itemId));
+  if (snapshot?.itemId) {
+    const match = items.find(item => String(item.itemId) === String(snapshot.itemId));
+    if (match) return match;
+    // Re-parsing can assign a new internal ID to the same uniquely identified
+    // examination. Clinical fields are compared after this lookup.
+    const name = String(snapshot.name || '').trim();
+    if (!name) return null;
+    const byName = items.filter(item => String(item.name || '').trim() === name);
+    return byName.length === 1 ? byName[0] : null;
+  }
   const id = String(decision.itemId || '');
   return items.find(item => [item.itemId, item.name, item.screeningKey, ...(item.screeningKeys || [])]
     .some(value => String(value || '') === id));
@@ -57,9 +70,9 @@ function sourceChanged(report, decision) {
     // A single screening item can be regrouped when a report is reclassified. Its
     // stable itemId and clinical content still identify the original decision.
     if (snapshot.items.length === 1 && snapshot.items[0]?.itemId) {
-      const matches = (report.reportItems || []).filter(item => String(item.itemId || '') === String(snapshot.items[0].itemId));
-      return matches.length !== 1 || String(report.checkDate || '') !== String(snapshot.checkDate || '')
-        || JSON.stringify(clinicalItem(matches[0])) !== JSON.stringify(clinicalItem(snapshot.items[0]));
+      const currentItem = currentSourceItem(report, decision);
+      return !currentItem || String(report.checkDate || '') !== String(snapshot.checkDate || '')
+        || JSON.stringify(clinicalItem(currentItem)) !== JSON.stringify(clinicalItem(snapshot.items[0]));
     }
     return !current.length || String(report.checkDate || '') !== String(snapshot.checkDate || '')
       || JSON.stringify(signatures(current)) !== JSON.stringify(signatures(snapshot.items));
@@ -113,12 +126,15 @@ async function load(patientId, year, dependencies = {}) {
     if (changed) {
       const snapshot = decision.sourceSnapshot || {};
       const current = report && currentSourceItem(report, decision);
-      const labels = { value: '检验结果', unit: '单位', referenceRange: '参考范围', status: '异常标记', name: '项目名称', findings: '检查所见', conclusion: '结论' };
+      const labels = { name: '项目名称', value: '检验结果', unit: '单位', referenceRange: '参考范围', status: '异常标记',
+        itemType: '项目类型', bodyPart: '检查部位', specimen: '标本', modality: '检查方式', reviewIssues: '解读问题',
+        findings: '检查所见', diagnosis: '诊断', conclusion: '结论', examDate: '检查日期', institution: '检查机构' };
       const fields = current && snapshot.item ? Object.keys(labels).filter(key => (current[key] ?? '') !== (snapshot.item[key] ?? '')) : [];
       const reason = !report ? '原报告当前无法作为已审核来源'
         : String(report.checkDate || '') !== String(snapshot.checkDate || '') ? '报告日期与纳入时不同'
-        : fields.length ? fields.map(key => labels[key]).join('、') + '与纳入时不同'
-        : '请核对原报告的检查项目、归属及审核状态';
+        : !current ? '原检查项已移除或存在多个同名项目，请在专项筛查中重新归属'
+        : fields.length ? fields.map(key => labels[key]).join('、') + '与纳入时不同，请在专项筛查中重新确认'
+        : '组合检查的项目归属或成员已变化，请在专项筛查中重新确认';
       staleSourceNotes.push({ title: decision.title, reason });
       stale.push(decision.title); staleDecisionIds.push(String(decision._id)); continue;
     }
