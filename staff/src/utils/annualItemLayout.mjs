@@ -12,6 +12,21 @@ export function annualItemLayout(key, def, managerName, nutritionName, nutrition
     }
   }
   if (!simpleAnnualModules.includes(key)) return def
+  if (key === 'annual_checkup') return {
+    ...def, reviewDriven: true, annualServiceArrangement: true, annualCheckupScheduling: true,
+    managerName: managerName || '未分配健管专员，请先完善客户归属',
+    fields: [
+      { key: 'date', label: '下一年度体检日期', type: 'date', appointmentDate: true },
+      { key: 'institution', label: '体检机构', type: 'text', placeholder: '填写计划体检的机构' },
+      { key: 'timingReason', label: '时间安排依据', type: 'textarea', internal: true },
+      { key: 'notes', label: '备注', type: 'textarea', internal: true },
+    ],
+    serviceFields: [{ key: 'serviceMode', label: '服务方式', type: 'select', defaultValue: 'reminder', options: [
+      { value: 'reminder', label: '仅提醒' },
+      { value: 'single', label: '方案定制＋机构安排' },
+      { value: 'managed', label: '体检一站式服务' },
+    ] }],
+  }
   const hidden = new Set(['standardPlanName', 'standardContent', 'standardSchedule', 'coordinator', 'followUpStaff', 'frequency', 'ownerRole', 'serviceMode', 'serviceType'])
   const notesField = def.fields.find(f => f.key === 'notes')
   const dateKeys = new Set(['visit_time', 'time', 'date'])

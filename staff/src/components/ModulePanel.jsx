@@ -277,7 +277,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
 
 // ── 板块折叠面板 ───────────────────────────────────────────────────────
 export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = false, executionReviewChanges = [], issues = [] }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(moduleKey === 'annual_checkup' && data.enabled === true)
   const enabled = data.enabled !== false
 
   const set = (fieldKey, val) => onChange(moduleKey, fieldKey, val)
@@ -396,8 +396,8 @@ export function ModulePanel({ moduleKey, def, data, onChange, showPlanSummary = 
           {def.annualServiceArrangement && !directNutrition && <>
               <FieldRow label="随访人员">{def.managerName}</FieldRow>
               <h4>服务安排</h4>
-              {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || data.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={data[field.key]} onChange={val => { set(field.key, val); if (field.key === 'serviceMode') { set('serviceType', ''); set('managedServiceType', '') } }} /></FieldRow>)}
-              {data.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={data.managedServiceType} onChange={val => set('managedServiceType', val)} /></FieldRow>}
+              {(def.serviceFields || []).filter(f => f.key !== 'serviceType' || data.serviceMode === 'single').map(field => <FieldRow key={field.key} label={field.label}><FieldInput field={field} value={data[field.key]} onChange={val => { set(field.key, val); if (field.key === 'serviceMode') { set('serviceType', def.annualCheckupScheduling && val === 'single' ? 'proxy_booking' : ''); set('managedServiceType', def.annualCheckupScheduling && val === 'managed' ? 'checkup' : '') } }} /></FieldRow>)}
+              {data.serviceMode === 'managed' && !def.annualCheckupScheduling && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={data.managedServiceType} onChange={val => set('managedServiceType', val)} /></FieldRow>}
             </>}
             </>
           )}

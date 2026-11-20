@@ -7,6 +7,18 @@ test('仅提醒事项不生成服务需求单', () => {
   const rows = buildAnnualPlanServiceTasks({ confirmedAt: new Date(), moduleData: { abnormal_followup: { records: [{ items: '甲状腺超声', time: '2026-10-20', serviceMode: 'reminder' }] } } }, { assignedHealthPlanner: 'planner-1' });
   assert.deepEqual(rows, []);
 });
+test('下一年度体检按服务方式生成对应需求，保留体检机构', () => {
+  const base = { enabled: true, date: '2027-11-04', institution: '邵逸夫医院' };
+  const rowsFor = record => buildAnnualPlanServiceTasks({ confirmedAt: new Date(), moduleData: { annual_checkup: { ...base, ...record } } }, { assignedHealthPlanner: 'planner-1' });
+  assert.deepEqual(rowsFor({ serviceMode: 'reminder' }), []);
+  const [custom] = rowsFor({ serviceMode: 'single', serviceType: 'proxy_booking' });
+  assert.equal(custom.formData.serviceRequest.mode, 'single');
+  assert.match(custom.content, /方案定制＋机构安排/);
+  assert.match(custom.content, /体检机构：邵逸夫医院/);
+  const [oneStop] = rowsFor({ serviceMode: 'managed', managedServiceType: 'checkup' });
+  assert.equal(oneStop.formData.serviceRequest.mode, 'managed');
+  assert.match(oneStop.content, /体检一站式/);
+});
 test('单项服务只生成健康规划师服务需求单，不提前创建跨岗位任务', () => {
   const rows = buildAnnualPlanServiceTasks({ confirmedAt: new Date(), moduleData: { abnormal_followup: { records: [{ items: '甲状腺超声', time: '2026-10-20', serviceMode: 'single', serviceType: 'proxy_booking', basisSummary: '结节复查建议' }] } } }, { assignedHealthPlanner: 'planner-1' });
   assert.equal(rows.length, 1);

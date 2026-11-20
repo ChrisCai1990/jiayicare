@@ -225,6 +225,7 @@ async function buildAnnualPlanFollowUps(plan) {
     const checkupLines = [
       annualCheckup.appointmentSchedulingVersion === 1 && `预约安排日期：${appointmentDay(annualCheckup.date)}；建议体检日期：${annualCheckup.date}。一周内完成预约安排，日期已过则立即处理。`,
       annualCheckup.institution && `计划体检机构：${annualCheckup.institution}`,
+      `服务方式：${{ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' }[annualCheckup.serviceMode || 'reminder'] || '待确认'}`,
       annualCheckup.campus && `院区：${annualCheckup.campus}`,
       annualCheckup.expert && `专家：${annualCheckup.expert}`,
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,

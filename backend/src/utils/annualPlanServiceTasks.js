@@ -36,10 +36,10 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
       date: executionDate, assignedTo: (moduleKey === 'personalized_followups' && record.managementFollowUpVersion === 1 ? patient.assignedHealthManager : patient.assignedHealthPlanner) || null,
       stage: supervisionOnly ? 'service_supervision' : 'service_request', taskRole: 'supervisor', theme: `${supervisionOnly ? '服务进度督办' : '服务需求待安排'} · ${label}`,
       content: [
-        `服务模式：${supervisionOnly ? '预约与检查进度督办' : mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
+        `服务模式：${supervisionOnly ? '预约与检查进度督办' : moduleKey === 'annual_checkup' && mode === 'single' ? '方案定制＋机构安排' : mode === 'managed' ? '全托管' : '单项服务'}`, record.serviceType && `服务类型：${record.serviceType}`,
         mode === 'managed' && record.managedServiceType && `一站式类型：${record.managedServiceType === 'checkup' ? '体检一站式' : '门诊一站式'}`,
         `管理事项：${itemSnapshot.items || label}`, evidence && `设置依据：${evidence}`,
-        record.hospital && `医院：${record.hospital}`, record.campus && `院区：${record.campus}`, record.department && `科室：${record.department}`,
+        record.institution && `体检机构：${record.institution}`, record.hospital && `医院：${record.hospital}`, record.campus && `院区：${record.campus}`, record.department && `科室：${record.department}`,
         record.expert && `专家：${record.expert}`,
         record.expertSnapshots?.length && `候选专家：${record.expertSnapshots.map(item => item.name).join('、')}`,
         record.order_dept && `开单科室：${record.order_dept}`,

@@ -17,7 +17,13 @@ test('同次就诊可全部仅提醒，日期仍须一致且不会创建单项�
  assert.equal(validate(data, '2026-11-19'), '');
  assert.match(validate({ abnormal_followup: { records: [rows[0], { ...rows[1], time:'2026-12-04' }] } }, '2026-11-19'), /日期须一致/);
 });
-test('顾问新增年度体检草稿可暂存，发布前必须补齐重点项目和日期', () => {
- assert.match(validate({ annual_checkup: { enabled: true } }, '2026-11-19'), /重点关注项目和计划日期/);
- assert.equal(validate({ annual_checkup: { enabled: true, focus: '核对已确认的体检项目', date: '2027-06-01' } }, '2026-11-19'), '');
+test('下一年度体检排期只要求日期、机构和有效服务方式，不要求定体检项目', () => {
+ assert.match(validate({ annual_checkup: { enabled: true } }, '2026-11-19'), /年度体检日期/);
+ assert.match(validate({ annual_checkup: { enabled: true, date: '2027-06-01' } }, '2026-11-19'), /体检机构/);
+ assert.equal(validate({ annual_checkup: { enabled: true, date: '2027-06-01', institution: '体检中心', serviceMode: 'reminder' } }, '2026-11-19'), '');
+ assert.match(validate({ annual_checkup: { enabled: true, targetYear: 2027, date: '2026-12-01', institution: '体检中心', serviceMode: 'reminder' } }, '2026-11-19'), /2027年/);
+ assert.equal(validate({ annual_checkup: { enabled: true, targetYear: 2027, date: '2027-06-01', institution: '体检中心', serviceMode: 'reminder' } }, '2026-11-19'), '');
+ assert.equal(validate({ annual_checkup: { enabled: true, date: '2027-06-01', institution: '体检中心', serviceMode: 'single', serviceType: 'proxy_booking' } }, '2026-11-19'), '');
+ assert.equal(validate({ annual_checkup: { enabled: true, date: '2027-06-01', institution: '体检中心', serviceMode: 'managed', managedServiceType: 'checkup' } }, '2026-11-19'), '');
+ assert.match(validate({ annual_checkup: { enabled: true, date: '2027-06-01', institution: '体检中心', serviceMode: 'managed', managedServiceType: 'outpatient' } }, '2026-11-19'), /体检一站式/);
 });

@@ -61,8 +61,8 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
       </div>
       <div className="annual-track-panel annual-track-panel--checkup"><h3 className="annual-track-heading"><span className="annual-track-number">03</span>年度体检</h3>{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A', lineHeight: 1.7 }}>
         <div>本方案尚未纳入下一次年度体检安排。{latestCheckupDate ? `已审核的最近一次完整体检日期：${latestCheckupDate}。` : ''}</div>
-        <div>专项复查和完善检查已分别列在医疗服务；下一次年度体检的项目、日期及机构需由顾问核对后确定。</div>
-        {onArrangeAnnualCheckup && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={onArrangeAnnualCheckup}>＋ 安排年度体检</button>}
+        <div>专项复查和完善检查已分别列在医疗服务；请确定下一年度体检时间、机构和服务方式，保存并确认方案后生成随访计划。</div>
+        {onArrangeAnnualCheckup && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={onArrangeAnnualCheckup}>＋ 安排下一年度体检随访</button>}
       </div>}</div>
     </div>
   </section>

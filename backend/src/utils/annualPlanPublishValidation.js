@@ -17,8 +17,12 @@ function validate(data = {}, today = new Date(Date.now() + 8 * 3600000).toISOStr
     if (records.some(row => !validDate(row[field]))) return `推送前请补全${label}的执行日期（不早于今天）`;
   }
   const annualCheckup = data?.annual_checkup;
-  if (annualCheckup?.enabled === true && (!String(annualCheckup.focus || '').trim() || !validDate(annualCheckup.date))) return '推送前请核对年度体检的重点关注项目和计划日期';
-  if (annualCheckup?.enabled !== false && annualCheckup && (annualCheckup.focus || annualCheckup.standardPlanId || annualCheckup.date) && !validDate(annualCheckup.date)) return '推送前请补全年度体检日期（不早于今天）';
+  if (annualCheckup?.enabled !== false && annualCheckup && (annualCheckup.enabled === true || annualCheckup.focus || annualCheckup.standardPlanId || annualCheckup.date)) {
+    if (!validDate(annualCheckup.date)) return '推送前请补全下一年度体检日期（不早于今天）';
+    if (Number.isInteger(annualCheckup.targetYear) && annualCheckup.date.slice(0, 4) !== String(annualCheckup.targetYear)) return `下一年度体检日期请选择${annualCheckup.targetYear}年`;
+    if (!String(annualCheckup.institution || '').trim()) return '推送前请填写下一年度体检机构';
+    if (annualCheckup.serviceMode === 'managed' && annualCheckup.managedServiceType !== 'checkup') return '下一年度体检请选择体检一站式服务';
+  }
   const personalized = data?.personalized_followups?.enabled === false ? [] : data?.personalized_followups?.records || [];
   if (personalized.some(r => !validDate(r.executionDate))) return '推送前请补全每项随访日期（不早于今天）；由客户所属健管专员跟进，当前可暂存草稿';
   const consensus = data?.health_consensus?.enabled === false ? [] : data?.health_consensus?.records || [];

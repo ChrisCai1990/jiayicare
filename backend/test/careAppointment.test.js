@@ -53,3 +53,22 @@ test('real followup builder dispatches seven days earlier to assigned manager an
   assert.equal(rows[0].sourceScheduleKey, oldRows[0].sourceScheduleKey);
   assert.equal(oldRows[0].date.toISOString().slice(0, 10), '2026-10-22');
 });
+test('next-year checkup date, institution and service choice generate one manager follow-up', async t => {
+  const User = require('../src/models/User'), Admin = require('../src/models/Admin');
+  const manager = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: manager }) }) }));
+  t.mock.method(Admin, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  const { buildAnnualPlanFollowUps } = require('../src/utils/annualPlanFollowUps');
+  for (const [mode, type, label] of [['reminder', '', '仅提醒'], ['single', 'proxy_booking', '方案定制＋机构安排'], ['managed', '', '体检一站式服务']]) {
+    const rows = await buildAnnualPlanFollowUps({ _id: 'plan', patientId: 'patient', moduleData: { annual_checkup: {
+      enabled: true, targetYear: 2027, date: '2027-11-04', institution: '邵逸夫医院',
+      serviceMode: mode, serviceType: type, managedServiceType: mode === 'managed' ? 'checkup' : '', appointmentSchedulingVersion: 1,
+    } } });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].date.toISOString().slice(0, 10), '2027-10-28');
+    assert.equal(rows[0].assignedTo, manager);
+    assert.equal(rows[0].deliveryMode, mode);
+    assert.match(rows[0].content, new RegExp(label));
+    assert.match(rows[0].content, /计划体检机构：邵逸夫医院/);
+  }
+});
