@@ -6,6 +6,11 @@ const BP_RE = /血压|高血压|收缩压|舒张压/i;
 const WEIGHT_RE = /体重|减重|肥胖|超重|BMI|体脂/i;
 const HYPERTENSION_RE = /高血压|血压偏高|血压升高/i;
 const METABOLIC_RE = /肥胖|超重|代谢综合征|糖尿病|高脂血症|脂肪肝/i;
+const EXTRA_METRICS = {
+  bloodSugar: '血糖', waist: '腰围', heartRate: '心率', sleep: '睡眠', mood: '情绪',
+  diet: '饮食', exercise: '运动', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒',
+};
+const metricFromSourceKey = key => key === 'blood_pressure' ? 'bloodPressure' : key;
 
 function patientAge(patient, now = new Date()) {
   const explicit = Number(patient?.age);
@@ -63,7 +68,7 @@ function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPress
         : ((hasHypertension || hasElevatedReading) ? { daysOfWeek: ['Mon', 'Thu'] } : { daysOfWeek: [], rollingWeekly: true }));
     specs.push({
       sourceKey: 'blood_pressure', category: 'monitoring', title: '测量血压',
-      description: explicitBp?.precautions || explicitBp?.notes || (hasHypertension ? '按固定时段测量并记录；如有不适或读数异常，请及时联系专业人员。' : '建议在上次测量约一周后再次测量并记录。'),
+      description: [explicitBp?.measurementPeriod, explicitBp?.precautions || explicitBp?.notes].filter(Boolean).join('；') || (hasHypertension ? '按固定时段测量并记录；如有不适或读数异常，请及时联系专业人员。' : '建议在上次测量约一周后再次测量并记录。'),
       reminderTime: reminderTime(explicitBp?.time), ...bpSchedule,
     });
   }
@@ -72,9 +77,16 @@ function buildMonitoringReminderSpecs(patient, moduleData = {}, recentBloodPress
     : (needsWeightFocus ? { daysOfWeek: ['Mon', 'Thu'] } : { daysOfWeek: [], rollingWeekly: true });
   specs.push({
     sourceKey: 'weight', category: 'weight_checkin', title: '记录体重',
-    description: explicitWeight?.precautions || explicitWeight?.notes || '建议晨起、空腹、穿着相近衣物测量并记录，用于观察长期趋势。',
+    description: [explicitWeight?.measurementPeriod || '晨起', explicitWeight?.precautions || explicitWeight?.notes || '穿着相近衣物测量并记录，用于观察长期趋势。'].join('；'),
     reminderTime: reminderTime(explicitWeight?.time), ...weightSchedule,
   });
+  for (const [type, label] of Object.entries(EXTRA_METRICS)) {
+    const row = records.find(record => String(record.items || '').split(/[、,，]/).some(item => item.trim() === label));
+    if (!row) continue;
+    specs.push({ sourceKey: type, category: type === 'sleep' ? 'sleep' : ['smoking', 'alcohol'].includes(type) ? 'substance' : 'monitoring',
+      title: `记录${label}`, description: [row.measurementPeriod, row.precautions || row.notes].filter(Boolean).join('；') || `按年度方案记录${label}。`,
+      reminderTime: reminderTime(row.time), ...scheduleFromFrequency(row.frequency, false), });
+  }
   return specs;
 }
 
@@ -92,17 +104,18 @@ async function syncServiceCycleMonitoringReminders(userId) {
   const HealthRecord = require('../models/HealthRecord');
   const recentBloodPressure = await HealthRecord.find({ user: patient._id, type: 'bloodPressure', recordedAt: { $gte: new Date(Date.now() - 30 * 86400000) } })
     .sort({ recordedAt: -1 }).limit(14).select('value extra recordedAt').lean();
-  const latestRows = await Promise.all(['bloodPressure', 'weight'].map(type =>
-    HealthRecord.findOne({ user: patient._id, type, deletedAt: null }).sort({ recordedAt: -1 }).select('recordedAt').lean()));
-  const latestByType = { bloodPressure: latestRows[0]?.recordedAt || null, weight: latestRows[1]?.recordedAt || null };
   const specs = buildMonitoringReminderSpecs(patient, annualPlan?.moduleData || {}, recentBloodPressure);
+  const recordTypes = [...new Set(specs.map(item => metricFromSourceKey(item.sourceKey)))];
+  const latestRows = await Promise.all(recordTypes.map(type =>
+    HealthRecord.findOne({ user: patient._id, type, deletedAt: null }).sort({ recordedAt: -1 }).select('recordedAt').lean()));
+  const latestByType = Object.fromEntries(recordTypes.map((type, index) => [type, latestRows[index]?.recordedAt || null]));
   const activeKeys = specs.map(item => item.sourceKey);
   const startDate = patient.onboardingCompletedAt || patient.createdAt || new Date();
   const endDate = null; // 免费基础监测不随付费服务期结束；年度方案仅覆盖个性化频次。
   let created = 0; let updated = 0;
   for (const spec of specs) {
     const sourceKey = `service-cycle:${spec.sourceKey}`;
-    const latest = latestByType[spec.sourceKey === 'blood_pressure' ? 'bloodPressure' : 'weight'];
+    const latest = latestByType[metricFromSourceKey(spec.sourceKey)];
     const anchor = latest && new Date(latest) >= new Date(startDate) ? latest : startDate;
     const anchorDay = new Date(new Date(anchor).getTime() + 8 * 3600000).toISOString().slice(0, 10);
     const nextDueDate = new Date(`${anchorDay}T00:00:00+08:00`);
@@ -161,10 +174,10 @@ async function syncMonitoringSystemMessage(userId, now = new Date(), { sendPush 
   const cstDay = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
   const dayStart = new Date(`${cstDay}T00:00:00+08:00`);
   const dayEnd = new Date(`${cstDay}T23:59:59.999+08:00`);
-  const dueTypes = due.map(item => item.sourceKey.endsWith('blood_pressure') ? 'bloodPressure' : 'weight');
+  const dueTypes = due.map(item => metricFromSourceKey(item.sourceKey.replace(/^service-cycle:/, '')));
   const completedTypes = await HealthRecord.distinct('type', { user: userId, type: { $in: dueTypes }, recordedAt: { $gte: dayStart, $lte: dayEnd } });
-  const pending = due.filter(item => !completedTypes.includes(item.sourceKey.endsWith('blood_pressure') ? 'bloodPressure' : 'weight'));
-  const labels = pending.map(item => item.sourceKey.endsWith('blood_pressure') ? '测量血压' : '记录体重');
+  const pending = due.filter(item => !completedTypes.includes(metricFromSourceKey(item.sourceKey.replace(/^service-cycle:/, ''))));
+  const labels = pending.map(item => item.title);
   const completed = pending.length === 0;
   const content = completed ? '今日健康监测已完成，数据已记录。' : `今日请完成：${labels.join('、')}。完成后数据将用于更新健康趋势。`;
   const message = await Message.findOneAndUpdate(
