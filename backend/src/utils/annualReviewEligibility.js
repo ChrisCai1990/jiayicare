@@ -59,6 +59,13 @@ function eligibility(reports, now = new Date(), options = {}) {
   const cutoffMonth = targetMonth % 12;
   const cutoff = new Date(Date.UTC(cutoffYear,cutoffMonth,Math.min(d,new Date(Date.UTC(cutoffYear,cutoffMonth+1,0)).getUTCDate()))).toISOString().slice(0,10);
   const exams = examReports(reports);
+  const examIds = new Set(exams.map(report => String(report._id || '')));
+  const recentIncomplete = reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly
+    && !excludedCategories.has(report.documentCategory) && /体检|总检|健康检查/.test(report.title || '')
+    && day(report.checkDate || report.date) >= cutoff && day(report.checkDate || report.date) <= today
+    && !examIds.has(String(report._id || '')))
+    .sort((a, b) => day(b.checkDate || b.date).localeCompare(day(a.checkDate || a.date))
+      || (b.reportItems || []).length - (a.reportItems || []).length)[0];
   const latest = exams
     .map(r => ({ reportId: String(r._id || ''), date: day(r.checkDate || r.date) }))
     .filter(r => r.date && r.date <= today).sort((a,b) => b.date.localeCompare(a.date))[0];
@@ -70,8 +77,12 @@ function eligibility(reports, now = new Date(), options = {}) {
   const pending = recent ? exams.filter(r => day(r.checkDate || r.date) === latest.date &&
     require('./reportFollowUpSource').needsAdvisorInterpretation(r) && !r.advisorInterpretationConfirmedAt) : [];
   return { allowed: recent && hasCompleteContent && pending.length === 0, latest: latest || null, cutoff,
+    problemReportId: !recent && recentIncomplete ? String(recentIncomplete._id || '') : '',
     pendingInterpretation: pending.map(r => String(r._id || '')),
-    message: !recent ? `近${lookbackMonths}个月内没有已审核的完整体检资料，请先完成体检并录入审核后，再生成年度方案。`
+    message: !recent ? (recentIncomplete
+      ? `${day(recentIncomplete.checkDate || recentIncomplete.date)}的已审核“体检报告”未达到完整体检判定条件（需多系统检查覆盖或总检结论）；${latest ? `最近符合条件的完整体检为${latest.date}，早于本次要求的${cutoff}` : `目前没有符合条件的完整体检，需补充${cutoff}之后的资料`}。请核对该报告并补齐完整体检资料。`
+      : latest ? `最近一份已审核的完整体检日期为${latest.date}，早于本次要求的${cutoff}；请补充近期完整体检并完成审核、解读后再生成年度方案。`
+      : `近${lookbackMonths}个月内没有已审核的完整体检资料，请先完成体检并录入审核后，再生成年度方案。`)
       : !hasCompleteContent ? '本次体检报告缺少可解读的完整检查内容，请补齐解析和审核后再生成年度方案。'
         : '本次体检资料尚未全部完成健康顾问解读，请全部解读确认后再生成年度方案。' };
 }
