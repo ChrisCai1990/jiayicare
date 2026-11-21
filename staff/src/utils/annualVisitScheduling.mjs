@@ -121,6 +121,9 @@ export function autoGroupAnnualVisits(data) {
   for (const items of buckets.values()) {
     if (items.length < 2) continue
     const leaders = items.filter(item => ['single','managed'].includes(item.row.serviceMode))
+    // Separate paid services can share a date and hospital. Grouping them would
+    // silently turn all but one into "shared" and drop their service requests.
+    if (leaders.length > 1) continue
     const leader = leaders[0] || items[0]
     const mode = leader.row.serviceMode || 'reminder'
     if (items.some(item => !['reminder','single','managed'].includes(item.row.serviceMode || 'reminder')) ||

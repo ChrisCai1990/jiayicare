@@ -27,3 +27,14 @@ test('同院同日保存后归并，异日只提示，保留手动分开的安�
   assert.equal(autoGroupAnnualVisits(result), result)
   assert.deepEqual(nearDateCandidates(result).map(e => e.index).sort(), [0, 1, 2])
 })
+
+test('同日同院的多个单项服务分别保留，推送时不能自动变成随同办理', () => {
+  const records = [
+    { items: '胃镜评估', hospital: '邵逸夫医院', time: '2026-11-28', serviceMode: 'single', serviceType: 'proxy_booking' },
+    { items: '进一步检查', hospital: '邵逸夫医院', time: '2026-11-28', serviceMode: 'single', serviceType: 'escort_exam' },
+  ]
+  const data = { abnormal_followup: { records } }
+  assert.equal(autoGroupAnnualVisits(data), data)
+  assert.deepEqual(records.map(row => row.serviceMode), ['single', 'single'])
+  assert.deepEqual(records.map(row => row.visitGroupId), [undefined, undefined])
+})
