@@ -598,7 +598,8 @@ router.post('/patients/:patientId/ai-case-reviews', staffAuth, async (req, res) 
     const title = String(req.body.title || '').trim();
     if (!title) return res.status(400).json({ success: false, message: '请输入研判主题' });
     if (req.body.reviewType === 'annual') {
-      const eligibility = await require('../utils/annualReviewEligibility').check(user._id);
+      const eligibility = await require('../utils/annualReviewEligibility').checkForAnnualPlan(user._id,
+        Number(req.body.annualPlanYear || req.body.year) || new Date().getFullYear(), { lookbackMonths: 12 });
       if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
     }
     let proposedTargets;
@@ -630,7 +631,8 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId', staffAuth, async (
     if (req.body.title !== undefined) topic.title = String(req.body.title).trim();
     if (req.body.description !== undefined) topic.description = String(req.body.description).trim();
     if (req.body.reviewType === 'annual' && topic.reviewType !== 'annual') {
-      const eligibility = await require('../utils/annualReviewEligibility').check(user._id);
+      const eligibility = await require('../utils/annualReviewEligibility').checkForAnnualPlan(user._id,
+        Number(topic.annualPlanYear || req.body.annualPlanYear || req.body.year) || new Date().getFullYear(), { lookbackMonths: 12 });
       if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
     }
     if (req.body.reviewType !== undefined && VALID_REVIEW_TYPES.has(req.body.reviewType)) topic.reviewType = req.body.reviewType;
@@ -820,7 +822,8 @@ router.patch('/patients/:patientId/ai-case-reviews/:topicId/messages/:messageId'
     const topic = await AiCaseReview.findOne({ _id: req.params.topicId, user: user._id });
     if (!topic) return res.status(404).json({ success: false, message: '研判主题不存在' });
     if (topic.reviewType === 'annual') {
-      const eligibility = await require('../utils/annualReviewEligibility').check(user._id);
+      const eligibility = await require('../utils/annualReviewEligibility').checkForAnnualPlan(user._id,
+        Number(topic.annualPlanYear) || new Date().getFullYear(), { lookbackMonths: 12 });
       if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
     }
     if (topic.generation?.status === 'running') return res.status(409).json({ success: false, message: 'AI正在回复，请等待本轮完成后修改' });

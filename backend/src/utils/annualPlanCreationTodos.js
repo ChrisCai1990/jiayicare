@@ -31,7 +31,7 @@ function buildTodo(patient, year, plans, now) {
   return {
     id: `annual_plan_create_${id}_${year}`, type: 'annual_plan_create',
     label: draft ? '年度管理方案草稿待完成' : '年度管理方案待建立', priority: 2,
-    patientId: id, patientName: patient.name || '未知',
+    patientId: id, patientName: patient.name || '未知', year,
     summary: `${year}年度 · ${draft ? '已有草稿，请完善并审核推送' : '年度会员尚未建立管理方案，请核对资料后建立'}`,
     createdAt, overdue: now - new Date(createdAt) > 3 * DAY,
     link: `/patients/${id}/annual-health?year=${year}`,
@@ -75,7 +75,12 @@ async function loadAnnualPlanCreationTodos(staff, now = new Date(), deps = {}) {
     if (!byPatient.has(id)) byPatient.set(id, []);
     byPatient.get(id).push(report);
   });
-  return candidates.filter(todo => eligibility(byPatient.get(todo.patientId) || [], now, { lookbackMonths: 3 }).allowed);
+  return candidates.filter(todo => {
+    const renewal = plans.some(plan => String(plan.patientId) === todo.patientId
+      && Number(plan.year) < Number(todo.year) && plan.confirmedAt);
+    return eligibility(byPatient.get(todo.patientId) || [], now,
+      { lookbackMonths: 3, allowHistoricalFullExam: !renewal }).allowed;
+  });
 }
 
 module.exports = { loadAnnualPlanCreationTodos, buildTodo, planYear };
