@@ -207,6 +207,11 @@
 .sg-task {display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #d7e5e1;padding:8px;}
 .sg-mention-badge {color:#b42318;font-size:12px;background:#fff0ed;padding:3px 7px;border-radius:6px;}
 .sg-file-control {display:flex;align-items:center;justify-content:center;flex:0 0 40px;width:40px;height:44px;border:1px solid #d8e2dc;border-radius:8px;background:#fff;color:#1e6b50;font-size:26px;cursor:pointer;box-sizing:border-box;}
+.service-assistant .sg-file-control input[type="file"] {display:none;}
+.sg-message-image {display:block;max-width:min(260px,100%);max-height:260px;width:auto;height:auto;object-fit:contain;border-radius:8px;}
+.sg-pending-image {display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.sg-pending-image img {width:56px;height:56px;object-fit:cover;border-radius:7px;}
+.sg-pending-image button {font-size:12px;padding:5px 8px;min-width:0;}
 .sg-pending-file {max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#1e6b50;}
 .sg-pending-file button {font-size:12px;padding:2px 5px;}
 .sg-mention-links button {padding:3px 6px;font-size:12px;color:#187e87;background:#eaf8f8;}

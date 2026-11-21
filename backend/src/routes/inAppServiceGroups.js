@@ -96,8 +96,8 @@ async function serializeMessages(group,rows) {
     return { id:row.materialReportId, title:report?.title || '医疗资料', status:materials.statusOf(report),
       mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signStoredUrl(url,report.ossKeys?.[i] || '')) };
   };
-  const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId}).select('senderName content audioUrl fileUrl materialReportId').lean();
-  const quoteMap=new Map(quoted.map(q=>[String(q._id),{id:q._id,senderName:q.senderName,content:q.audioUrl?'[语音消息]':q.fileUrl?'[文件]':q.materialReportId?'[医疗资料]':q.content.slice(0,180)}]));
+  const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId}).select('senderName content audioUrl fileUrl fileMimeType materialReportId').lean();
+  const quoteMap=new Map(quoted.map(q=>[String(q._id),{id:q._id,senderName:q.senderName,content:q.audioUrl?'[语音消息]':q.fileUrl?(q.fileMimeType?.startsWith('image/')?'[图片]':'[文件]'):q.materialReportId?'[医疗资料]':q.content.slice(0,180)}]));
   return rows.map(row => ({ id: row._id, quote:row.quotedMessageId?(quoteMap.get(String(row.quotedMessageId))||{unavailable:true,content:'原消息已不可用'}):null, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
@@ -283,10 +283,11 @@ staffRouter.post('/:groupId/voice',wrap(async(req,res)=>{
 staffRouter.post('/:groupId/files',wrap(async(req,res)=>{
  const {group,patient}=await groupAndPatient(req.params.groupId,req.staff.tenantId);
  if(!canStaffAccess(group,patient,req.staff))fail('仅当前入群服务人员可以发送文件');
- const file=require('../utils/chatFile').validate(req.body?.file),oss=require('../utils/oss');
+ const chatFile=require('../utils/chatFile');
+ const file=req.body?.file?.mimeType?.startsWith('image/')?chatFile.validateGroupImage(req.body.file):chatFile.validate(req.body?.file),oss=require('../utils/oss');
  const saved=await oss.uploadBuffer(file.buffer,file.mimeType,'messages/files');
  try{
-  const message=await send(group,'staff',req.staff,contentOf(req.body?.content)||'[文件]',[],
+  const message=await send(group,'staff',req.staff,contentOf(req.body?.content)||(file.mimeType.startsWith('image/')?'[图片]':'[文件]'),[],
     {fileUrl:saved.url,fileName:file.name,fileMimeType:file.mimeType,fileSize:saved.size},req.body?.quotedMessageId);
   res.status(201).json({success:true,data:message});
  }catch(error){if(!await Message.exists({groupId:group._id,fileUrl:saved.url}))await oss.deleteFile(saved.key);throw error;}
@@ -471,7 +472,8 @@ const historyHandler=wrap(async(req,res)=>{
   if(['image','file'].includes(req.query.kind)) {
     const reports=await MedicalReport.find({sourceInAppGroupId:group._id,user:group.patientId,tenantId:group.tenantId,
       mimeType:req.query.kind==='image'?/^image\//:'application/pdf'}).select('_id').lean();
-    filter.materialReportId={$in:reports.map(r=>r._id)};
+    filter.$or=[{materialReportId:{$in:reports.map(r=>r._id)}},
+      {fileMimeType:req.query.kind==='image'?/^image\//:{$in:['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.openxmlformats-officedocument.presentationml.presentation']}}];
   }
   const data=await recentMessages(group,req.query.before,filter);
   await logHistoryView(req,group,data.length,observed);

@@ -61,8 +61,8 @@ export default function ServiceGroupHistory({group,onClose,initialMessageId=null
         {!busy&&!(context?.data || rows).length&&<p>未找到聊天记录，请调整关键词、日期或类型。</p>}
         {(context?.data || rows).map(message=><article key={message.id} ref={String(message.id)===String(context?.anchorId)?anchor:null} className={String(message.id)===String(context?.anchorId)?'gh-anchor':''}>
           <small>{message.senderName} · {roles[message.senderRole] || '服务成员'} · {stamp(message.createdAt)}</small>
-          {message.audioUrl?<GroupVoiceMessage groupId={group.id} message={message}/>:(!message.fileUrl || message.content!=='[文件]')&&<p>{message.content}</p>}
-          {message.fileUrl&&<a href={message.fileUrl} target="_blank" rel="noreferrer" download={message.fileName}>📎 {message.fileName||'查看文件'}</a>}
+          {message.audioUrl?<GroupVoiceMessage groupId={group.id} message={message}/>:(!message.fileUrl || !['[文件]','[图片]'].includes(message.content))&&<p>{message.content}</p>}
+          {message.fileUrl&&(message.fileMimeType?.startsWith('image/')?<a href={message.fileUrl} target="_blank" rel="noreferrer" aria-label={message.fileName||'查看图片'}><img className="gh-message-image" src={message.fileUrl} alt={message.fileName||'聊天图片'}/></a>:<a href={message.fileUrl} target="_blank" rel="noreferrer" download={message.fileName}>📎 {message.fileName||'查看文件'}</a>)}
           {message.material&&<div><small>{message.material.title} · {message.material.status}</small>
             <div className="gh-files">{(message.material.files||[]).map((url,i)=><a key={i} href={url} target="_blank" rel="noreferrer">{message.material.mimeType==='application/pdf'?'查看PDF原件':<img src={url} alt={`资料第${i+1}页`}/>}</a>)}</div>
           </div>}
