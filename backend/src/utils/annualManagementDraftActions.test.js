@@ -1,6 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { draftPlanActions, validatePlanCoverage, managementTargets } = require('./annualManagementEvidence');
+const { normalizeAction } = require('./annualManagementAction');
+
+test('日常监测逐项保存，血压与体重独立带入方案并逐项校验', () => {
+  const timing = { monitoring: { items: [{ type: 'bloodPressure', time: '睡前' }, { type: 'weight', time: '晨起' }] } };
+  const normalized = normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: timing });
+  assert.deepEqual(normalized.directionTimings.monitoring.items, timing.monitoring.items);
+  assert.throws(() => normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: { monitoring: { items: [{ type: 'weight', time: '' }] } } }), /监测时间/);
+  const evidence = [{ id: 'management_issue:1', content: { direction: 'monitoring', problem: '糖尿病', directionTimings: normalized.directionTimings } }];
+  const actions = draftPlanActions(evidence);
+  assert.deepEqual(actions.map(action => action.record.items), ['血压', '体重']);
+  assert.equal(validatePlanCoverage({ monitoring: { records: actions.map(action => action.record) } }, evidence), '');
+  assert.match(validatePlanCoverage({ monitoring: { records: [actions[0].record] } }, evidence), /日常监测项目/);
+});
 
 test('已确认复查进入方案复查条目，营养问题合并为一个评估', () => {
   const evidence = [

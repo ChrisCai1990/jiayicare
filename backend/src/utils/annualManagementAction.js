@@ -4,6 +4,19 @@ const { addMonths } = require('./annualReviewPlan');
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
 
 function normalizeTiming(timing = {}, direction = '') {
+  if (direction === 'monitoring' && Array.isArray(timing.items)) {
+    const metricTypes = new Set(['bloodPressure', 'bloodSugar', 'waist', 'heartRate', 'weight', 'sleep', 'mood', 'diet', 'exercise', 'water', 'bowel', 'smoking', 'alcohol']);
+    const seen = new Set();
+    if (!timing.items.length || timing.items.length > metricTypes.size) fail('请至少选择一项日常监测项目');
+    const items = timing.items.map(item => {
+      const type = String(item?.type || '').trim();
+      const time = String(item?.time || '').trim();
+      if (!metricTypes.has(type) || seen.has(type) || !time || time.length > 60) fail('请核对日常监测项目和监测时间');
+      seen.add(type);
+      return { type, time };
+    });
+    return { mode: 'pending', firstDueDate: '', frequency: '', items };
+  }
   const mode = String(timing.mode || 'pending');
   if (!['pending', 'single', 'rolling'].includes(mode)) fail('请选择有效的执行方式');
   const intervalBased = timing.dateBasis === 'interval';

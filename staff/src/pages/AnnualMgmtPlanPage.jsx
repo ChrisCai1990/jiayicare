@@ -21,7 +21,6 @@ import AnnualPlanTrackView from '../components/AnnualPlanTrackView'
 import AnnualNutritionAdvisorTargets from '../components/AnnualNutritionAdvisorTargets'
 import nutritionAdvisorTargets from '../../../shared/annualNutritionAdvisorTargets.cjs'
 import PublishedAnnualConsensus from '../components/PublishedAnnualConsensus'
-import ManualMonitoringTrial from '../components/ManualMonitoringTrial'
 import { annualPlanReturnTarget } from '../utils/annualPlanNavigation.mjs'
 import { CONSENSUS_TOPICS } from '../utils/annualConsensusTopics.mjs'
 import assessmentCriteria from '../../../shared/annualAssessmentCriteria.json'
@@ -1235,7 +1234,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }}
     consensusTopics={CONSENSUS_TOPICS} canAddConsensus={canEdit && !pushedAt && !moduleData.health_consensus?.records?.length}
     onConsensus={() => editDraftItem('health_consensus')}
-    manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
     monitoringRecords={moduleData.monitoring?.enabled === false ? [] : moduleData.monitoring?.records || []}
     consensusEditor={canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualConsensus patientId={id} plan={plansByType[planType]} topics={CONSENSUS_TOPICS} toast={toast}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />} />
@@ -1331,8 +1329,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOptionalIncluded(key, removed)}>{removed ? '恢复此项' : '移除本项'}</button>}
               {!removed && <>{key !== 'monitoring' && actions.map(action => <div key={action.index} id={`annual-operation-${key}-${action.index}`}>{renderPlanAction(action, true)}</div>)}
                 {canEdit && key === 'health_consensus' && <label><input type="checkbox" checked={data?.shareWithCustomer === true} onChange={event => handleModuleChange(key, 'shareWithCustomer', event.target.checked)} /> 将沟通主题和日期纳入客户方案</label>}
-                {key === 'monitoring' && (canEdit && !pushedAt ? <ModulePanel moduleKey="monitoring" def={MODULE_DEFS.monitoring} data={data || { enabled: true, records: [] }} onChange={handleModuleChange} /> : (data?.records || []).map((row, index) => <div key={index}>{row.items || '监测项目待确认'} · {row.measurementPeriod || row.time || '时段待确认'} · {row.frequency || '频次待确认'}</div>))}
-                {canEdit && key === 'monitoring' && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
+                {key === 'monitoring' && (data?.records || []).map((row, index) => <div key={index}>{row.items || '监测项目待确认'} · {row.measurementPeriod || row.time || '监测时间待确认'}</div>)}
                 {canEdit && (key === 'vaccine' || !actions.length && key !== 'monitoring') && <button type="button" className="btn btn-secondary btn-sm" onClick={() => editDraftItem(key, actions.length)}>{key === 'annual_checkup' ? '安排体检日期、机构与服务方式' : key === 'vaccine' ? '添加疫苗接种' : '安排当前沟通主题'}</button>}
               </>}
             </details>
@@ -1473,7 +1470,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           {!!generationCoverage.length && <details style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.filter(item => !item.complete).map(item => (
-              <div key={item.key} style={{ fontSize: 13, color: item.complete ? '#287A50' : '#9A5B13' }}>{item.complete ? '✓' : '○'} {item.label}{item.waived ? '（已说明豁免）' : ''}</div>
+              <div key={item.key} style={{ fontSize: 13, color: '#9A5B13' }}>○ {item.key === 'complete_checkup' ? <button type="button" className="btn btn-link" style={{ padding: 0, fontSize: 13, color: '#9A5B13', textDecoration: 'underline' }} onClick={() => nav(`/patients/${id}?tab=reports${item.reportId ? `&reportId=${encodeURIComponent(item.reportId)}` : ''}&annualWorkflowYear=${year}&workflowStep=interpretation`)}>{item.label} → 查看问题</button> : item.label}{item.detail && <div style={{ marginTop: 4, color: '#744315' }}>{item.detail}</div>}</div>
             ))}
           </div>
           <details style={{ marginTop: 8, fontSize: 12, color: '#62776A' }}><summary>已完成 {preparation.checklist.progress.completed} 项</summary><div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>{preparation.checklist.items.filter(item => item.complete).map(item => <span key={item.key}>✓ {item.label}</span>)}</div></details>

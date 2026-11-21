@@ -226,6 +226,7 @@ function generationActionEvidence(evidence = []) {
 // never schedules an appointment or writes a plan; the advisor reviews the draft.
 function draftPlanActions(evidence = []) {
   const actions = [];
+  const monitoringLabels = { bloodPressure: '血压', bloodSugar: '血糖', waist: '腰围', heartRate: '心率', weight: '体重', sleep: '睡眠', mood: '情绪', diet: '饮食', exercise: '运动', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒' };
   for (const group of require('./annualReviewPlan').reviewGroups(evidence)) {
     actions.push({ key: 'abnormal_followup', record: {
       sourceIds: group.sourceIds, reviewGroupVersion: 1, reviewItems: group.items,
@@ -240,6 +241,14 @@ function draftPlanActions(evidence = []) {
   };
   for (const item of evidence) {
     const content = item.content || {};
+    if (directionsOf(content).includes('monitoring')) {
+      for (const selected of content.directionTimings?.monitoring?.items || []) {
+        if (monitoringLabels[selected.type]) actions.push({ key: 'monitoring', record: {
+          sourceIds: [item.id], metricType: selected.type, items: monitoringLabels[selected.type],
+          measurementPeriod: selected.time, reviewStatus: 'pending_family_doctor_review',
+        } });
+      }
+    }
     for (const direction of directionsOf(content)) {
     if (content.reviewPlan?.kind === 'recheck' && direction === 'abnormal_followup' || !fields[direction]) continue;
     const timing = content.directionTimings?.[direction] || (!Object.keys(content.directionTimings || {}).length && direction === content.direction ? content.actionTiming : null);
@@ -302,6 +311,13 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
     const key = direction === 'ongoing_management' ? 'personalized_followups' : direction;
     const module = moduleData[key];
     const rows = module?.enabled === false ? [] : Array.isArray(module?.records) ? module.records : module ? [module] : [];
+    if (direction === 'monitoring' && Array.isArray(source.content.directionTimings?.monitoring?.items)) {
+      const labels = { bloodPressure: '血压', bloodSugar: '血糖', waist: '腰围', heartRate: '心率', weight: '体重', sleep: '睡眠', mood: '情绪', diet: '饮食', exercise: '运动', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒' };
+      if (!source.content.directionTimings.monitoring.items.every(item => rows.some(row => row.sourceIds?.includes(source.id)
+        && row.metricType === item.type && row.items === labels[item.type] && row.measurementPeriod === item.time)))
+        return `“${source.content.problem}”的日常监测项目或时间尚未进入方案，请重新带入`;
+      continue;
+    }
     if (!rows.some(row => Array.isArray(row.sourceIds) && row.sourceIds.includes(source.id)
       && (isReview ? source.content.reviewPlan.items.every(item => row.reviewItems?.includes(item))
         : direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {

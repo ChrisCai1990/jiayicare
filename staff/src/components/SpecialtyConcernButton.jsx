@@ -4,6 +4,7 @@ import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs
 import { annualManagementSourceKey, findAnnualManagementDecision } from '../utils/annualManagementDecision.mjs'
 import DateField from '../../../shared/DateField.jsx'
 import annualAppointment from '../../../shared/annualAppointment.cjs'
+import { MONITORING_METRICS, MONITORING_PERIODS } from '../utils/monitoringMetrics'
 
 const supportsInterval = direction => ['medical_treatment', 'checkup_completion'].includes(direction)
 const DIRECTIONS = [
@@ -34,6 +35,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [title, setTitle] = useState(''), [directions, setDirections] = useState([]), [note, setNote] = useState('')
   const [goal, setGoal] = useState('')
   const [directionTimings, setDirectionTimings] = useState({})
+  const [monitoringItems, setMonitoringItems] = useState([])
   const [reviewKind, setReviewKind] = useState('none'), [reviewMonths, setReviewMonths] = useState('3'), [reviewItems, setReviewItems] = useState('')
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
   const [reviewDepartment, setReviewDepartment] = useState('')
@@ -99,13 +101,14 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     if (!pilot && planCheck.plan && (!amendment.reason.trim() || !amendment.advice.trim() || amendment.changeReason.trim().length < 2 || amendment.date && !amendment.timingReason.trim())) {
       setError('请填写资料依据、处理建议和修订原因；填写日期时还需时间依据'); return
     }
-    if (title.trim().length < 2 || !directions.length || pilot && !goal.trim()) { setError(pilot ? '请填写具体问题、管理方向和整体目标' : '请填写具体问题和管理方向'); return }
+    if (title.trim().length < 2 || !directions.length || pilot && !goal.trim() && !(directions.length === 1 && hasDirection('monitoring'))) { setError(pilot ? '请填写具体问题、管理方向和整体目标' : '请填写具体问题和管理方向'); return }
+    if (pilot && hasDirection('monitoring') && (!monitoringItems.length || monitoringItems.some(item => !item.time.trim()))) { setError('请勾选监测项目，并填写每项的监测时间'); return }
     setBusy(true); setError('')
     try {
       const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, directions, note: note.trim(),
-        ...(pilot ? { goal: goal.trim(), action: '', directionTimings: Object.fromEntries(directions
+        ...(pilot ? { goal: goal.trim() || '按选定项目与时间完成日常监测', action: '', directionTimings: Object.fromEntries(directions
           .filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value)))
-          .map(value => { const timing = timingFor(value); return [value, { mode: timing.mode || 'pending',
+          .map(value => { if (value === 'monitoring') return [value, { mode: 'pending', items: monitoringItems.map(item => ({ type: item.type, time: item.time.trim() })) }]; const timing = timingFor(value); return [value, { mode: timing.mode || 'pending',
             firstDueDate: supportsInterval(value) && timing.mode !== 'pending' && timing.dateBasis === 'interval' ? '' : timing.firstDueDate || '',
             frequency: timing.mode === 'rolling' ? timing.frequency || '' : '',
             ...(supportsInterval(value) && timing.mode !== 'pending' && timing.dateBasis === 'interval'
@@ -158,6 +161,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setDirectionTimings(saved?.directionTimings && Object.keys(saved.directionTimings).length ? saved.directionTimings
         : saved?.actionTiming && legacyTimingDirection && !(saved?.reviewPlan?.kind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(legacyTimingDirection))
           ? { [legacyTimingDirection]: saved.actionTiming } : {})
+      setMonitoringItems(Array.isArray(saved?.directionTimings?.monitoring?.items) ? saved.directionTimings.monitoring.items : [])
       setWithdrawReason(null); setAdoptLegacy(false); setError(''); setOpen(true)
       setAmendment({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
       setReviewKind(savedDirections.includes('abnormal_followup') || saved?.reviewPlan?.kind === 'recheck' ? 'recheck' : 'none')
@@ -178,7 +182,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
         <div role="group" aria-label="管理方向（可多选）" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>{DIRECTIONS.filter(([value]) => (value !== 'ongoing_management' || savedDirections.includes(value)) && (!symptomSource || ['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(value))).map(([value, label]) => <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 8px', border: `1px solid ${hasDirection(value) ? '#17694D' : '#DDE6E0'}`, borderRadius: 7, cursor: 'pointer', background: hasDirection(value) ? '#F1F8F3' : '#FFF' }}><input type="checkbox" checked={hasDirection(value)} disabled={drafting} onChange={() => toggleDirection(value)} />{label}</label>)}</div>
-        {pilot && <><label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
+        {pilot && !(directions.length === 1 && hasDirection('monitoring')) && <><label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
         <textarea className="form-input" rows={2} maxLength={240} value={goal} onChange={e => setGoal(e.target.value)} placeholder="写出本年度要达到或明确的可核对结果；缺少基线时先以建立基线为目标" />
         <button type="button" className="btn btn-secondary btn-sm" disabled={drafting || busy || !direction || !title.trim()} onClick={draft} style={{ marginTop: 8 }}>
           {drafting ? 'AI 起草中…' : 'AI 起草空白目标'}
@@ -202,7 +206,14 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <input className="form-input" maxLength={100} value={reviewDepartment} onChange={e => setReviewDepartment(e.target.value)} placeholder="例如：消化内科；不同专科请分别归属" />
           <div style={{ fontSize: 12, color: '#65776F' }}>同一月份、同一专科的项目归为一次就诊复查；先由专科医生评估并开单，再完成检查及结果回顾。</div>
         </div>}</>}
-        {pilot && directions.filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value))).map(value => {
+        {pilot && hasDirection('monitoring') && <div style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
+          <strong>日常监测 · 勾选项目并填写监测时间</strong>
+          {MONITORING_METRICS.map(([type, label]) => { const selected = monitoringItems.find(item => item.type === type); return <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
+            <label style={{ minWidth: 76 }}><input type="checkbox" checked={!!selected} onChange={e => setMonitoringItems(previous => e.target.checked ? [...previous, { type, time: MONITORING_PERIODS[type]?.[0] || '' }] : previous.filter(item => item.type !== type))} /> {label}</label>
+            {selected && <><input className="form-input" aria-label={`${label}监测时间`} maxLength={60} list={`monitoring-period-${type}`} value={selected.time} onChange={e => setMonitoringItems(previous => previous.map(item => item.type === type ? { ...item, time: e.target.value } : item))} placeholder="监测时间" style={{ flex: 1 }} /><datalist id={`monitoring-period-${type}`}>{(MONITORING_PERIODS[type] || []).map(period => <option key={period} value={period} />)}</datalist></>}
+          </div> })}
+        </div>}
+        {pilot && directions.filter(value => value !== 'monitoring' && !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value))).map(value => {
           const timing = timingFor(value)
           const intervalAction = supportsInterval(value)
           const actionLabel = value === 'medical_treatment' ? '就医' : '检查'

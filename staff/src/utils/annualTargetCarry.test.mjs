@@ -2,6 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { carryAnnualTargets } from './annualTargetCarry.mjs'
 
+test('血压和体重作为独立监测草稿承接，调整时间和取消选项同步更新', () => {
+  const targets = [{ issueId: 'monitor:1', sourceGoal: '日常监测' }]
+  const draft = (type, label, time) => ({ key: 'monitoring', record: { sourceIds: ['monitor:1'], metricType: type, items: label, measurementPeriod: time } })
+  const first = carryAnnualTargets({}, targets, [draft('bloodPressure', '血压', '睡前'), draft('weight', '体重', '晨起')])
+  assert.deepEqual(first.modules.monitoring.records.map(row => row.items), ['血压', '体重'])
+  assert.equal(carryAnnualTargets(first.modules, targets, [draft('bloodPressure', '血压', '睡前'), draft('weight', '体重', '晨起')]).changed, false)
+  const changed = carryAnnualTargets(first.modules, targets, [draft('bloodPressure', '血压', '晨起')]).modules.monitoring.records
+  assert.deepEqual(changed.map(row => [row.items, row.measurementPeriod]), [['血压', '晨起']])
+})
+
 test('未发布草稿承接新增筛查事项并保留顾问编辑，营养评估保持参与', () => {
   const modules = { management_targets: { records: [{ issueId: 'management_issue:1', sourceGoal: '持续管理或观察',
     goal: '顾问调整后的目标', focus: '顾问调整后的重点', nutritionRelevant: false }] } }

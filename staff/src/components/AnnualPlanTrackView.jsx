@@ -20,7 +20,7 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, manualMonitoringEditor, monitoringRecords = [], latestCheckupDate = '', onEditItem }) {
+export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, monitoringRecords = [], latestCheckupDate = '', onEditItem }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -59,7 +59,7 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
     <div className="annual-track-stack">
       <AnnualPlanSection section="medical">{medical.map(renderGroup)}</AnnualPlanSection>
       <AnnualPlanSection section="management">{management.map(group => group[0] === '疫苗接种' && !itemsFor(group[1]).length ? <div key="vaccine-review" style={{ borderTop: '1px solid #E1EAE4', padding: '15px 0', fontSize: 13, color: '#62776A' }}><strong style={{ fontSize: 16, color: '#183E30' }}>疫苗接种</strong><div style={{ marginTop: 5 }}>当前方案未纳入接种事项；需核对接种史、检查结果和适宜性后决定。</div>{onEditItem && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditItem('vaccine')}>添加接种安排</button>}</div> : renderGroup(group))}
-        <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · {monitoringRecords.length ? '按年度方案选定项目执行' : '按已有基础计划执行'}</strong>{monitoringRecords.length > 0 && <div style={{ marginTop: 6 }}>{monitoringRecords.map((row, index) => <div key={index}>{row.items} · {row.measurementPeriod || row.time || '时段待确认'} · {row.frequency || '频次待确认'}</div>)}</div>}{manualMonitoringEditor}</div>
+        <div style={{ borderTop: '1px solid #E1EAE4', padding: '12px 0', fontSize: 13 }}><strong style={{ fontSize: 15 }}>日常监测 · {monitoringRecords.length ? '按年度方案选定项目执行' : '按已有基础计划执行'}</strong>{monitoringRecords.length > 0 && <div style={{ marginTop: 6 }}>{monitoringRecords.map((row, index) => <div key={index}>{row.items} · {row.measurementPeriod || row.time || '监测时间待确认'}</div>)}</div>}</div>
       </AnnualPlanSection>
       <AnnualPlanSection section="checkup">{renderGroup(['年度体检', ['annual_checkup']]) || <div style={{ marginTop: 12, fontSize: 13, color: '#62776A', lineHeight: 1.7 }}>
         <div>本方案尚未纳入下一次年度体检安排。{latestCheckupDate ? `已审核的最近一次完整体检日期：${latestCheckupDate}。` : ''}</div>
