@@ -11,7 +11,7 @@ function normalizeTiming(timing = {}, direction = '') {
     const items = timing.items.map(item => {
       const type = String(item?.type || '').trim();
       const time = String(item?.time || '').trim();
-      if (!metricTypes.has(type) || seen.has(type) || !time || time.length > 60) fail('请核对日常监测项目和监测时间');
+      if (!metricTypes.has(type) || seen.has(type) || (['bloodPressure', 'bloodSugar', 'weight'].includes(type) && !time) || time.length > 60) fail('请核对日常监测项目和监测时间');
       seen.add(type);
       return { type, time };
     });

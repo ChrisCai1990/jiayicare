@@ -8,6 +8,8 @@ test('日常监测逐项保存，血压与体重独立带入方案并逐项校�
   const normalized = normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: timing });
   assert.deepEqual(normalized.directionTimings.monitoring.items, timing.monitoring.items);
   assert.throws(() => normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: { monitoring: { items: [{ type: 'weight', time: '' }] } } }), /监测时间/);
+  assert.deepEqual(normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: { monitoring: { items: [{ type: 'waist', time: '' }, { type: 'bloodPressure', time: '晨起、中午、下午、睡前' }] } } }).directionTimings.monitoring.items,
+    [{ type: 'waist', time: '' }, { type: 'bloodPressure', time: '晨起、中午、下午、睡前' }]);
   const evidence = [{ id: 'management_issue:1', content: { direction: 'monitoring', problem: '糖尿病', directionTimings: normalized.directionTimings } }];
   const actions = draftPlanActions(evidence);
   assert.deepEqual(actions.map(action => action.record.items), ['血压', '体重']);

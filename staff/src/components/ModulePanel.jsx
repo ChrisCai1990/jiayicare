@@ -99,7 +99,7 @@ export function FieldInput({ field, value, onChange }) {
   if (field.type === 'monitoring-period') {
     const metric = MONITORING_METRICS.find(([, label]) => label === field.record?.items)?.[0]
     const options = MONITORING_PERIODS[metric] || []
-    return <><input type="text" value={value || ''} onChange={e => onChange(e.target.value)} placeholder="血压可标晨起／睡前；血糖可标空腹／餐后；体重一般晨起" style={inputStyle} />
+    return <><input type="text" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={options.length ? '可填写多个时段，用顿号分隔' : '无需标注监测时段'} style={inputStyle} />
       {!!options.length && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>{options.map(period => <button type="button" key={period} onClick={() => onChange(period)} style={{ fontSize: 12 }}>{period}</button>)}</div>}</>
   }
   if (field.type === 'medical-experts') return <MedicalExpertPicker field={field} value={value} onChange={onChange} />

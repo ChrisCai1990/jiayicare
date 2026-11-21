@@ -1329,7 +1329,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOptionalIncluded(key, removed)}>{removed ? '恢复此项' : '移除本项'}</button>}
               {!removed && <>{key !== 'monitoring' && actions.map(action => <div key={action.index} id={`annual-operation-${key}-${action.index}`}>{renderPlanAction(action, true)}</div>)}
                 {canEdit && key === 'health_consensus' && <label><input type="checkbox" checked={data?.shareWithCustomer === true} onChange={event => handleModuleChange(key, 'shareWithCustomer', event.target.checked)} /> 将沟通主题和日期纳入客户方案</label>}
-                {key === 'monitoring' && (data?.records || []).map((row, index) => <div key={index}>{row.items || '监测项目待确认'} · {row.measurementPeriod || row.time || '监测时间待确认'}</div>)}
+                {key === 'monitoring' && (data?.records || []).map((row, index) => <div key={index}>{row.items || '监测项目待确认'}{(row.measurementPeriod || row.time) && ` · ${row.measurementPeriod || row.time}`}</div>)}
                 {canEdit && (key === 'vaccine' || !actions.length && key !== 'monitoring') && <button type="button" className="btn btn-secondary btn-sm" onClick={() => editDraftItem(key, actions.length)}>{key === 'annual_checkup' ? '安排体检日期、机构与服务方式' : key === 'vaccine' ? '添加疫苗接种' : '安排当前沟通主题'}</button>}
               </>}
             </details>
