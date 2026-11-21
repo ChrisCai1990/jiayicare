@@ -16,6 +16,7 @@ const MedicalReport = require('../models/MedicalReport');
 const materials = require('../utils/inAppGroupMaterials');
 const StaffRole = require('../models/StaffRole');
 const assistant = require('../utils/serviceGroupAssistant');
+const customerMentionDisplay = require('../utils/groupCustomerMentionDisplay');
 const { assignmentFields, assignedIds, canUseGroupModule, isAssignedHealthManager, isAssignedLeader, canCustomerAccess, canStaffAccess,
   canMentorObserve, needsStaffReply, same } = require('../utils/inAppServiceGroupPolicy');
 
@@ -209,7 +210,7 @@ customerRouter.get('/', wrap(async (req, res) => {
     ({ ...summary(group, req.user, await groupStaff(group, req.user)),
       unreadCount: await InboxMessage.countDocuments({ user: req.user._id, unread: true, 'action.type': 'service_group', 'action.groupId': String(group._id) }),
       mentionCount: await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,mentions:{$elemMatch:{id:req.user._id,kind:'customer'}},mentionReadBy:{$ne:req.user._id}}),
-      preview: (await Message.findOne({ groupId: group._id, tenantId: group.tenantId }).sort({ createdAt: -1, _id: -1 }).select('content').lean())?.content?.slice(0, 100) || '' }))) });
+      preview: customerMentionDisplay.removeCustomerRoleLabel((await Message.findOne({ groupId: group._id, tenantId: group.tenantId }).sort({ createdAt: -1, _id: -1 }).select('content').lean())?.content || '', req.user.name).slice(0, 100) }))) });
 }));
 customerRouter.post('/', wrap(async (req, res) => {
   fail('请等待健管专员配置服务群成员', 409);
@@ -224,7 +225,7 @@ customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const firstUnread = data.find(row => unreadKeys.has(`in-app-service-group:${row.id}`));
   if (unread.length) await InboxMessage.updateMany({ user: req.user._id, _id: { $in: unread.map(row => row._id) }, unread: true }, { $set: { unread: false, readAt: new Date() } });
   await Message.updateMany({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},mentions:{$elemMatch:{id:req.user._id,kind:'customer'}}},{$addToSet:{mentionReadBy:req.user._id}});
-  res.json({ success: true, data, hasMore: data.length === 100, firstUnreadMessageId: firstUnread?.id || null });
+  res.json({ success: true, data: data.map(message => customerMentionDisplay.forCustomer(message, req.user.name)), hasMore: data.length === 100, firstUnreadMessageId: firstUnread?.id || null });
 }));
 async function transcribeGroupMessage(req,res){
  const {group,observed}=await readableHistoryGroup(req);
@@ -477,7 +478,7 @@ const historyHandler=wrap(async(req,res)=>{
   }
   const data=await recentMessages(group,req.query.before,filter);
   await logHistoryView(req,group,data.length,observed);
-  res.json({success:true,data:[...data].reverse(),hasMore:data.length===100,nextBefore:data[0]?.id || null});
+  res.json({success:true,data:[...data].reverse().map(message => req.user ? customerMentionDisplay.forCustomer(message, req.user.name) : message),hasMore:data.length===100,nextBefore:data[0]?.id || null});
 });
 const historyContextHandler=wrap(async(req,res)=>{
   const {group,observed}=await readableHistoryGroup(req);
@@ -490,7 +491,7 @@ const historyContextHandler=wrap(async(req,res)=>{
   ]);
   const data=await serializeMessages(group,[...before.reverse(),anchor,...after]);
   await logHistoryView(req,group,data.length,observed);
-  res.json({success:true,data,anchorId:anchor._id});
+  res.json({success:true,data:req.user ? data.map(message => customerMentionDisplay.forCustomer(message, req.user.name)) : data,anchorId:anchor._id});
 });
 for(const router of [staffRouter,customerRouter]) {
  router.get('/:groupId/history',historyHandler);

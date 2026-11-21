@@ -7,7 +7,7 @@ export const MONITORING_METRICS = [
 ]
 
 export const MONITORING_PERIODS = {
-  bloodPressure: ['晨起', '睡前', '其他时段'],
-  bloodSugar: ['空腹', '早餐后2小时', '午餐后2小时', '晚餐后2小时', '睡前', '其他时段'],
-  weight: ['晨起', '其他时段'],
+  bloodPressure: ['晨起', '中午', '下午', '睡前'],
+  bloodSugar: ['空腹', '早餐后', '午餐后', '晚餐后', '睡前'],
+  weight: ['晨起'],
 }

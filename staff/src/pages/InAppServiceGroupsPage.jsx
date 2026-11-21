@@ -11,6 +11,7 @@ import './InAppServiceGroupsPage.css';
 const categories = [['advisor','健康顾问','嘉医服务群'],['nutrition','营养师','营养干预服务群'],['medical','就医专员','就医服务群'],['specialty','专科医师','专病管理群']];
 const stamp = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '暂无消息';
 const roleLabel = person => person.kind === 'customer' ? '客户' : ({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', ai:'AI健康管家', customer: '客户' })[person.role] || person.role || '服务人员';
+const mentionLabel = person => person.kind === 'customer' || person.role === '客户' ? person.name : `${person.name}（${roleLabel(person)}）`;
 const memberLabel = person => `${person.name} · ${roleLabel(person)}`;
 
 export default function InAppServiceGroupsPage() {
@@ -193,7 +194,7 @@ export default function InAppServiceGroupsPage() {
     if (!selected || (!draft.trim() && !pendingFile) || busy || attaching) return;
     setBusy(true); setError('');
     try { if (pendingFile) await api.sendFile(selected.id,pendingFile,draft.trim(),quote?.id);
-      else await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+p.name+'（'+roleLabel(p)+'）'))),quote?.id);
+      else await api.send(selected.id, draft.trim(), mentionIds.filter(id=>mentionCandidates.some(p=>String(p.id)===id && draft.includes('@'+mentionLabel(p)))),quote?.id);
       setPendingFile(null);setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft('');setQuote(null);setQuoteMenu(null); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
     catch (e) { setError(e.message || '发送失败'); }
     finally { setBusy(false); }
@@ -206,7 +207,7 @@ export default function InAppServiceGroupsPage() {
     catch(e){setError(e.message || '确认失败，请刷新后重试');}finally{setBusy(false);}
   };
   const mentionCandidates = selected ? [...selected.staff, {...selected.customer,role:'客户'}, {...selected.assistant,role:'ai'}].filter(p=>p.id) : [];
-  const mention = person => {setMentionIds(ids=>[...new Set([...ids,String(person.id)])]);const label=person.name+'（'+roleLabel(person)+'）';setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+label+' '+text.slice(at+1):text+'@'+label+' ';});setShowMentions(false);};
+  const mention = person => {setMentionIds(ids=>[...new Set([...ids,String(person.id)])]);const label=mentionLabel(person);setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+label+' '+text.slice(at+1):text+'@'+label+' ';});setShowMentions(false);};
   const visibleGroups = groups.filter(group => scope === 'all' ||
     scope === 'supervised' && group.supervised ||
     scope === 'pending' && group.waitingForStaff);
