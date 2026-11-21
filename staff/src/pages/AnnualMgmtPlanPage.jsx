@@ -158,7 +158,8 @@ const MODULE_DEFS = {
   monitoring: {
     name: '自动监测提醒', icon: '📊', multi: true, summaryKey: 'items', summaryLabel: '监测项目',
     fields: [
-      { key: 'items',     label: '监测项目', type: 'text' },
+      { key: 'items',     label: '监测项目（每条一项）', type: 'monitoring-metrics' },
+      { key: 'measurementPeriod', label: '测量时段', type: 'monitoring-period' },
       { key: 'time',      label: '系统提醒时间', type: 'text', placeholder: '如：08:00' },
       { key: 'purpose',   label: '监测目的', type: 'textarea' },
       { key: 'frequency', label: '系统提醒频率', type: 'text', placeholder: '如：每日一次、每周一次' },
@@ -1235,6 +1236,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     consensusTopics={CONSENSUS_TOPICS} canAddConsensus={canEdit && !pushedAt && !moduleData.health_consensus?.records?.length}
     onConsensus={() => editDraftItem('health_consensus')}
     manualMonitoringEditor={canEdit && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
+    monitoringRecords={moduleData.monitoring?.enabled === false ? [] : moduleData.monitoring?.records || []}
     consensusEditor={canEdit && pushedAt && confirmedAt && plansByType[planType] && <PublishedAnnualConsensus patientId={id} plan={plansByType[planType]} topics={CONSENSUS_TOPICS} toast={toast}
       onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />} />
   const openDetailedAction = selector => {
@@ -1327,8 +1329,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             const actions = integratedActions.filter(action => action.key === key)
             return <details key={key} className="annual-plan-secondary"><summary>{label}{removed ? ' · 已移除' : ''}</summary>
               {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOptionalIncluded(key, removed)}>{removed ? '恢复此项' : '移除本项'}</button>}
-              {!removed && <>{actions.map(action => <div key={action.index} id={`annual-operation-${key}-${action.index}`}>{renderPlanAction(action, true)}</div>)}
+              {!removed && <>{key !== 'monitoring' && actions.map(action => <div key={action.index} id={`annual-operation-${key}-${action.index}`}>{renderPlanAction(action, true)}</div>)}
                 {canEdit && key === 'health_consensus' && <label><input type="checkbox" checked={data?.shareWithCustomer === true} onChange={event => handleModuleChange(key, 'shareWithCustomer', event.target.checked)} /> 将沟通主题和日期纳入客户方案</label>}
+                {key === 'monitoring' && (canEdit && !pushedAt ? <ModulePanel moduleKey="monitoring" def={MODULE_DEFS.monitoring} data={data || { enabled: true, records: [] }} onChange={handleModuleChange} /> : (data?.records || []).map((row, index) => <div key={index}>{row.items || '监测项目待确认'} · {row.measurementPeriod || row.time || '时段待确认'} · {row.frequency || '频次待确认'}</div>))}
                 {canEdit && key === 'monitoring' && <ManualMonitoringTrial patientId={id} year={year} staffList={staffList} assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''} toast={toast} />}
                 {canEdit && (key === 'vaccine' || !actions.length && key !== 'monitoring') && <button type="button" className="btn btn-secondary btn-sm" onClick={() => editDraftItem(key, actions.length)}>{key === 'annual_checkup' ? '安排体检日期、机构与服务方式' : key === 'vaccine' ? '添加疫苗接种' : '安排当前沟通主题'}</button>}
               </>}

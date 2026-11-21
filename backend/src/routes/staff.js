@@ -14297,13 +14297,13 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       });
       if (!hasTargetYearTumorReport) reusedTumorSection = incrementalBase.sections.tumor_risk;
     }
-    const { sections: genResult, failed, validationError } = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => generateHealthSummarySections(user, {
+    const { sections: genResult, failed, validationError } = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => withAiContext({ circuitScope: 'health_summary', actorId: String(req.staff._id), tenantId: String(req.staff.tenantId || ''), stage: scope === 'nutrition' ? 'lifestyle_summary' : 'five_dimension' }, () => generateHealthSummarySections(user, {
       scope,
       existingSections: prevEntry.sections || null,
       analysisYear: year,
       incrementalBase: recheckFromSources || needsTumorRefresh ? null : incrementalBase,
       reusedTumorSection: recheckFromSources || needsTumorRefresh ? null : reusedTumorSection,
-    }));
+    })));
     // AI返回解析失败或本该生成的板块是空壳内容：不写入数据库，直接报错，避免前端显示"已生成"却看不到内容
     // （2026-07-07 赵菲盈反馈"生活方式评估提示已生成但实际没有"即此场景——此前空壳会被当成功写入）
     if (failed) {
