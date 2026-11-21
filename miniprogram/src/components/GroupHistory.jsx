@@ -50,8 +50,8 @@ export default function GroupHistory({group,onClose,topInset=0,initialMessageId=
    {!busy&&!(context?.data||rows).length&&<Text>未找到聊天记录，请调整日期或关键词。</Text>}
    {(context?.data||rows).map(m=><View id={'history-'+m.id} key={m.id} style={{padding:'12px',marginBottom:'10px',background:'#fff',borderRadius:'10px',border:String(m.id)===String(context?.anchorId)?'2px solid #249c93':'1px solid #e0e9e5'}}>
     <Text style={{display:'block',fontSize:'12px',color:'#6a817a'}}>{m.senderName} · {new Date(m.createdAt).toLocaleString('zh-CN')}</Text>
-    {m.fileUrl&&<Text onClick={()=>openChatFile(m,group.id)} style={{display:'block',color:'#187e87',fontWeight:'700'}}>📎 {m.fileName||'查看文件'}</Text>}
-    <Text style={{display:'block',whiteSpace:'pre-wrap',wordBreak:'break-all',marginTop:'8px'}}>{m.audioUrl || (m.fileUrl&&m.content==='[文件]')?'':m.content}</Text>
+    {m.fileUrl&&<Text onClick={()=>openChatFile(m,group.id)} style={{display:'block',color:'#187e87',fontWeight:'700'}}>{m.fileMimeType?.startsWith('image/')?'🖼 查看图片':`📎 ${m.fileName||'查看文件'}`}</Text>}
+    <Text style={{display:'block',whiteSpace:'pre-wrap',wordBreak:'break-all',marginTop:'8px'}}>{m.audioUrl || (m.fileUrl&&['[文件]','[图片]'].includes(m.content))?'':m.content}</Text>
     {m.audioUrl&&<GroupVoiceMessage message={m} groupId={group.id}/>}
     {m.material&&(m.material.files||[]).map((url,i)=>m.material.mimeType==='application/pdf'?<Text key={i} style={{...button,display:'block'}} onClick={async()=>{try{if(process.env.TARO_ENV==='h5')window.location.assign(url);else{const file=await Taro.downloadFile({url});await Taro.openDocument({filePath:file.tempFilePath,fileType:'pdf'});}}catch{Taro.showToast({title:'原件打开失败',icon:'none'});}}}>查看PDF原件</Text>:<Image key={i} src={url} mode="aspectFit" style={{width:'100px',height:'100px'}} onClick={()=>Taro.previewImage({current:url,urls:m.material.files})}/>)}
     {!context&&<Text onClick={()=>!busy&&open(m.id)} style={{...button,display:'block'}}>查看前后对话</Text>}
