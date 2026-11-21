@@ -85,8 +85,10 @@ export default function ServiceGroupsScreen({ navigation }) {
           message.senderType === 'customer' ? styles.mine : styles.staff]}>
           {message.senderAvatar && <Image source={{ uri: mediaUrl(message.senderAvatar) }} style={{ width: 36, height: 36, borderRadius: 18, marginBottom: 6 }} />}
           <Text style={styles.sender}>{message.senderName}{message.senderType !== 'customer' && ` · ${({ai:'嘉医汇AI健康管家',familyDoctor:'健康顾问',nutritionist:'营养师',healthManager:'健管专员',medicalAssistant:'就医专员'})[message.senderRole] || '服务人员'}`} · {stamp(message.createdAt)}</Text>
-          {message.fileUrl && <Text style={[styles.body,{color:colors.primary,fontWeight:'700'}]} onPress={() => Linking.openURL(message.fileUrl).catch(() => Alert.alert('文件暂时无法打开'))}>📎 {message.fileName || '查看文件'}</Text>}
-          {(!message.fileUrl || message.content !== '[文件]') && <Text style={styles.body}>{message.content}</Text>}
+          {message.fileUrl && (message.fileMimeType?.startsWith('image/')
+            ? <TouchableOpacity onPress={() => Linking.openURL(message.fileUrl).catch(() => Alert.alert('图片暂时无法打开'))}><Image source={{ uri: message.fileUrl }} style={{ width: 160, height: 160, borderRadius: 8, marginTop: 6 }} resizeMode="contain" /></TouchableOpacity>
+            : <Text style={[styles.body,{color:colors.primary,fontWeight:'700'}]} onPress={() => Linking.openURL(message.fileUrl).catch(() => Alert.alert('文件暂时无法打开'))}>📎 {message.fileName || '查看文件'}</Text>)}
+          {(!message.fileUrl || !['[文件]','[图片]'].includes(message.content)) && <Text style={styles.body}>{message.content}</Text>}
           {message.mentions?.map(p=><Text key={p.id} style={{color:'#187e87'}} onPress={()=>Alert.alert(p.name,p.role || '服务成员')}>@{p.name}</Text>)}
         </View>)}
       </ScrollView>
