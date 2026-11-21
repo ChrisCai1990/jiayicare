@@ -75,7 +75,10 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     const failed = Boolean(error || result?.error || malformed || emptyOutput || outputTruncated);
     try {
       // Truncation/invalid JSON are extraction failures, not service failures.
-      await db.outcome(key, Boolean(error || result?.error), policy.failureThreshold);
+      // Supplier content rejection is local to this request, not a model outage.
+      // Keep failure accounting and the rejection; do not retry or trip a global circuit.
+      const contentRejected = !error && result?.error?.code === 'data_inspection_failed';
+      if (!contentRejected) await db.outcome(key, Boolean(error || result?.error), policy.failureThreshold);
       // Missing usage (including timeout) retains its entire reservation. Never refund it
       // merely because our client disconnected; the supplier may have executed the request.
       if (usage) for (const scope of reserved) {
