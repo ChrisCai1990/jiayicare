@@ -70,19 +70,21 @@ function eligibility(reports, now = new Date(), options = {}) {
     .map(r => ({ reportId: String(r._id || ''), date: day(r.checkDate || r.date) }))
     .filter(r => r.date && r.date <= today).sort((a,b) => b.date.localeCompare(a.date))[0];
   const recent = Boolean(latest && latest.date >= cutoff);
-  const batch = recent ? exams.filter(r => day(r.checkDate || r.date) === latest.date) : [];
+  const eligibleDate = Boolean(latest && (options.allowHistoricalFullExam === true || recent));
+  const batch = eligibleDate ? exams.filter(r => day(r.checkDate || r.date) === latest.date) : [];
   const hasCompleteContent = batch.some(r => (r.reportItems || []).length >= 8 ||
     String(r.examConclusion || r.examDescription || '').trim() || Object.values(r.examMainConclusions || {}).some(Boolean))
     || batch.reduce((count, r) => count + (r.reportItems || []).length, 0) >= 5;
-  const pending = recent ? exams.filter(r => day(r.checkDate || r.date) === latest.date &&
+  const pending = eligibleDate ? exams.filter(r => day(r.checkDate || r.date) === latest.date &&
     require('./reportFollowUpSource').needsAdvisorInterpretation(r) && !r.advisorInterpretationConfirmedAt) : [];
-  return { allowed: recent && hasCompleteContent && pending.length === 0, latest: latest || null, cutoff,
-    problemReportId: !recent && recentIncomplete ? String(recentIncomplete._id || '') : '',
+  return { allowed: eligibleDate && hasCompleteContent && pending.length === 0, latest: latest || null, cutoff,
+    problemReportId: !eligibleDate && recentIncomplete ? String(recentIncomplete._id || '') : '',
     pendingInterpretation: pending.map(r => String(r._id || '')),
-    message: !recent ? (recentIncomplete
+    message: !eligibleDate ? (recentIncomplete
       ? `${day(recentIncomplete.checkDate || recentIncomplete.date)}的已审核“体检报告”未达到完整体检判定条件（需多系统检查覆盖或总检结论）；${latest ? `最近符合条件的完整体检为${latest.date}，早于本次要求的${cutoff}` : `目前没有符合条件的完整体检，需补充${cutoff}之后的资料`}。请核对该报告并补齐完整体检资料。`
       : latest ? `最近一份已审核的完整体检日期为${latest.date}，早于本次要求的${cutoff}；请补充近期完整体检并完成审核、解读后再生成年度方案。`
-      : `近${lookbackMonths}个月内没有已审核的完整体检资料，请先完成体检并录入审核后，再生成年度方案。`)
+      : options.allowHistoricalFullExam === true ? '尚无已审核的完整体检资料，请先录入并完成审核、解读。'
+        : `近${lookbackMonths}个月内没有已审核的完整体检资料，请先完成体检并录入审核后，再生成年度方案。`)
       : !hasCompleteContent ? '本次体检报告缺少可解读的完整检查内容，请补齐解析和审核后再生成年度方案。'
         : '本次体检资料尚未全部完成健康顾问解读，请全部解读确认后再生成年度方案。' };
 }
@@ -91,4 +93,9 @@ async function check(patientId, options = {}) {
     .select('_id title type documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt').lean();
   return eligibility(reports, options.now || new Date(), options);
 }
-module.exports = { day, examReports, eligibility, check };
+async function checkForAnnualPlan(patientId, year, options = {}) {
+  const continuity = options.continuity || await require('./annualPlanContinuity').loadAnnualPlanContinuity(patientId, year);
+  return check(patientId, { lookbackMonths: options.lookbackMonths === 12 ? 12 : 3,
+    allowHistoricalFullExam: continuity.mode !== 'renewal', now: options.now });
+}
+module.exports = { day, examReports, eligibility, check, checkForAnnualPlan };

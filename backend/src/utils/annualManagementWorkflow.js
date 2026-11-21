@@ -40,7 +40,9 @@ function project(patient, year, plans, reports, now = new Date(), aiReviews = []
     && !['prescription_order', 'outpatient_record'].includes(row.documentCategory));
   const pending = currentReports.filter(row => !row.advisorInterpretationConfirmedAt
     && row.advisorCorrection?.status !== 'returned');
-  const hasCurrentExam = require('./annualReviewEligibility').eligibility(currentReports, now, { lookbackMonths: 12 }).allowed;
+  const renewal = plans.some(row => String(row.patientId) === id && Number(row.year) < Number(year) && row.confirmedAt);
+  const hasCurrentExam = require('./annualReviewEligibility').eligibility(currentReports, now,
+    { lookbackMonths: 12, allowHistoricalFullExam: !renewal }).allowed;
   const planConfirmed = Boolean(plan?.confirmedAt);
   const planReleased = Boolean(plan?.pushedAt || planConfirmed);
   const checkup = approvedItems(patient.aiHealthSummary, year);
