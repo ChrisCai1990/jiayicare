@@ -109,15 +109,29 @@ export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, servi
   return next
 }
 export function autoGroupAnnualVisits(data) {
-  const buckets = new Map()
+  let next = data
+  const existingGroups = new Map()
   for (const item of visitRows(data)) {
+    if (!item.row.visitGroupId) continue
+    if (!existingGroups.has(item.row.visitGroupId)) existingGroups.set(item.row.visitGroupId, [])
+    existingGroups.get(item.row.visitGroupId).push(item)
+  }
+  for (const items of existingGroups.values()) {
+    if (items.filter(item => ['single', 'managed'].includes(item.row.serviceMode)).length < 2 ||
+        items.some(item => item.row.serviceMode === 'shared')) continue
+    for (const item of items) {
+      if (next[item.moduleKey] === data[item.moduleKey]) next = { ...next, [item.moduleKey]: { ...next[item.moduleKey], records: [...next[item.moduleKey].records] } }
+      next[item.moduleKey].records[item.index] = { ...item.row, visitGroupId: '' }
+    }
+  }
+  const buckets = new Map()
+  for (const item of visitRows(next)) {
     if (!item.hospital || /待定|待确认|待核|或|就近/.test(item.hospital) || !/^\d{4}-\d{2}-\d{2}$/.test(item.date) || !Number.isFinite(Date.parse(item.date)) || new Date(item.date).toISOString().slice(0,10) !== item.date ||
         item.row.visitGroupId || item.row.datePending || item.row.scheduleSeparationReason?.trim()) continue
     const key = JSON.stringify([item.date, item.hospital])
     if (!buckets.has(key)) buckets.set(key, [])
     buckets.get(key).push(item)
   }
-  let next = data
   for (const items of buckets.values()) {
     if (items.length < 2) continue
     const leaders = items.filter(item => ['single','managed'].includes(item.row.serviceMode))

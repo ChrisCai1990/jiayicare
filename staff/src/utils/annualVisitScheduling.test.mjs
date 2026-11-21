@@ -38,3 +38,15 @@ test('同日同院的多个单项服务分别保留，推送时不能自动变�
   assert.deepEqual(records.map(row => row.serviceMode), ['single', 'single'])
   assert.deepEqual(records.map(row => row.visitGroupId), [undefined, undefined])
 })
+
+test('已保存的同次分组若全部改为单项服务，保存时解除冲突分组', () => {
+  const records = [
+    { items: '胃镜评估', hospital: '邵逸夫医院', time: '2026-11-28', serviceMode: 'single', serviceType: 'proxy_booking', visitGroupId: '2026-11-28 邵逸夫医院同次就诊' },
+    { items: '进一步检查', hospital: '邵逸夫医院', time: '2026-11-28', serviceMode: 'single', serviceType: 'escort_exam', visitGroupId: '2026-11-28 邵逸夫医院同次就诊' },
+  ]
+  const data = { abnormal_followup: { records } }
+  const result = autoGroupAnnualVisits(data)
+  assert.deepEqual(result.abnormal_followup.records.map(row => row.visitGroupId), ['', ''])
+  assert.deepEqual(result.abnormal_followup.records.map(row => row.serviceType), ['proxy_booking', 'escort_exam'])
+  assert.equal(autoGroupAnnualVisits(result), result)
+})
