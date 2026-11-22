@@ -5,6 +5,7 @@ import { annualManagementSourceKey, findAnnualManagementDecision } from '../util
 import DateField from '../../../shared/DateField.jsx'
 import annualAppointment from '../../../shared/annualAppointment.cjs'
 import { MONITORING_METRICS, MONITORING_PERIODS } from '../utils/monitoringMetrics'
+import { splitMonitoringPeriods, toggleMonitoringPeriod } from '../utils/monitoringPeriodSelection.mjs'
 
 const supportsInterval = direction => ['medical_treatment', 'checkup_completion'].includes(direction)
 const DIRECTIONS = [
@@ -208,9 +209,9 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         </div>}</>}
         {pilot && hasDirection('monitoring') && <div style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
           <strong>日常监测 · 勾选项目；血压、血糖、体重填写监测时间</strong>
-          {MONITORING_METRICS.map(([type, label]) => { const selected = monitoringItems.find(item => item.type === type); return <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
-            <label style={{ minWidth: 76 }}><input type="checkbox" checked={!!selected} onChange={e => setMonitoringItems(previous => e.target.checked ? [...previous, { type, time: MONITORING_PERIODS[type]?.[0] || '' }] : previous.filter(item => item.type !== type))} /> {label}</label>
-            {selected && MONITORING_PERIODS[type] && <><input className="form-input" aria-label={`${label}监测时间`} maxLength={60} list={`monitoring-period-${type}`} value={selected.time} onChange={e => setMonitoringItems(previous => previous.map(item => item.type === type ? { ...item, time: e.target.value } : item))} placeholder="可填写多个时段，用顿号分隔" style={{ flex: 1 }} /><datalist id={`monitoring-period-${type}`}>{MONITORING_PERIODS[type].map(period => <option key={period} value={period} />)}</datalist></>}
+          {MONITORING_METRICS.map(([type, label]) => { const selected = monitoringItems.find(item => item.type === type); const periods = splitMonitoringPeriods(selected?.time); const choices = MONITORING_PERIODS[type] || []; return <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
+            <label style={{ minWidth: 76 }}><input type="checkbox" checked={!!selected} onChange={e => setMonitoringItems(previous => e.target.checked ? [...previous, { type, time: type === 'weight' ? '晨起' : '' }] : previous.filter(item => item.type !== type))} /> {label}</label>
+            {selected && choices.length > 0 && <div role="group" aria-label={`${label}监测时间（可多选）`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, flex: 1 }}>{[...choices, ...periods.filter(period => !choices.includes(period))].map(period => <label key={period} style={{ whiteSpace: 'nowrap', fontSize: 13 }}><input type="checkbox" checked={periods.includes(period)} onChange={() => setMonitoringItems(previous => previous.map(item => item.type === type ? { ...item, time: toggleMonitoringPeriod(item.time, period) } : item))} /> {period}</label>)}</div>}
           </div> })}
         </div>}
         {pilot && directions.filter(value => value !== 'monitoring' && !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value))).map(value => {
