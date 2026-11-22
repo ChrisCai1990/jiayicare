@@ -47,7 +47,8 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
   const monitoringRows = keptMonitoring.map(row => {
     if (!row.screeningDraft) return row
     const draft = monitoringDrafts.find(item => item.metricType === row.metricType && item.sourceIds?.some(id => row.sourceIds?.includes(id)))
-    return draft ? { ...row, items: draft.items, measurementPeriod: draft.measurementPeriod } : row
+    return draft ? { ...row, items: draft.items, measurementPeriod: draft.measurementPeriod,
+      ...(draft.frequency !== undefined ? { frequency: draft.frequency } : {}) } : row
   })
   for (const draft of monitoringDrafts) if (!monitoringRows.some(row => row.metricType === draft.metricType && row.sourceIds?.some(id => draft.sourceIds?.includes(id)))) monitoringRows.push({ ...draft, screeningDraft: true })
   if (JSON.stringify(monitoringRows) !== JSON.stringify(oldMonitoring)) next.monitoring = { ...(modules.monitoring || {}), enabled: true, records: monitoringRows }

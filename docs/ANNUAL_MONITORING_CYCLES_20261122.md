@@ -1,0 +1,14 @@
+# 年度方案日常监测周期与人工随访
+
+## 口径
+
+- 专项筛查的日常监测逐项选择周期：每日1次、每周1次、每周2次、每N天1次（N 为 1 至 365）。时段和周期分别保存；血压、血糖可多选时段。
+- 年度方案逐项展示并允许顾问确认周期。已发布方案的周期调整留补充修订记录；有待发布的暂存修订时先发布暂存内容，避免覆盖。
+- 顾问确认客户不使用 App／小程序，且客户已有责任健管专员、年度方案已推送并经客户确认后，才按方案每个监测项目建立一条内部随访。首次日期由顾问填写，后续在任务完成时按该项目周期接续。重复提交不重复建任务。
+- 原有客户端血压、体重提醒独立运行。没有明确调整这两项周期时仍沿用原每周一次等既定规则；新建内部随访不关闭客户端提醒。明确调整周期后，客户端监测提醒同步应用该周期。
+
+## 验证与发布
+
+- `node --test backend/src/utils/annualManagementDraftActions.test.js backend/src/utils/monitoringCycle.test.js backend/src/utils/annualPlanMonitoringReminders.test.js backend/src/utils/manualAnnualMonitoring.test.js`
+- `node --test staff/src/utils/annualTargetCarry.test.mjs staff/src/utils/monitoringPeriodSelection.test.mjs`
+- 发布时另核对 staff 构建、后端健康、生产 Git 版本与客户端提醒状态。代码发布不会自动为现有客户创建人工随访；需要顾问逐位确认。

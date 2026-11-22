@@ -245,7 +245,7 @@ function draftPlanActions(evidence = []) {
       for (const selected of content.directionTimings?.monitoring?.items || []) {
         if (monitoringLabels[selected.type]) actions.push({ key: 'monitoring', record: {
           sourceIds: [item.id], metricType: selected.type, items: monitoringLabels[selected.type],
-          measurementPeriod: selected.time, reviewStatus: 'pending_family_doctor_review',
+          measurementPeriod: selected.time, frequency: selected.frequency || '', reviewStatus: 'pending_family_doctor_review',
         } });
       }
     }
@@ -314,7 +314,8 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
     if (direction === 'monitoring' && Array.isArray(source.content.directionTimings?.monitoring?.items)) {
       const labels = { bloodPressure: '血压', bloodSugar: '血糖', waist: '腰围', heartRate: '心率', weight: '体重', sleep: '睡眠', mood: '情绪', diet: '饮食', exercise: '运动', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒' };
       if (!source.content.directionTimings.monitoring.items.every(item => rows.some(row => row.sourceIds?.includes(source.id)
-        && row.metricType === item.type && row.items === labels[item.type] && row.measurementPeriod === item.time)))
+        && row.metricType === item.type && row.items === labels[item.type] && row.measurementPeriod === item.time
+        && (!item.frequency || !!row.frequency))))
         return `“${source.content.problem}”的日常监测项目或时间尚未进入方案，请重新带入`;
       continue;
     }

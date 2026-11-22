@@ -11,9 +11,11 @@ function normalizeTiming(timing = {}, direction = '') {
     const items = timing.items.map(item => {
       const type = String(item?.type || '').trim();
       const time = String(item?.time || '').trim();
+      const frequency = String(item?.frequency || '').trim();
       if (!metricTypes.has(type) || seen.has(type) || (['bloodPressure', 'bloodSugar', 'weight'].includes(type) && !time) || time.length > 60) fail('请核对日常监测项目和监测时间');
+      if (!require('./monitoringCycle').monitoringCycleDays(frequency)) fail('请为每项选择1至365天内的监测周期');
       seen.add(type);
-      return { type, time };
+      return { type, time, frequency };
     });
     return { mode: 'pending', firstDueDate: '', frequency: '', items };
   }
