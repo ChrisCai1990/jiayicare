@@ -8,6 +8,7 @@ import DateInput from './DateInput'
 import { concretePlanText } from '../utils/annualItemLayout.mjs'
 import nutritionComparisonMetrics from '../../../shared/nutritionComparisonMetrics.cjs'
 import { MONITORING_METRICS, MONITORING_PERIODS } from '../utils/monitoringMetrics'
+import { splitMonitoringPeriods, toggleMonitoringPeriod } from '../utils/monitoringPeriodSelection.mjs'
 
 const { COMMON_METRICS, OBJECTIVE_METRICS, SUBJECTIVE_METRICS, MAX_METRICS } = nutritionComparisonMetrics
 
@@ -99,8 +100,11 @@ export function FieldInput({ field, value, onChange }) {
   if (field.type === 'monitoring-period') {
     const metric = MONITORING_METRICS.find(([, label]) => label === field.record?.items)?.[0]
     const options = MONITORING_PERIODS[metric] || []
-    return <><input type="text" value={value || ''} onChange={e => onChange(e.target.value)} placeholder={options.length ? '可填写多个时段，用顿号分隔' : '无需标注监测时段'} style={inputStyle} />
-      {!!options.length && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>{options.map(period => <button type="button" key={period} onClick={() => onChange(period)} style={{ fontSize: 12 }}>{period}</button>)}</div>}</>
+    const selected = splitMonitoringPeriods(value)
+    if (!options.length) return <input type="text" value={value || ''} onChange={e => onChange(e.target.value)} placeholder="无需标注监测时段" style={inputStyle} />
+    return <div role="group" aria-label={`${field.record?.items || '日常监测'}监测时间（可多选）`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {[...options, ...selected.filter(period => !options.includes(period))].map(period => <label key={period} style={{ whiteSpace: 'nowrap', fontSize: 12 }}><input type="checkbox" checked={selected.includes(period)} onChange={() => onChange(toggleMonitoringPeriod(value, period))} /> {period}</label>)}
+    </div>
   }
   if (field.type === 'medical-experts') return <MedicalExpertPicker field={field} value={value} onChange={onChange} />
   if (field.type === 'department-experts') {
