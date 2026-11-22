@@ -27,6 +27,7 @@ function validate(data = {}, today = new Date(Date.now() + 8 * 3600000).toISOStr
     if (!validDate(annualCheckup.date)) return '推送前请补全下一年度体检日期（不早于今天）';
     if (Number.isInteger(annualCheckup.targetYear) && annualCheckup.date.slice(0, 4) !== String(annualCheckup.targetYear)) return `下一年度体检日期请选择${annualCheckup.targetYear}年`;
     if (!String(annualCheckup.institution || '').trim()) return '推送前请填写下一年度体检机构';
+    if (!String(annualCheckup.focus || '').trim()) return '推送前请核对下一年度体检重点关注项目；无依据时请移除本项';
     if (annualCheckup.serviceMode === 'managed' && annualCheckup.managedServiceType !== 'checkup') return '下一年度体检请选择体检一站式服务';
   }
   const personalized = data?.personalized_followups?.enabled === false ? [] : data?.personalized_followups?.records || [];

@@ -634,6 +634,7 @@ export default function ServicePlansScreen({ navigation, route }) {
       const displayItemRows = item => item.moduleKey === 'annual_checkup' ? [
         ['体检日期', item.schedule || '待确定'],
         ['计划体检机构', item.careTarget?.hospital || '待确定'],
+        ['下一年度重点关注项目', item.focus],
         ['体检服务方式', [item.service?.modeLabel || '仅提醒', item.service?.typeLabel].filter(Boolean).join(' · ')],
       ] : item.moduleKey === 'monitoring' ? [
         ['监测时段', item.measurementPeriod],
@@ -654,6 +655,18 @@ export default function ServicePlansScreen({ navigation, route }) {
       ].filter(([, value]) => value && String(value).trim());
       const displayItemName = item => item.title === item.category || item.title?.startsWith(`${item.category} · `)
         ? item.title : `${item.category} · ${item.title}`;
+      const groupMonitoring = items => {
+        const monitoring = items.filter(item => item.moduleKey === 'monitoring');
+        if (!monitoring.length) return items;
+        if (monitoring.length === 1 && Array.isArray(monitoring[0].monitoringItems)) return items;
+        let inserted = false;
+        return items.flatMap(item => {
+          if (item.moduleKey !== 'monitoring') return [item];
+          if (inserted) return [];
+          inserted = true;
+          return [{ moduleKey: 'monitoring', id: 'monitoring', title: '日常监测', category: '日常监测', monitoringItems: monitoring }];
+        });
+      };
       const annualMgmtPlans = (annualRes.success && annualRes.data?.length > 0)
         ? annualRes.data.map(ap => ({
             _id: ap._id,
@@ -668,11 +681,12 @@ export default function ServicePlansScreen({ navigation, route }) {
             confirmedAt: ap.confirmedAt || null,
             serviceRecommendations: ap.serviceRecommendations || [],
             pushedAt: ap.pushedAt || null,
-            items: Array.isArray(ap.displayItems) ? ap.displayItems.map(item => ({
-              _id: item.id, name: displayItemName(item),
+            items: Array.isArray(ap.displayItems) ? groupMonitoring(ap.displayItems).map(item => ({
+              _id: item.id, name: item.monitoringItems ? '日常监测' : displayItemName(item),
               goal: item.goal, schedule: item.schedule,
               summaryRows: item.moduleKey === 'annual_checkup' ? displayItemRows(item) : null,
-              detailRows: displayItemRows(item), status: 'pending',
+              detailRows: item.monitoringItems ? item.monitoringItems.map(row => [row.title,
+                [row.measurementPeriod, row.frequency].filter(Boolean).join(' · ')]) : displayItemRows(item), status: 'pending',
             })) : Object.entries(ap.moduleData || {})
               .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : v.enabled !== false))
               .map(([key, v]) => ({

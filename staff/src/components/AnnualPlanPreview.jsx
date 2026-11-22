@@ -17,6 +17,7 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
   }, [open, patientId, planId, version])
     const renderItem = item => <section key={item.id} style={{ padding: '12px 0', borderTop: '1px solid #E1EAE4' }}><strong>{item.title}</strong>
         <p>{[item.category, item.schedule, item.frequency, item.careTarget?.hospital, !item.examArrangement && item.careTarget?.department, !item.examArrangement && item.careTarget?.expert, item.service?.modeLabel, item.service?.typeLabel].filter(Boolean).join(' · ')}</p>
+        {item.moduleKey === 'annual_checkup' && item.focus && <p style={{ whiteSpace: 'pre-line' }}>下一年度重点关注项目：{item.focus}</p>}
         {item.examArrangement && <>{[['开单科室', item.examArrangement.orderDepartment], ['开单专家', item.examArrangement.orderExperts.join('、')], ['检查科室', item.examArrangement.examDepartment], ['检查专家', item.examArrangement.examExperts.join('、')]].filter(([, value]) => value).map(([label, value]) => <p key={label}>{label}：{value}</p>)}</>}
         {[item.goal, item.interventionFocus, item.interventionPlan, item.reviewItems?.join('、'), item.customerAction, item.precautions, item.completionStandard].filter(text => text && text !== item.title).map((text, i) => <p key={i}>{text}</p>)}
       </section>

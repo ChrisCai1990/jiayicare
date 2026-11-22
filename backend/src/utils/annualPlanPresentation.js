@@ -14,6 +14,8 @@ function normalizeItem(moduleKey, record, index) {
   if (moduleKey === 'annual_checkup') return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: MODULE_NAME[moduleKey],
     schedule: record.date || '',
+    focus: record.focus || '',
+    customerAction: record.focus ? `在下一年度体检中重点关注：${String(record.focus).split(/\r?\n/).map(row => row.trim()).filter(Boolean).join('、')}` : '',
     careTarget: { hospital: record.institution || '', department: '', expert: '' },
     service: { mode: record.serviceMode || 'reminder', modeLabel: ({ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' })[record.serviceMode || 'reminder'],
       type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
@@ -71,6 +73,17 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
     const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records) && module.records.length
       ? module.records
       : Array.isArray(module) ? module : Array.isArray(module.records) ? module.records : [module];
+    if (moduleKey === 'monitoring') {
+      const monitoringItems = records.filter(row => row?.items).map((row, index) => ({
+        id: `monitoring:${index}`, title: row.items, measurementPeriod: row.measurementPeriod || row.time || '',
+        frequency: row.frequency || '', precautions: row.precautions || '',
+      }));
+      if (monitoringItems.length) items.push({ id: 'monitoring', moduleKey, category: '日常监测', title: '项目与周期',
+        monitoringItems, customerAction: monitoringItems.map(row =>
+          `${row.title}：${[row.measurementPeriod, row.frequency].filter(Boolean).join(' · ')}`).join('\n'),
+        service: { mode: 'monitoring', modeLabel: '按方案监测' } });
+      return;
+    }
     records.forEach((record, index) => { if (record && Object.keys(record).length && !(moduleKey === 'personalized_followups' && internalDaily(record))) items.push(normalizeItem(moduleKey, record, index)); });
   });
   return items;

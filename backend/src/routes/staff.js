@@ -15445,7 +15445,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const { chat } = require('../utils/ai');
     const { nextAnnualCheckupDate, hepatitisBAllNegative, conciseTitle } = require('../utils/annualPlanGeneration');
-    const s = ais?.sections || {};
+    const s = require('../utils/aiHealthCheckupItems').approvedDoctorSections(ais, targetYear);
     const year = targetYear;
 
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })

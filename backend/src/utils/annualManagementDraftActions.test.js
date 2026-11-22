@@ -50,6 +50,17 @@ test('纳入管理时确认的首次日期进入对应方案日期，待确认�
   assert.equal(actions[2].record.visit_time, undefined);
 });
 
+test('已逐项确认的当年 AI 待补检查进入完善检查草稿', () => {
+  const evidence = [{ id: 'management_issue:ai-review', content: {
+    direction: 'checkup_completion', problem: '当年待补项目', sourceKind: 'ai_checkup',
+    reportTitle: '已审核AI健康信息整理 · 体检资料覆盖',
+  } }];
+  const [action] = draftPlanActions(evidence);
+  assert.equal(action.key, 'checkup_completion');
+  assert.equal(action.record.items, '当年待补项目');
+  assert.equal(validatePlanCoverage({ checkup_completion: { records: [action.record] } }, evidence), '');
+});
+
 test('同一问题多选复查、就医和营养评估，分别形成行动且逐项校验', () => {
   const evidence = [{ id: 'management_issue:combined', content: {
     direction: 'medical_treatment', directions: ['medical_treatment', 'abnormal_followup', 'nutrition_assessment'],
