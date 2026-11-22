@@ -30,13 +30,17 @@ async function generateNextWeeklyFollowUp(followUp, item = '') {
     staffId: followUp.staffId,
     assignedTo: followUp.assignedTo,
     clientVisible: followUp.clientVisible !== false,
-    date: nextWeeklyDate(followUp.completedAt || new Date()),
+    date: template.formData?.manualNoClientApp && template.formData?.['监测频率']
+      ? require('./monitoringCycle').nextMonitoringDate(followUp.completedAt || new Date(), template.formData['监测频率'])
+      : nextWeeklyDate(followUp.completedAt || new Date()),
     type: template.type,
     status: 'planned',
     theme: template.theme,
     content: template.content,
     followUpSchemeId: template.followUpSchemeId || null,
     formData: template.formData || null,
+    sourceAnnualPlanId: followUp.sourceAnnualPlanId || null,
+    plannedContent: template.content || '',
     checkInItems: template.checkInItems || [],
     repeatDaily: false,
   };

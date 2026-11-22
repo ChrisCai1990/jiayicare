@@ -18,6 +18,9 @@ import AnnualVisitScheduleReview from '../components/AnnualVisitScheduleReview'
 import AnnualPlanSection, { annualSectionFor, medicalGroups } from '../components/AnnualPlanSection'
 import AnnualPlanPreview from '../components/AnnualPlanPreview'
 import AnnualPlanTrackView from '../components/AnnualPlanTrackView'
+import MonitoringFrequencyField from '../components/MonitoringFrequencyField'
+import PublishedMonitoringCycles from '../components/PublishedMonitoringCycles'
+import ManualMonitoringTrial from '../components/ManualMonitoringTrial'
 import AnnualNutritionAdvisorTargets from '../components/AnnualNutritionAdvisorTargets'
 import nutritionAdvisorTargets from '../../../shared/annualNutritionAdvisorTargets.cjs'
 import PublishedAnnualConsensus from '../components/PublishedAnnualConsensus'
@@ -1329,7 +1332,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {canEdit && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOptionalIncluded(key, removed)}>{removed ? '恢复此项' : '移除本项'}</button>}
               {!removed && <>{key !== 'monitoring' && actions.map(action => <div key={action.index} id={`annual-operation-${key}-${action.index}`}>{renderPlanAction(action, true)}</div>)}
                 {canEdit && key === 'health_consensus' && <label><input type="checkbox" checked={data?.shareWithCustomer === true} onChange={event => handleModuleChange(key, 'shareWithCustomer', event.target.checked)} /> 将沟通主题和日期纳入客户方案</label>}
-                {key === 'monitoring' && (data?.records || []).map((row, index) => <div key={index}>{row.items || '监测项目待确认'}{(row.measurementPeriod || row.time) && ` · ${row.measurementPeriod || row.time}`}</div>)}
+                {key === 'monitoring' && !pushedAt && (data?.records || []).map((row, index) => <div key={index} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 7 }}>
+                  <span>{row.items || '监测项目待确认'}{row.measurementPeriod && ` · ${row.measurementPeriod}`}</span>
+                  {canEdit ? <MonitoringFrequencyField label={row.items || '监测项目'} value={row.frequency || ''}
+                    onChange={frequency => handleModuleChange('monitoring', 'records', data.records.map((item, i) => i === index ? { ...item, frequency } : item))} /> : <span>· {row.frequency || '周期待确认'}</span>}
+                </div>)}
+                {key === 'monitoring' && pushedAt && (data?.records || []).length > 0 && (canEdit
+                  ? <PublishedMonitoringCycles patientId={id} plan={plansByType[planType]} rows={data.records} toast={toast}
+                    onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
+                  : data.records.map((row, index) => <div key={index}>{row.items || '监测项目待确认'}{row.measurementPeriod && ` · ${row.measurementPeriod}`} · {row.frequency || '周期待确认'}</div>))}
+                {key === 'monitoring' && canEdit && pushedAt && confirmedAt && currentPlanId && (data?.records || []).length > 0 &&
+                  <ManualMonitoringTrial patientId={id} year={year} planId={currentPlanId} rows={data.records}
+                    assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''}
+                    managerName={patient?.assignedHealthManager?.name || staffList.find(person => String(person._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name || ''} toast={toast} />}
                 {canEdit && (key === 'vaccine' || !actions.length && key !== 'monitoring') && <button type="button" className="btn btn-secondary btn-sm" onClick={() => editDraftItem(key, actions.length)}>{key === 'annual_checkup' ? '安排体检日期、机构与服务方式' : key === 'vaccine' ? '添加疫苗接种' : '安排当前沟通主题'}</button>}
               </>}
             </details>
@@ -1436,6 +1451,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {patientMode && pushedAt && !annualPilot && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
 
       {annualPilot && pushedAt && patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} onDataChange={setExecutionReviewData} />}
+      {annualPilot && patientMode && pushedAt && (moduleData.monitoring?.records || []).length > 0 && moduleData.monitoring?.enabled !== false && <section aria-label="日常监测周期与人工随访" style={{ padding: 14, marginBottom: 16, border: '1px solid #C7DCCF', borderRadius: 10, background: '#fff' }}>
+        <strong>日常监测 · 逐项周期</strong>
+        {canEdit ? <PublishedMonitoringCycles patientId={id} plan={plansByType[planType]} rows={moduleData.monitoring.records} toast={toast}
+          onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
+          : moduleData.monitoring.records.map((row, index) => <div key={index}>{row.items || '监测项目'}{row.measurementPeriod && ` · ${row.measurementPeriod}`} · {row.frequency || '周期待确认'}</div>)}
+        {canEdit && confirmedAt && currentPlanId && <ManualMonitoringTrial patientId={id} year={year} planId={currentPlanId} rows={moduleData.monitoring.records}
+          assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''}
+          managerName={patient?.assignedHealthManager?.name || staffList.find(person => String(person._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name || ''} toast={toast} />}
+      </section>}
       {patientMode && plansByType[planType]?.returnedAt && pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户修改意见：{plansByType[planType].returnReason || '请核对客户反馈'}。</div>}
       {patientMode && plansByType[planType]?.returnedAt && !pushedAt && <div role="alert" style={{ padding: 14, marginBottom: 16, background: '#FFF4E8', border: '1px solid #E9BB7A', borderRadius: 8 }}>客户退回方案：{plansByType[planType].returnReason || '请核对客户反馈'}。请修改草稿并重新推送。</div>}
       {remotePlanChanged && <div role="alert" style={{padding:12,background:'#FFF4D6',marginBottom:12}}>方案已有新补录，当前未保存编辑尚未覆盖。<button onClick={() => { if (window.confirm('放弃当前未保存编辑，加载最新方案？')) window.location.reload() }}>加载最新方案</button></div>}

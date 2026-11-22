@@ -10193,7 +10193,6 @@ router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, r
 // the management decision separately; AI cannot set dates or publish a plan.
 router.post('/patients/:id/annual-management-decision-draft', staffAuth, async (req, res) => {
   try {
-    if (!await require('../utils/annualFlowPilot').enabledForYear(req.params.id, req.body.year)) return res.status(404).json({ success: false, message: '当前年度未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可起草管理决定' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -10981,10 +10980,71 @@ router.post('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, asyn
 });
 
 // Explicit fallback for a pilot customer who does not use either client app.
-// The usual onboarding monitoring reminders remain untouched.
+// Client monitoring reminders remain independent, including the existing weekly BP/weight reminders.
+router.patch('/patients/:id/annual-plan/:planId/monitoring-cycles', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可调整监测周期' });
+    if (!mongoose.isValidObjectId(req.params.planId)) return res.status(400).json({ success: false, message: '请指定年度方案' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可调整监测周期' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: patient._id }).select('+supplementRevisions +revisionDraft').lean();
+    if (!plan?.pushedAt || !['approved', null, undefined].includes(plan.reviewStatus))
+      return res.status(409).json({ success: false, message: '请先选择已发布且未驳回的年度方案' });
+    if (plan.revisionDraft) return res.status(409).json({ success: false, message: '请先发布当前暂存修订，再调整监测周期' });
+    if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || ''))
+      return res.status(409).json({ success: false, message: '方案已变化，请刷新后重试' });
+    const records = plan.moduleData?.monitoring?.enabled === false ? [] : plan.moduleData?.monitoring?.records || [];
+    const frequencies = req.body.frequencies;
+    if (!Array.isArray(frequencies) || !records.length || frequencies.length !== records.length
+      || frequencies.some(value => !require('../utils/monitoringCycle').monitoringCycleDays(String(value || '').trim())))
+      return res.status(400).json({ success: false, message: '请为每个监测项目选择有效周期' });
+    const nextRecords = records.map((row, index) => ({ ...row, frequency: String(frequencies[index]).trim() }));
+    const revision = { id: require('crypto').randomUUID(), kind: 'monitoring_cycles', status: 'applied',
+      createdAt: new Date(), createdBy: req.staff._id,
+      before: records.map(row => ({ metricType: row.metricType, items: row.items, frequency: row.frequency || '' })),
+      after: nextRecords.map(row => ({ metricType: row.metricType, items: row.items, frequency: row.frequency })),
+      note: '顾问逐项确认日常监测周期' };
+    const moduleData = { ...plan.moduleData, monitoring: { ...plan.moduleData.monitoring, records: nextRecords } };
+    const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: patient._id, updatedAt: plan.updatedAt },
+      { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true });
+    if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重试' });
+    let warning = '';
+    try {
+      const labels = { bloodPressure: '血压', bloodSugar: '血糖', waist: '腰围', heartRate: '心率', weight: '体重', sleep: '睡眠', mood: '情绪', diet: '饮食', exercise: '运动', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒' };
+      for (const row of nextRecords) {
+        const type = row.metricType || Object.keys(labels).find(key => labels[key] === row.items);
+        if (!type) continue;
+        const content = `客户不使用 App／小程序；请健管专员按${row.frequency}联系客户，记录${labels[type]}${row.measurementPeriod ? `（${row.measurementPeriod}）` : ''}的监测结果；本次完成后按该周期接续。`;
+        await FollowUp.updateMany({ patientId: patient._id, sourceAnnualPlanId: plan._id, clientVisible: false,
+          repeatWeekly: true, checkInItems: type, 'formData.manualNoClientApp': true,
+          status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: {
+          'formData.监测频率': row.frequency, 'weeklyTemplate.formData.监测频率': row.frequency,
+          'weeklyTemplate.content': content, content, plannedContent: content } });
+      }
+      await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(patient._id);
+    } catch (error) { warning = '周期已保存，但提醒同步未完成；请稍后刷新核对'; console.error('[monitoring-cycles] sync failed', error); }
+    return res.json({ success: true, data: saved, message: warning || '各项目监测周期已保存并同步提醒' });
+  } catch (error) { return res.status(500).json({ success: false, message: '保存监测周期失败' }); }
+});
+router.get('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可查看人工监测安排' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可查看人工监测安排' });
+    if (!mongoose.isValidObjectId(req.query.planId)) return res.status(400).json({ success: false, message: '请指定年度方案' });
+    const rows = await FollowUp.find({ patientId: patient._id, sourceAnnualPlanId: req.query.planId,
+      clientVisible: false, repeatWeekly: true, 'formData.manualNoClientApp': true,
+      status: { $in: ['planned', 'in_progress', 'missed'] } }).select('_id date checkInItems formData assignedTo').lean();
+    return res.json({ success: true, data: rows.map(row => ({ id: row._id, date: row.date,
+      type: row.checkInItems?.[0], frequency: row.formData?.['监测频率'] || '', assignedTo: row.assignedTo })) });
+  } catch (error) { return res.status(500).json({ success: false, message: '读取人工监测安排失败' }); }
+});
 router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res) => {
   try {
-    if (!await require('../utils/annualFlowPilot').enabledForYear(req.params.id, req.body.year)) return res.status(404).json({ success: false, message: '当前年度未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可安排人工提醒' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -10993,7 +11053,8 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可安排人工提醒' });
     const managerId = String(req.body.managerId || '');
-    if (!mongoose.isValidObjectId(managerId)) return res.status(400).json({ success: false, message: '请选择负责随访的健管专员' });
+    if (!mongoose.isValidObjectId(managerId) || String(patient.assignedHealthManager || '') !== managerId)
+      return res.status(400).json({ success: false, message: '请先为客户指定责任健管专员' });
     const manager = await Admin.findOne({ _id: managerId, role: 'healthManager', tenantId: patient.tenantId,
       staffStatus: { $in: ['active', null] } }).select('_id name').lean();
     if (!manager) return res.status(400).json({ success: false, message: '所选健管专员已停用或不属于当前机构，请重新选择' });
@@ -11002,21 +11063,37 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
     if (req.body.noClientAppConfirmed !== true
       || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < today || !Number.isFinite(Date.parse(date)))
       return res.status(400).json({ success: false, message: '请先确认客户不使用客户端，并填写有效首次日期' });
-    const existing = await FollowUp.exists({ patientId: patient._id, repeatWeekly: true, clientVisible: false,
-      checkInItems: { $in: ['bloodPressure', 'weight'] }, status: { $in: ['planned', 'in_progress', 'missed'] } });
-    if (existing) return res.status(409).json({ success: false, message: '已有血压或体重的人工每周提醒，请先核对原任务，避免重复安排' });
-    const content = '客户不使用 App／小程序；请健管专员每周联系客户，同时记录血压和体重实测结果。两项入档后按实际完成日期安排下一周。';
-    const _id = new mongoose.Types.ObjectId(require('crypto').createHash('sha256').update(`manual-monitoring:v2:${patient._id}:bloodPressure+weight`).digest('hex').slice(0, 24));
-    const template = { type: 'phone', theme: '人工健康监测 · 血压和体重', content,
-      formData: { '监测频率': '每周1次', manualNoClientApp: true, confirmedBy: String(req.staff._id) }, checkInItems: ['bloodPressure', 'weight'] };
-    const result = await FollowUp.updateOne({ _id }, { $setOnInsert: { _id, tenantId: patient.tenantId, patientId: patient._id,
-      staffId: req.staff._id, assignedTo: manager._id, date: new Date(`${date}T00:00:00+08:00`),
-      status: 'planned', clientVisible: false, repeatWeekly: true, weeklyTemplate: template,
-      theme: template.theme, content, plannedContent: content, type: 'phone', formData: template.formData, checkInItems: template.checkInItems, aiStatus: 'approved' } },
-    { upsert: true, setDefaultsOnInsert: true });
-    if (!result.upsertedCount) return res.status(409).json({ success: false, message: '血压和体重的人工监测计划已存在，请核对原任务' });
-    res.json({ success: true, message: `已给${manager.name}安排血压和体重的同一条每周任务，完成后接续下一周` });
-  } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? '人工提醒已存在，请刷新' : '安排人工提醒失败' }); }
+    if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '请指定已确认的年度方案' });
+    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: patient._id, year: Number(req.body.year) })
+      .select('moduleData pushedAt confirmedAt reviewStatus').lean();
+    if (!plan?.pushedAt || !plan.confirmedAt || !['approved', null, undefined].includes(plan.reviewStatus))
+      return res.status(409).json({ success: false, message: '请先确认年度方案' });
+    const rows = require('../utils/manualAnnualMonitoring').manualMonitoringItems(plan.moduleData);
+    const identity = type => new mongoose.Types.ObjectId(require('crypto').createHash('sha256')
+      .update(`manual-monitoring:v3:${patient._id}:${plan._id}:${type}`).digest('hex').slice(0, 24));
+    for (const row of rows) {
+      const conflict = await FollowUp.exists({ patientId: patient._id, repeatWeekly: true, clientVisible: false,
+        checkInItems: row.type, _id: { $ne: identity(row.type) }, status: { $in: ['planned', 'in_progress', 'missed'] } });
+      if (conflict) return res.status(409).json({ success: false, message: `已有${row.label}的人工监测随访，请先核对原任务，避免重复安排` });
+    }
+    let created = 0;
+    for (const row of rows) {
+      const _id = identity(row.type), label = row.label;
+      const content = `客户不使用 App／小程序；请健管专员按${row.frequency}联系客户，记录${label}${row.period ? `（${row.period}）` : ''}的监测结果；本次完成后按该周期接续。`;
+      const formData = { '监测频率': row.frequency, manualNoClientApp: true, monitoringMetricType: row.type, confirmedBy: String(req.staff._id) };
+      const template = { type: 'phone', theme: `人工健康监测 · ${label}`, content, formData, checkInItems: [row.type] };
+      const result = await FollowUp.updateOne({ _id }, { $setOnInsert: { _id, tenantId: patient.tenantId,
+        patientId: patient._id, sourceAnnualPlanId: plan._id, staffId: req.staff._id, assignedTo: manager._id,
+        date: new Date(`${date}T00:00:00+08:00`), status: 'planned', clientVisible: false,
+        repeatWeekly: true, weeklyTemplate: template, theme: template.theme, content, plannedContent: content,
+        type: 'phone', formData, checkInItems: template.checkInItems, aiStatus: 'approved' } },
+      { upsert: true, setDefaultsOnInsert: true });
+      created += result.upsertedCount || 0;
+    }
+    return res.json({ success: true, data: { created, total: rows.length },
+      message: created ? `已给${manager.name}按各项目周期安排${created}条内部随访` : '人工监测随访已安排，无需重复建立' });
+  } catch (error) { res.status(error.statusCode || (error.code === 11000 ? 409 : 500)).json({ success: false,
+    message: error.statusCode ? error.message : error.code === 11000 ? '人工提醒已存在，请刷新' : '安排人工提醒失败' }); }
 });
 
 // Production MongoDB is standalone: keep the plan change atomic in one document,

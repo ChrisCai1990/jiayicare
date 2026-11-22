@@ -42,7 +42,7 @@ export default function MonitoringFollowUpFields({ task, value, onChange }) {
   const weight = task.checkInItems.includes('weight')
   return <div style={{ border: '1px solid #B8D8C7', borderRadius: 9, background: '#F4FAF6', padding: 12, display: 'grid', gap: 9 }}>
     <strong style={{ color: '#1E6B50', fontSize: 14 }}>本次实际测量数据</strong>
-    <div style={{ fontSize: 12, color: '#5F6B65' }}>保存后直接写入客户健康档案；完成本次内部随访，并从测量日期顺延7天生成下一次。</div>
+    <div style={{ fontSize: 12, color: '#5F6B65' }}>保存后直接写入客户健康档案；完成本次内部随访，并按{task.formData?.['监测频率'] || '每周1次'}安排下一次。</div>
     <label style={{ display: 'grid', gap: 4, fontSize: 12 }}>实际测量时间
       <input className="form-control" type="datetime-local" value={data.recordedAt || ''} onChange={e => set('recordedAt', e.target.value)} />
     </label>

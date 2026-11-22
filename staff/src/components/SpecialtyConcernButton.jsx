@@ -6,6 +6,7 @@ import DateField from '../../../shared/DateField.jsx'
 import annualAppointment from '../../../shared/annualAppointment.cjs'
 import { MONITORING_METRICS, MONITORING_PERIODS } from '../utils/monitoringMetrics'
 import { splitMonitoringPeriods, toggleMonitoringPeriod } from '../utils/monitoringPeriodSelection.mjs'
+import MonitoringFrequencyField from './MonitoringFrequencyField'
 
 const supportsInterval = direction => ['medical_treatment', 'checkup_completion'].includes(direction)
 const DIRECTIONS = [
@@ -103,13 +104,13 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setError('请填写资料依据、处理建议和修订原因；填写日期时还需时间依据'); return
     }
     if (title.trim().length < 2 || !directions.length || pilot && !goal.trim() && !(directions.length === 1 && hasDirection('monitoring'))) { setError(pilot ? '请填写具体问题、管理方向和整体目标' : '请填写具体问题和管理方向'); return }
-    if (pilot && hasDirection('monitoring') && (!monitoringItems.length || monitoringItems.some(item => MONITORING_PERIODS[item.type] && !item.time.trim()))) { setError('请勾选监测项目，并填写血压、血糖或体重的监测时间'); return }
+    if (pilot && hasDirection('monitoring') && (!monitoringItems.length || monitoringItems.some(item => MONITORING_PERIODS[item.type] && !item.time.trim() || !item.frequency?.trim()))) { setError('请勾选监测项目，为每项选择监测周期，并填写血压、血糖或体重的监测时间'); return }
     setBusy(true); setError('')
     try {
       const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, directions, note: note.trim(),
         ...(pilot ? { goal: goal.trim() || '按选定项目与时间完成日常监测', action: '', directionTimings: Object.fromEntries(directions
           .filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value)))
-          .map(value => { if (value === 'monitoring') return [value, { mode: 'pending', items: monitoringItems.map(item => ({ type: item.type, time: item.time.trim() })) }]; const timing = timingFor(value); return [value, { mode: timing.mode || 'pending',
+          .map(value => { if (value === 'monitoring') return [value, { mode: 'pending', items: monitoringItems.map(item => ({ type: item.type, time: item.time.trim(), frequency: item.frequency.trim() })) }]; const timing = timingFor(value); return [value, { mode: timing.mode || 'pending',
             firstDueDate: supportsInterval(value) && timing.mode !== 'pending' && timing.dateBasis === 'interval' ? '' : timing.firstDueDate || '',
             frequency: timing.mode === 'rolling' ? timing.frequency || '' : '',
             ...(supportsInterval(value) && timing.mode !== 'pending' && timing.dateBasis === 'interval'
@@ -208,10 +209,11 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <div style={{ fontSize: 12, color: '#65776F' }}>同一月份、同一专科的项目归为一次就诊复查；先由专科医生评估并开单，再完成检查及结果回顾。</div>
         </div>}</>}
         {pilot && hasDirection('monitoring') && <div style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
-          <strong>日常监测 · 勾选项目；血压、血糖、体重填写监测时间</strong>
+          <strong>日常监测 · 每项选择周期；血压、血糖、体重选择监测时间</strong>
           {MONITORING_METRICS.map(([type, label]) => { const selected = monitoringItems.find(item => item.type === type); const periods = splitMonitoringPeriods(selected?.time); const choices = MONITORING_PERIODS[type] || []; return <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
-            <label style={{ minWidth: 76 }}><input type="checkbox" checked={!!selected} onChange={e => setMonitoringItems(previous => e.target.checked ? [...previous, { type, time: type === 'weight' ? '晨起' : '' }] : previous.filter(item => item.type !== type))} /> {label}</label>
+            <label style={{ minWidth: 76 }}><input type="checkbox" checked={!!selected} onChange={e => setMonitoringItems(previous => e.target.checked ? [...previous, { type, time: type === 'weight' ? '晨起' : '', frequency: '' }] : previous.filter(item => item.type !== type))} /> {label}</label>
             {selected && choices.length > 0 && <div role="group" aria-label={`${label}监测时间（可多选）`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, flex: 1 }}>{[...choices, ...periods.filter(period => !choices.includes(period))].map(period => <label key={period} style={{ whiteSpace: 'nowrap', fontSize: 13 }}><input type="checkbox" checked={periods.includes(period)} onChange={() => setMonitoringItems(previous => previous.map(item => item.type === type ? { ...item, time: toggleMonitoringPeriod(item.time, period) } : item))} /> {period}</label>)}</div>}
+            {selected && <MonitoringFrequencyField label={label} value={selected.frequency || ''} onChange={frequency => setMonitoringItems(previous => previous.map(item => item.type === type ? { ...item, frequency } : item))} />}
           </div> })}
         </div>}
         {pilot && directions.filter(value => value !== 'monitoring' && !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value))).map(value => {

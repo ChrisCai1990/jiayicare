@@ -598,6 +598,8 @@ export const staffAPI = {
   getAnnualConsensusDraft: (patientId, planId) => req(`/staff/patients/${patientId}/annual-plan/${planId}/consensus-trial/draft`),
   saveAnnualConsensusDraft: (patientId, planId, data) => req(`/staff/patients/${patientId}/annual-plan/${planId}/consensus-trial/draft`, { method: 'PUT', body: JSON.stringify(data) }),
   startManualAnnualMonitoring: (patientId, data) => req(`/staff/patients/${patientId}/annual-monitoring-manual`, { method: 'POST', body: JSON.stringify(data) }),
+  getManualAnnualMonitoring: (patientId, planId) => req(`/staff/patients/${patientId}/annual-monitoring-manual?planId=${encodeURIComponent(planId)}`),
+  saveAnnualMonitoringCycles: (patientId, planId, data) => req(`/staff/patients/${patientId}/annual-plan/${planId}/monitoring-cycles`, { method: 'PATCH', body: JSON.stringify(data) }),
   reviseAnnualNutritionMetrics: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-metrics`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAnnualNutritionTask: (patientId, planId) => req(`/staff/patients/${patientId}/annual-nutrition-task?planId=${encodeURIComponent(planId)}`),
   dispatchAnnualNutritionTask: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-dispatch`, { method: 'POST', body: JSON.stringify(data) }),
