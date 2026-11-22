@@ -576,7 +576,7 @@ export default function ServicePlansScreen({ navigation, route }) {
         visit_time: '就医时间', hospital: '就医/体检医院', department: '就诊科室',
         expert: '专家姓名', reason: '原因', coordinator: '协调专员',
         plan_time: '计划时间', plan_method: '方式', purpose: '目的',
-        items: '项目', time: '时间', frequency: '频率',
+        items: '项目', time: '时间', measurementPeriod: '监测时段', frequency: '监测周期',
         name: '名称', brand: '品牌', dose: '剂量',
         escort: '陪检服务', institution: '体检机构',
         chemical_name: '药品名', brand_name: '商品名',
@@ -635,7 +635,11 @@ export default function ServicePlansScreen({ navigation, route }) {
         ['体检日期', item.schedule || '待确定'],
         ['计划体检机构', item.careTarget?.hospital || '待确定'],
         ['体检服务方式', [item.service?.modeLabel || '仅提醒', item.service?.typeLabel].filter(Boolean).join(' · ')],
-      ] : [
+      ] : item.moduleKey === 'monitoring' ? [
+        ['监测时段', item.measurementPeriod],
+        ['监测周期', item.frequency],
+        ['注意事项', item.precautions],
+      ].filter(([, value]) => value && String(value).trim()) : [
         ['管理目标', item.goal],
         ['完成标准', item.completionStandard],
         ['建议时间', item.schedule],

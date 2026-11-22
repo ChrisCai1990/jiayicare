@@ -28,6 +28,11 @@ function normalizeItem(moduleKey, record, index) {
     schedule: record.actionTiming?.firstDueDate || '',
     frequency: record.actionTiming?.mode === 'rolling' ? record.actionTiming.frequency || '本轮完成后再确定下一轮' : '',
   };
+  if (moduleKey === 'monitoring') return {
+    id: `${moduleKey}:${index}`, moduleKey, category: '日常监测', title: record.items || `监测项目 ${index + 1}`,
+    measurementPeriod: record.measurementPeriod || record.time || '', frequency: record.frequency || '',
+    precautions: record.precautions || '',
+  };
   const title = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
   const schedule = first(record.visit_time, record.plan_time, record.executionDate, record.date, record.time);
   return {
@@ -71,7 +76,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items;
 }
 
-const internalFields = new Set(['advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
+const internalFields = new Set(['clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);

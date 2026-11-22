@@ -25,7 +25,7 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
     {!planId ? <p>保存方案草稿后可在此查看。</p> : error ? <p role="alert">{error}</p> : !view ? <p>正在读取方案…</p> : <>
       <p>{view.pushedAt ? '已推送方案' : '已保存草稿'}</p>
       <div className="annual-track-stack">{['medical', 'management', 'checkup'].map(section => {
-        const items = view.items.filter(item => item.moduleKey !== 'management_targets' && annualSectionFor(item.moduleKey) === section)
+        const items = view.items.filter(item => item.moduleKey !== 'management_targets' && item.moduleKey !== 'monitoring' && annualSectionFor(item.moduleKey) === section)
         const recommendations = section === 'medical' ? view.recommendations : []
         return <AnnualPlanSection key={section} section={section}>
           {section === 'medical' && medicalGroups.map(group => <div key={group.title} className="annual-medical-group">
@@ -35,6 +35,10 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
           </div>)}
           {section === 'medical' && items.filter(item => !medicalGroups.some(group => group.keys.includes(item.moduleKey))).map(renderItem)}
           {section !== 'medical' && items.map(renderItem)}
+          {section === 'management' && !!view.monitoring?.records?.length && <section style={{ borderTop: '1px solid #E1EAE4', padding: '14px 0' }}>
+            <h4>日常监测</h4>
+            {view.monitoring.records.map((row, index) => <p key={index}>{row.items || '监测项目'}{row.measurementPeriod && ` · ${row.measurementPeriod}`} · {row.frequency || '周期待确认'}</p>)}
+          </section>}
           {section === 'management' && view.nutritionAssessment && <section style={{ borderTop: '1px solid #E1EAE4', padding: '14px 0' }}>
             <h4>营养评估与干预</h4>
             <p>评估日期：{view.nutritionAssessment.executionDate || '待安排'}</p>
@@ -43,7 +47,7 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
           </section>}
 
           {recommendations.map(row => <p key={row._id}>{[row.finding, row.recommendation, row.timeframe, row.nextStep].filter(Boolean).join(' · ')}</p>)}
-          {section !== 'medical' && !items.length && !recommendations.length && !(section === 'management' && view.nutritionAssessment) && <p>暂无已纳入的安排。</p>}
+          {section !== 'medical' && !items.length && !recommendations.length && !(section === 'management' && (view.nutritionAssessment || view.monitoring?.records?.length)) && <p>暂无已纳入的安排。</p>}
         </AnnualPlanSection>
       })}</div>
     </>}

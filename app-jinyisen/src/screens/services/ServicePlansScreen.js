@@ -560,7 +560,7 @@ export default function ServicePlansScreen({ navigation }) {
         visit_time: '就医时间', hospital: '就医/体检医院', department: '就诊科室',
         expert: '专家姓名', reason: '原因', coordinator: '协调专员',
         plan_time: '计划时间', plan_method: '方式', purpose: '目的',
-        items: '项目', time: '时间', frequency: '频率',
+        items: '项目', time: '时间', measurementPeriod: '监测时段', frequency: '监测周期',
         name: '名称', brand: '品牌', dose: '剂量',
         escort: '陪检服务', institution: '体检机构',
         chemical_name: '药品名', brand_name: '商品名',

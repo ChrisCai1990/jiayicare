@@ -10846,6 +10846,7 @@ router.get('/patients/:id/annual-plan/:planId/preview', staffAuth, async (req, r
     const byPlan = plan.pushedAt ? await require('../utils/publishedAnnualRecommendations')(req.params.id, [plan]) : new Map();
     const recommendations = byPlan.get(String(plan._id)) || [];
     res.json({ success: true, data: { items, pushedAt: plan.pushedAt || null, recommendations,
+      monitoring: plan.moduleData?.monitoring?.enabled === false ? null : customerModuleData(plan.moduleData).monitoring || null,
       nutritionAssessment: plan.moduleData?.nutrition_assessment?.enabled === false ? null : plan.moduleData?.nutrition_assessment || null } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -10985,7 +10986,7 @@ router.patch('/patients/:id/annual-plan/:planId/monitoring-cycles', staffAuth, a
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可调整监测周期' });
     if (!mongoose.isValidObjectId(req.params.planId)) return res.status(400).json({ success: false, message: '请指定年度方案' });
-    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
     if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可调整监测周期' });
@@ -11000,13 +11001,29 @@ router.patch('/patients/:id/annual-plan/:planId/monitoring-cycles', staffAuth, a
     if (!Array.isArray(frequencies) || !records.length || frequencies.length !== records.length
       || frequencies.some(value => !require('../utils/monitoringCycle').monitoringCycleDays(String(value || '').trim())))
       return res.status(400).json({ success: false, message: '请为每个监测项目选择有效周期' });
+    const clientAppUsage = String(req.body.clientAppUsage || '');
+    const firstManualFollowUpDate = String(req.body.firstManualFollowUpDate || '');
+    if (!['yes', 'no'].includes(clientAppUsage)) return res.status(400).json({ success: false, message: '请确认客户是否使用 App／小程序' });
+    const activeManual = await FollowUp.exists({ patientId: patient._id, sourceAnnualPlanId: plan._id,
+      clientVisible: false, repeatWeekly: true, 'formData.manualNoClientApp': true,
+      status: { $in: ['planned', 'in_progress', 'missed'] } });
+    if (clientAppUsage === 'yes' && activeManual) return res.status(409).json({ success: false, message: '已有人工监测随访，请先处理现有任务再改为使用客户端' });
+    if (clientAppUsage === 'no' && !activeManual && !require('../utils/manualAnnualMonitoringTasks').firstFollowUpDate(firstManualFollowUpDate))
+      return res.status(400).json({ success: false, message: '请确认有效的首次随访日期' });
+    let manager = null;
+    if (clientAppUsage === 'no') {
+      manager = patient.assignedHealthManager && await Admin.findOne({ _id: patient.assignedHealthManager,
+        role: 'healthManager', tenantId: patient.tenantId, staffStatus: { $in: ['active', null] } }).select('_id name').lean();
+      if (!manager) return res.status(409).json({ success: false, message: '请先分配责任健管专员' });
+    }
     const nextRecords = records.map((row, index) => ({ ...row, frequency: String(frequencies[index]).trim() }));
     const revision = { id: require('crypto').randomUUID(), kind: 'monitoring_cycles', status: 'applied',
       createdAt: new Date(), createdBy: req.staff._id,
       before: records.map(row => ({ metricType: row.metricType, items: row.items, frequency: row.frequency || '' })),
       after: nextRecords.map(row => ({ metricType: row.metricType, items: row.items, frequency: row.frequency })),
       note: '顾问逐项确认日常监测周期' };
-    const moduleData = { ...plan.moduleData, monitoring: { ...plan.moduleData.monitoring, records: nextRecords } };
+    const moduleData = { ...plan.moduleData, monitoring: { ...plan.moduleData.monitoring, records: nextRecords,
+      clientAppUsage, firstManualFollowUpDate: clientAppUsage === 'no' ? firstManualFollowUpDate : '' } };
     const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: patient._id, updatedAt: plan.updatedAt },
       { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true });
     if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重试' });
@@ -11023,6 +11040,8 @@ router.patch('/patients/:id/annual-plan/:planId/monitoring-cycles', staffAuth, a
           'formData.监测频率': row.frequency, 'weeklyTemplate.formData.监测频率': row.frequency,
           'weeklyTemplate.content': content, content, plannedContent: content } });
       }
+      if (clientAppUsage === 'no') await require('../utils/manualAnnualMonitoringTasks').createManualAnnualMonitoringTasks({
+        plan: saved, patient, manager, staffId: req.staff._id });
       await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(patient._id);
     } catch (error) { warning = '周期已保存，但提醒同步未完成；请稍后刷新核对'; console.error('[monitoring-cycles] sync failed', error); }
     return res.json({ success: true, data: saved, message: warning || '各项目监测周期已保存并同步提醒' });
@@ -11066,8 +11085,9 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
     if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '请指定已确认的年度方案' });
     const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: patient._id, year: Number(req.body.year) })
       .select('moduleData pushedAt confirmedAt reviewStatus').lean();
-    if (!plan?.pushedAt || !plan.confirmedAt || !['approved', null, undefined].includes(plan.reviewStatus))
-      return res.status(409).json({ success: false, message: '请先确认年度方案' });
+    if (!plan?.pushedAt || !['approved', null, undefined].includes(plan.reviewStatus)
+      || plan.moduleData?.monitoring?.clientAppUsage !== 'no')
+      return res.status(409).json({ success: false, message: '请先发布方案并确认客户不使用 App／小程序' });
     const rows = require('../utils/manualAnnualMonitoring').manualMonitoringItems(plan.moduleData);
     const identity = type => new mongoose.Types.ObjectId(require('crypto').createHash('sha256')
       .update(`manual-monitoring:v3:${patient._id}:${plan._id}:${type}`).digest('hex').slice(0, 24));
@@ -11721,13 +11741,18 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (plan.confirmedAt) return res.status(409).json({ success: false, message: '客户已确认本年度方案，新检查结果请走单项随访' });
     if (plan.pushedAt) {
       if (!plan.followUpReleasedAt || plan.distributionSyncedAt) return res.status(409).json({ success: false, message: '方案已推送；如需局部修改，请使用方案修订入口' });
-      const patient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist').lean();
+      const patient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist assignedHealthManager').lean();
       if (!patient || patient.isDeleted || String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '无权处理该会员' });
       if (plan.moduleData?.nutrition_assessment?.enabled !== false) {
         if (!patient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再重试分发' });
         await require('../utils/annualNutritionDispatch').dispatch(plan, patient, req.staff, FollowUp);
       }
       const dispatch = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
+      if (plan.moduleData?.monitoring?.clientAppUsage === 'no') {
+        const manager = await Admin.findOne({ _id: patient.assignedHealthManager, role: 'healthManager', tenantId: patient.tenantId,
+          staffStatus: { $in: ['active', null] } }).select('_id name').lean();
+        await require('../utils/manualAnnualMonitoringTasks').createManualAnnualMonitoringTasks({ plan, patient, manager, staffId: req.staff._id });
+      }
       if (!dispatch.warnings?.length) { plan.distributionSyncedAt = new Date(); await plan.save(); }
       return res.json({ success: true, data: plan, dispatch, retried: true });
     }
@@ -11768,6 +11793,9 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     plan.markModified('moduleData');
     const issue = require('../utils/annualPlanPublishValidation').validate(plan.moduleData);
     if (issue) return res.status(400).json({ success:false, message:issue });
+    const monitoring = plan.moduleData?.monitoring;
+    if (monitoring?.enabled !== false && monitoring?.records?.length && !['yes', 'no'].includes(monitoring.clientAppUsage))
+      return res.status(400).json({ success: false, message: '请确认客户是否使用 App／小程序，再推送方案' });
     let nutritionPatient = null;
     if (closedLoop) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, targetYear);
@@ -11790,6 +11818,17 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       try { plan.moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(plan.moduleData || {}, patient?.assignedHealthManager, patient); }
       catch (error) { return res.status(400).json({success:false,message:error.message}); }
     }
+    let manualPatient = null, manualManager = null;
+    if (monitoring?.enabled !== false && monitoring?.records?.length && monitoring.clientAppUsage === 'no') {
+      try { require('../utils/manualAnnualMonitoring').manualMonitoringItems(plan.moduleData); }
+      catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+      if (!require('../utils/manualAnnualMonitoringTasks').firstFollowUpDate(monitoring.firstManualFollowUpDate))
+        return res.status(400).json({ success: false, message: '请确认人工监测首次随访日期，再推送方案' });
+      manualPatient = nutritionPatient || await User.findById(req.params.id).select('_id tenantId assignedHealthManager').lean();
+      manualManager = manualPatient?.assignedHealthManager && await Admin.findOne({ _id: manualPatient.assignedHealthManager,
+        role: 'healthManager', tenantId: manualPatient.tenantId, staffStatus: { $in: ['active', null] } }).select('_id name').lean();
+      if (!manualManager) return res.status(409).json({ success: false, message: '请先分配可用的责任健管专员，再推送方案' });
+    }
     const wasReturned = Boolean(plan.returnedAt);
     plan.reviewStatus = 'approved';
     plan.reviewedBy = req.staff._id;
@@ -11806,6 +11845,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (nutritionPatient && plan.moduleData?.nutrition_assessment?.enabled !== false) {
       await require('../utils/annualNutritionDispatch').dispatch(plan, nutritionPatient, req.staff, FollowUp);
     }
+    if (manualPatient) await require('../utils/manualAnnualMonitoringTasks').createManualAnnualMonitoringTasks({
+      plan, patient: manualPatient, manager: manualManager, staffId: req.staff._id });
     const dispatch = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
     if (!dispatch.warnings?.length) { plan.distributionSyncedAt = new Date(); await plan.save(); }
     const { byCode } = require('../utils/annualPlanServiceVersions');
@@ -11832,7 +11873,7 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     }
     res.json({ success: true, data: plan, dispatch });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 });
 

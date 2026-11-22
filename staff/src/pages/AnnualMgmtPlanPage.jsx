@@ -1337,11 +1337,18 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                   {canEdit ? <MonitoringFrequencyField label={row.items || '监测项目'} value={row.frequency || ''}
                     onChange={frequency => handleModuleChange('monitoring', 'records', data.records.map((item, i) => i === index ? { ...item, frequency } : item))} /> : <span>· {row.frequency || '周期待确认'}</span>}
                 </div>)}
+                {key === 'monitoring' && !pushedAt && (data?.records || []).length > 0 && <div style={{ display: 'grid', gap: 8, marginTop: 14, fontSize: 13 }}>
+                  <label>客户是否使用 App／小程序　{canEdit ? <select className="form-input" aria-label="客户是否使用App或小程序" style={{ width: 'auto' }} value={data.clientAppUsage || ''} onChange={event => handleModuleChange('monitoring', 'clientAppUsage', event.target.value)}>
+                    <option value="">请选择</option><option value="yes">使用</option><option value="no">不使用</option>
+                  </select> : data.clientAppUsage === 'yes' ? '使用' : data.clientAppUsage === 'no' ? '不使用' : '待确认'}</label>
+                  {data.clientAppUsage === 'no' && <><div>推送方案时将按上述周期给责任健管专员建立内部随访。</div>
+                    <label>首次随访日期　{canEdit ? <input className="form-input" type="date" aria-label="人工监测首次随访日期" style={{ width: 'auto' }} value={data.firstManualFollowUpDate || ''} onChange={event => handleModuleChange('monitoring', 'firstManualFollowUpDate', event.target.value)} /> : data.firstManualFollowUpDate || '待确认'}</label></>}
+                </div>}
                 {key === 'monitoring' && pushedAt && (data?.records || []).length > 0 && (canEdit
                   ? <PublishedMonitoringCycles patientId={id} plan={plansByType[planType]} rows={data.records} toast={toast}
                     onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
                   : data.records.map((row, index) => <div key={index}>{row.items || '监测项目待确认'}{row.measurementPeriod && ` · ${row.measurementPeriod}`} · {row.frequency || '周期待确认'}</div>))}
-                {key === 'monitoring' && canEdit && pushedAt && confirmedAt && currentPlanId && (data?.records || []).length > 0 &&
+                {key === 'monitoring' && canEdit && pushedAt && data.clientAppUsage === 'no' && currentPlanId && (data?.records || []).length > 0 &&
                   <ManualMonitoringTrial patientId={id} year={year} planId={currentPlanId} rows={data.records}
                     assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''}
                     managerName={patient?.assignedHealthManager?.name || staffList.find(person => String(person._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name || ''} toast={toast} />}
@@ -1456,7 +1463,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         {canEdit ? <PublishedMonitoringCycles patientId={id} plan={plansByType[planType]} rows={moduleData.monitoring.records} toast={toast}
           onSaved={saved => { setPlansByType(previous => ({ ...previous, [planType]: saved })); setModuleData(saved.moduleData || {}); setRemotePlanChanged(false) }} />
           : moduleData.monitoring.records.map((row, index) => <div key={index}>{row.items || '监测项目'}{row.measurementPeriod && ` · ${row.measurementPeriod}`} · {row.frequency || '周期待确认'}</div>)}
-        {canEdit && confirmedAt && currentPlanId && <ManualMonitoringTrial patientId={id} year={year} planId={currentPlanId} rows={moduleData.monitoring.records}
+        {canEdit && moduleData.monitoring.clientAppUsage === 'no' && currentPlanId && <ManualMonitoringTrial patientId={id} year={year} planId={currentPlanId} rows={moduleData.monitoring.records}
           assignedManagerId={patient?.assignedHealthManager?._id || patient?.assignedHealthManager || ''}
           managerName={patient?.assignedHealthManager?.name || staffList.find(person => String(person._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name || ''} toast={toast} />}
       </section>}
