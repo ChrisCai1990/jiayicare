@@ -42,7 +42,7 @@ function parseTextResultFirstLab(layout, sourcePage) {
     if (hasPrintedUnit && (!unit || unit.length > 24)) continue;
     if (previousColumn && cells.length < 4) continue;
     const marker = rawValue.match(/[↑↓HL]\s*$/i);
-    const value = marker ? rawValue.slice(0, marker.index).trim() : rawValue;
+    const value = rawValue;
     items.push({ name, value, referenceRange, unit, itemType: 'lab',
       status: marker || /^(?:阳性|弱阳性)/.test(value) ? 'abnormal' : 'unknown',
       manualReviewStatus: 'pending', sourcePage, sourceSection: section,

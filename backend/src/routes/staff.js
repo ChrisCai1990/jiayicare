@@ -19593,9 +19593,10 @@ async function runReportParseControlled(reportId) {
       // Reconcile its complete text-layer rows before the draft is saved, instead
       // of leaving clear omissions for repeated manual page supplements.
       if (!isPrescriptionReport && report.type === 'annual') {
-        const { readPdfPageLayout } = require('../utils/reportOcrWords');
+        const { readPdfPageLayout, readPdfPageTextBoxes } = require('../utils/reportOcrWords');
         const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
-        const { parseTextNamedExamTable } = require('../utils/reportTextNamedExamTable');
+        const { parseTextNamedExamTable, parseCrossPageNamedExamTable,
+          filterUncoveredNamedExams } = require('../utils/reportTextNamedExamTable');
         const { parseTextLabTable } = require('../utils/reportTextLabTable');
         const { parseTextResultFirstLab } = require('../utils/reportTextResultFirstLab');
         const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
@@ -19606,11 +19607,25 @@ async function runReportParseControlled(reportId) {
         for (let page = 1; page <= (knownTotalPages || totalPageCount); page++) {
           try {
             const layout = await readPdfPageLayout(pdfBuf, page);
+            let namedBoxes = null;
+            if (/项目名称\s+影像表现\s+诊断结论|(?:^|\n)\s*影像结果\s{2,}/.test(layout)) {
+              try { namedBoxes = await readPdfPageTextBoxes(pdfBuf, page); }
+              catch (error) { console.log(`[parse-ai] 第${page}页文字坐标不可用，继续文字层解析：${error.code || error.name || 'ERROR'}`); }
+            }
+            if (namedBoxes && page > 1) {
+              const previousLayout = await readPdfPageLayout(pdfBuf, page - 1);
+              const continuation = parseCrossPageNamedExamTable(previousLayout, namedBoxes, page);
+              if (continuation.supported) missingTextRows.push(...filterUncoveredNamedExams(
+                [...classified, ...missingTextRows], continuation.items));
+            }
             for (const parser of [parseTextReferenceFirstLab, parseTextNamedExamTable,
               parseTextLabTable, parseTextResultFirstLab, parseTextUrineTable, parseTextPhysicalExam,
               parseTextUltrasoundTable, parseTextAikangExam]) {
-              const transcript = parser(layout, page);
-              if (transcript.supported) missingTextRows.push(...transcript.items);
+              const transcript = parser === parseTextNamedExamTable
+                ? parser(layout, page, namedBoxes) : parser(layout, page);
+              if (transcript.supported) missingTextRows.push(...(parser === parseTextNamedExamTable
+                ? filterUncoveredNamedExams([...classified, ...missingTextRows], transcript.items)
+                : transcript.items));
             }
           } catch (error) {
             console.log(`[parse-ai] 第${page}页参考值前置表格读取失败：${error.code || error.name || 'ERROR'}`);
@@ -20008,7 +20023,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   let localScan = null;
   if (isPdf && report.type === 'annual') {
     try {
-      const { readPdfPageLayout } = require('../utils/reportOcrWords');
+      const { readPdfPageLayout, readPdfPageTextBoxes } = require('../utils/reportOcrWords');
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
       const { parseTextLabTable } = require('../utils/reportTextLabTable');
       const textCandidate = parseTextLabTable(layout, pageNum);
@@ -20016,8 +20031,21 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const resultFirstCandidate = parseTextResultFirstLab(layout, pageNum);
       const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
       const referenceFirstCandidate = parseTextReferenceFirstLab(layout, pageNum);
-      const { parseTextNamedExamTable } = require('../utils/reportTextNamedExamTable');
-      const namedExamCandidate = parseTextNamedExamTable(layout, pageNum);
+      const { parseTextNamedExamTable, parseCrossPageNamedExamTable,
+        filterUncoveredNamedExams } = require('../utils/reportTextNamedExamTable');
+      let namedBoxes = null;
+      if (/项目名称\s+影像表现\s+诊断结论|(?:^|\n)\s*影像结果\s{2,}/.test(layout)) {
+        try { namedBoxes = await readPdfPageTextBoxes(pdfBuf, pageNum); }
+        catch (error) { console.log(`[parse-page] P${pageNum} 文字坐标不可用，继续文字层解析：${error.code || error.name || 'ERROR'}`); }
+      }
+      const namedExamCandidate = parseTextNamedExamTable(layout, pageNum, namedBoxes);
+      const previousLayout = namedBoxes && pageNum > 1
+        ? await readPdfPageLayout(pdfBuf, pageNum - 1) : '';
+      const crossPageCandidate = previousLayout
+        ? parseCrossPageNamedExamTable(previousLayout, namedBoxes, pageNum) : { items: [] };
+      const missingNamedExams = filterUncoveredNamedExams(oldPageAtStart,
+        [...(namedExamCandidate.supported ? namedExamCandidate.items : []),
+          ...(crossPageCandidate.supported ? crossPageCandidate.items : [])]);
       const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
       const urineCandidate = parseTextUrineTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
@@ -20030,12 +20058,12 @@ async function runReportPageParseControlled(reportId, pageNum) {
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || resultFirstCandidate.supported || referenceFirstCandidate.supported || namedExamCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
+      if (textCandidate.supported || resultFirstCandidate.supported || referenceFirstCandidate.supported || missingNamedExams.length || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
         localScan = { source: aikangCandidate.supported ? 'pdf_text_exam' : 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
           ...(resultFirstCandidate.supported ? resultFirstCandidate.items : []),
           ...(referenceFirstCandidate.supported ? referenceFirstCandidate.items : []),
-          ...(namedExamCandidate.supported ? namedExamCandidate.items : []),
+          ...missingNamedExams,
           ...(urineCandidate.supported ? urineCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
@@ -20049,7 +20077,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
         const { extractScannedLabTable } = require('../utils/reportScanOcr');
         const scanImage = await renderSinglePage(pdfBuf, pageNum, 300);
         const candidate = await extractScannedLabTable(Buffer.from(scanImage, 'base64'), pageNum);
-        if (candidate.supported && candidate.items.length >= 6
+        if (!missingNamedExams.length && candidate.supported && candidate.items.length >= 6
           && candidate.items.length > (localScan?.items.length || 0) + 5) {
           localScan = { ...candidate, source: 'local_ocr' };
         }

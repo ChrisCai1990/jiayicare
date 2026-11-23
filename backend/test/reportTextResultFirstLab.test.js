@@ -20,6 +20,7 @@ test('result-first vaginal table reads current result without borrowing prior re
   assert.equal(result.items[0].unit, '');
   assert.equal(result.items.find(item => item.name === '白细胞').unit, '/HPF');
   assert.equal(result.items.find(item => item.name === '上皮细胞').status, 'abnormal');
+  assert.equal(result.items.find(item => item.name === '上皮细胞').value, '少量 ↓');
   assert.equal(result.items[0].sourceSection, '白带生化');
 });
 

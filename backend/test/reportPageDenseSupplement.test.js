@@ -36,7 +36,9 @@ test('dense annual page checks four bands and does not stop after a partial loca
     '../utils/reportTextLabTable': { parseTextLabTable: () => ({ supported: false, items: [] }) },
     '../utils/reportTextResultFirstLab': { parseTextResultFirstLab: () => ({ supported: false, items: [] }) },
     '../utils/reportTextReferenceFirstLab': { parseTextReferenceFirstLab: () => ({ supported: false, items: [] }) },
-    '../utils/reportTextNamedExamTable': { parseTextNamedExamTable: () => ({ supported: false, items: [] }) },
+    '../utils/reportTextNamedExamTable': { parseTextNamedExamTable: () => ({ supported: false, items: [] }),
+      parseCrossPageNamedExamTable: () => ({ supported: false, items: [] }),
+      filterUncoveredNamedExams: (_, items) => items },
     '../utils/reportScanOcr': { extractScannedLabTable: async () => { localOcrCalls++; return { supported: true, items: [
       { name: '本地识别项目', itemType: 'lab', value: '1', sourcePage: 9 },
     ] }; } },

@@ -184,6 +184,7 @@ function findUncoveredExamSections(sections, items) {
     const covered = group.sections.some(section => (items || []).some(item => {
       if (!['imaging', 'diagnosis', 'pathology'].includes(item?.itemType)
           || sectionForItem(item, representativeSections) !== group.sections[0]) return false;
+      if (item.manualReviewStatus === 'reviewed' && String(item.findings || item.diagnosis || item.conclusion || '').trim()) return true;
       return ['findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']
         .some(field => String(item[field] || '').trim() && isNarrativeAnchored(item[field], section.clinicalText));
     }));
