@@ -1162,7 +1162,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {action.key === 'annual_checkup' && <div>体检机构：{action.record.institution || '待确认'} · 服务方式：{{ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' }[action.record.serviceMode || 'reminder'] || '待确认'}</div>}
       {action.record.goal && <div>目标：{action.record.goal}</div>}
       {action.record.reviewItems?.length > 0 && <div>检查：{action.record.reviewItems.join('、')}</div>}
-      {action.record.notes && <div style={{ whiteSpace: 'pre-wrap' }}>内部备注：{action.record.notes}</div>}
+      {action.key !== 'vaccine' && action.record.notes && <div style={{ whiteSpace: 'pre-wrap' }}>内部备注：{action.record.notes}</div>}
     </div>
     const def = annualItemLayout(entry.key, entry.def, patient?.assignedHealthManager?.name || staffList.find(s => String(s._id) === String(patient?.assignedHealthManager?._id || patient?.assignedHealthManager))?.name, patient?.assignedNutritionist?.name || staffList.find(s => String(s._id) === String(patient?.assignedNutritionist?._id || patient?.assignedNutritionist))?.name, currentPlanId, dirty)
     if (action.record.reviewGroupVersion === 1) def.fields = def.fields.filter(field => field.key !== 'items')

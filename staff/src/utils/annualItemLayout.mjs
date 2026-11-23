@@ -1,4 +1,4 @@
-export const simpleAnnualModules = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'annual_checkup']
+export const simpleAnnualModules = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'annual_checkup']
 export function annualItemLayout(key, def, managerName, nutritionName, nutritionPlanId, planDirty) {
   if (key === 'personalized_followups') {
     const templateKeys = new Set(['standardPlanName', 'standardContent', 'standardSchedule'])
@@ -29,10 +29,11 @@ export function annualItemLayout(key, def, managerName, nutritionName, nutrition
     ] }],
   }
   const hidden = new Set(['standardPlanName', 'standardContent', 'standardSchedule', 'coordinator', 'followUpStaff', 'frequency', 'ownerRole', 'serviceMode', 'serviceType'])
-  const notesField = def.fields.find(f => f.key === 'notes')
+  if (key === 'vaccine') ['notes', 'precautions', 'customerAction'].forEach(field => hidden.add(field))
+  const notesField = key === 'vaccine' ? null : def.fields.find(f => f.key === 'notes')
   const dateKeys = new Set(['visit_time', 'time', 'date'])
   const fields = def.fields.filter(f => !hidden.has(f.key) && f.key !== 'notes').flatMap(f => dateKeys.has(f.key)
-    ? [{ ...f, label: '建议就医/检查日期', appointmentDate: true }, { key: 'timingReason', label: '时间评估依据', type: 'textarea', internal: true },
+    ? [{ ...f, label: key === 'vaccine' ? '接种时间' : '建议就医/检查日期', ...(key === 'vaccine' ? {} : { appointmentDate: true }) }, ...(key === 'vaccine' ? [] : [{ key: 'timingReason', label: '时间评估依据', type: 'textarea', internal: true }]),
       ...(notesField ? [{ ...notesField, label: '备注', placeholder: '填写本项安排需要补充说明的内容（选填）' }] : [])]
     : [f])
   if (notesField && !def.fields.some(f => dateKeys.has(f.key))) fields.push({ ...notesField, label: '备注', placeholder: '填写本项安排需要补充说明的内容（选填）' })
