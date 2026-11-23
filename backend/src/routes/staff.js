@@ -6684,7 +6684,7 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
       // 健康顾问因任务仍指向一个已不存在的 ID 而永久卡死。
       Object.assign(report, {
         fileUrl: '', fileUrls: [], ossKey: '', ossKeys: [], content: '', mimeType: '', fileSize: '',
-        reportItems: [], aiSummary: '', keyFindings: [], parseJob: null, pageParseStatus: {}, imagePageEvidence: {}, pageParseHistory: [],
+        reportItems: [], aiSummary: '', keyFindings: [], parseJob: null, pageParseStatus: {}, pageParseStatusByPage: {}, imagePageEvidence: {}, pageParseHistory: [],
         audit_status: 'unaudited', aiStatus: 'pending', status: 'pending', audited_by: '', audited_at: null,
         reviewedByStaff: null, reviewedAt: null, reject_reason: '', familyDoctorViewedAt: null, familyDoctorViewedBy: null,
         familyDoctorAudit: { status: 'pending', by: null, byName: '', at: null, editLog: [] },
@@ -19047,8 +19047,10 @@ async function runReportParseControlled(reportId) {
   const useZheyiTemplate = !isPrescriptionReport && zheyiTemplate.isZheyiReport(report);
 
   const imagePageEvidence = {};
-  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
+  const examSectionsByPage = new Map();
+  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence, sections) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
+    if (sections?.length) examSectionsByPage.set(page, [...(examSectionsByPage.get(page) || []), ...sections]);
   } });
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
@@ -19599,7 +19601,13 @@ async function runReportParseControlled(reportId) {
       const textGapWarning = textCoverage?.uncoveredRows
         ? `⚠️ PDF文字层在第${textCoverage.pagesWithGaps.join('、')}页发现至少${textCoverage.uncoveredRows}条有结果的原文行未与草稿同名同值对应，请逐行核对；该数字是保守候选统计，不代表全部漏项。`
         : '';
+      const { applyExamSectionCoverage } = require('../utils/reportImageEvidence');
+      for (const [page, sections] of examSectionsByPage) {
+        imagePageEvidence[page] = applyExamSectionCoverage(imagePageEvidence[page], sections,
+          classified.filter(item => Number(item.sourcePage) === Number(page)));
+      }
       const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
+      const imageEvidenceNeedsReview = Object.values(imagePageEvidence).some(evidence => evidence?.status === 'needs_review');
       const failedPages = totalPageCount - okPages;
       const failedPageList = [...new Set([...failedPageNumbers, ...qualityRetryPages])].sort((a, b) => a - b);
       const failedPageLabel = failedPageList.length ? `（第${failedPageList.join('、')}页）` : '';
@@ -19619,7 +19627,7 @@ async function runReportParseControlled(reportId) {
         imagePageEvidence,
         aiSummary:   reviewedSummary,
         aiStatus:    allFailed ? 'failed' : 'pending',
-        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${textCoverage?.uncoveredRows ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
+        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${textCoverage?.uncoveredRows || imageEvidenceNeedsReview ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
           ...(textCoverage ? { textCoverage } : {}) },
         institution, checkDate: resolvedCheckDate, reportYear: resolvedCheckDate ? Number(resolvedCheckDate.slice(0, 4)) : null,
       });
@@ -20093,6 +20101,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
       pageParseStatus: { pageNum, status: 'image_only', startedAt: report.pageParseStatus?.startedAt || new Date(),
         completedAt: new Date(), itemCount: 0,
         message: `${evidence.message} 已有条目不自动改写，请人工核对。` },
+      [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: 'image_only',
+        completedAt: new Date(), itemCount: 0, message: evidence.message },
     } });
     return;
   }
@@ -20132,7 +20142,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
     acceptedItems: acceptedSupplementItems,
     afterItems: classifiedPage,
   }].slice(-3);
-  const pageEvidence = imagePageEvidence[pageNum];
+  const { applyExamSectionCoverage } = require('../utils/reportImageEvidence');
+  const pageEvidence = applyExamSectionCoverage(imagePageEvidence[pageNum],
+    [...regionEvidenceSections.values()].flat(), classifiedPage);
   const candidateDiagnostics = { existing: 0, withoutResult: 0, other: 0 };
   if (!acceptedSupplementItems.length) {
     for (const candidate of parsedItems) {
@@ -20153,6 +20165,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
       : parsedItems.length
         ? `第${pageNum}页识别到${parsedItems.length}项候选${candidateDetail}，未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
         : `第${pageNum}页AI未读到可接纳的遗漏项目，已保留原${oldPage.length}项，请对照原件核对是否漏提`;
+  const pageNeedsReview = Boolean(localScan) || pageEvidence?.status === 'needs_review';
+  const finalMessage = pageNeedsReview && pageEvidence?.message
+    ? `${resultMessage} ${pageEvidence.message}` : resultMessage;
   const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision),
     'pageParseStatus.status': 'processing', 'pageParseStatus.pageNum': pageNum,
     'pageParseStatus.startedAt': report.pageParseStatus?.startedAt }, {
@@ -20160,7 +20175,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
       aiStatus: 'pending',
-      pageParseStatus: { pageNum, status: localScan ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+      pageParseStatus: { pageNum, status: pageNeedsReview ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: finalMessage, itemCount: acceptedSupplementItems.length },
+      [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: pageNeedsReview ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review',
+        startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: finalMessage, itemCount: acceptedSupplementItems.length },
       pageParseHistory,
     },
     $inc: { reviewRevision: 1 },
@@ -20251,13 +20268,18 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
     }
     const claimStartedAt = new Date();
-    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(claimStartedAt.getTime() - PAGE_PARSE_STALE_MS) } }, { 'pageParseStatus.startedAt': { $exists: false } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` } });
+    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(claimStartedAt.getTime() - PAGE_PARSE_STALE_MS) } }, { 'pageParseStatus.startedAt': { $exists: false } }] }, {
+      pageParseStatus: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` },
+      [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` },
+    });
     if (!pageClaim) return res.status(409).json({ success: false, message: '报告正在识别、补提或已暂停，请勿重复提交' });
     runReportPageParse(report._id, pageNum).catch(async error => {
       console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);
       await MedicalReport.findOneAndUpdate({ _id: report._id, 'pageParseStatus.status': 'processing',
         'pageParseStatus.pageNum': pageNum, 'pageParseStatus.startedAt': claimStartedAt },
-      { pageParseStatus: { pageNum, status: 'failed', startedAt: claimStartedAt, completedAt: new Date(), message: error.message } }).catch(() => {});
+      { pageParseStatus: { pageNum, status: 'failed', startedAt: claimStartedAt, completedAt: new Date(), message: error.message },
+        [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: 'failed', startedAt: claimStartedAt,
+          completedAt: new Date(), message: error.message } }).catch(() => {});
     });
     res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
   } catch (err) {

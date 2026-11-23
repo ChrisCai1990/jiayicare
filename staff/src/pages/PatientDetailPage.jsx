@@ -13631,7 +13631,8 @@ export default function PatientDetailPage() {
         const activePage = ocrReviewPage || firstSourcePage
         const activeImageEvidence = ocrReviewReport.imagePageEvidence?.[activePage]
         const isImageOnlyPage = activeImageEvidence?.status === 'image_only'
-        const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
+        const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage
+          ? ocrReviewReport.pageParseStatus : ocrReviewReport.pageParseStatusByPage?.[activePage] || null
         // 后端补提是进程内异步任务；发布重启等中断可能遗留 processing。
         // 超过15分钟后不再锁死按钮，让后端按同一规则接受重新补提。
         const pageParseStartedAt = new Date(activePageParse?.startedAt || '').getTime()

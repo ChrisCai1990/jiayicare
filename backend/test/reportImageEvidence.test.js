@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { guardImageEvidence, createReportImageParser, IMAGE_EVIDENCE_PROMPT, recordPageEvidence } = require('../src/utils/reportImageEvidence');
+const { guardImageEvidence, createReportImageParser, IMAGE_EVIDENCE_PROMPT, recordPageEvidence,
+  findUncoveredExamSections, applyExamSectionCoverage } = require('../src/utils/reportImageEvidence');
 
 const imageOnly = { hasMedicalImages: true, readability: 'clear', clinicalText: '' };
 const narrative = { name: '乳腺', itemType: 'imaging', findings: '左侧乳腺内见低回声结节，大小约0.482cm×0.282cm。', diagnosis: '' };
@@ -15,6 +16,37 @@ test('pure images reject invented findings and caliper values regardless of cand
   assert.equal(result.summary, '');
   assert.equal(result.imageEvidence.blockedCount, 3);
   assert.equal(candidates.length, 3); // Never mutate existing/raw arrays.
+});
+
+test('annual report checks independently transcribed exam sections even when first pass found no items', async () => {
+  let calls = 0;
+  const parse = createReportImageParser(async (_, prompt) => {
+    calls++;
+    return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT
+      ? { hasMedicalImages: false, readability: 'clear', sections: [{ title: '心脏彩超', clinicalText: '左心室大小正常。' }] }
+      : { items: [] });
+  }, { report: { type: 'annual' } });
+  await parse('annual-page', 'extract', { sourcePage: 12 });
+  assert.equal(calls, 2);
+});
+
+test('whole missing exam section is reported; overlapping bands do not create false gaps', () => {
+  const sections = [
+    { title: '心脏彩超', clinicalText: '左心室大小正常。' },
+    { title: '心脏彩超', clinicalText: '左心室大小正常。\n二尖瓣轻度反流。' },
+    { title: '前列腺超声', clinicalText: '前列腺形态正常，回声均匀。' },
+    { title: '检查所见', clinicalText: '页内字段标题，不是独立检查。' },
+  ];
+  const items = [{ name: '心脏彩超', sourceSection: '心脏彩超', itemType: 'imaging', findings: '左心室大小正常。' }];
+  assert.deepEqual(findUncoveredExamSections(sections, items), { total: 2, titles: ['前列腺超声'] });
+  const result = applyExamSectionCoverage({ status: 'verified', blockedReasons: {} }, sections, items);
+  assert.equal(result.status, 'needs_review');
+  assert.deepEqual(result.uncoveredSections, ['前列腺超声']);
+  assert.equal(result.blockedReasons.uncovered_sections, 1);
+  const wrongSection = [{ name: '心脏彩超', sourceSection: '前列腺超声',
+    itemType: 'imaging', findings: '左心室大小正常。' }];
+  assert.deepEqual(findUncoveredExamSections(sections, wrongSection).titles,
+    ['心脏彩超', '前列腺超声']);
 });
 
 test('mixed image/text pages keep printed findings and reject added interpretation, wrong side or changed measurement', () => {

@@ -112,6 +112,7 @@ const medicalReportSchema = new mongoose.Schema({
   // 独立于 UI 的持久化任务状态；服务重启后按此恢复，不把原件或中间图片写入数据库。
   parseJob:        { type: mongoose.Schema.Types.Mixed, default: null },
   pageParseStatus: { type: mongoose.Schema.Types.Mixed, default: null }, // 单页补提进度：{pageNum,status,startedAt,completedAt,message,itemCount}
+  pageParseStatusByPage: { type: mongoose.Schema.Types.Mixed, default: {} }, // 每页最近一次补提结果，切页后仍可追溯
   // 保留最近3次单页补提现场，人工修改 reportItems 后仍可追溯 AI 原始候选与最终接受项。
   imagePageEvidence: { type: mongoose.Schema.Types.Mixed, default: {} }, // 页级影像原文校验状态，不保存图像或额外原文
   pageParseHistory: { type: mongoose.Schema.Types.Mixed, default: [] },
