@@ -19308,7 +19308,30 @@ async function runReportParseControlled(reportId) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
-            const firstRows = allItems.filter(it => it._page === pageNum);
+            let firstRows = allItems.filter(it => it._page === pageNum);
+            // A scanned lab page can be smaller than the large-PDF threshold.
+            // Recover only empty pages already selected for the normal
+            // page-coverage audit, so covers and template skips are not scanned.
+            if (isComprehensiveCheckup && !firstRows.length) {
+              try {
+                const localRows = await require('../utils/reportFirstPassScanFallback').recoverBlankScannedLabPage({
+                  pdfBuffer: pdfBuf, pageNum, existingItems: firstRows,
+                  readLayout: require('../utils/reportOcrWords').readPdfPageLayout,
+                  renderPage: renderSinglePage,
+                  extractTable: require('../utils/reportScanOcr').extractScannedLabTable,
+                });
+                if (localRows.length) {
+                  firstRows = tagReportPageItems(localRows, pageNum);
+                  allItems = allItems.concat(firstRows);
+                  const previousEvidence = imagePageEvidence[pageNum] || {};
+                  imagePageEvidence[pageNum] = { ...previousEvidence, status: 'needs_review',
+                    message: [previousEvidence.message,
+                      `扫描表格本地OCR补出${localRows.length}条待核对候选；请逐行核对项目、数值、参考范围及异常标记。`].filter(Boolean).join(' ') };
+                }
+              } catch (error) {
+                console.log(`[parse-ai] 页${pageNum}本地扫描表格补提不可用: ${error.code || error.name || 'ERROR'}`);
+              }
+            }
             const firstNames = firstRows.map(it => str(it.name)).filter(Boolean);
             const incompleteNames = firstRows.filter(it => ['lab', 'data'].includes(it.itemType) && !str(it.value))
               .map(it => str(it.name)).filter(Boolean);
