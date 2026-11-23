@@ -395,7 +395,7 @@ export const staffAPI = {
   deleteReport:  (id, reason) => req(`/staff/medical-reports/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   parseReportAI: (id, data = {}) => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST', body: JSON.stringify(data) }),
   parseReportPageAI: (id, pageNum) => req(`/staff/medical-reports/${id}/parse-page`, { method: 'POST', body: JSON.stringify({ pageNum }) }),
-  reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
+  reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST', body: JSON.stringify({ refreshAutomatic: true }) }),
   getScreeningCatalog: () => req('/staff/screening-catalog'),
   generateHealthCourseDraft: (reportId, force = false) => req(`/staff/medical-reports/${reportId}/health-course-draft`, { method:'POST', body:JSON.stringify({ force }) }),
   reviewHealthCourseDraft: (reportId, data) => req(`/staff/medical-reports/${reportId}/health-course-draft`, { method:'PUT', body:JSON.stringify(data) }),

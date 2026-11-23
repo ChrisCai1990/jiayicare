@@ -6,6 +6,11 @@ function findUnconfirmedMultiClassifiedItems(items) {
   });
 }
 
+function shouldReclassifyReportItem(item, refreshAutomatic, hasConfirmedClassification) {
+  if (!hasConfirmedClassification(item)) return true;
+  return refreshAutomatic && item?.classificationSource !== 'manual' && !item?.classificationReviewedAt;
+}
+
 async function collapseStaleAutomaticCandidates(items, classifyItems) {
   const source = Array.isArray(items) ? items : [];
   const candidates = source.map((item, index) => ({ item, index })).filter(({ item }) => {
@@ -22,4 +27,5 @@ async function collapseStaleAutomaticCandidates(items, classifyItems) {
   return source.map((item, index) => resolved.get(index) || item);
 }
 
-module.exports = { findUnconfirmedMultiClassifiedItems, collapseStaleAutomaticCandidates };
+module.exports = { findUnconfirmedMultiClassifiedItems, collapseStaleAutomaticCandidates,
+  shouldReclassifyReportItem };

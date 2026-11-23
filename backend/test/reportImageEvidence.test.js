@@ -36,6 +36,7 @@ test('whole missing exam section is reported; overlapping bands do not create fa
     { title: '心脏彩超', clinicalText: '左心室大小正常。\n二尖瓣轻度反流。' },
     { title: '前列腺超声', clinicalText: '前列腺形态正常，回声均匀。' },
     { title: '检查所见', clinicalText: '页内字段标题，不是独立检查。' },
+    { title: '影像结果', clinicalText: '上一页表格的续行，不是独立检查。' },
   ];
   const items = [{ name: '心脏彩超', sourceSection: '心脏彩超', itemType: 'imaging', findings: '左心室大小正常。' }];
   assert.deepEqual(findUncoveredExamSections(sections, items), { total: 2, titles: ['前列腺超声'] });
@@ -342,7 +343,9 @@ test('single-page route stops before coverage/classification and preserves exist
   const report = { _id: 'fixture', user: 'synthetic', type: 'ultrasound', title: '测试超声', reportItems: [oldItem] };
   const writes = [];
   let calls = 0;
-  const db = { findById: async () => report, findByIdAndUpdate: async (_, update) => writes.push(update) };
+  const db = { findById: async () => report,
+    findByIdAndUpdate: async (_, update) => writes.push(update),
+    findOneAndUpdate: async (_, update) => { writes.push(update); return report; } };
   const modules = {
     '../utils/aiBudget': { assertSupplementCallCapacity: async () => {} },
     '../utils/ai': { parseImage: async (_, prompt) => { calls++; return JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? imageOnly : { items: [narrative] }); } },

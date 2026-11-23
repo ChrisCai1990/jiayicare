@@ -170,7 +170,7 @@ function findUncoveredExamSections(sections, items) {
   for (const section of sections || []) {
     const title = String(section?.title || '').trim();
     const clinicalText = cleanClinicalTranscript(section?.clinicalText);
-    if (!title || /^(?:超声)?(?:检查|检验|检测)?(?:项目|结果|名称|所见|描述|诊断|提示|结论|印象|医师意见)$/u.test(title)
+    if (!title || /^(?:影像|超声)?(?:检查|检验|检测)?(?:项目|结果|名称|所见|描述|诊断|提示|结论|印象|医师意见)$/u.test(title)
         || section.rows?.some(row => String(row.name || '').trim() && String(row.value || '').trim())
         || normalizeText(clinicalText).length < 6) continue;
     const key = normalizeText(title);

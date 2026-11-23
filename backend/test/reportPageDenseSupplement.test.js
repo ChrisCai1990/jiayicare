@@ -22,6 +22,7 @@ test('dense annual page checks four bands and does not stop after a partial loca
       createReportImageParser: parseImage => parseImage,
       recordPageEvidence: () => {},
       findUncoveredPrintedRows: () => ({ rows: [] }),
+      findUncoveredExamSections: () => ({ titles: [] }),
     },
     '../utils/pdf': {
       isPdfReport: () => true,
@@ -33,6 +34,9 @@ test('dense annual page checks four bands and does not stop after a partial loca
     '../utils/aiBudget': { assertSupplementCallCapacity: async (_, __, count) => { requiredCalls = count; } },
     '../utils/reportOcrWords': { readPdfPageLayout: async () => '含零散文字层的扫描页', parseLayoutResultPairs: () => Array(14).fill({}) },
     '../utils/reportTextLabTable': { parseTextLabTable: () => ({ supported: false, items: [] }) },
+    '../utils/reportTextResultFirstLab': { parseTextResultFirstLab: () => ({ supported: false, items: [] }) },
+    '../utils/reportTextReferenceFirstLab': { parseTextReferenceFirstLab: () => ({ supported: false, items: [] }) },
+    '../utils/reportTextNamedExamTable': { parseTextNamedExamTable: () => ({ supported: false, items: [] }) },
     '../utils/reportScanOcr': { extractScannedLabTable: async () => { localOcrCalls++; return { supported: true, items: [
       { name: '本地识别项目', itemType: 'lab', value: '1', sourcePage: 9 },
     ] }; } },

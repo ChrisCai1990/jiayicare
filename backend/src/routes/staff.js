@@ -19595,17 +19595,30 @@ async function runReportParseControlled(reportId) {
       if (!isPrescriptionReport && report.type === 'annual') {
         const { readPdfPageLayout } = require('../utils/reportOcrWords');
         const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
+        const { parseTextNamedExamTable } = require('../utils/reportTextNamedExamTable');
+        const { parseTextLabTable } = require('../utils/reportTextLabTable');
+        const { parseTextResultFirstLab } = require('../utils/reportTextResultFirstLab');
+        const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
+        const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
+        const { parseTextUltrasoundTable } = require('../utils/reportTextUltrasoundTable');
+        const { parseTextAikangExam } = require('../utils/reportTextAikangExam');
         const missingTextRows = [];
         for (let page = 1; page <= (knownTotalPages || totalPageCount); page++) {
           try {
-            const transcript = parseTextReferenceFirstLab(await readPdfPageLayout(pdfBuf, page), page);
-            if (transcript.supported) missingTextRows.push(...transcript.items);
+            const layout = await readPdfPageLayout(pdfBuf, page);
+            for (const parser of [parseTextReferenceFirstLab, parseTextNamedExamTable,
+              parseTextLabTable, parseTextResultFirstLab, parseTextUrineTable, parseTextPhysicalExam,
+              parseTextUltrasoundTable, parseTextAikangExam]) {
+              const transcript = parser(layout, page);
+              if (transcript.supported) missingTextRows.push(...transcript.items);
+            }
           } catch (error) {
             console.log(`[parse-ai] 第${page}页参考值前置表格读取失败：${error.code || error.name || 'ERROR'}`);
           }
         }
         const { filterMissingReportItems } = require('../utils/reportPageSupplement');
-        const missing = filterMissingReportItems(classified, missingTextRows);
+        const missing = filterMissingReportItems(classified, missingTextRows,
+          { preserveDistinctMeasuredSections: true });
         if (missing.length) {
           const classifiedMissing = (await classifyItemsAsync(missing)).map(normalizeExplicitNormalStatus);
           classified = stripReportSourceOrder(sortReportItemsBySource([...classified, ...classifiedMissing]));
@@ -19934,10 +19947,15 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const regionEvidenceSections = new Map();
   const parseImage = createReportImageParser(rawParseImage, { report, verifyTableRows: true, onEvidence: (page, evidence, sections, options) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
-    if (Number.isInteger(options?.regionIndex) && sections) regionEvidenceSections.set(options.regionIndex, sections);
+    if (Number.isInteger(options?.regionIndex) && sections) {
+      const prior = regionEvidenceSections.get(options.regionIndex) || [];
+      const seen = new Set(prior.map(section => `${section.title}|${section.clinicalText}`));
+      regionEvidenceSections.set(options.regionIndex, [...prior,
+        ...sections.filter(section => !seen.has(`${section.title}|${section.clinicalText}`))]);
+    }
   } });
 
-  const { findUncoveredPrintedRows } = require('../utils/reportImageEvidence');
+  const { findUncoveredPrintedRows, findUncoveredExamSections } = require('../utils/reportImageEvidence');
   const { alignSupplementCandidate, describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, supplementMatches } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
@@ -19994,8 +20012,12 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
       const { parseTextLabTable } = require('../utils/reportTextLabTable');
       const textCandidate = parseTextLabTable(layout, pageNum);
+      const { parseTextResultFirstLab } = require('../utils/reportTextResultFirstLab');
+      const resultFirstCandidate = parseTextResultFirstLab(layout, pageNum);
       const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
       const referenceFirstCandidate = parseTextReferenceFirstLab(layout, pageNum);
+      const { parseTextNamedExamTable } = require('../utils/reportTextNamedExamTable');
+      const namedExamCandidate = parseTextNamedExamTable(layout, pageNum);
       const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
       const urineCandidate = parseTextUrineTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
@@ -20008,10 +20030,12 @@ async function runReportPageParseControlled(reportId, pageNum) {
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || referenceFirstCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
+      if (textCandidate.supported || resultFirstCandidate.supported || referenceFirstCandidate.supported || namedExamCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
         localScan = { source: aikangCandidate.supported ? 'pdf_text_exam' : 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
+          ...(resultFirstCandidate.supported ? resultFirstCandidate.items : []),
           ...(referenceFirstCandidate.supported ? referenceFirstCandidate.items : []),
+          ...(namedExamCandidate.supported ? namedExamCandidate.items : []),
           ...(urineCandidate.supported ? urineCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
@@ -20043,8 +20067,18 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
   const { hasBroadLocalLabScan } = require('../utils/reportPageSupplement');
-  const useLocalScanOnly = localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
-  if (!useLocalScanOnly) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+  let useLocalScanOnly = localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
+  if (!useLocalScanOnly) {
+    try {
+      await require('../utils/aiBudget').assertSupplementCallCapacity(
+        { reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+    } catch (error) {
+      if (!localScan?.items?.length || !['AI_PAGE_BUDGET_PAUSED', 'AI_BUDGET_PAUSED'].includes(error.code)) throw error;
+      useLocalScanOnly = true;
+      imagePageEvidence[pageNum] = { status: 'needs_review',
+        message: `视觉补提额度不足；已保留PDF文字层的${localScan.items.length}条候选供人工逐项核对，其他栏目仍需对照原件。` };
+    }
+  }
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
   for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
@@ -20099,6 +20133,30 @@ async function runReportPageParseControlled(reportId, pageNum) {
             if (Array.isArray(focused?.items)) regionItems = mergeCoverageAuditItems(regionItems, focused.items);
           } catch (error) { rethrowAiControl(error);
             console.log(`[parse-page] ${reportId} P${pageNum} 遗漏行定向补提未完成: ${error.message}`);
+          }
+        }
+      }
+    }
+    if (report.type === 'annual') {
+      const uncoveredExams = findUncoveredExamSections(regionEvidenceSections.get(regionIndex),
+        [...oldPageAtStart, ...parsedItems, ...regionItems]).titles;
+      if (uncoveredExams.length) {
+        let capacity = true;
+        try {
+          await require('../utils/aiBudget').assertSupplementCallCapacity(
+            { reportId: String(reportId), page: pageNum }, undefined,
+            1 + 2 * (images.length - regionIndex - 1));
+        } catch (error) { rethrowAiControl(error); capacity = false; }
+        if (capacity) {
+          try {
+            const focusedRaw = await parseImage(images[regionIndex],
+              `${reportParsePromptForCategory(report.documentCategory)}\n\n【遗漏检查栏目定向补提】独立原文转录发现以下检查栏目尚未进入本页草稿：${uncoveredExams.slice(0, 6).join('、')}。只输出本图可见的这些独立栏目，每个栏目单独一项，保留原栏目名、检查所见和诊断结论的原文及否定词；不要沿用相邻栏目的内容。看不清的字段留空，不要猜测。`,
+              { sourcePage: pageNum, regionIndex, stage: 'focused_exam_supplement',
+                isUrl: false, model: 'qwen-vl-plus', maxTokens: 3500, timeoutMs: 180000 });
+            const focused = safeParseJSON(focusedRaw);
+            if (Array.isArray(focused?.items)) regionItems = mergeCoverageAuditItems(regionItems, focused.items);
+          } catch (error) { rethrowAiControl(error);
+            console.log(`[parse-page] ${reportId} P${pageNum} 遗漏检查栏目定向补提未完成: ${error.message}`);
           }
         }
       }
@@ -20406,20 +20464,23 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
   }
 });
 
-// POST /staff/patients/:id/reports/:rid/reclassify — 只对报告里未归类项重跑自动归类。
-// 已归类项可能经过医护人工确认，screeningKey 是权威结果，重新归类时不得覆盖。
+// POST /staff/patients/:id/reports/:rid/reclassify — 重新计算待归类项；
+// 医护明确请求时也刷新系统自动归类，始终保留人工确认的分类。
 router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id }).lean();
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const { classifyItemsAsync, hasConfirmedClassification } = require('../utils/screeningMatch');
+    const { shouldReclassifyReportItem } = require('../utils/reportClassificationReview');
     const originalItems = report.reportItems || [];
+    const refreshAutomatic = req.body?.refreshAutomatic === true;
     const pendingIndexes = [];
     const pendingItems = [];
     originalItems.forEach((item, index) => {
-      if (!hasConfirmedClassification(item)) {
+      if (shouldReclassifyReportItem(item, refreshAutomatic, hasConfirmedClassification)) {
         pendingIndexes.push(index);
-        pendingItems.push(item);
+        pendingItems.push({ ...item, screeningKey: '', screeningKeys: [], screeningCategory: '',
+          screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 });
       }
     });
     const newlyClassified = await classifyItemsAsync(pendingItems);
