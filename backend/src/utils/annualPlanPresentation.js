@@ -14,6 +14,8 @@ function normalizeItem(moduleKey, record, index) {
   if (moduleKey === 'annual_checkup') return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: MODULE_NAME[moduleKey],
     schedule: record.date || '',
+    focus: record.focus || '',
+    customerAction: record.focus ? `在下一年度体检中重点关注：${String(record.focus).split(/\r?\n/).map(row => row.trim()).filter(Boolean).join('、')}` : '',
     careTarget: { hospital: record.institution || '', department: '', expert: '' },
     service: { mode: record.serviceMode || 'reminder', modeLabel: ({ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' })[record.serviceMode || 'reminder'],
       type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
@@ -27,6 +29,11 @@ function normalizeItem(moduleKey, record, index) {
     goal: record.goal || '', interventionFocus: record.focus || '',
     schedule: record.actionTiming?.firstDueDate || '',
     frequency: record.actionTiming?.mode === 'rolling' ? record.actionTiming.frequency || '本轮完成后再确定下一轮' : '',
+  };
+  if (moduleKey === 'monitoring') return {
+    id: `${moduleKey}:${index}`, moduleKey, category: '日常监测', title: record.items || `监测项目 ${index + 1}`,
+    measurementPeriod: record.measurementPeriod || record.time || '', frequency: record.frequency || '',
+    precautions: record.precautions || '',
   };
   const title = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
   const schedule = first(record.visit_time, record.plan_time, record.executionDate, record.date, record.time);
@@ -66,12 +73,23 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
     const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records) && module.records.length
       ? module.records
       : Array.isArray(module) ? module : Array.isArray(module.records) ? module.records : [module];
+    if (moduleKey === 'monitoring') {
+      const monitoringItems = records.filter(row => row?.items).map((row, index) => ({
+        id: `monitoring:${index}`, title: row.items, measurementPeriod: row.measurementPeriod || row.time || '',
+        frequency: row.frequency || '', precautions: row.precautions || '',
+      }));
+      if (monitoringItems.length) items.push({ id: 'monitoring', moduleKey, category: '日常监测', title: '项目与周期',
+        monitoringItems, customerAction: monitoringItems.map(row =>
+          `${row.title}：${[row.measurementPeriod, row.frequency].filter(Boolean).join(' · ')}`).join('\n'),
+        service: { mode: 'monitoring', modeLabel: '按方案监测' } });
+      return;
+    }
     records.forEach((record, index) => { if (record && Object.keys(record).length && !(moduleKey === 'personalized_followups' && internalDaily(record))) items.push(normalizeItem(moduleKey, record, index)); });
   });
   return items;
 }
 
-const internalFields = new Set(['advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
+const internalFields = new Set(['clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
@@ -81,7 +99,7 @@ function customerModuleData(value) {
     .map(([key, child]) => [key, key === 'management_targets'
       ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
       : key === 'annual_checkup'
-      ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '',
+      ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '', focus: child?.focus || '',
           serviceMode: child?.serviceMode || 'reminder', serviceType: child?.serviceType || '' }
       : key === 'health_consensus'
       ? { enabled: child?.enabled !== false, shareWithCustomer: true, records: (child?.records || []).map(row => ({ question: row.question || '', method: row.method || '', frequency: row.frequency || '', firstDate: row.firstDate || '' })) }

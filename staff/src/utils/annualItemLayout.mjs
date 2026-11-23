@@ -18,6 +18,7 @@ export function annualItemLayout(key, def, managerName, nutritionName, nutrition
     fields: [
       { key: 'date', label: '下一年度体检日期', type: 'date', appointmentDate: true },
       { key: 'institution', label: '体检机构', type: 'text', placeholder: '填写计划体检的机构' },
+      { key: 'focus', label: '下一年度重点关注项目', type: 'textarea', placeholder: '每行一个已审核依据支持的体检项目；不要重复本年度待完善检查' },
       { key: 'timingReason', label: '时间安排依据', type: 'textarea', internal: true },
       { key: 'notes', label: '备注', type: 'textarea', internal: true },
     ],
