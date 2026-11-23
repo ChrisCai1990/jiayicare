@@ -99,7 +99,7 @@ function customerModuleData(value) {
     .map(([key, child]) => [key, key === 'management_targets'
       ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
       : key === 'annual_checkup'
-      ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '',
+      ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '', focus: child?.focus || '',
           serviceMode: child?.serviceMode || 'reminder', serviceType: child?.serviceType || '' }
       : key === 'health_consensus'
       ? { enabled: child?.enabled !== false, shareWithCustomer: true, records: (child?.records || []).map(row => ({ question: row.question || '', method: row.method || '', frequency: row.frequency || '', firstDate: row.firstDate || '' })) }

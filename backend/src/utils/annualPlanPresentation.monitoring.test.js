@@ -20,8 +20,8 @@ test('客户成品方案展示监测项目、时段和周期，隐藏使用方�
 });
 
 test('下一年度体检在成品方案保留顾问核对的关注项目', () => {
-  const [row] = buildAnnualPlanDisplayItems({ annual_checkup: { enabled: true, date: '2027-10-08',
-    institution: '体检机构', focus: '项目甲\n项目乙' } });
+  const [row] = buildAnnualPlanDisplayItems(customerModuleData({ annual_checkup: { enabled: true, date: '2027-10-08',
+    institution: '体检机构', focus: '项目甲\n项目乙' } }));
   assert.equal(row.focus, '项目甲\n项目乙');
   assert.equal(row.schedule, '2027-10-08');
   assert.match(row.customerAction, /项目甲、项目乙/);
