@@ -19585,10 +19585,33 @@ async function runReportParseControlled(reportId) {
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
       const departmentNormalized = isPrescriptionReport ? cleanedItems : normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       const filteredItems = isPrescriptionReport ? departmentNormalized : fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
-      const classified = (isPrescriptionReport
+      let classified = (isPrescriptionReport
         ? stripReportSourceOrder(sortReportItemsBySource(filteredItems))
         : await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))))))))
         .map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
+      // A searchable report may print lab columns as name/reference/unit/result.
+      // Reconcile its complete text-layer rows before the draft is saved, instead
+      // of leaving clear omissions for repeated manual page supplements.
+      if (!isPrescriptionReport && report.type === 'annual') {
+        const { readPdfPageLayout } = require('../utils/reportOcrWords');
+        const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
+        const missingTextRows = [];
+        for (let page = 1; page <= (knownTotalPages || totalPageCount); page++) {
+          try {
+            const transcript = parseTextReferenceFirstLab(await readPdfPageLayout(pdfBuf, page), page);
+            if (transcript.supported) missingTextRows.push(...transcript.items);
+          } catch (error) {
+            console.log(`[parse-ai] 第${page}页参考值前置表格读取失败：${error.code || error.name || 'ERROR'}`);
+          }
+        }
+        const { filterMissingReportItems } = require('../utils/reportPageSupplement');
+        const missing = filterMissingReportItems(classified, missingTextRows);
+        if (missing.length) {
+          const classifiedMissing = (await classifyItemsAsync(missing)).map(normalizeExplicitNormalStatus);
+          classified = stripReportSourceOrder(sortReportItemsBySource([...classified, ...classifiedMissing]));
+          console.log(`[parse-ai] PDF参考值前置表格补齐 ${classifiedMissing.length} 条待审核行`);
+        }
+      }
       const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
       const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
@@ -19971,6 +19994,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
       const { parseTextLabTable } = require('../utils/reportTextLabTable');
       const textCandidate = parseTextLabTable(layout, pageNum);
+      const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
+      const referenceFirstCandidate = parseTextReferenceFirstLab(layout, pageNum);
       const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
       const urineCandidate = parseTextUrineTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
@@ -19983,9 +20008,10 @@ async function runReportPageParseControlled(reportId, pageNum) {
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
+      if (textCandidate.supported || referenceFirstCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
         localScan = { source: aikangCandidate.supported ? 'pdf_text_exam' : 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
+          ...(referenceFirstCandidate.supported ? referenceFirstCandidate.items : []),
           ...(urineCandidate.supported ? urineCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),

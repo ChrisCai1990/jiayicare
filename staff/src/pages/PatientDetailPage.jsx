@@ -13855,6 +13855,7 @@ export default function PatientDetailPage() {
                   const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
                   const abnN = abn.filter(it => it.status === 'abnormal').length
                   const attN = abn.filter(it => it.status === 'attention').length
+                  const textLayerGap = ocrReviewReport.parseJob?.textCoverage?.pagesWithGaps?.includes(activePage)
                   return (
                     <>
                       {(() => {
@@ -13903,7 +13904,9 @@ export default function PatientDetailPage() {
                           本页检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 本页影像/检查 ${imgRows.length} 项` : ''}
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
-                          {labRows.length > 0 && !activeImageEvidence?.message && abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
+                          {labRows.length > 0 && abn.length === 0 && (textLayerGap || activeImageEvidence?.message || !pageAllReviewed
+                            ? <span style={{ color: '#D97706', marginLeft: 8, fontWeight: 400 }}>· 本页尚不能判定无异常，请核对原件</span>
+                            : <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 已核对项目未见异常标记</span>)}
                           <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 整份报告已归类 {matchedN} 项（提交审核后写入专项筛查）</span>
                           <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 整份报告人工已核对 {reviewedCount}/{indexedAll.length}（仅记录核对进度，不阻止保存）</span>
                         </div>

@@ -127,6 +127,15 @@ async function auditPdfTextCoverage(pdfBuffer, reportItems, pageNumbers) {
       try {
         const layout = await run('pdftotext', ['-f', String(page), '-l', String(page), '-layout', filename, '-']);
         const pairs = parseLayoutResultPairs(layout, page);
+        const structured = require('./reportTextReferenceFirstLab').parseTextReferenceFirstLab(layout, page);
+        if (structured.supported) {
+          const normalize = value => String(value || '').normalize('NFKC').toLowerCase()
+            .replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
+          const structuredNames = new Set(structured.items.map(item => normalize(item.name)));
+          const remaining = pairs.filter(pair => !structuredNames.has(normalize(pair.name)));
+          pairs.splice(0, pairs.length, ...remaining,
+            ...structured.items.map(item => ({ page, name: item.name, value: item.value, source: 'pdf_text_table' })));
+        }
         if (!pairs.length) continue;
         const counts = compareShadowPairsToItems(pairs, reportItems);
         result.checkedPages++;
