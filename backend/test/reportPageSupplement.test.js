@@ -99,6 +99,28 @@ test('有明确超声缺项时只接受带器官原词证据的目标项', () =>
   assert.deepEqual(filterMissingReportItems(existing, candidates, { targetOrgans: targets }).map(item => item.name), ['胰腺彩超']);
 });
 
+test('同页复合超声缺项提示不屏蔽独立的心脏和前列腺检查', () => {
+  const existing = [
+    { name: '双肾输尿管超声', itemType: 'imaging', sourceSection: '肝胆胰脾双肾输尿管超声', findings: '输尿管未见扩张。' },
+    { name: '右下肢动脉', itemType: 'imaging', sourceSection: '右下肢动脉', findings: '右侧股总动脉管壁光滑。' },
+  ];
+  const targets = inferMissingUltrasoundOrgans(existing);
+  assert.deepEqual(targets.map(item => item.label), ['肾脏']);
+  const candidates = [
+    { name: '心脏彩超', itemType: 'imaging', sourceSection: '心脏彩超', findings: '左心房内径正常，二尖瓣可见轻度反流。' },
+    { name: '前列腺超声', itemType: 'imaging', sourceSection: '前列腺超声', findings: '前列腺形态正常，回声分布均匀。' },
+    { name: '肾脏超声', itemType: 'imaging', sourceSection: '肝胆胰脾双肾输尿管超声', findings: '双肾大小形态正常。' },
+    { name: '胆囊超声', itemType: 'imaging', sourceSection: '肝胆胰脾双肾输尿管超声', findings: '未见明显异常回声。' },
+  ];
+  assert.deepEqual(filterMissingReportItems(existing, candidates, { targetOrgans: targets }).map(item => item.name),
+    ['心脏彩超', '前列腺超声', '肾脏超声']);
+});
+
+test('双肾原词已在所见中时不误报肾脏缺项', () => {
+  const existing = [{ name: '双肾输尿管超声', itemType: 'imaging', findings: '双肾大小正常。输尿管未见扩张。' }];
+  assert.deepEqual(inferMissingUltrasoundOrgans(existing), []);
+});
+
 test('数值项目没有数值不能作为有效OCR结果', () => {
   assert.equal(hasReportItemEvidence({ name: '身高', itemType: 'data' }), false);
   assert.equal(hasReportItemEvidence({ name: '身高', itemType: 'data', value: '158.50' }), true);

@@ -19913,7 +19913,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const existingItemText = describeExistingReportItems(oldPageAtStart);
   const targetOrgans = inferMissingUltrasoundOrgans(oldPageAtStart);
   const targetText = targetOrgans.map(item => item.label).join('、');
-  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出真实遗漏项目；已有同名同栏目项目的数值、所见或结论为空时可输出该项目补全。超声页若已有检查描述而“超声诊断”为空，须复读页面下方诊断栏，以同一项目名仅补原文diagnosis/conclusion；不要把诊断下方的分级解释或参考文献并入诊断。文字检查虽有非空所见，但原件同一结果栏还有后续编号段落时，也可用相同项目名输出从首行至末行的完整findings；不得另建检查项。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n已有复合超声项目的所见疑似缺少：${targetText}；仅在该复合项目的原文确有对应内容时补全。还须检查本页其他独立检查栏目，不得因这个提示忽略心脏、前列腺、血管等真实遗漏项目。` : ''}\n只输出真实遗漏项目；已有同名同栏目项目的数值、所见或结论为空时可输出该项目补全。超声页若已有检查描述而“超声诊断”为空，须复读页面下方诊断栏，以同一项目名仅补原文diagnosis/conclusion；不要把诊断下方的分级解释或参考文献并入诊断。文字检查虽有非空所见，但原件同一结果栏还有后续编号段落时，也可用相同项目名输出从首行至末行的完整findings；不得另建检查项。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
