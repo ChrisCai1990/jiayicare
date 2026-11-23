@@ -1,4 +1,4 @@
-const MODULES = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'personalized_followups'];
+const MODULES = ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'personalized_followups'];
 function normalizeAnnualItems(data, managerId, team = {}) {
   const result = { ...data };
   for (const key of MODULES) {
