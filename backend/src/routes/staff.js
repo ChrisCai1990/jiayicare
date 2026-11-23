@@ -19241,6 +19241,27 @@ async function runReportParseControlled(reportId) {
       // 这样既不会漏把空壳项标为成功，也不会把每一页都昂贵地重跑。
       if (!isPrescriptionReport && report.type !== 'body_comp' && isLargeScannedPdf && qualityRetryPages.size) {
         for (const pageNum of [...qualityRetryPages]) {
+          if (isComprehensiveCheckup) {
+            try {
+              const firstRows = allItems.filter(item => item._page === pageNum);
+              const localRows = await require('../utils/reportFirstPassScanFallback').recoverBlankScannedLabPage({
+                pdfBuffer: pdfBuf, pageNum, existingItems: firstRows,
+                readLayout: require('../utils/reportOcrWords').readPdfPageLayout,
+                renderPage: renderSinglePage,
+                extractTable: require('../utils/reportScanOcr').extractScannedLabTable,
+              });
+              if (localRows.length) {
+                allItems = allItems.concat(tagReportPageItems(localRows, pageNum));
+                const previousEvidence = imagePageEvidence[pageNum] || {};
+                imagePageEvidence[pageNum] = { ...previousEvidence, status: 'needs_review',
+                  message: [previousEvidence.message,
+                    `扫描表格本地OCR补出${localRows.length}条待核对候选；请逐行核对项目、数值、参考范围及异常标记。`].filter(Boolean).join(' ') };
+                console.log(`[parse-ai] 页${pageNum}低分辨率首轮为空，本地扫描表格补出${localRows.length}条待审核候选`);
+              }
+            } catch (error) {
+              console.log(`[parse-ai] 页${pageNum}本地扫描表格补提不可用: ${error.code || error.name || 'ERROR'}`);
+            }
+          }
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, 180);
             if (!img) continue;
@@ -19645,7 +19666,7 @@ async function runReportParseControlled(reportId) {
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       // Searchable PDF pages are independently checked against printed result
       // rows. This audit records counts only and never adds an unverified item.
-      const textCoverage = !isPrescriptionReport && report.type === 'annual'
+      const textCoverage = !isPrescriptionReport && isComprehensiveCheckup
         ? await require('../utils/reportOcrWords').auditPdfTextCoverage(
           pdfBuf, classified, Array.from({ length: knownTotalPages || totalPageCount }, (_, i) => i + 1))
         : null;
@@ -19678,8 +19699,8 @@ async function runReportParseControlled(reportId) {
         imagePageEvidence,
         aiSummary:   reviewedSummary,
         aiStatus:    allFailed ? 'failed' : 'pending',
-        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${textCoverage?.uncoveredRows || imageEvidenceNeedsReview ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
-          ...(textCoverage ? { textCoverage } : {}) },
+        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${failedPages || textCoverage?.uncoveredRows || imageEvidenceNeedsReview ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
+          failedPages: failedPageList, ...(textCoverage ? { textCoverage } : {}) },
         institution, checkDate: resolvedCheckDate, reportYear: resolvedCheckDate ? Number(resolvedCheckDate.slice(0, 4)) : null,
       });
       if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
@@ -19699,6 +19720,7 @@ async function runReportParseControlled(reportId) {
     let imageOkCount = 0;
     let lastRawText = '';
     const imageFailures = [];
+    const imageFailedPages = [];
     for (let imageIndex = 0; imageIndex < bufs.length; imageIndex++) {
       const cachedImage = report.parseJob?.imagePages?.[imageIndex + 1];
       if (cachedImage) {
@@ -19865,6 +19887,7 @@ async function runReportParseControlled(reportId) {
         await MedicalReport.findByIdAndUpdate(reportId, { $set: { [`parseJob.imagePages.${imageIndex + 1}`]: { items: imageItems.filter(item => Number(item.sourcePage) === imageIndex + 1), summary: parsedPage.summary || '', institution: imageInstitution, checkDate: imageCheckDate, evidence: imagePageEvidence[imageIndex + 1] } } });
       } catch (e) { rethrowAiControl(e);
         imageFailures.push(`第${imageIndex + 1}张：${e.message}`);
+        imageFailedPages.push(imageIndex + 1);
         console.log(`[parse-ai] 图片${imageIndex + 1}解析异常 ${reportId}: ${e.message}`);
       }
     }
@@ -19907,11 +19930,13 @@ async function runReportParseControlled(reportId) {
     const preservedSummary = completion.reason === 'revision_changed'
       ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 识别期间报告被编辑，本次结果未覆盖人工最新内容。`
       : keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary;
+    const imageNeedsReview = imageFailures.length > 0 || imageOkCount < bufs.length
+      || Object.values(imagePageEvidence).some(evidence => evidence?.status === 'needs_review');
     const imageUpdate = {
       imagePageEvidence,
       aiSummary:   noReviewableItems ? `⚠️ 未提取到可审核项目：${failureDetail}` : preservedSummary,
       aiStatus:    noReviewableItems ? 'failed' : 'pending',
-      parseJob:    { status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
+      parseJob:    { status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), failedPages: imageFailedPages, message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `${imageNeedsReview ? '识别待核对' : '识别完成'}：${bufs.length}张，提取${resolvedImageItems.length}项${imageFailures.length ? `；${imageFailures.length}张识别失败` : ''}` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate),
       reportYear: (resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate)) ? Number(String(resolvedImageCheckDate || report.checkDate).slice(0, 4)) : null,

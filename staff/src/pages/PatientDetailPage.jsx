@@ -74,6 +74,7 @@ import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../com
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
+import { summarizeReportPages } from '../utils/reportPageCoverage.mjs'
 import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
@@ -13641,7 +13642,12 @@ export default function PatientDetailPage() {
           && Date.now() - pageParseStartedAt >= 0
           && Date.now() - pageParseStartedAt < 15 * 60 * 1000
         const pageParseStale = activePageParse?.status === 'processing' && !pageParsing
-        const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
+        const pageCoverage = summarizeReportPages(expectedPages, ocrEditItems,
+          ocrReviewReport.imagePageEvidence, ocrReviewReport.parseJob?.textCoverage,
+          { ...ocrReviewReport.pageParseStatusByPage,
+            ...(ocrReviewReport.pageParseStatus?.pageNum ? { [ocrReviewReport.pageParseStatus.pageNum]: ocrReviewReport.pageParseStatus } : {}) },
+          ocrReviewReport.parseJob?.failedPages)
+        const attentionPages = pageCoverage.filter(row => row.needsAttention)
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
         // 格式：[{ label: 'L1分类名', opts: [{value: 'L1|packageName|itemName', label: '...', groupLabel: 'L1分类名'}] }]
@@ -13737,12 +13743,22 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
                   <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
-                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{unclassifiedByPage[page] ? `（未归类 ${unclassifiedByPage[page]} 项）` : ocrReviewReport.imagePageEvidence?.[page]?.status === 'image_only' ? '（影像资料）' : missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                    {pageCoverage.map(row => <option key={row.page} value={row.page}>第 {row.page} 页（{row.label}{unclassifiedByPage[row.page] ? `；未归类 ${unclassifiedByPage[row.page]} 项` : ''}）</option>)}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
+              {attentionPages.length > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF8E6', borderBottom: '1px solid #FCD34D', color: '#92400E', fontSize: 12 }}>
+                <strong>原件覆盖待核对：{attentionPages.length}/{expectedPages.length} 页</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, maxHeight: 96, overflowY: 'auto' }}>
+                  {attentionPages.map(row => <button key={row.page} type="button" onClick={() => setOcrReviewPage(row.page)}
+                    style={{ border: '1px solid #FCD34D', borderRadius: 5, padding: '4px 8px', background: activePage === row.page ? '#FEF3C7' : '#fff', color: '#92400E', cursor: 'pointer', textAlign: 'left' }}>
+                    第 {row.page} 页 · {row.reasons.join('；')}
+                  </button>)}
+                </div>
+                <div style={{ marginTop: 4 }}>无提取数据仅表示草稿为空，请对照原件判断该页是否有检查结果。</div>
+              </div>}
               {unclassifiedN > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF1F0', borderBottom: '1px solid #FCA5A5', color: '#B42318', fontSize: 12 }}>
                 <div style={{ fontWeight: 800, marginBottom: 6 }}>⚠ 未归类 {unclassifiedN} 项：可以保存草稿，全部归类后才能提交审核。点击下列项目直接定位：</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 104, overflowY: 'auto' }}>
