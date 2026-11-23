@@ -11322,6 +11322,31 @@ router.get('/patients/:id/annual-nutrition-task', staffAuth, async (req, res) =>
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+router.post('/patients/:id/annual-nutrition-cancel', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可撤回未开始的营养评估' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可处理' });
+    if (!mongoose.isValidObjectId(req.body.planId) || !mongoose.isValidObjectId(req.body.taskId))
+      return res.status(400).json({ success: false, message: '方案或任务标识无效' });
+    const reason = String(req.body.reason || '').trim();
+    if (!reason || reason.length > 500) return res.status(400).json({ success: false, message: '请填写取消原因（最多500字）' });
+    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: patient._id }).lean();
+    if (!plan || plan.pushedAt || plan.confirmedAt) return res.status(409).json({ success: false, message: '仅可在未发布草稿中撤回未开始的独立评估' });
+    const task = await FollowUp.findOne({ _id: req.body.taskId, patientId: patient._id,
+      sourceAnnualPlanId: plan._id, workflowKey: 'annual_nutrition_assessment' }).lean();
+    if (!task || task.status !== 'planned' || task.completedAt || task.formData?.nutritionAssessment || task.formData?.lifestyleInterview)
+      return res.status(409).json({ success: false, message: '评估已开始或已有记录，请进入任务核对处理' });
+    const saved = await FollowUp.findOneAndUpdate({ _id: task._id, status: 'planned', updatedAt: task.updatedAt },
+      { $set: { status: 'cancelled', cancelReason: reason, 'formData.cancelledByAdvisor': String(req.staff._id),
+        'formData.cancelledAt': new Date() } }, { new: true });
+    if (!saved) return res.status(409).json({ success: false, message: '任务已变化，请刷新核对' });
+    return res.json({ success: true, message: '已取消未开始的营养评估，可继续编辑方案草稿' });
+  } catch (error) { return res.status(500).json({ success: false, message: '取消失败，请刷新核对任务状态' }); }
+});
+
 router.post('/patients/:id/annual-nutrition-dispatch', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可派发营养评估' });
   try {
@@ -11418,6 +11443,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
     if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
+    const requestedAdvisorTargets = moduleData?.nutrition_assessment?.advisorTargets !== undefined;
     moduleData = require('../utils/annualPlanDates').normalize(moduleData);
     moduleData = { ...(moduleData || {}), nutrition_assessment: require('../utils/annualNutritionDispatch').draftModule(moduleData) };
     try {
@@ -11515,6 +11541,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const annualFlow = existingVersion
       ? require('../utils/annualFlowPilot').enabledForPlan(existingVersion)
       : require('../utils/annualFlowPilot').enabledForNewPlan(req.params.id);
+    // Legacy drafts must not be rejected for fields added by our own normalizer.
+    // Explicit new-flow input still goes through the version gate below.
+    moduleData = require('../utils/annualDraftCompatibility').preserveLegacyNutritionInput(moduleData, annualFlow, requestedAdvisorTargets);
     if (!annualFlow && (moduleData.nutrition_assessment?.advisorTargets !== undefined
       || moduleData.health_consensus?.records?.length
       || (moduleData.management_targets?.records || []).some(row => ['goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'rehabRelevant', 'actionTiming'].some(key => row[key] !== undefined))))

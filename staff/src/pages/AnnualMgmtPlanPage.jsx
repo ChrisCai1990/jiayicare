@@ -1296,7 +1296,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               if (!window.confirm('确认从本次年度方案移除营养评估与干预？已有的其他强化干预方案不会删除；本项将不再随年度方案派发。')) return
               setOptionalIncluded('nutrition_assessment', false)
             }}>移除本次营养评估与干预</button>}
-            {nutritionTask && !pushedAt && <div style={{ fontSize: 12, color: '#9A5B13', marginTop: 6 }}>营养师任务已派发，请先处理现有任务，再调整本次方案。</div>}
+            {nutritionTask && !pushedAt && <div style={{ fontSize: 12, color: '#9A5B13', marginTop: 6 }}>营养师任务已派发，保留营养评估可继续保存草稿。需要移除或删除方案时，请先核对下面的任务。
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}?tab=followups&followUpId=${nutritionTask._id}`)}>查看营养评估任务</button>
+              {canEdit && nutritionTask.status === 'planned' && !nutritionTask.formData?.nutritionAssessment && !nutritionTask.formData?.lifestyleInterview && <button type="button" className="btn btn-secondary btn-sm" disabled={nutritionDispatching} onClick={async () => {
+                const reason = window.prompt('取消未开始的营养评估，请填写原因。取消后可移除本项或删除方案草稿。')
+                if (!reason?.trim()) return
+                setNutritionDispatching(true)
+                try { const result = await staffAPI.cancelAnnualNutritionTask(id, { planId: currentPlanId, taskId: nutritionTask._id, reason: reason.trim() }); setNutritionTask(null); toast(result.message) }
+                catch (error) { toast(error.message || '取消失败，请刷新核对') }
+                finally { setNutritionDispatching(false) }
+              }}>取消未开始的营养评估</button>}
+            </div>}
             {annualPilot && nutritionEditor}
             <div style={{fontSize:13,marginBottom:8}}>相关问题：{nutritionSummary.problems.join('、') || '按研判相关问题评估膳食与生活方式'}</div>
             <div style={{fontSize:13,marginBottom:8}}>对比指标：{nutritionSummary.metrics.join('、') || '基础体成分评估'}；固定包含骨骼肌、体脂率、内脏脂肪。</div>
