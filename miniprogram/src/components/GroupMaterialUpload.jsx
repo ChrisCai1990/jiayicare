@@ -34,12 +34,12 @@ export default function GroupMaterialUpload({ groupId, onSent }) {
           result={contents:[content]};
         }else if(sourceIndex===1){
           const picked=await Taro.chooseMessageFile({count:1,type:'file',extension:['pdf']});
-          result={tempFilePaths:(picked.tempFiles||[]).map(f=>f.path)};
+          result={tempFilePaths:picked.tempFilePaths?.length?picked.tempFilePaths:(picked.tempFiles||[]).map(f=>f.path||f.tempFilePath).filter(Boolean)};
         }else result=await chooseImageWithPrivacy({count:9,sizeType:['compressed'],sourceType:['album','camera']});
         setChoosing(false);
         setPhase('正在读取资料…');
-        const files=result.contents || [];
-        const selected=result.tempFilePaths || [];
+        const files=[...(result.contents||[])];
+        const selected=result.tempFilePaths?.length?result.tempFilePaths:(result.tempFiles||[]).map(f=>f.path||f.tempFilePath).filter(Boolean);
         const sizes=(result.tempFiles||[]).map(file=>Number(file.size)||0);
         if(sizes.length && sizes.reduce((sum,size)=>sum+size,0)>15*1024*1024)throw new Error('资料总大小不能超过15MB，请减少图片数量');
         for(let index=0;index<selected.length;index++) {
@@ -58,7 +58,7 @@ export default function GroupMaterialUpload({ groupId, onSent }) {
           }
           if(files.reduce((sum,file)=>sum+file.length,0)>21*1024*1024)throw new Error('资料总大小不能超过15MB，请减少图片数量');
         }
-        if(!files.length)return;
+        if(!files.length)throw new Error('未读取到所选资料，请重新选择');
         setBusy(true);
         setPhase('正在确认资料处理方式…');
         await ensureAiDataConsent('health',{cancelText:'仅保存原件'});
