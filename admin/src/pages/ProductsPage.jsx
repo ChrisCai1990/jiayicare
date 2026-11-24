@@ -23,7 +23,7 @@ const EMPTY_FORM = {
   fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
   deliveryRequired: false, serviceLocation: '', validityDays: 365,
   refundPolicy: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。', skus: [],
-  healthFundDeduction: { mode: 'disabled', value: 0 },
+  healthFundDeduction: { mode: '', value: '' },
   memberBundle: { enabled:false, allowedMembershipTiers:['consumer365','annual','therapy','enterprise'], selectionCount: 3, validityDays:730, purchaseLimitPerMembership:1, transferRemainingOnce:true, discountRules:[{ key:'standard', label:'会员专享价', discountRate:0.7 }], selectableProducts:[] },
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
@@ -51,7 +51,7 @@ const IBD_PRODUCT_TEMPLATE = {
   validityDays: 365,
   serviceLocation: '长三角、珠三角（具体医院与陪诊安排由健康顾问确认）',
   refundPolicy: '服务开始前可申请退款；服务开始后的退费根据已实际提供服务、陪诊安排及双方确认的服务协议核算。医院诊疗与检查费用由客户向院方另付。',
-  healthFundDeduction: { mode: 'disabled', value: 0 },
+  healthFundDeduction: { mode: '', value: '' },
   specialtyTerms: { key: 'ibd', startDelayDays: 7, durationMonths: 12, includedEscorts: 2, regions: ['长三角', '珠三角'] },
   aiProfile: { ...EMPTY_FORM.aiProfile, enabledForRecommendation: false },
 }
@@ -623,7 +623,7 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
       serviceLocation: product.serviceLocation || '',
       validityDays: product.validityDays || 365,
       refundPolicy: product.refundPolicy || '',
-      healthFundDeduction: { mode:'inherit', value:0, ...(product.healthFundDeduction || {}) },
+      healthFundDeduction: { mode:['percentage','disabled'].includes(product.healthFundDeduction?.mode) ? product.healthFundDeduction.mode : '', value:product.healthFundDeduction?.value ?? '' },
       memberBundle: { ...EMPTY_FORM.memberBundle, ...(product.memberBundle || {}),
         allowedMembershipTiers: product.memberBundle?.allowedMembershipTiers?.length ? product.memberBundle.allowedMembershipTiers : EMPTY_FORM.memberBundle.allowedMembershipTiers,
         discountRules: product.memberBundle?.discountRules?.length ? product.memberBundle.discountRules : EMPTY_FORM.memberBundle.discountRules,
@@ -768,6 +768,7 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
       || (!hasSeparateAllocations && Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001))) {
       toast('请为每项业务填写归属金额；产品／检测须关联产品库，金额合计须覆盖产品原价'); setTab('businessAllocation'); return
     }
+    if (!['percentage', 'disabled'].includes(form.healthFundDeduction?.mode)) { toast('请为商品明确设置健康礼遇金抵扣规则'); setTab('fund'); return }
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
     const isUnpricedIbdDraft = form.category === '专病管理' && /IBD|炎症性肠病/i.test(form.name) && form.status === 'off'
@@ -814,7 +815,7 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
         validityDays: Math.max(1, parseInt(form.validityDays) || 365),
         refundPolicy: form.refundPolicy,
         healthFundDeduction: {
-          mode: form.healthFundDeduction?.mode || 'inherit',
+          mode: form.healthFundDeduction.mode,
           value: Math.max(0, Number(form.healthFundDeduction?.value) || 0),
         },
         memberBundle: form.memberBundle?.enabled ? {
@@ -1061,7 +1062,7 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
           )}
 
           {tab === 'fund' && (() => {
-            const rule = form.healthFundDeduction || { mode:'inherit', value:0 }
+            const rule = form.healthFundDeduction || { mode:'', value:'' }
             const setRule = (key, value) => set('healthFundDeduction', { ...rule, [key]:value })
             return <div>
               <div style={{padding:14,background:'#ecfdf5',border:'1px solid #bbf7d0',borderRadius:10,color:'#166534',fontSize:13,marginBottom:18}}>
@@ -1070,7 +1071,7 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
               <div className="form-group">
                 <label className="form-label">该产品健康基金抵扣方式</label>
                 <select className="form-input" value={rule.mode} onChange={e=>setRule('mode',e.target.value)}>
-                  <option value="inherit">沿用旧规则（20%）</option>
+                  <option value="">请选择抵扣规则</option>
                   <option value="disabled">不支持健康基金抵扣</option>
                   <option value="percentage">按产品应付金额比例</option>
                 </select>

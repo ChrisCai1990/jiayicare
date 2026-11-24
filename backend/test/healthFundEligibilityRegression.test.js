@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { corporateProductEligible } = require('../src/utils/healthFundPayment');
 
-test('category restrictions apply to corporate fund without blocking personal fund settlement', () => {
+test('unconfigured product has no gift fund eligibility', () => {
   assert.equal(corporateProductEligible(
     { eligibleCategories: ['体检服务'] },
     'product-1',
@@ -11,7 +11,7 @@ test('category restrictions apply to corporate fund without blocking personal fu
   ), false);
 });
 
-test('an explicit product rule takes precedence over inherited platform categories', () => {
+test('an explicitly configured product is eligible regardless of the display filter', () => {
   assert.equal(corporateProductEligible(
     { eligibleCategories: ['体检服务'] },
     'product-2',

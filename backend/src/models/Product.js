@@ -106,7 +106,7 @@ const productSchema = new mongoose.Schema({
   },
   refundPolicy: { type: String, default: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。' },
   healthFundDeduction: {
-    mode: { type: String, enum: ['inherit', 'disabled', 'unlimited', 'percentage', 'fixedAmount'], default: 'inherit' },
+    mode: { type: String, enum: ['inherit', 'disabled', 'unlimited', 'percentage', 'fixedAmount'] },
     value: { type: Number, default: 0, min: 0 },
   },
   // 会员专享组合服务包。实际服务仍引用已有商城商品，支付后把每项服务写入

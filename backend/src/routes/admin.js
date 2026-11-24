@@ -2281,7 +2281,7 @@ router.post('/products', adminAuth, async (req, res) => {
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const attributionError = productBusinessAttributionRequired({ status: status || 'off', servicePrices, businessAllocations, originalPrice });
   if (attributionError) return res.status(400).json({ success: false, message: attributionError });
-  const fundRuleError = healthFundDeduction === undefined ? null : require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
+  const fundRuleError = require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
   if (!name || !category) return res.status(400).json({ success: false, message: '名称、分类为必填项' });
@@ -2303,7 +2303,7 @@ router.post('/products', adminAuth, async (req, res) => {
     bookingRequired: bookingRequired !== false, deliveryRequired: !!deliveryRequired,
     serviceLocation: serviceLocation || '', validityDays: validityDays || 365,
     specialtyTerms: specialtyTerms || undefined,
-    refundPolicy: refundPolicy || undefined, healthFundDeduction: healthFundDeduction || { mode: 'disabled', value: 0 }, memberBundle: memberBundle || undefined, skus: skus || [],
+    refundPolicy: refundPolicy || undefined, healthFundDeduction, memberBundle: memberBundle || undefined, skus: skus || [],
     aiProfile: require('../utils/productAiProfile').normalizeAiProfile(aiProfile),
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
@@ -2407,7 +2407,7 @@ router.patch('/products/:id/health-fund-deduction', adminAuth, async (req, res) 
   const error = require('../utils/productFundRule').validateProductFundRule(req.body);
   if (error) return res.status(400).json({ success:false, message:error });
   const mode = req.body.mode;
-  const value = ['percentage', 'fixedAmount'].includes(mode) ? Number(req.body.value) : 0;
+  const value = mode === 'percentage' ? Number(req.body.value) : 0;
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { $set: { healthFundDeduction: { mode, value } } },

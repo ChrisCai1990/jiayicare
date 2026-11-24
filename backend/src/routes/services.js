@@ -102,13 +102,10 @@ router.get('/', async (req, res) => {
       serviceLocation: p.serviceLocation || '',
       validityDays: p.validityDays || 365,
       refundPolicy: p.refundPolicy || '',
-      // 已发布的小程序会直接按商品规则展示可抵扣额；继承规则在接口层
-      // 下发为明确的20%，客户端只负责展示，最终以结算服务端重算为准。
-      healthFundDeduction: !p.healthFundDeduction?.mode || ['inherit', 'unlimited'].includes(p.healthFundDeduction.mode)
-        ? { mode:'percentage', value:20 }
-        : p.healthFundDeduction.mode === 'percentage'
+      // 客户端展示明确设置的商品比例；未配置的历史商品不显示礼遇金抵扣额。
+      healthFundDeduction: p.healthFundDeduction?.mode === 'percentage'
           ? { mode:'percentage', value:Math.min(100, Math.max(0, Number(p.healthFundDeduction.value) || 0)) }
-          : p.healthFundDeduction,
+          : { mode:'disabled', value:0 },
       memberBundle: p.memberBundle?.enabled ? {
         enabled: true,
         selectionCount: Math.max(1, Number(p.memberBundle.selectionCount) || 1),

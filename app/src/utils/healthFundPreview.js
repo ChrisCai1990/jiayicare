@@ -7,16 +7,11 @@ function policyLimit(type, value, amount) {
   return amount;
 }
 function corporateProductEligible(policy, product, rule) {
-  const mode = rule?.mode || 'inherit';
-  if (mode === 'disabled') return false;
-  if (mode !== 'inherit') return true;
-  if (policy?.eligibleCategories?.length && !policy.eligibleCategories.includes(product?.category || '')) return false;
-  return !policy?.eligibleProductIds?.length || policy.eligibleProductIds.map(String).includes(String(product?.id || product?._id || product?.productId || ''));
+  return rule?.mode === 'percentage' && nonnegative(rule.value) >= 1 && nonnegative(rule.value) <= 100;
 }
 function productCap(rule, amount) {
-  if (rule?.mode === 'disabled') return 0;
-  if (!rule?.mode || ['inherit', 'unlimited'].includes(rule.mode)) return amount * .2;
-  return Math.min(amount, policyLimit(rule.mode, rule.value, amount));
+  if (rule?.mode !== 'percentage') return 0;
+  return Math.min(amount, policyLimit('percentage', rule.value, amount));
 }
 function enterpriseEligible(healthFund, amount, product) {
   const enterprise = healthFund?.enterprise;

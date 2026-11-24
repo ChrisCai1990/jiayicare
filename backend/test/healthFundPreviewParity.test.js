@@ -18,8 +18,8 @@ function server(config={}) {
 }
 test('single-product request is a ceiling, never a second percentage base',async()=>{
   const validate=server();
-  for(const [request,expected] of [[20,20],[5,5],[99,20],[0,0]])assert.equal((await validate(request)).allowed,expected);
-  assert.equal((await validate(5,true)).allowed,20);
+  for(const [request,expected] of [[20,0],[5,0],[99,0],[0,0]])assert.equal((await validate(request)).allowed,expected);
+  assert.equal((await validate(5,true)).allowed,0);
 });
 test('single-product preview agrees with actual validator across product rules and fund sources',async()=>{
   for(const rule of [undefined,{mode:'disabled'},{mode:'percentage',value:5},{mode:'percentage',value:30},{mode:'percentage',value:100},{mode:'fixedAmount',value:8},{mode:'unlimited'}]){
@@ -39,7 +39,7 @@ test('自有基金和活力基金不受会员资格限制，奖励基金仍受�
   assert.equal((await server({eligible:false,personal:20})(20)).allowed,20);
 });
 test('group preview respects each product cap, shared balance and coupon cents',()=>{
-  const products=[{price:6800,fundProduct:{id:'a'}},{price:318.44,fundProduct:{id:'b'}}];
+  const products=[{price:6800,fundProduct:{id:'a',healthFundDeduction:{mode:'percentage',value:100}}},{price:318.44,fundProduct:{id:'b',healthFundDeduction:{mode:'percentage',value:100}}}];
   assert.equal(preview.maxGroupFundDeduction({eligible:true,personal:9000},7118.44,products),7118.44);
   assert.equal(preview.maxGroupFundDeduction({eligible:true,personal:4,corporate:100,total:68},7118.44,products),68);
   products[1].fundProduct.healthFundDeduction={mode:'disabled'};
