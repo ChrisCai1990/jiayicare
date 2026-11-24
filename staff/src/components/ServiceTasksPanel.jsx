@@ -148,7 +148,9 @@ export default function ServiceTasksPanel({ onTasksLoaded }) {
     if (date < monthEnd) return 'month'
     return 'later'
   }
+  // 年度营养评估在方案发布时已经交到营养师手中；即使约在未来几天，首页也应看得到。
   const isActionableNow = service => isServiceActionable(service, now)
+    || (staff?.role === 'nutritionist' && service.task.workflowKey === 'annual_nutrition_assessment')
   const actionableCount = serviceGroups.filter(isActionableNow).length
   const roleServices = group === 'all' ? serviceGroups
     : group === 'actionable' ? serviceGroups.filter(isActionableNow)

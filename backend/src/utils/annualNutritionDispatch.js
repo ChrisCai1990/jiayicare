@@ -65,7 +65,24 @@ async function dispatch(plan, patient, actor, FollowUp) {
   }
   const query = { patientId: patient._id, sourceAnnualPlanId: plan._id, workflowKey: 'annual_nutrition_assessment' };
   const existing = await FollowUp.findOne({ ...query, status: { $ne: 'cancelled' } }).sort({ createdAt: 1 }).lean();
-  if (existing) return { task: existing, reused: true };
+  if (existing) {
+    // A previously published task may still point at the former nutritionist.
+    // Only an untouched planned task follows the current confirmed assignment.
+    if (existing.status === 'planned' && !existing.completedAt && !existing.formData?.nutritionAssessment && !existing.formData?.lifestyleInterview) {
+      const desired = buildTask(plan, patient, actor);
+      const changed = String(existing.assignedTo || '') !== String(desired.assignedTo || '')
+        || (/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData?.nutrition_assessment?.executionDate || '')
+          && new Date(existing.date).getTime() !== desired.date.getTime());
+      if (changed) {
+        await FollowUp.updateOne({ _id: existing._id, status: 'planned', completedAt: null }, { $set: {
+          assignedTo: desired.assignedTo, date: desired.date, content: desired.content,
+          plannedContent: desired.plannedContent, 'formData.plannedAssessmentDate': desired.formData.plannedAssessmentDate,
+        } });
+        return { task: await FollowUp.findById(existing._id).lean(), reused: true };
+      }
+    }
+    return { task: existing, reused: true };
+  }
   const cancelled = await FollowUp.countDocuments({ ...query, sourceType: 'professional_assessment', status: 'cancelled' });
   const task = buildTask(plan, patient, actor, cancelled + 1);
   const inserted = await FollowUp.updateOne({ _id: task._id }, { $setOnInsert: task }, { upsert: true, setDefaultsOnInsert: true });

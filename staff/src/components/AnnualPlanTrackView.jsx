@@ -16,11 +16,13 @@ const management = [
 const displayDate = value => value ? String(value).slice(0, 10) : '时间待确认'
 const conciseTitle = action => {
   if (action.key === 'annual_checkup') return '年度体检'
+  if (action.key === 'medical_treatment' && action.record.department) return `前往${action.record.department}就诊`
+  if (action.key === 'abnormal_followup' && action.record.reviewItems?.length) return `复查${action.record.reviewItems.join('、')}`
   const title = String(action.title || action.moduleName || '待核对事项').replace(/\s*（来源[:：][^）]+）/g, '').trim()
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, monitoringRecords = [], latestCheckupDate = '', onEditItem }) {
+export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionTask, nutritionTaskLoading, canDispatchNutrition, onNutrition, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, monitoringRecords = [], latestCheckupDate = '', onEditItem }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -37,12 +39,20 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
           const rows = nutritionAdvisorTargets.filter(row => (row.kind || nutritionCatalog.kindFor(row.metric)) === kind)
           return rows.length ? <div key={kind}><strong className="annual-nutrition-group-title">{label}</strong>{rows.map((row, index) => <div className="annual-nutrition-summary-row" key={`${row.metric}:${index}`}><strong>{row.metric}{nutritionCatalog.isInternalNutritionMetric(row.metric) && <small> · 仅内部</small>}</strong><span>当前：{row.baseline || '待核对'}</span><span>目标：{row.target}</span></div>)}</div> : null
         })}</div> : <div style={{ color: '#62776A' }}>待顾问明确异常指标、症状和期望目标</div>}
+        <div style={{ color: '#52675D' }}>下一步：营养师核对饮食、生活方式和相关指标，制定具体干预方案。</div>
         <div style={{ color: '#52675D' }}>计划日期：{nutritionExecutionDate || '待确定'} · 执行营养师：{nutritionExecutorName || '待匹配'}</div>
+        <div style={{ color: '#52675D' }}>任务状态：{nutritionTaskLoading ? '核对中' : nutritionTask ? nutritionTask.status === 'completed' ? '已完成' : '已派发给营养师' : '尚未派发'}</div>
+        {onNutrition && (nutritionTask || canDispatchNutrition) && <button type="button" className="btn btn-secondary btn-sm" onClick={onNutrition} disabled={nutritionTaskLoading}>{nutritionTask ? '查看营养师任务' : '派发营养师任务'}</button>}
         {nutritionAdvisorEditor}
       </details>}
       {items.map(action => <details key={`${action.key}:${action.index}`} style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC' }}>
         <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600, lineHeight: 1.55 }} title={action.title}>
-          {conciseTitle(action)}{action.key === 'annual_checkup' && <span style={{ display: 'block', fontWeight: 400 }}>体检机构：{action.record.institution || '待确认'} · 服务方式：{{ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' }[action.record.serviceMode || 'reminder'] || '待确认'}</span>}<span style={{ display: 'block', color: '#62776A', fontSize: 12, fontWeight: 400 }}>{action.key === 'specialist_collab' ? '多学科会诊 · ' : action.key === 'medical_treatment' ? '门诊／检查 · ' : ''}{displayDate(action.date)}</span>{goalForAction?.(action) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>目标：{goalForAction(action)}</span>}
+          {conciseTitle(action)}
+          <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>安排时间：{displayDate(action.date)}{action.record.frequency ? ` · ${action.record.frequency}` : ''}</span>
+          {(action.record.hospital || action.record.institution || action.record.department) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>就诊地点：{[action.record.hospital || action.record.institution, action.record.department].filter(Boolean).join(' · ')}</span>}
+          {(action.record.reason || action.record.items || action.record.reviewItems?.length) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>要做什么：{action.record.reason || action.record.items || action.record.reviewItems.join('、')}</span>}
+          {goalForAction?.(action) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>希望达到：{goalForAction(action)}</span>}
+          {action.record.serviceMode && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>服务安排：{{ reminder: '提醒您自行安排', single: '协助安排单项服务', managed: '全程协助' }[action.record.serviceMode] || '待确认'}</span>}
         </summary>
         {renderAction(action)}
         {onEditItem && ['vaccine', 'health_consensus', 'annual_checkup'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditItem(action.key, action.index)}>修改安排</button>}

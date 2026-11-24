@@ -11847,6 +11847,19 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       try { plan.moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(plan.moduleData || {}, patient?.assignedHealthManager, patient); }
       catch (error) { return res.status(400).json({success:false,message:error.message}); }
     }
+    // 新版年度方案的营养交接不依赖旧闭环灰度开关；推送时必须有实际负责人。
+    if (!nutritionPatient && require('../utils/annualFlowPilot').enabledForPlan(plan)
+      && plan.moduleData?.nutrition_assessment?.enabled !== false) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData.nutrition_assessment?.executionDate || ''))
+        return res.status(409).json({ success: false, message: '请先在营养干预中确定计划日期，再推送方案' });
+      nutritionPatient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist').lean();
+      if (!nutritionPatient || nutritionPatient.isDeleted || String(nutritionPatient.tenantId || '') !== String(req.staff.tenantId || ''))
+        return res.status(403).json({ success: false, message: '无权发布该会员的年度方案' });
+      if (!nutritionPatient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再推送方案' });
+      const nutritionist = await Admin.findOne({ _id: nutritionPatient.assignedNutritionist, role: 'nutritionist',
+        tenantId: nutritionPatient.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
+      if (!nutritionist) return res.status(409).json({ success: false, message: '责任营养师不可用，请先核对分配' });
+    }
     let manualPatient = null, manualManager = null;
     if (monitoring?.enabled !== false && monitoring?.records?.length && monitoring.clientAppUsage === 'no') {
       try { require('../utils/manualAnnualMonitoring').manualMonitoringItems(plan.moduleData); }
