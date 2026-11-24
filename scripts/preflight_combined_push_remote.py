@@ -55,10 +55,17 @@ tar -czf /tmp/combined-push-{suffix}-dist.tgz -C {remote_dir}/miniprogram dist p
 '''
         try:
             _, stdout, stderr = ssh.exec_command(script, timeout=600, get_pty=True)
+            lines = []
             for line in iter(stdout.readline, ''):
-                print(line.rstrip())
+                clean = line.rstrip()
+                lines.append(clean)
+                if len(lines) > 60:
+                    lines.pop(0)
+                if any(marker in clean for marker in ('ℹ tests ', 'ℹ pass ', 'ℹ fail ', 'built in ', 'Compiled successfully', '发布预检', 'preflight passed')):
+                    print(clean)
             exit_code = stdout.channel.recv_exit_status()
             if exit_code:
+                print('\n'.join(lines[-35:]))
                 print(stderr.read().decode('utf-8', 'replace'))
                 raise SystemExit(exit_code)
             if args.download_dist:
