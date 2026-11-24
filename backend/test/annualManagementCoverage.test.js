@@ -278,3 +278,24 @@ test('已审核 AI 缺口必须逐项处理，确需检查进入完善检查且�
   const next = approvedItems(newSummary, 2026);
   assert.notEqual(next.version, approvedItems(summary, 2026).version);
 });
+
+test('已审核 AI 整理的明确待补检查直接进入草稿，重复描述和已做项目不重复复核', async () => {
+  const summary = { byYear: { 2026: { records: [{ scope: 'doctor', generatedAt: '2026-10-24',
+    sections: {
+      checkup_completeness: { missing: ['规范肝脏超声（确认是否已完成）', '结肠镜', '胃镜（含食管）', '低剂量胸部CT（LDCT）', '幽门螺杆菌年度复查（虽2026年阴性，但需连续3年阴性才可降低频次）'] },
+      tumor_risk: { missing: ['肺癌：胸部CT平扫已做（2026-10-24）', '结直肠癌：肠镜未做，建议补做', '肝癌：肝脏超声已做（2026-10-24）', '胃癌：胃镜未做；幽门螺杆菌建议每年复查', '食管癌：胃镜（含食管段）未做'], summary: '肠镜和胃镜为优先补做项目。' },
+    }, sectionReviews: { checkup_completeness: { status: 'approved', approvedAt: '2026-10-24T04:00:00Z' }, tumor_risk: { status: 'approved', approvedAt: '2026-10-24T04:00:00Z' } },
+  }] } } };
+  const { approvedItems } = require('../src/utils/aiHealthCheckupItems');
+  const items = approvedItems(summary, 2026).items;
+  assert.equal(items.length, 5);
+  assert.equal(items.filter(item => item.autoDisposition === 'needs_exam').length, 4);
+  assert.equal(items.filter(item => item.autoDisposition === 'request_records').length, 1);
+  const Decision = { find: () => ({ sort: () => ({ lean: async () => [] }) }) };
+  const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: summary }) }) }) };
+  const CheckupReview = { find: () => ({ lean: async () => [] }) };
+  const result = await load('patient', 2026, { Decision, User, CheckupReview });
+  assert.deepEqual(result.unresolved, []);
+  assert.equal(result.evidence.length, 4);
+  assert.deepEqual(result.evidence.map(row => row.content.problem), ['结肠镜', '胃镜（含食管）', '低剂量胸部CT', '幽门螺杆菌复查']);
+});

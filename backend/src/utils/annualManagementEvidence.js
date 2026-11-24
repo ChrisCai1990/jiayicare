@@ -170,7 +170,19 @@ async function load(patientId, year, dependencies = {}) {
   const unresolved = [];
   for (const item of approved.items) {
     const review = byKey.get(item.sourceKey);
-    if (!review || review.itemText !== item.text) { unresolved.push(item.text); continue; }
+    if (!review || review.itemText !== item.text) {
+      if (item.autoDisposition === 'needs_exam') {
+        // The physician-approved missing-examination list is already a reviewed
+        // source. Carry it into the editable annual draft; the usual plan
+        // approval still decides whether the action is published.
+        evidence.push({ id: `management_issue:ai_approved_${item.itemKey}`, content: {
+          problem: item.title, direction: 'checkup_completion',
+          advisorNote: item.text, reportTitle: '已审核AI健康信息整理 · 体检资料覆盖',
+          sourceKind: 'ai_checkup_approved', source: item.text,
+        } });
+      } else if (!item.autoDisposition) unresolved.push(item.text);
+      continue;
+    }
     if (review.disposition === 'needs_exam') {
       evidence.push({ id: `management_issue:${review._id}`, content: {
         problem: review.title, direction: 'checkup_completion', advisorNote: review.note,

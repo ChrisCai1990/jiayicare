@@ -1458,7 +1458,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       </div>
 
       {patientMode && planType && canEdit && <div style={{ margin: '-12px 0 20px', padding: '12px 14px', border: '1px solid #C7DCCF', borderRadius: 10, background: '#F4FAF6', fontSize: 13, color: '#365E4C' }}>
-        {!pushedAt ? <><strong>核对已纳入的问题</strong><span style={{ marginLeft: 8 }}>新确认的专项筛查与 AI 待完善检查，先由顾问核对，再同步到草稿。</span>
+        {!pushedAt ? <><strong>核对已纳入的问题</strong><span style={{ marginLeft: 8 }}>已确认的专项筛查与已审核 AI 整理中的明确待补检查可同步到草稿；推送前请核对方案安排。</span>
           <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={reloadManagementTargets}>同步最新纳入问题</button></>
           : <><strong>此方案已推送</strong><span style={{ marginLeft: 8 }}>新增检查请到客户档案的“筛查事项去向”核对并补入；营养指标请在本页“营养干预”中留痕调整。</span>
             <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看筛查事项去向</button></>}

@@ -1,6 +1,23 @@
 const crypto = require('node:crypto');
 
 function hash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+const EXAM_NAMES = [
+  ['colonoscopy', '结肠镜', /结肠镜|肠镜/],
+  ['gastroscopy', '胃镜（含食管）', /胃镜/],
+  ['chest_ct', '低剂量胸部CT', /低剂量胸部\s*CT|LDCT|胸部\s*CT/],
+  ['liver_ultrasound', '肝脏超声', /肝脏超声|肝脏B超/],
+  ['h_pylori', '幽门螺杆菌复查', /幽门螺杆菌|HP复查/i],
+];
+function checkupMeaning(text) {
+  const value = String(text || '').trim();
+  const names = EXAM_NAMES.filter(([, , pattern]) => pattern.test(value));
+  const alreadyDone = /已做|已完成|已检查/.test(value) && !/未做|补做|待做|需做|需要补做|优先补做/.test(value);
+  if (alreadyDone && !/年度复查|每年复查|仍需复查|补传|核对资料|确认是否已完成/.test(value)) return null;
+  const disposition = /确认是否已完成|补传|核对资料/.test(value) ? 'request_records'
+    : names.length > 1 ? '' : 'needs_exam';
+  return { key: names.length === 1 ? names[0][0] : value.replace(/\s+/g, ''),
+    title: names.length === 1 ? names[0][1] : value.slice(0, 80), autoDisposition: disposition };
+}
 function approvedDoctorSections(summary, year) {
   const byYear = summary?.byYear || {};
   const entry = byYear[String(year)] || (!Object.keys(byYear).length && summary?.sections ? summary : {});
@@ -36,13 +53,22 @@ function approvedItems(summary, year) {
   const missing = [...listed, ...summaryCandidates.filter(value => !listed.some(item => item && (item.includes(value) || value.includes(item))))];
   const version = hash([record.generatedAt || entry.generatedAt || '', checkupApprovedAt, tumorApprovedAt, missing]);
   const seen = new Map();
-  const items = missing.map(value => String(value || '').trim()).filter(Boolean).map(text => {
+  const rawItems = missing.map(value => String(value || '').trim()).filter(Boolean).map(text => {
     const occurrence = seen.get(text) || 0;
     seen.set(text, occurrence + 1);
     const itemKey = hash([text, occurrence]);
     return { itemKey, sourceKey: `ai_checkup:${version}:${itemKey}`, text };
   });
+  const seenMeaning = new Set();
+  const items = rawItems.flatMap(item => {
+    const meaning = checkupMeaning(item.text);
+    if (!meaning || seenMeaning.has(meaning.key)) return [];
+    // A narrative mentioning several tests is context, not a separate examination.
+    if (!meaning.autoDisposition && EXAM_NAMES.filter(([, , pattern]) => pattern.test(item.text)).some(([key]) => seenMeaning.has(key))) return [];
+    seenMeaning.add(meaning.key);
+    return [{ ...item, ...meaning }];
+  });
   return { approved: true, items, version };
 }
 
-module.exports = { approvedItems, approvedDoctorSections };
+module.exports = { approvedItems, approvedDoctorSections, checkupMeaning };

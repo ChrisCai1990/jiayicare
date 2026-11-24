@@ -22,7 +22,7 @@ export default function AICheckupReview({ patientId, year, versionKey, staff, to
   const current = item => data.reviews?.find(row => row.sourceKey === item.sourceKey)
   const open = item => {
     const saved = current(item)
-    setEditing(item); setForm({ disposition: saved?.disposition || '', title: saved?.title || item.text.slice(0, 80), note: saved?.note || '', linkedDecisionId: saved?.linkedDecisionId || '' }); setError(''); setSuccessMessage('')
+    setEditing(item); setForm({ disposition: saved?.disposition || item.autoDisposition || '', title: saved?.title || item.title || item.text.slice(0, 80), note: saved?.note || '', linkedDecisionId: saved?.linkedDecisionId || '' }); setError(''); setSuccessMessage('')
   }
   const save = async () => {
     if (!form.disposition) { setError('请选择处理方式'); return }
@@ -42,8 +42,8 @@ export default function AICheckupReview({ patientId, year, versionKey, staff, to
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
     {successMessage && <div role="status" style={{ color: '#1E6B50', background: '#EAF7EF', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>{successMessage}</div>}
     {data.items.map(item => { const saved = current(item); return <div key={item.sourceKey} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '8px 10px', background: '#FAFAF8', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-      <div style={{ minWidth: 0, fontSize: 13, lineHeight: 1.6 }}><b>{item.text}</b><div style={{ color: saved ? '#1E6B50' : '#B45309', fontSize: 12 }}>{saved ? LABELS[saved.disposition] + (saved.note ? ` · ${saved.note}` : '') : '待顾问核对'}</div></div>
-      {editable && <button type="button" className="btn btn-secondary btn-sm" onClick={() => open(item)}>{saved ? '调整' : '核对去向'}</button>}
+      <div style={{ minWidth: 0, fontSize: 13, lineHeight: 1.6 }}><b>{item.text}</b><div style={{ color: saved || item.autoDisposition ? '#1E6B50' : '#B45309', fontSize: 12 }}>{saved ? LABELS[saved.disposition] + (saved.note ? ` · ${saved.note}` : '') : item.autoDisposition === 'needs_exam' ? '已审核整理带入年度草稿，推送前可调整' : item.autoDisposition === 'request_records' ? '已审核整理提示核对资料，不生成检查行动' : '待顾问核对'}</div></div>
+      {editable && <button type="button" className="btn btn-secondary btn-sm" onClick={() => open(item)}>{saved || item.autoDisposition ? '调整去向' : '核对去向'}</button>}
     </div> })}
     {editing && <div className="modal-overlay"><div className="modal" style={{ maxWidth: 520 }}>
       <div className="modal-header"><div className="modal-title">核对待完善检查</div><button type="button" className="modal-close" onClick={() => { setEditing(null); setError('') }}>×</button></div>

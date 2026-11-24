@@ -41,7 +41,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
   useEffect(() => { refresh() }, [patientId, year])
   const reviewed = state.checkup?.reviews || []
   const pendingAICheckups = (state.checkup?.items || []).filter(item =>
-    !reviewed.some(row => row.sourceKey === item.sourceKey && row.itemText === item.text)).length
+    !item.autoDisposition && !reviewed.some(row => row.sourceKey === item.sourceKey && row.itemText === item.text)).length
   const currentReports = useMemo(() => reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly), [reports])
   const hepatitisVaccinePrompt = useMemo(() => hepatitisAllNegative(currentReports), [currentReports])
   const covered = useMemo(() => {

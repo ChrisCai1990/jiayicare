@@ -111,16 +111,18 @@ test('只给所属顾问的有效年度客户投影一张流程卡', async () =>
   assert.equal((await load({ _id: 'advisor', role: 'familyDoctor' }, now, deps, 'p1', true))[0].step, 'execution');
 });
 
-test('报告解读完成且 AI 待核对为零时自动进入目标，新版 AI 提示重新待核对', () => {
+test('已审核 AI 明确待补检查沿用审核结论，含糊提示仍需核对', () => {
   const summary = { sections: { checkup_completeness: { missing: ['骨密度检查'] } }, approvedAt: now };
   const withAI = { ...patient, aiHealthSummary: summary };
   const interpreted = { ...report, advisorInterpretationConfirmedAt: now };
   const item = approvedItems(summary, 2026).items[0];
-  assert.equal(project(withAI, 2026, [], [interpreted], now).step, 'screening');
+  assert.equal(project(withAI, 2026, [], [interpreted], now).step, 'goals');
   const review = { patientId: 'p1', year: 2026, sourceVersion: approvedItems(summary, 2026).version,
     sourceKey: item.sourceKey, itemText: item.text };
   assert.equal(project(withAI, 2026, [], [interpreted], now, [review]).step, 'goals');
   const changed = { ...summary, sections: { checkup_completeness: { missing: ['骨密度检查', '肺功能检查'] } } };
-  assert.equal(project({ ...patient, aiHealthSummary: changed }, 2026, [], [interpreted], now, [review]).step, 'screening');
+  assert.equal(project({ ...patient, aiHealthSummary: changed }, 2026, [], [interpreted], now, [review]).step, 'goals');
+  const unclear = { ...summary, sections: { checkup_completeness: { missing: ['胃镜和肠镜筛查情况待核实'] } } };
+  assert.equal(project({ ...patient, aiHealthSummary: unclear }, 2026, [], [interpreted], now).step, 'screening');
   assert.equal(project(withAI, 2026, [], [report], now, [review]).step, 'interpretation');
 });

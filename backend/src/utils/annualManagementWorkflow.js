@@ -46,7 +46,7 @@ function project(patient, year, plans, reports, now = new Date(), aiReviews = []
   const planConfirmed = Boolean(plan?.confirmedAt);
   const planReleased = Boolean(plan?.pushedAt || planConfirmed);
   const checkup = approvedItems(patient.aiHealthSummary, year);
-  const screeningConfirmed = !pending.length && checkup.items.every(item => aiReviews.some(row =>
+  const screeningConfirmed = !pending.length && checkup.items.every(item => !!item.autoDisposition || aiReviews.some(row =>
     String(row.patientId) === id && Number(row.year) === Number(year)
     && row.sourceVersion === checkup.version && row.sourceKey === item.sourceKey && row.itemText === item.text));
   const hasGoals = Boolean((plan?.moduleData?.management_targets?.records || []).length
