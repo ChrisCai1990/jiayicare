@@ -20106,8 +20106,14 @@ async function runReportPageParseControlled(reportId, pageNum) {
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || resultFirstCandidate.supported || referenceFirstCandidate.supported || missingNamedExams.length || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
-        localScan = { source: aikangCandidate.supported ? 'pdf_text_exam' : 'pdf_text', items: [
+      const { parseTextNarrativeFindings } = require('../utils/reportTextNarrativeFindings');
+      const narrativeCandidate = parseTextNarrativeFindings(layout, oldPageAtStart, pageNum);
+      const narrativeOnly = narrativeCandidate.supported && !textCandidate.supported
+        && !resultFirstCandidate.supported && !referenceFirstCandidate.supported
+        && !missingNamedExams.length && !urineCandidate.supported && !physicalCandidate.supported
+        && !ultrasoundCandidate.supported && !aikangCandidate.supported;
+      if (textCandidate.supported || resultFirstCandidate.supported || referenceFirstCandidate.supported || missingNamedExams.length || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported || narrativeCandidate.supported) {
+        localScan = { source: aikangCandidate.supported || narrativeOnly ? 'pdf_text_exam' : 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
           ...(resultFirstCandidate.supported ? resultFirstCandidate.items : []),
           ...(referenceFirstCandidate.supported ? referenceFirstCandidate.items : []),
@@ -20116,6 +20122,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
           ...(aikangCandidate.supported ? aikangCandidate.items : []),
+          ...(narrativeCandidate.supported ? narrativeCandidate.items : []),
         ] };
       }
       if (!localScan || (localScan.source !== 'pdf_text_exam' && localScan.items.length < 25)) {
