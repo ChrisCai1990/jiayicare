@@ -13724,8 +13724,8 @@ export default function PatientDetailPage() {
           // 审核内容多且耗时，鼠标稍微移出弹窗点到遮罩层就会误触关闭丢失未保存的编辑，去掉点遮罩关闭，
           // 只能点右上角✕关闭（2026-07-13 反馈：之前只改了纯查看用的"体检报告详情弹窗"，这个才是真正
           // 审核AI识别结果、会长时间编辑的弹窗，之前漏改了）
-          <div className="modal-overlay">
-            <div className="modal ocr-review-modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal-overlay ocr-review-overlay">
+            <div className="modal ocr-review-modal">
               <ReportReviewQuality report={ocrReviewReport} items={ocrEditItems} onChange={patch => {
                 setOcrReviewReport(current => ({ ...current, ...patch }))
                 // The save handlers read ocrReportMeta. Keep the header edits in that
@@ -13749,8 +13749,9 @@ export default function PatientDetailPage() {
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
-              {attentionPages.length > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF8E6', borderBottom: '1px solid #FCD34D', color: '#92400E', fontSize: 12 }}>
-                <strong>原件覆盖待核对：{attentionPages.length}/{expectedPages.length} 页</strong>
+              {(attentionPages.length > 0 || unclassifiedN > 0 || ambiguousItems.length > 0) && <div className="ocr-review-notices">
+              {attentionPages.length > 0 && <details className="ocr-review-notice ocr-review-notice-coverage">
+                <summary>原件覆盖待核对：{attentionPages.length}/{expectedPages.length} 页 <span>展开查看页码</span></summary>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, maxHeight: 96, overflowY: 'auto' }}>
                   {attentionPages.map(row => <button key={row.page} type="button" onClick={() => setOcrReviewPage(row.page)}
                     style={{ border: '1px solid #FCD34D', borderRadius: 5, padding: '4px 8px', background: activePage === row.page ? '#FEF3C7' : '#fff', color: '#92400E', cursor: 'pointer', textAlign: 'left' }}>
@@ -13758,23 +13759,24 @@ export default function PatientDetailPage() {
                   </button>)}
                 </div>
                 <div style={{ marginTop: 4 }}>无提取数据仅表示草稿为空，请对照原件判断该页是否有检查结果。</div>
-              </div>}
-              {unclassifiedN > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF1F0', borderBottom: '1px solid #FCA5A5', color: '#B42318', fontSize: 12 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>⚠ 未归类 {unclassifiedN} 项：可以保存草稿，全部归类后才能提交审核。点击下列项目直接定位：</div>
+              </details>}
+              {unclassifiedN > 0 && <details className="ocr-review-notice ocr-review-notice-unclassified">
+                <summary>⚠ 未归类 {unclassifiedN} 项：可保存草稿，全部归类后才能提交审核 <span>展开定位项目</span></summary>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 104, overflowY: 'auto' }}>
                   {unclassifiedItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)}
                     style={{ color: '#B42318', border: '1px solid #FCA5A5', background: '#fff', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontSize: 12, textAlign: 'left', maxWidth: '100%' }}>
                     第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.sourceSection || entry.it.orderName || '未识别栏目'} · <strong>{entry.it.name || '未命名项目'}</strong>
                   </button>)}
                 </div>
-              </div>}
-              {ambiguousItems.length > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF8E6', borderBottom: '1px solid #FCD34D', color: '#92400E', fontSize: 12 }}>
-                <strong>⚠ {ambiguousItems.length} 项同时匹配多个分类，须逐项核对归属后才能提交审核。可先保存草稿：</strong>
+              </details>}
+              {ambiguousItems.length > 0 && <details className="ocr-review-notice ocr-review-notice-coverage">
+                <summary>⚠ {ambiguousItems.length} 项匹配多个分类，须逐项核对后提交 <span>展开定位项目</span></summary>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, maxHeight: 104, overflowY: 'auto' }}>
                   {ambiguousItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)} style={{ border: '1px solid #FCD34D', borderRadius: 5, padding: '4px 8px', background: '#fff', color: '#92400E', cursor: 'pointer', textAlign: 'left' }}>
                     第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.name}：{reportClassificationLabels(entry.it, screeningCatalog).join('；')}
                   </button>)}
                 </div>
+              </details>}
               </div>}
               <div className="ocr-review-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 {/* 左：原始报告预览 */}

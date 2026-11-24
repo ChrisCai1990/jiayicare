@@ -371,9 +371,22 @@ textarea.form-control { resize: vertical; }
 .report-detail-layout > .modal-body { min-width: 0; }
 .report-detail-layout-side-by-side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 0 20px; }
 .report-detail-layout-side-by-side > .modal-body { padding: 0 0 16px; }
-.ocr-review-source { width: 40%; min-width: 0; flex-shrink: 0; }
+.ocr-review-overlay { padding: 12px; }
+.ocr-review-modal { width: min(1800px, calc(100vw - 24px)); max-width: none; height: calc(100dvh - 24px); max-height: none; min-height: 0; }
+.ocr-review-modal .modal-header { padding: 12px 18px; gap: 12px; }
+.ocr-review-modal .modal-title { min-width: 0; }
+.ocr-review-modal .modal-footer { padding: 10px 16px; }
+.ocr-review-notices { flex-shrink: 0; max-height: min(24vh, 240px); overflow-y: auto; }
+.ocr-review-notice { padding: 6px 16px; border-bottom: 1px solid; font-size: 13px; }
+.ocr-review-notice summary { cursor: pointer; font-weight: 700; line-height: 1.5; }
+.ocr-review-notice summary span { font-size: 12px; font-weight: 400; margin-left: 12px; }
+.ocr-review-notice-coverage { background: #FFF8E6; border-color: #FCD34D; color: #92400E; }
+.ocr-review-notice-unclassified { background: #FFF1F0; border-color: #FCA5A5; color: #B42318; }
+.ocr-review-source { width: 48%; min-width: 0; flex-shrink: 0; }
 .ocr-review-fields { min-width: 0; }
 @media (max-width: 850px) {
+  .ocr-review-overlay { padding: 8px; }
+  .ocr-review-modal { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
   .ocr-review-modal .modal-header { flex-wrap: wrap; gap: 8px; }
   .ocr-review-modal .modal-title { width: calc(100% - 40px); overflow-wrap: anywhere; }
   .ocr-review-layout { flex-direction: column; overflow-y: auto !important; }
