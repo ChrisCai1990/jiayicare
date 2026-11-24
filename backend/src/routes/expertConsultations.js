@@ -11,11 +11,16 @@ const MedicalExpert = require('../models/MedicalExpert');
 const StaffAvailability = require('../models/StaffAvailability');
 const MedicalReport = require('../models/MedicalReport');
 const Referral = require('../models/Referral');
+const { signStoredUrl } = require('../utils/oss');
 
 const id = value => String(value?._id || value || '');
 const text = (value, max = 4000) => String(value || '').trim().slice(0, max);
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
 const valid = value => mongoose.isValidObjectId(value);
+const materialIds = value => Array.isArray(value) ? [...new Set(value.map(id))] : [];
+const materialSelectionValid = ids => ids.length <= 30 && ids.every(valid);
+const materialFields = '_id title checkDate documentCategory audit_status sourceOrderId fileUrl fileUrls ossKey ossKeys createdAt';
+const materialCategories = ['prescription_order', 'lab_report', 'exam_report', 'physical_exam', null];
 const paid = order => order?.paymentStatus === 'paid' && ['paid', 'fulfilling', 'completed', 'partially_refunded'].includes(order.tradeStatus);
 const serviceType = order => ({ expert_consultation: 'single', mdt_consultation: 'mdt' })[order?.serviceWorkflowSnapshot?.key];
 const activeOrder = order => paid(order) && order?.status !== 'cancelled' && !['requested', 'processing', 'refunded'].includes(order?.refundStatus);
@@ -91,6 +96,11 @@ router.post('/staff', staffAuth, async (req, res) => {
   if (req.staff.role !== 'superadmin' && ![patient.assignedHealthManager, patient.assignedFamilyDoctor,
     patient.assignedHealthPlanner].some(staffId => id(staffId) === id(req.staff._id)))
     return fail(res, 403, '只能为本人负责的客户发起咨询');
+  const reportIds = materialIds(req.body?.reportIds);
+  if (!materialSelectionValid(reportIds)) return fail(res, 400, '所选检查单或报告编号无效或数量过多');
+  if (reportIds.length && await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: patient._id,
+    documentCategory: { $in: materialCategories } }) !== reportIds.length)
+    return fail(res, 400, '所选检查单或报告不属于该客户');
   const managerId = patient.assignedHealthManager;
   if (!managerId || !await Admin.exists({ _id: managerId, tenantId: req.staff.tenantId, role: 'healthManager', staffStatus: 'active' }))
     return fail(res, 409, '客户所属健管专员资料异常，请先修正客户归属后发起');
@@ -99,9 +109,22 @@ router.post('/staff', staffAuth, async (req, res) => {
   const row = await Case.create({ tenantId: req.staff.tenantId, patientId: patient._id, type,
     initiationSource: 'staff', initiatedByStaff: req.staff._id,
     specificationLabel: type === 'mdt' ? `${expertCount}位专家` : '', managerId, advisorId, plannerId,
-    status: 'intake', clientRequest: request,
+    status: 'intake', clientRequest: request, materialReportIds: reportIds,
     history: [{ action: 'staff_requested', actorId: req.staff._id, at: new Date(), note: '' }] });
   res.status(201).json({ success: true, data: { id: row._id, status: row.status } });
+});
+
+router.get('/staff/material-options/:patientId', staffAuth, async (req, res) => {
+  if (!valid(req.params.patientId)) return fail(res, 400, '客户编号无效');
+  const patient = await User.findOne({ _id: req.params.patientId, tenantId: req.staff.tenantId, isDeleted: { $ne: true } })
+    .select('assignedHealthManager assignedFamilyDoctor assignedHealthPlanner').lean();
+  if (!patient) return fail(res, 404, '客户不存在或不属于本机构');
+  if (req.staff.role !== 'superadmin' && ![patient.assignedHealthManager, patient.assignedFamilyDoctor, patient.assignedHealthPlanner]
+    .some(staffId => id(staffId) === id(req.staff._id))) return fail(res, 403, '只能查看本人负责客户的检查资料');
+  const reports = await MedicalReport.find({ user: patient._id,
+    documentCategory: { $in: materialCategories } })
+    .select(materialFields).sort({ createdAt: -1 }).limit(100).lean();
+  res.json({ success: true, data: reports.map(({ fileUrl, fileUrls, ossKey, ossKeys, ...report }) => report) });
 });
 
 router.get('/mine/experts', userAuth, async (req, res) => {
@@ -187,10 +210,24 @@ router.get('/staff/:id/materials', staffAuth, async (req, res) => {
   const row = valid(req.params.id) && await Case.findById(req.params.id);
   if (!row) return fail(res, 404, '咨询服务不存在');
   if (!staffCanRead(row, req.staff)) return fail(res, 403, '无权查看该服务资料');
+  const selected = await MedicalReport.find({ _id: { $in: row.materialReportIds }, user: row.patientId })
+    .select(materialFields).lean();
+  const orderIds = selected.filter(report => report.documentCategory === 'prescription_order' && report.sourceOrderId)
+    .map(report => report.sourceOrderId);
+  const related = orderIds.length ? await MedicalReport.find({ user: row.patientId,
+    sourceOrderId: { $in: orderIds }, documentCategory: { $in: ['lab_report', 'exam_report', 'physical_exam'] }, audit_status: 'audited' })
+    .select(materialFields).sort({ createdAt: -1 }).limit(100).lean() : [];
+  const sharedIds = new Set([...selected, ...related].map(report => id(report)));
   const reportFilter = { user: row.patientId };
-  if (!assigned(row, req.staff, 'managerId')) reportFilter._id = { $in: row.materialReportIds };
-  const reports = await MedicalReport.find(reportFilter).select('_id title checkDate audit_status').sort({ createdAt: -1 }).limit(100).lean();
-  res.json({ success: true, data: reports });
+  if (!assigned(row, req.staff, 'managerId')) reportFilter._id = { $in: [...sharedIds] };
+  const reports = await MedicalReport.find(reportFilter).select(materialFields).sort({ createdAt: -1 }).limit(100).lean();
+  res.json({ success: true, data: reports.map(report => {
+    const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const keys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    const { fileUrl, fileUrls, ossKey, ossKeys, ...details } = report;
+    return { ...details, shared: sharedIds.has(id(report)), automaticallyIncluded: !row.materialReportIds.some(value => id(value) === id(report)) && sharedIds.has(id(report)),
+      files: sharedIds.has(id(report)) ? urls.map((url, index) => signStoredUrl(url, keys[index] || '')) : [] };
+  }) });
 });
 
 router.get('/staff/:id/referrals', staffAuth, async (req, res) => {
@@ -252,8 +289,8 @@ router.post('/staff/:id/intake', staffAuth, async (req, res) => {
   row.advisorId = advisorId;
   const summary = text(req.body?.summary);
   if (!summary) return fail(res, 400, '请填写已核实的资料摘要和待补资料');
-  const reportIds = Array.isArray(req.body?.reportIds) ? [...new Set(req.body.reportIds.map(id))] : [];
-  if (reportIds.length > 30 || reportIds.some(value => !valid(value))) return fail(res, 400, '关联报告编号无效或数量过多');
+  const reportIds = req.body?.reportIds === undefined ? row.materialReportIds.map(id) : materialIds(req.body.reportIds);
+  if (!materialSelectionValid(reportIds)) return fail(res, 400, '关联报告编号无效或数量过多');
   if (reportIds.length && await MedicalReport.countDocuments({ _id: { $in: reportIds }, user: row.patientId }) !== reportIds.length)
     return fail(res, 400, '所选报告不属于该客户');
   row.materialSummary = summary;
