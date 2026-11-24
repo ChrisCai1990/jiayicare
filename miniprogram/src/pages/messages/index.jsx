@@ -564,8 +564,6 @@ function MessageDetailModal({ msg, onClose, paymentActivityRef }) {
   );
 }
 
-const RENEWAL_PAYMENT_METHODS = [{ key: 'wechat', label: '微信支付' }];
-
 function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false } }) {
   const familyPayment = !!msg.beneficiaryUserId;
   const { user, updateUser } = useAuth();
@@ -580,7 +578,6 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
   const [payError, setPayError] = useState('');
-  const [payMethod, setPayMethod] = useState('wechat');
   const [checkoutUser, setCheckoutUser] = useState(user);
   const fundBalance = checkoutUser?.healthFund?.total || 0;
   const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
@@ -634,7 +631,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     paymentActivityRef.current = true;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, beneficiaryUserId: msg.beneficiaryUserId || '', useHealthFund: fundApplied, useEnterpriseSharedFund: !familyPayment && useSharedFund, couponId: familyPayment ? null : couponId, paymentMethod: payMethod, paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
+      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, beneficiaryUserId: msg.beneficiaryUserId || '', useHealthFund: fundApplied, useEnterpriseSharedFund: !familyPayment && useSharedFund, couponId: familyPayment ? null : couponId, paymentMethod: 'wechat', paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
       if (result.code === 'CHECKOUT_QUOTE_CHANGED') { setCheckoutQuote(result.summary); throw new Error(result.message); }
       if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
       if (result.summary) setCheckoutQuote(result.summary);
@@ -675,7 +672,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
 
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', height: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.sm}px` }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>{familyPayment ? '为家庭成员推荐以下产品' : '为您推荐以下产品'}</Text>
@@ -685,7 +682,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
             setCheckedIds(checkedIds.length === productList.length ? [] : productList.map(p => p.productId));
           }} style={{ fontSize: '12px', color: colors.primary }}>{checkedIds.length === productList.length ? '取消全选' : '全选'}</Text>}
         </View>
-        <ScrollView scrollY style={{ flex: 1, marginBottom: `${spacing.sm}px` }}>
+        <ScrollView scrollY style={{ flex: 1, height: 0, minHeight: 0, width: '100%', marginBottom: `${spacing.sm}px` }}>
           {productList.map((p) => {
             const isChecked = checkedIds.includes(p.productId);
             return (
@@ -711,8 +708,6 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
               </View>
             );
           })}
-        </ScrollView>
-
         {!familyPayment && (
           <View style={{ marginBottom: `${spacing.sm}px` }}>
             <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>抵用券</Text>
@@ -755,18 +750,6 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           <Text style={{ fontSize: '12px', color: colors.textPrimary }}>企业共享基金可抵 ¥{sharedQuote.toFixed(2)} · {useSharedFund ? '已启用' : '点击使用'}（最高 50%）</Text>
         </View>}
 
-        <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
-          {RENEWAL_PAYMENT_METHODS.map((m) => (
-            <View key={m.key} onClick={() => setPayMethod(m.key)} style={{
-              flex: 1, textAlign: 'center', padding: '10px', borderRadius: `${radius.md}px`,
-              border: `1.5px solid ${payMethod === m.key ? colors.primary : colors.border}`,
-              backgroundColor: payMethod === m.key ? colors.primary10 : colors.background,
-            }}>
-              <Text style={{ fontSize: '12px', color: payMethod === m.key ? colors.textPrimary : colors.textMuted, fontWeight: payMethod === m.key ? 700 : 500 }}>{m.label}</Text>
-            </View>
-          ))}
-        </View>
-
         {!!payError && <Text style={{ fontSize: '12px', color: colors.danger, textAlign: 'center', marginBottom: '6px' }}>{payError}</Text>}
 
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -775,12 +758,13 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           </Text>
           <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>合计 ¥{finalPrice}</Text>
         </View>
-        <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+        </ScrollView>
+        <View style={{ display: 'flex', flexShrink: 0, gap: `${spacing.sm}px` }}>
           <View onClick={paying ? undefined : onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
             <Text style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>关闭</Text>
           </View>
           <View onClick={!checkedIds.length || paying ? undefined : handlePay} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: (!checkedIds.length || paying) ? 0.5 : 1 }}>
-            <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{paying ? '提交中...' : pendingOrderId ? '查看待支付订单' : `${checkedIds.length > 1 ? '合并支付' : '立即支付'} ¥${finalPrice}`}</Text>
+            <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{paying ? '正在发起微信支付...' : pendingOrderId ? '查看待支付订单' : `微信支付 ¥${finalPrice}${checkedIds.length > 1 ? `（合并${checkedIds.length}项）` : ''}`}</Text>
           </View>
         </View>
       </View>
@@ -1210,7 +1194,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
           {(input.trim() || foodImages.length || sending) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>{sending ? (foodImages.length ? '照片上传中…' : '发送中…') : '发送'}</Text> : <View onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="circle-plus" size={28} color={colors.textPrimary} /></View>}
         </View>
         {emojiOpen && <View style={{display:'flex',flexWrap:'wrap',gap:'12px',padding:'12px 4px 4px'}}>{['😊','👍','🌙','❤️','谢谢','收到'].map(e=><Text key={e} onClick={()=>setInput(v=>`${v}${e}`)} style={{fontSize:'21px'}}>{e}</Text>)}</View>}
-        {moreOpen && <View style={{display:'flex',padding:'12px 4px 4px'}}><View onClick={chooseFoodImage} style={{textAlign:'center'}}><View style={{width:'48px',height:'48px',borderRadius:'9px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:'23px'}}>🖼️</Text></View><Text style={{fontSize:'11px',color:colors.textMuted}}>图片</Text></View></View>}
+        {moreOpen && <View style={{display:'flex',padding:'12px 4px 4px'}}><View onClick={chooseFoodImage} style={{textAlign:'center'}}><View style={{width:'48px',height:'48px',borderRadius:'9px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="image" size={28} color={colors.textPrimary}/></View><Text style={{fontSize:'11px',color:colors.textMuted}}>图片</Text></View></View>}
       </View>
     </View>
   );

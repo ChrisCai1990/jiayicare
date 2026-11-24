@@ -111,6 +111,15 @@ test('two products are independently selectable, including deselect-all/select-a
   elements().find(n => n.props.key === 'b').props.onClick(); assert.deepEqual(Array.from(states[0]), ['a', 'b']);
   elements().find(n => n.type === 'Text' && n.children.includes('取消全选')).props.onClick(); assert.equal(states[0].length, 0);
   elements().find(n => n.type === 'Text' && n.children.includes('全选')).props.onClick(); assert.equal(states[0].length, 2);
+  const nodes = elements();
+  const body = nodes.find(n => n.type === 'ScrollView' && n.props.scrollY);
+  const descendants = [];
+  function visit(node) { if (!node || typeof node !== 'object') return; descendants.push(node); (node.children || []).flat(Infinity).forEach(visit); }
+  visit(body);
+  assert.ok(descendants.some(n => n.type === 'Text' && n.children.includes('抵用券')));
+  assert.ok(descendants.some(n => n.type === 'Text' && String(n.children[0]).startsWith('合计 ¥')));
+  assert.ok(!descendants.some(n => n.type === 'Text' && String(n.children[0]).startsWith('微信支付 ¥')));
+  assert.ok(nodes.some(n => n.type === 'Text' && String(n.children[0]).startsWith('微信支付 ¥')));
 });
 
 test('changed checkout quote does not call the cashier before a second confirmation', async () => {

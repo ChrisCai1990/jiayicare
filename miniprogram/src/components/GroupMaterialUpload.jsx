@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -6,18 +7,20 @@ import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePi
 import { ensureAiDataConsent } from '../utils/aiDataConsent';
 import { chooseBrowserFile } from '../utils/chooseBrowserFile';
 
-export default function GroupMaterialUpload({ groupId, onSent }) {
+export default function GroupMaterialUpload({ groupId, onSent, expanded=false }) {
   const [busy,setBusy]=useState(false);
   const [pending,setPending]=useState(null);
   const lock=useRef(false);
   const picker=useRef(null);
   const [choosing,setChoosing]=useState(false);
   const [phase,setPhase]=useState('');
-  const [showSources,setShowSources]=useState(false);
+  const [lastError,setLastError]=useState('');
+  const [showSources,setShowSources]=useState(expanded);
   useEffect(()=>()=>picker.current?.abort(),[]);
   const upload=async(sourceIndex)=>{
     if(lock.current)return;
     lock.current=true;
+    setLastError('');
     try {
       let data=pending;
       if(!data){
@@ -67,22 +70,24 @@ export default function GroupMaterialUpload({ groupId, onSent }) {
       }
       setBusy(true);
       setPhase('正在上传资料…');
-      await inAppServiceGroupAPI.uploadMaterial(groupId,data);
+      const response=await inAppServiceGroupAPI.uploadMaterial(groupId,data);
+      if(!response?.success||!response?.data?.reportId)throw new Error('提交结果未确认，请点“重试提交医疗资料”核对');
       setPending(null);
       Taro.showToast({title:'资料已提交',icon:'success'});
       onSent?.();
-    }catch(error){if(!isImagePickerCancelled(error)&&!/cancel/i.test(error.errMsg||''))Taro.showModal({title:'资料未确认提交',content:error.message||'请重试，重复提交不会重复建档',showCancel:false});}
+    }catch(error){if(!isImagePickerCancelled(error)){const message=error.message||'请重试，重复提交不会重复建档';setLastError(message);Taro.showModal({title:'资料未确认提交',content:message,showCancel:false});}}
     finally{picker.current=null;lock.current=false;setChoosing(false);setBusy(false);setPhase('');}
   };
   return <View style={{flexShrink:0,padding:'6px 12px',background:'#fff',borderTop:'1px solid #eee'}}>
-    <View onClick={()=>{if(lock.current)return;pending?upload():setShowSources(value=>!value);}} style={{minHeight:'44px',display:'flex',alignItems:'center',color:'#187e87',fontSize:'14px'}}>
+    {(!expanded||pending||choosing)&&<View onClick={()=>{if(lock.current)return;pending?upload():setShowSources(value=>!value);}} style={{minHeight:'44px',display:'flex',alignItems:'center',color:'#187e87',fontSize:'14px'}}>
       {phase|| (choosing?'正在准备选择资料…':pending?'重试提交医疗资料':showSources?'收起上传选项':'＋ 上传医疗资料')}
-    </View>
+    </View>}
     {showSources&&!pending&&!choosing&&<View style={{display:'flex',gap:'10px',padding:'4px 0 10px'}}>
-      <View onClick={()=>upload(0)} style={{flex:1,minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center',border:'1px solid #B7D7C9',borderRadius:'10px',color:'#1E6B50'}}>拍照 / 相册图片</View>
-      <View onClick={()=>upload(1)} style={{flex:1,minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center',border:'1px solid #B7D7C9',borderRadius:'10px',color:'#1E6B50'}}>选择 PDF 文件</View>
+      <View onClick={()=>upload(0)} style={{flex:1,minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'8px',padding:'12px',border:'1px solid #B7D7C9',borderRadius:'10px',color:'#1E6B50'}}><Icon name='image' size={28}/><Text>图片资料</Text></View>
+      <View onClick={()=>upload(1)} style={{flex:1,minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'8px',padding:'12px',border:'1px solid #B7D7C9',borderRadius:'10px',color:'#1E6B50'}}><Icon name='file-text' size={28}/><Text>PDF 资料</Text></View>
     </View>}
     {choosing&&<Text onClick={()=>picker.current?.abort()} style={{marginLeft:'20px',color:'#187e87',fontSize:'12px'}}>取消选择</Text>}
+    {!!lastError&&<Text style={{display:'block',padding:'8px 0',color:'#B42318',fontSize:'12px'}}>{lastError}{pending?'；可点上方重试，不会重复建档':''}</Text>}
     {!busy&&pending&&<Text onClick={()=>setPending(null)} style={{marginLeft:'20px',fontSize:'12px'}}>重新选择</Text>}
   </View>;
 }
