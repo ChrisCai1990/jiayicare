@@ -121,6 +121,7 @@ export const inAppServiceGroupAPI = {
   configuration: (patientId, serviceType) => req(`/staff/in-app-service-groups/configuration/${encodeURIComponent(patientId)}?serviceType=${encodeURIComponent(serviceType)}`),
   configure: data => req('/staff/in-app-service-groups', { method: 'POST', body: JSON.stringify(data) }),
   messages: (id, before = '') => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages?before=${encodeURIComponent(before)}`),
+  recall: (id, messageId) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/recall`, {method:'PATCH'}),
   send: (id, content, mentionIds = [], quotedMessageId = null) => req(`/staff/in-app-service-groups/${encodeURIComponent(id)}/messages`, {
     method: 'POST', body: JSON.stringify({ content, mentionIds, quotedMessageId }),
   }),

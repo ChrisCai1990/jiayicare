@@ -108,7 +108,7 @@ export default function ServiceGroupPage() {
       const result = current ? await api.messages(current.id) : { data: [] };
       if (activeId !== selectedId.current) return;
       const rows = result.data || [];
-      setMessages(prev=>[...new Map([...prev,...rows].map(m=>[String(m.id),m])).values()].sort((a,b)=>+new Date(a.createdAt)-+new Date(b.createdAt)||String(a.id).localeCompare(String(b.id))));
+      setMessages(prev=>[...new Map([...(rows.length?prev.filter(m=>+new Date(m.createdAt)<+new Date(rows[0].createdAt)):[]),...rows].map(m=>[String(m.id),m])).values()].sort((a,b)=>+new Date(a.createdAt)-+new Date(b.createdAt)||String(a.id).localeCompare(String(b.id))));
       if(!opened.current)setOlder(!!result.hasMore);
       if (!opened.current && rows.length) {
         opened.current = true;
