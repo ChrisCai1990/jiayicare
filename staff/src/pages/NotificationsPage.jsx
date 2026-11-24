@@ -1023,6 +1023,7 @@ function ThreadVoiceMessage({ message, userId, roleKey }) {
 // ── 对话线程弹窗 ──
 function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate }) {
   const androidStaff = navigator.userAgent.includes('JiayiCareStaffAndroid/')
+  const staffId = (() => { try { return String(JSON.parse(localStorage.getItem('jy_staff_info'))?._id || '') } catch { return '' } })()
   const tapVoice = window.matchMedia?.('(pointer: coarse)').matches || false
   const toast = useToast()
   const [previewImageUrl, setPreviewImageUrl] = useState('')
@@ -1215,6 +1216,17 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
     finally { setSubmitting(false) }
   }
 
+  const recallMessage = async message => {
+    if (submitting || !window.confirm('确定撤回这条消息吗？')) return
+    setSubmitting(true); setErr('')
+    try {
+      await staffAPI.recallChatMessage(message._id)
+      setMessages(rows => rows.filter(row => String(row._id) !== String(message._id)))
+      onSent(); await loadThread()
+    } catch (error) { setErr(error.message || '撤回失败') }
+    finally { setSubmitting(false) }
+  }
+
   const fmtTime = t => new Date(t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
   const reviewAI = async (message, action) => {
@@ -1280,9 +1292,13 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" onClick={() => setPreviewImageUrl(url)} style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6, cursor: 'zoom-in' }} />)}
                     {m.audioUrl && <ThreadVoiceMessage message={m} userId={userId} roleKey={roleKey} />}
-                    {m.fileUrl && <a href={m.fileUrl} target="_blank" rel="noreferrer" download={m.fileName} style={{display:'block',color:isUser?'#1e6b50':'#fff',fontWeight:700,overflowWrap:'anywhere'}}>📎 {m.fileName || '查看文件'}</a>}
+                    {m.fileUrl && (m.fileMimeType?.startsWith('image/')
+                      ? <img src={m.fileUrl} alt={m.fileName || '沟通图片'} onClick={() => setPreviewImageUrl(m.fileUrl)} style={{display:'block',maxWidth:'100%',maxHeight:220,borderRadius:8,marginBottom:6,cursor:'zoom-in'}} />
+                      : <a href={m.fileUrl} target="_blank" rel="noreferrer" download={m.fileName} style={{display:'block',color:isUser?'#1e6b50':'#fff',fontWeight:700,overflowWrap:'anywhere'}}>📎 {m.fileName || '查看文件'}</a>)}
                     {(!m.audioUrl || m.content !== '[语音消息]') && (!m.fileUrl || m.content !== '[文件]') && m.content}
                   </div>
+                  {!isUser && String(m.senderStaffId || '') === staffId && Date.now() - new Date(m.createdAt).getTime() <= 120000 &&
+                    <button type="button" className="btn btn-secondary btn-sm" disabled={submitting} onClick={() => recallMessage(m)} style={{display:'block',marginTop:4,marginLeft:'auto'}}>撤回</button>}
                   {roleKey === 'nutritionist' && m.aiGenerated && m.aiReviewStatus === 'pending' && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 6, justifyContent: 'flex-end' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => reviewAI(m, 'reject')}>驳回</button>
