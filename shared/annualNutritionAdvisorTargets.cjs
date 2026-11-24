@@ -28,9 +28,9 @@ function fromManagementTargets(records = []) {
     const status = String(row.sourceStatus || '').toLowerCase();
     if (status === 'normal') return [];
     const explicitlyAbnormal = ['abnormal', 'attention'].includes(status)
-      || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考/.test(`${row.goal || ''} ${row.focus || ''} ${row.baseline || ''}`);
+      || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考|高血脂|血脂高/.test(`${row.sourceTitle || ''} ${row.goal || ''} ${row.focus || ''} ${row.baseline || ''}`);
     const goalMetric = row.goalMetric || {};
-    const text = [row.goal, row.focus, row.baseline, goalMetric.name, VITAL_NAMES[goalMetric.key]].filter(Boolean).join('；');
+    const text = [row.sourceTitle, row.goal, row.focus, row.baseline, goalMetric.name, VITAL_NAMES[goalMetric.key]].filter(Boolean).join('；');
     const matches = MATCHERS.filter(([name, pattern]) => pattern.test(text) && (explicitlyAbnormal || kindFor(name) === 'symptom'));
     if (!matches.length && !explicitlyAbnormal) return [];
     const candidates = matches.length ? matches : [[String(goalMetric.name || VITAL_NAMES[goalMetric.key] || row.goal || '').split(/[·：:；;]/)[0].trim(), /.*/]];

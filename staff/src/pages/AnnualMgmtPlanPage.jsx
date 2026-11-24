@@ -841,7 +841,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const nutritionAssessment = moduleData.nutrition_assessment || {}
         const annualModuleData = { ...(annualPilot ? autoGroupAnnualVisits(moduleData) : moduleData), nutrition_assessment: nutritionAssessment.enabled === false
           ? { ...nutritionAssessment, enabled: false }
-          : { ...nutritionAssessment, enabled: true, nutritionComparisonMetrics: nutritionMetricRules.selectedFromAnnualPlan({ moduleData }) } }
+          : { ...nutritionAssessment, enabled: true, nutritionComparisonMetrics: nutritionMetricRules.selectedFromAnnualPlan({ moduleData }),
+            advisorTargets: nutritionAssessment.advisorTargetsManuallyAdjusted
+              ? nutritionAssessment.advisorTargets || []
+              : nutritionAdvisorTargets.mergeAdvisorTargets(nutritionAssessment.advisorTargets || [], moduleData.management_targets?.records || [], nutritionEvidence) } }
         const res = await staffAPI.saveAnnualPlan(id, { planType: servicePlanCode, servicePlanCode, saveDraft: true, sourcePlanId: plansByType[planType]?._id || null, baseUpdatedAt: plansByType[planType]?.updatedAt || null, moduleData: annualModuleData, phaseAssessmentFrequency, year, continuitySource, templateId: selectedTemplateId || null, templateName: selectedTemplate?.content?.planName || selectedTemplate?.name || '' })
         const saved = res.data
         savedPlan = saved

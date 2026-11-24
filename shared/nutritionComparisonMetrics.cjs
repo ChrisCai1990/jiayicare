@@ -32,8 +32,8 @@ function normalizeMetrics(value) {
 // Extract only metrics explicitly mentioned by confirmed nutrition-related goals.
 function metricsFromTargets(targets = []) {
   const text = targets.filter(r => r.nutritionRelevant === true && r.sourceStatus !== 'normal'
-    && (['abnormal', 'attention'].includes(r.sourceStatus) || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考/.test(`${r.goal || ''} ${r.focus || ''} ${r.baseline || ''}`)))
-    .map(r => `${r.goal || ''} ${r.focus || ''}`).join('；');
+    && (['abnormal', 'attention'].includes(r.sourceStatus) || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考|高血脂|血脂高/.test(`${r.sourceTitle || ''} ${r.goal || ''} ${r.focus || ''} ${r.baseline || ''}`)))
+    .map(r => `${r.sourceTitle || ''} ${r.goal || ''} ${r.focus || ''}`).join('；');
   const selected = COMMON_METRICS.filter(name => text.includes(name));
   const aliases = [[/HbA1c|糖化/i,'糖化血红蛋白'],[/LDL[-－]?C/i,'低密度脂蛋白'],[/HDL[-－]?C/i,'高密度脂蛋白'],[/Lp[-－]?PLA2/i,'脂蛋白磷脂酶A2']];
   aliases.forEach(([pattern,name]) => { if (pattern.test(text)) selected.push(name); });
@@ -43,7 +43,11 @@ function metricsFromTargets(targets = []) {
 function selectedFromAnnualPlan(plan) {
   const standard = plan?.moduleData?.nutrition_assessment;
   if (standard && standard.enabled !== false) {
-    try { return standard.metricsManuallyAdjusted || standard.nutritionComparisonMetrics?.length ? normalizeMetrics(standard.nutritionComparisonMetrics) : metricsFromTargets(plan?.moduleData?.management_targets?.records); } catch { return []; }
+    try {
+      const saved = normalizeMetrics(standard.nutritionComparisonMetrics);
+      return standard.metricsManuallyAdjusted ? saved
+        : normalizeMetrics([...saved, ...metricsFromTargets(plan?.moduleData?.management_targets?.records)]);
+    } catch { return []; }
   }
   const records = plan?.moduleData?.personalized_followups?.enabled === false
     ? [] : plan?.moduleData?.personalized_followups?.records || [];

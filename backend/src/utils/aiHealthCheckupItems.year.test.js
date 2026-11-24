@@ -13,3 +13,25 @@ test('年度方案只读取目标年已审核的 AI 健康信息', () => {
   assert.deepEqual(approvedItems(summary, 2026).items.map(row => row.text), ['当年待完善项目']);
   assert.deepEqual(approvedDoctorSections(summary, 2027), {});
 });
+
+test('已审核肿瘤筛查待补项进入顾问核对，未审核板块不带入', () => {
+  const summary = { byYear: { 2026: { records: [{ scope: 'doctor', sections: {
+    tumor_risk: { missing: ['肠镜和胃镜待完善'] }, checkup_completeness: { missing: ['尿微量白蛋白复查'] },
+  }, sectionReviews: {
+    tumor_risk: { status: 'approved', approvedAt: '2026-11-24' },
+    checkup_completeness: { status: 'pending' },
+  } }] } } };
+  assert.deepEqual(approvedItems(summary, 2026).items.map(row => row.text), ['肠镜和胃镜待完善']);
+  summary.byYear[2026].records[0].sectionReviews.checkup_completeness = { status: 'approved', approvedAt: '2026-11-24' };
+  assert.deepEqual(approvedItems(summary, 2026).items.map(row => row.text), ['尿微量白蛋白复查', '肠镜和胃镜待完善']);
+});
+
+test('肿瘤总评明确优先补做检查时也供顾问核对', () => {
+  const summary = { byYear: { 2026: { records: [{ scope: 'doctor', sections: {
+    tumor_risk: { missing: [], summary: '结直肠癌、胃癌筛查存在关键缺口，其中肠镜和胃镜为优先补做项目。' },
+    checkup_completeness: { missing: [] },
+  }, sectionReviews: { tumor_risk: { status: 'approved', approvedAt: '2026-11-24' } } }] } } };
+  assert.deepEqual(approvedItems(summary, 2026).items.map(row => row.text), ['结直肠癌、胃癌筛查存在关键缺口，其中肠镜和胃镜为优先补做项目']);
+  summary.byYear[2026].records[0].sections.tumor_risk.summary = '乳腺钼靶为优先补做项目。';
+  assert.deepEqual(approvedItems(summary, 2026).items.map(row => row.text), ['乳腺钼靶为优先补做项目']);
+});

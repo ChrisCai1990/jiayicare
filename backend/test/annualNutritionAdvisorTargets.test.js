@@ -2,6 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { mergeAdvisorTargets } = require('../../shared/annualNutritionAdvisorTargets.cjs');
 
+test('高血脂筛查标题带入年度营养评估，已有自动指标继续合并', () => {
+  const source = [{ issueId: 'lipid', nutritionRelevant: true, sourceTitle: '高血脂早筛', goal: '营养评估并改善饮食', focus: '顾问复核后转营养师' }];
+  const rows = mergeAdvisorTargets([], source);
+  assert.deepEqual(rows.map(row => row.metric), ['总胆固醇', '高密度脂蛋白', '低密度脂蛋白', '甘油三酯']);
+  const { selectedFromAnnualPlan } = require('../../shared/nutritionComparisonMetrics.cjs');
+  const plan = { moduleData: { management_targets: { records: source }, nutrition_assessment: { enabled: true, nutritionComparisonMetrics: ['尿酸'] } } };
+  assert.deepEqual(selectedFromAnnualPlan(plan), ['尿酸', '总胆固醇', '甘油三酯', '低密度脂蛋白', '高密度脂蛋白']);
+  plan.moduleData.nutrition_assessment.metricsManuallyAdjusted = true;
+  assert.deepEqual(selectedFromAnnualPlan(plan), ['尿酸']);
+});
+
 test('营养相关筛查目标带入异常值和参考目标，顾问修改后保留选择', () => {
   const source = [{ issueId: 'screening:1', nutritionRelevant: true, sourceStatus: 'abnormal', goal: '血压控制', baseline: '收缩压 145 mmHg',
     goalMetric: { key: 'systolic', operator: 'lte', targetValue: 130, unit: 'mmHg' } }];
