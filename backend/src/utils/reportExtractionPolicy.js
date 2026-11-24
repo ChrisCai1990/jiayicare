@@ -8,7 +8,7 @@ const REPORT_PARSE_PROMPT = `你是报告文字转录和结构化提取助手。
 3b. FibroScan、肝脏纤维弹性超声、肝脏弹性成像等报告按一项影像/超声检查提取，itemType=imaging。检查结果findings记录原件明确标出的患者实测CAP中值（dB/m）、肝脏硬度E中值（kPa）等；“医师意见”原文放diagnosis/conclusion。脂肪变及纤维化分期的对照参考阈值不是患者实测值，不得拆成检验项目或填入value/referenceRange。不能从分期参考条推断诊断。
 4. 表格模糊、跨行关系不确定或字段难以辨认时，保留能确认的内容，将具体疑点写入reviewIssues，例如“参考范围可能跨行”。医学结果异常不等于识别不确定。不能为消除疑点改写原文。
 4a. 逐行核对眼科表格中的左右裸眼视力、矫正视力和各眼部项目。检查结果栏若以横线开头后接文字，横线不是完整结果，须保留后面的文字；如“未见异常”明确对应本项目，status填normal。无法辨认的数值不要猜。
-5. 检查日期与机构只取原文；不得以打印日期或上传日期代替检查日期。同页不同检查的日期机构写在各自项目中。每个项目都填写 examDate：只有日期能明确归属该项目时才填写 YYYY-MM-DD，不能明确归属时留空，禁止以封面、另一页或“最常见日期”猜填。checkDate 仅在整份资料只有一个明确检查日期时填写；多个明确日期时必须留空，由项目级 examDate 保留真实日期。不提取建议、科普、目录或无结果的标题；有实际检查结果的汇总页保留，由系统检查跨页重复。
+5. 检查日期与机构只取原文；不得以打印日期或上传日期代替检查日期。同页不同检查的日期机构写在各自项目中。每个项目都填写 examDate：只有日期能明确归属该项目时才填写 YYYY-MM-DD，不能明确归属时留空，禁止以封面、另一页或“最常见日期”猜填。checkDate 仅在整份资料只有一个明确检查日期时填写；多个明确日期时必须留空，由项目级 examDate 保留真实日期。独立的总结、总检、汇总、建议、科普和目录页不提取，即使重复列出了检查结果也跳过；详细检查页的原始结果仍逐项提取。
 只返回JSON：{"institution":"","checkDate":"","pageType":"results","pageTitle":"","skipPage":false,"summary":"","items":[{"name":"","itemType":"lab","sourceSection":"","sourceSectionOrder":1,"sourceRowOrder":1,"orderName":"","bodyPart":"","specimen":"","modality":"","examDate":"","institution":"","value":"","unit":"","referenceRange":"","status":"unknown","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":"","reviewIssues":[]}]}
 itemType使用lab（检验）、imaging（文字检查）、data（数据/体成分）；status仅为normal/abnormal/attention/unknown。lab的findings/diagnosis/conclusion留空；无法确认状态填unknown。没有结果时items=[]。`;
 

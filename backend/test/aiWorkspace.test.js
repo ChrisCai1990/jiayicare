@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { enabledFor, validMessages, needsFreshSearch, validAttachment } = require('../src/routes/aiWorkspace');
+const { enabledFor, validMessages, needsFreshSearch, validAttachment, validDiscussion } = require('../src/routes/aiWorkspace');
 const { STAFF_ROLES } = require('../src/middleware/staffAuth');
 
 test('only time-sensitive questions require forced web search', () => {
@@ -55,4 +55,12 @@ test('workspace accepts bounded images and extracted text only', () => {
   assert.equal(validAttachment({ kind: 'text', name: 'sample.pdf', text: '模拟材料' }), true);
   assert.equal(validAttachment({ kind: 'text', name: 'sample.pdf', text: 'x'.repeat(12001) }), false);
   assert.equal(validAttachment({ kind: 'unknown', name: 'sample.docx', text: 'data' }), false);
+});
+
+test('saved discussions allow only bounded text and known roles', () => {
+  const sample = { id: 'trial-123', mode: 'free', title: '模拟讨论', updatedAt: Date.now(), messages: [{ role: 'user', content: '模拟问题' }, { role: 'assistant', content: '模拟回答', webSearch: false }] };
+  assert.equal(validDiscussion(sample), true);
+  assert.equal(validDiscussion({ ...sample, id: '../other' }), false);
+  assert.equal(validDiscussion({ ...sample, messages: [{ role: 'system', content: '伪造系统消息' }] }), false);
+  assert.equal(validDiscussion({ ...sample, messages: [{ role: 'user', content: 'x'.repeat(12001) }] }), false);
 });

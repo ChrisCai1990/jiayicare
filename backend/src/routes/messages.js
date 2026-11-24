@@ -43,7 +43,7 @@ router.post('/:id/transcribe', auth, (req, res) => require('../utils/messageTran
 router.get('/unread-count', auth, async (req, res) => {
   const [unreadMessages, unreadPushes, groupUnread] = await Promise.all([
     Message.find(visibleMessageQuery(req.user._id, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
-    PushRecord.find({ patientId: req.user._id, readAt: null, ...legacyAnnualItemNoticeFilter })
+    PushRecord.find({ patientId: req.user._id, readAt: null, withdrawnAt: null, ...legacyAnnualItemNoticeFilter })
       .select('type questionnaireId sourceOrderId').lean(),
     Message.countDocuments(unreadServiceGroupQuery(req.user._id)),
   ]);

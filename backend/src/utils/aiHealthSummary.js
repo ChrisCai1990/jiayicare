@@ -8,6 +8,7 @@ const { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation } = require
 const { focusedReportHits, reconcileFocusedTopics } = require('./focusedTrendEvidence');
 const { HOMOCYSTEINE_INTERVENTION_THRESHOLD, enforceHomocysteineIntervention } = require('./homocysteineIntervention');
 const { buildEchoChamberTrend } = require('./echoChamberTrend');
+const { reportsInAnalysisWindow } = require('./analysisReportWindow');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -136,20 +137,20 @@ async function generateHealthSummarySections(user, {
   const fetchedReports = await MedicalReport.find({ user: user._id })
     .sort({ checkDate: -1, date: -1, createdAt: -1 })
     .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note');
-  const allHistoricalReports = retrospective ? reportsThroughYear(fetchedReports, targetYear) : fetchedReports;
-  const useIncremental = !!(incrementalBase?.sections && Number.isFinite(targetYear));
-  // 有上一年度已审核基线时，只把目标年度新增报告送入AI；历史趋势由已审核基线承接。
-  // 规则引擎仍可读取完整历史，用于肿瘤覆盖周期等确定性判断。
+  // Five-dimensional analysis uses only the target year and the four preceding calendar years.
+  // Filter before deriving latest values, coverage, evidence, and source links as well as trends.
+  const allHistoricalReports = reportsInAnalysisWindow(
+    retrospective ? reportsThroughYear(fetchedReports, targetYear) : fetchedReports, targetYear);
+  // Prior generated text has no verified five-year boundary, so do not inherit it.
+  const useIncremental = false;
   let allReports = useIncremental
     ? allHistoricalReports.filter(report => {
       const date = String(report.checkDate || report.date || '');
       return Number(report.reportYear || date.slice(0, 4)) === targetYear;
     })
     : allHistoricalReports;
-  // A previously generated tumor section may contain an unsupported marker claim.
-  // Rebuild it when current report evidence contradicts that old prose.
-  const reuseTumor = !!(reusedTumorSection && (scope === 'doctor' || scope === 'all')
-    && !findUnsupportedTumorMarkerElevation(reusedTumorSection, allHistoricalReports));
+  // Older generated tumor sections may also contain out-of-window reports.
+  const reuseTumor = false;
   if (reuseTumor) {
     allReports = allReports.filter(report => {
       const text = [report.screeningCategory, report.title, report.screeningL2].filter(Boolean).join(' ');
@@ -399,7 +400,7 @@ ${reportSummary}
 【专科检查异常发现（含听力/视力/眼耳鼻喉/口腔/骨密度等所有专科，务必逐条纳入分析，不要遗漏）】
 ${examFindingsText}
 
-【肿瘤标志物（完整历史仅作背景；5年趋势只比较${targetYear - 4}—${targetYear}年，旧异常必须标年份）】
+【肿瘤标志物（仅使用${targetYear - 4}—${targetYear}年的报告）】
 ${tumorMarkerText}
 
 【基因检测报告】

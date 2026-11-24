@@ -8358,6 +8358,42 @@ router.get('/product-categories', staffAuth, checkPermission('products', 'view')
 });
 
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
+router.patch('/products/push-quantity/:id', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  const quantity = Number(req.body.quantity);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10)
+    return res.status(400).json({ success: false, message: '数量须为 1 至 10 件' });
+  const anchor = await PushRecord.findOne({ _id: req.params.id, type: 'product', staffId: req.staff._id });
+  if (!anchor) return res.status(404).json({ success: false, message: '找不到本人推送的商品' });
+  const peers = (await require('../utils/combinableProductPushes').samePushes(anchor, anchor.patientId))
+    .filter(row => String(row.staffId) === String(req.staff._id));
+  if (!peers.length || quantity > peers.length || peers.length > 10)
+    return res.status(409).json({ success: false, message: '本组推荐数量已变化，请刷新后重试' });
+  const token = new mongoose.Types.ObjectId().toString();
+  const locked = [];
+  try {
+    for (const row of [...peers].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
+      const claim = await PushRecord.findOneAndUpdate({ _id: row._id, staffId: req.staff._id,
+        $or: [{ checkoutLockUntil: null }, { checkoutLockUntil: { $lt: new Date() } }] },
+      { $set: { checkoutLockToken: token, checkoutLockUntil: new Date(Date.now() + 120000) } }, { new: true });
+      if (!claim) return res.status(409).json({ success: false, message: '推荐正在下单或调整，请稍后刷新' });
+      locked.push(row._id);
+    }
+    const existing = await Order.findOne({ user: anchor.patientId, pushRecordId: { $in: locked },
+      status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } }).select('_id');
+    if (existing) return res.status(409).json({ success: false, message: '已有待支付或已付款订单，请先处理订单，不能修改推荐数量' });
+    const keep = new Set([...peers].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .slice(0, quantity).map(row => String(row._id)));
+    for (const row of peers) await PushRecord.updateOne({ _id: row._id, checkoutLockToken: token },
+      { $set: { withdrawnAt: keep.has(String(row._id)) ? null : (row.withdrawnAt || new Date()),
+        withdrawnBy: keep.has(String(row._id)) ? null : req.staff._id } });
+    return res.json({ success: true, data: { quantity, maximum: peers.length } });
+  } catch (error) { return res.status(409).json({ success: false, message: error.message || '调整数量失败' }); }
+  finally {
+    for (const id of locked) await PushRecord.updateOne({ _id: id, checkoutLockToken: token },
+      { $set: { checkoutLockUntil: null, checkoutLockToken: '' } });
+  }
+});
+
 router.post('/products/push-bundle', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const { productIds, patientIds, pricedProducts, servicePerformers } = req.body;
   if (!await allPushPatientsBelongToStaff(patientIds, req.staff)) return res.status(403).json({ success: false, message: '只能推送给本机构客户' });
@@ -8374,6 +8410,9 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
     price: priceMap[p._id.toString()] ?? p.originalPrice, specificationLabel: specificationMap[p._id.toString()] || '', category: p.category, icon: '🛍',
     images: p.images || [], servicePrices: p.servicePrices || [],
   }));
+  const requestedQuantity = products.length === 1 ? Number(pricedProducts?.find(pp => String(pp.productId) === String(products[0]._id))?.quantity || 1) : 1;
+  if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1 || requestedQuantity > 10)
+    return res.status(400).json({ success: false, message: '推送数量须为 1 至 10 件' });
   const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);
   const title = products.length === 1 ? products[0].name : `产品推荐（${products.length}项）`;
   const content = productItems.map(p => `${p.name} ¥${p.price}`).join('、');
@@ -8382,14 +8421,14 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
     ? servicePerformers.filter(sp => sp && sp.role && sp.staffId)
         .map(sp => ({ productId: sp.productId || null, role: sp.role, staffId: sp.staffId }))
     : [];
-  const records = patientIds.map(pid => ({
+  const records = patientIds.flatMap(pid => Array.from({ length: requestedQuantity }, () => ({
     staffId: req.staff._id, patientId: pid,
     type: 'product', title, content,
     price: totalPrice,
     productId: products.length === 1 ? products[0]._id.toString() : null,
     products: productItems,
     servicePerformers: cleanPerformers,
-  }));
+  })));
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
 });
@@ -14264,18 +14303,6 @@ router.get('/patients/:id/ai-health-summary/checkup-readiness', staffAuth, async
 // member/scope in flight so a timed-out browser request or a second tab cannot append
 // a duplicate history record while the first request is still working.
 const activeAIHealthSummaryJobs = new Set();
-const hepatitisEvidencePattern = /乙肝|乙型肝炎|丙肝|丙型肝炎|HBsAg|HBV[\s-]?DNA|\bHBV\b|HCV[\s-]?(?:RNA|抗体)|抗[\s-]?HCV|\bHCV\b/i;
-const tumorReportConditions = [
-  { screeningCategory: 'tumor' }, { 'reportItems.screeningCategory': 'tumor' },
-  { screeningL1: /肿瘤筛查/ },
-  ...['title', 'screeningL2', 'examConclusion', 'note', 'reportItems.name',
-    'reportItems.sourceSection', 'reportItems.orderName', 'reportItems.value',
-    'reportItems.findings', 'reportItems.diagnosis', 'reportItems.conclusion']
-    .map(field => ({ [field]: hepatitisEvidencePattern })),
-];
-const tumorEvidenceStale = (scope, current, baseline) =>
-  (scope === 'doctor' || scope === 'all')
-  && [current, baseline].some(section => section && section.evidenceVersion !== 2);
 router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   let generationJobKey = null;
   let ownsGenerationJob = false;
@@ -14343,8 +14370,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 没做这层校验的漏洞）。
     if (scope === 'doctor' || scope === 'nutrition' || scope === 'all') {
       const { checkReportAuditGate } = require('../utils/reportAuditGate');
-      const gateMsg = await checkReportAuditGate(req.params.id,
-        requestedYear < currentYear ? { throughYear: requestedYear } : undefined);
+      const gateMsg = await checkReportAuditGate(req.params.id, { analysisYear: requestedYear });
       if (gateMsg) return res.status(403).json({ success: false, needReportAudit: true, message: gateMsg });
     }
     // 生活方式评估（nutrition维度）额外要求：该客户的膳食调查问卷必须已完成营养师复核
@@ -14410,60 +14436,14 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       }
     }
 
-    // 跨年度优先采用增量生成：继承最近一个更早年度中“已审核”的健康顾问结果，
-    // 只把目标年度新增报告交给AI。没有已审核基线时自动回退到原来的全量生成。
-    let incrementalBase = null;
-    if (scope === 'doctor' || scope === 'all') {
-      const priorYears = Object.keys(byYear)
-        .filter(y => Number(y) < Number(year))
-        .sort((a, b) => Number(b) - Number(a));
-      for (const priorYear of priorYears) {
-        const entry = byYear[priorYear] || {};
-        const candidates = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : []);
-        const approved = candidates.find(record =>
-          (record.doctorApprovedAt || record.approvedAt)
-          && DOCTOR_KEYS.some(key => record.sections?.[key]));
-        if (approved) {
-          incrementalBase = { year: priorYear, sections: approved.sections };
-          break;
-        }
-      }
-    }
-    let reusedTumorSection = null;
-    // 只复用已经升级为“10项肿瘤趋势卡”的新版板块。旧版只有 completed/abnormal/missing，
-    // 若直接复用会导致新生成的5维分析中唯独肿瘤板块仍停留在旧展示结构。
-    const isStructuredTumorSection = section => Array.isArray(section?.cancers)
-      && section.cancers.length === 10 && !!section.overview;
-    // Old tumor cards predate cross-category hepatitis evidence. Rebuild once from all
-    // historical reports even if their source reports have not changed since generation.
-    const needsTumorRefresh = tumorEvidenceStale(scope,
-      prevDoctorEntry.sections?.tumor_risk, incrementalBase?.sections?.tumor_risk);
-    if (!needsTumorRefresh && (scope === 'doctor' || scope === 'all') && isStructuredTumorSection(prevDoctorEntry.sections?.tumor_risk) && prevDoctorEntry.generatedAt) {
-      const tumorChanged = await MedicalReport.exists({
-        user: req.params.id,
-        updatedAt: { $gt: new Date(prevDoctorEntry.generatedAt) },
-        $or: tumorReportConditions,
-      });
-      if (!tumorChanged) reusedTumorSection = prevDoctorEntry.sections.tumor_risk;
-    }
-    if (!needsTumorRefresh && !reusedTumorSection && isStructuredTumorSection(incrementalBase?.sections?.tumor_risk)) {
-      const yearStart = `${year}-01-01`;
-      const nextYearStart = `${Number(year) + 1}-01-01`;
-      const hasTargetYearTumorReport = await MedicalReport.exists({
-        user: req.params.id,
-        $and: [
-          { $or: [{ reportYear: Number(year) }, { reportYear: year }, { checkDate: { $gte: yearStart, $lt: nextYearStart } }] },
-          { $or: tumorReportConditions },
-        ],
-      });
-      if (!hasTargetYearTumorReport) reusedTumorSection = incrementalBase.sections.tumor_risk;
-    }
+    // Regenerate the five dimensions from reports in the selected five-year window.
+    // Earlier approved prose may contain reports that now fall outside that window.
     const { sections: genResult, failed, validationError } = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => withAiContext({ circuitScope: 'health_summary', actorId: String(req.staff._id), tenantId: String(req.staff.tenantId || ''), stage: scope === 'nutrition' ? 'lifestyle_summary' : 'five_dimension' }, () => generateHealthSummarySections(user, {
       scope,
-      existingSections: prevEntry.sections || null,
+      existingSections: scope === 'nutrition' ? prevEntry.sections || null : null,
       analysisYear: year,
-      incrementalBase: recheckFromSources || needsTumorRefresh ? null : incrementalBase,
-      reusedTumorSection: recheckFromSources || needsTumorRefresh ? null : reusedTumorSection,
+      incrementalBase: null,
+      reusedTumorSection: null,
     })));
     // AI返回解析失败或本该生成的板块是空壳内容：不写入数据库，直接报错，避免前端显示"已生成"却看不到内容
     // （2026-07-07 赵菲盈反馈"生活方式评估提示已生成但实际没有"即此场景——此前空壳会被当成功写入）
@@ -17916,7 +17896,7 @@ function shouldSkipParsedReportPage(parsed) {
   if (!parsed || typeof parsed !== 'object') return false;
   if (parsed.skipPage === true || SKIPPED_REPORT_PAGE_TYPES.has(str(parsed.pageType).toLowerCase())) return true;
   const title = str(parsed.pageTitle).replace(/\s+/g, '');
-  return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
+  return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|^(?:总检|总结|体检总结|体检汇总|报告总结|科普)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
 }
 
 const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
@@ -19203,9 +19183,7 @@ async function runReportParseControlled(reportId) {
             const firstPassItems = tagReportPageItems(p.items, pageNum)
               .map(item => isPrescriptionReport ? { ...item, itemType: 'medication', status: 'unknown' } : item);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-            const hasStructuredResults = firstPassItems.some(item => str(item.name)
-              && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
-            if (!isPrescriptionReport && shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+            if (!isPrescriptionReport && shouldSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
               okPages++;
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
@@ -20014,7 +19992,7 @@ async function runReportPageParse(reportId, pageNum) {
 async function runReportPageParseControlled(reportId, pageNum) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
-  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, splitImageHorizontal, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
@@ -20180,12 +20158,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
   }
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
-  for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
+  const regionSplitDepths = images.map(() => 0);
+  regionLoop: for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length === 4
-        ? `这是第${pageNum}页自上而下的第${regionIndex + 1}/4分区，边界有重叠；`
+      const regionHint = images.length >= 4
+        ? `这是第${pageNum}页自上而下的第${regionIndex + 1}/${images.length}分区，边界有重叠；`
         : images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
@@ -20198,6 +20177,15 @@ async function runReportPageParseControlled(reportId, pageNum) {
       // output cap. A fresh request uses four narrower bands and is preflighted
       // against the full per-page call budget before changing any report items.
       if (error.code === 'AI_OUTPUT_LENGTH') {
+        if (isPdf && report.type === 'annual' && images.length >= 4 && regionSplitDepths[regionIndex] === 0) {
+          const halves = await splitImageHorizontal(Buffer.from(images[regionIndex], 'base64'));
+          if (halves.length !== 2 || halves.some(image => !image)) throw new Error(`第${pageNum}页分段渲染不完整`);
+          // Keep earlier successful regions; only retry this truncated crop.
+          images.splice(regionIndex, 1, ...halves);
+          regionSplitDepths.splice(regionIndex, 1, 1, 1);
+          regionIndex--;
+          continue regionLoop;
+        }
         const canNarrow = isPdf && report.type === 'annual' && images.length < 4;
         const message = canNarrow
           ? `第${pageNum}页输出过长；请再次点击补提，系统将改用四段识别，已有审核结果保持不变`

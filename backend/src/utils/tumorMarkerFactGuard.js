@@ -12,6 +12,13 @@ const MARKERS = [
   { name: 'PSA', pattern: /(?<![a-z])PSA\b|前列腺特异抗原/i },
 ];
 
+// AFP-L3 and its ratio are separate tests. Their names often contain "AFP"
+// or "甲胎蛋白", but neither measures total AFP.
+const AFP_SUBTYPE = /AFP\s*[-－]?\s*L\s*3|甲胎蛋白.{0,8}(?:异质体|变异体|比率|百分比)/i;
+function markerMatchesItem(marker, name) {
+  return marker.pattern.test(name) && !(marker.name === 'AFP' && AFP_SUBTYPE.test(name));
+}
+
 function upperReference(range) {
   const text = String(range || '').replace(/[，,]/g, '').trim();
   // Support printed upper bounds (<6.9, <=6.9, 0-6.9, ≤6.9).
@@ -21,7 +28,7 @@ function upperReference(range) {
 }
 
 function classifyTumorMarkerItem(item) {
-  const matches = MARKERS.filter(marker => marker.pattern.test(String(item?.name || '')));
+  const matches = MARKERS.filter(marker => markerMatchesItem(marker, String(item?.name || '')));
   if (!matches.length) return null;
   if (matches.length > 1) return 'unknown';
   const value = String(item.value ?? '').trim();
@@ -35,8 +42,8 @@ function classifyTumorMarkerItem(item) {
 
 function markerPoints(reports, marker) {
   return (reports || []).flatMap(report => (report.reportItems || []).filter(item =>
-    marker.pattern.test(String(item.name || ''))
-      && MARKERS.filter(candidate => candidate.pattern.test(String(item.name || ''))).length === 1).map(item => {
+    markerMatchesItem(marker, String(item.name || ''))
+      && MARKERS.filter(candidate => markerMatchesItem(candidate, String(item.name || ''))).length === 1).map(item => {
     const classification = classifyTumorMarkerItem(item);
     return {
       reportId: String(report._id || ''),

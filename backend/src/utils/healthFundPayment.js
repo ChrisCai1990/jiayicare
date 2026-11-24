@@ -30,20 +30,14 @@ function deductionLimit(type, value, orderAmount) {
 }
 
 function productDeductionLimit(rule, orderAmount) {
-  const mode = rule?.mode || 'inherit';
-  if (mode === 'disabled') return 0;
-  // 保留旧商品的20%额度；显式商品规则不再受平台比例限制。
-  if (['inherit', 'unlimited'].includes(mode)) return deductionLimit('percentage', 20, orderAmount);
-  return Math.min(orderAmount, deductionLimit(mode, rule?.value, orderAmount));
+  if (rule?.mode === 'aggregateLimit') return Math.min(orderAmount, Math.max(0, Number(rule.value) || 0));
+  if (rule?.mode !== 'percentage') return 0;
+  return Math.min(orderAmount, deductionLimit('percentage', rule.value, orderAmount));
 }
 
 function corporateProductEligible(policy, productId, category, productRule) {
-  const mode = productRule?.mode || 'inherit';
-  if (mode === 'disabled') return false;
-  if (mode !== 'inherit') return true;
-  if (policy?.eligibleCategories?.length && !policy.eligibleCategories.includes(category)) return false;
-  if (policy?.eligibleProductIds?.length && !policy.eligibleProductIds.map(String).includes(String(productId || ''))) return false;
-  return true;
+  return productRule?.mode === 'percentage'
+    && Number(productRule.value) >= 1 && Number(productRule.value) <= 100;
 }
 
 function allocateHealthFund({ orderAmount, personalAvailable, vitalityAvailable = 0, corporateAvailable, corporateEligible = true, productRule }) {
@@ -123,7 +117,8 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     productRule = product?.healthFundDeduction;
     finalProductLimit = productDeductionLimit(productRule, orderAmount);
   }
-  const corporateEligible = corporateProductEligible(policy, productId, category, productRule)
+  const corporateEligible = (productLimit !== undefined
+    ? finalProductLimit > 0 : corporateProductEligible(policy, productId, category, productRule))
     && orderAmount >= (Number(policy.minOrderAmount) || 0)
     && memberEligible;
   const [personalAvailable, vitalityAvailable] = await Promise.all([getPersonalFundAvailable(user), getVitalityFundAvailable(user)]);
@@ -150,8 +145,8 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
     corporateAvailable,
     corporateEligible: memberEligible && corporateEligible && enterpriseEnabled,
     productRule: productRule || (productLimit !== undefined && Number.isFinite(finalProductLimit)
-      ? { mode: 'fixedAmount', value: finalProductLimit }
-      : { mode: 'inherit', value: 0 }),
+      ? { mode: 'aggregateLimit', value: finalProductLimit }
+      : { mode: 'disabled', value: 0 }),
   });
   // The requested deduction is a ceiling, not the base for the product percentage.
   const allowed = Math.floor(Math.min(maximize ? allocation.allowed : amount, allocation.allowed) * 100 + 1e-7) / 100;

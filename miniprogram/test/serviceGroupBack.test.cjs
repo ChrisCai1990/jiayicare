@@ -1,0 +1,28 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const {transformSync}=require('esbuild'),{JSDOM}=require('jsdom');
+const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost'});
+global.window=dom.window;global.document=dom.window.document;global.navigator=dom.window.navigator;global.IS_REACT_ACT_ENVIRONMENT=true;
+const React=require('react'),{createRoot}=require('react-dom/client'),act=React.act||require('react-dom/test-utils').act;
+test('group back exits the chat, rejects a late response and falls back to Messages when no previous page exists',async()=>{
+ let listResolve,late=false,switched='';
+ const group={id:'synthetic',name:'合成服务群',status:'active',staff:[]};
+ const api={list:()=>late?new Promise(resolve=>listResolve=resolve):Promise.resolve({data:[group]}),messages:async()=>({data:[]})};
+ const taro={getCurrentInstance:()=>({router:{params:{groupId:'synthetic'}}}),navigateBack:()=>Promise.reject(Error('empty page stack')),switchTab:async({url})=>{switched=url},hideKeyboard:async()=>{}};
+ const View=({children,onClick,style})=>React.createElement('div',{onClick,style},children);
+ const mocks={'react':React,'@tarojs/components':{View,Text:View,ScrollView:View,Textarea:({value,placeholder})=>React.createElement('textarea',{value,placeholder,onChange:()=>{}}),Image:'img'},'@tarojs/taro':{...taro,default:taro,useDidShow:()=>{},useDidHide:()=>{}},'../../../services/api':{inAppServiceGroupAPI:api,mediaUrl:v=>v},'../../../theme':{colors:{},spacing:{lg:16,md:12},radius:{}},'../../../hooks/useNavBar':()=>({statusBarHeight:0,totalHeight:0})};
+ const src=fs.readFileSync(path.join(__dirname,'../src/pages/messages/service-group/index.jsx'),'utf8');
+ const code=transformSync(src,{loader:'jsx',format:'cjs',define:{'process.env.TARO_ENV':'"weapp"'}}).code;
+ const module={exports:{}};let tick;
+ vm.runInNewContext(code,{module,exports:module.exports,require:name=>mocks[name]||(()=>null),console,setInterval:fn=>{tick=fn;return 1},clearInterval:()=>{},setTimeout,clearTimeout,process:{env:{TARO_ENV:'weapp'}}});
+ const root=createRoot(document.getElementById('root'));
+ await act(async()=>{root.render(React.createElement(module.exports.default));await new Promise(r=>setTimeout(r,10))});
+ assert.ok(document.querySelector('textarea'));
+ late=true;await act(async()=>{tick();});
+ const back=()=>[...document.querySelectorAll('div')].find(el=>el.textContent==='‹ 返回');
+ await act(async()=>{back().click();});
+ await act(async()=>{listResolve({data:[group]});await Promise.resolve();});
+ assert.ok(document.body.textContent.includes('我的服务群'));
+ await act(async()=>{back().click();await Promise.resolve();});
+ assert.equal(switched,'/pages/chat/index');
+ await act(async()=>root.unmount());
+});

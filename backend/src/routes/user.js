@@ -1318,6 +1318,7 @@ router.get('/push-records', auth, async (req, res) => {
     }
     const filter = memberId && memberId !== String(req.user._id)
       ? { patientId, type: 'product' } : { patientId };
+    filter.withdrawnAt = null;
     const inboxFilter = {
       ...filter,
       ...require('../utils/messageInbox').legacyAnnualItemNoticeFilter,
@@ -1342,10 +1343,63 @@ router.get('/push-records', auth, async (req, res) => {
 });
 
 // POST /api/user/push-records/:id/pay — 从推送记录直接下单
+router.get('/push-records/:id/combined-options', auth, async (req, res) => {
+  try {
+    const beneficiaryUserId = String(req.query.beneficiaryUserId || '');
+    const serviceUser = beneficiaryUserId && beneficiaryUserId !== String(req.user._id)
+      ? await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, beneficiaryUserId) : req.user;
+    if (!serviceUser) return res.status(403).json({ success: false, message: '无权查看该家庭成员的推荐' });
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: serviceUser._id, type: 'product', withdrawnAt: null });
+    if (!record) return res.status(404).json({ success: false, message: '推荐记录不存在' });
+    const matches = await require('../utils/combinableProductPushes').availableSamePushes(record, serviceUser._id);
+    res.json({ success: true, data: { recordIds: matches.map(row => String(row._id)), maxQuantity: matches.length } });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/push-records/:id/pay-combined', auth, async (req, res) => {
+  try {
+    const beneficiaryUserId = String(req.body.beneficiaryUserId || '');
+    const serviceUser = beneficiaryUserId && beneficiaryUserId !== String(req.user._id)
+      ? await require('../utils/orderBeneficiary').resolveOrderBeneficiary(req.user, beneficiaryUserId) : req.user;
+    if (!serviceUser) return res.status(403).json({ success: false, message: '无权为该家庭成员购买服务' });
+    const appPayment = req.body.paymentScene === 'app';
+    if (req.body.paymentCapability !== (appPayment ? 'wechat_app_v1' : 'wechat_jsapi_v1'))
+      return res.status(426).json({ success: false, message: '请更新客户端后再支付' });
+    if (appPayment) require('../utils/wechatPay').assertAppReady();
+    if (String(serviceUser._id) !== String(req.user._id)
+      && (Number(req.body.useHealthFund) > 0 || req.body.useEnterpriseSharedFund || req.body.couponId))
+      return res.status(400).json({ success: false, message: '家庭代付请使用微信支付' });
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: serviceUser._id, type: 'product', withdrawnAt: null });
+    if (!record) return res.status(404).json({ success: false, message: '推荐记录不存在' });
+    const available = await require('../utils/combinableProductPushes').availableSamePushes(record, serviceUser._id);
+    const requested = req.body.recordIds;
+    if (!Array.isArray(requested) || requested.length < 1 || requested.length > 10
+      || new Set(requested.map(String)).size !== requested.length
+      || !requested.every(id => available.some(row => String(row._id) === String(id))))
+      return res.status(409).json({ success: false, message: '可购买数量已变化，请刷新后重新选择' });
+    const records = requested.map(id => available.find(row => String(row._id) === String(id)));
+    const result = await require('../utils/pushGroupCheckout').createCombinedPushCheckout({ records, user: req.user,
+      serviceUser, options: req.body });
+    res.json(result);
+  } catch (error) { res.status(error.status || 409).json({ success: false, message: error.message || '合并下单失败' }); }
+});
+
 router.post('/push-records/:id/shared-fund-quote', auth, async (req, res) => {
   try {
-    const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id, withdrawnAt: null });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
+    if (Array.isArray(req.body.recordIds) && req.body.recordIds.length > 1) {
+      const available = await require('../utils/combinableProductPushes').availableSamePushes(record, req.user._id);
+      const ids = req.body.recordIds.map(String);
+      if (ids.length > 10 || new Set(ids).size !== ids.length || ids.some(id => !available.some(row => String(row._id) === id)))
+        return res.status(409).json({ success: false, message: '可购买数量已变化，请刷新后重试' });
+      const items = ids.map(id => require('../utils/combinableProductPushes').singleItem(available.find(row => String(row._id) === id)));
+      const product = await Product.findOne({ _id: items[0].productId, status: 'on' });
+      if (!product) return res.status(409).json({ success: false, message: '商品已下架' });
+      const quote = await require('../utils/pushGroupCheckout').quoteGroup(req.user, items, items.map(() => product),
+        { couponId: req.body.couponId, useEnterpriseSharedFund: true });
+      return res.json({ success: true, data: quote.summary });
+    }
     const selected = new Set((req.body.selectedProductIds || []).map(String));
     const items = (record.products?.length ? record.products : record.productId ? [{ productId: record.productId, name: record.productName, price: record.price }] : [])
       .filter(item => selected.has(String(item.productId)));
@@ -1366,7 +1420,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       : req.user;
     if (!serviceUser) return res.status(403).json({ success: false, message: '无权为该家庭成员购买服务' });
     const familyPayment = String(serviceUser._id) !== String(req.user._id);
-    const record = await PushRecord.findOne({ _id: req.params.id, patientId: serviceUser._id, type: 'product' });
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: serviceUser._id, type: 'product', withdrawnAt: null });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
     const { selectedProductIds, useHealthFund, useEnterpriseSharedFund, couponId, paymentMethod, paymentCapability } = req.body;
     if (familyPayment && (Number(useHealthFund) > 0 || useEnterpriseSharedFund || couponId))
@@ -2083,7 +2137,7 @@ router.post('/ai-health-summary', auth, async (req, res) => {
     // 双审强制前置：有健康顾问的客户，必须先由家医审核确认所有体检报告才能生成（2026-07-21新增，
     // 此前只在 staff.js 医护端生成入口拦截，客户自助生成这条路完全没走这道校验，是遗漏的漏洞）
     const { checkReportAuditGate } = require('../utils/reportAuditGate');
-    const gateMsg = await checkReportAuditGate(req.user._id);
+    const gateMsg = await checkReportAuditGate(req.user._id, { analysisYear: new Date().getFullYear() });
     if (gateMsg) return res.status(403).json({ success: false, code: 'REPORT_AUDIT_PENDING', message: gateMsg });
     const { checkupAnalysisReadiness } = require('../utils/checkupAnalysisReadiness');
     const readiness = await checkupAnalysisReadiness(req.user._id, new Date().getFullYear());

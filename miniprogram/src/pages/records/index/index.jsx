@@ -10,6 +10,7 @@ import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 import { useAuth } from '../../../context/AuthContext';
 import { useLanguage } from '../../../i18n';
+import { loadRecordTrends } from '../../../utils/loadRecordTrends';
 
 const TYPE_META = {
   bloodPressure: { label: '血压', icon: '💗', unit: 'mmHg' },
@@ -59,6 +60,7 @@ export default function RecordsIndexPage() {
   const [childArchiveError, setChildArchiveError] = useState('');
   const { updateUser } = useAuth();
   const [records, setRecords] = useState([]);
+  const [recordError, setRecordError] = useState('');
   const [filter, setFilter] = useState('bloodPressure');
   const [loading, setLoading] = useState(true);
   const [ibdEnabled, setIbdEnabled] = useState(false);
@@ -80,8 +82,9 @@ export default function RecordsIndexPage() {
     setLoading(true);
     try {
       const res = await recordsAPI.list({ limit: 50 });
-      if (res.success) setRecords(res.data || []);
-    } catch {}
+      if (res.success && Array.isArray(res.data)) { setRecords(res.data); setRecordError(''); }
+      else setRecordError('健康记录暂时无法加载，点击重试');
+    } catch { setRecordError('健康记录暂时无法加载，点击重试'); }
     setLoading(false);
   }, []);
 
@@ -92,8 +95,8 @@ export default function RecordsIndexPage() {
     userAPI.getMe().then((res) => {
       if (res?.success && res.data) {
         updateUser(res.data);
-        setBodyComposition(res.data.bodyComposition || {});
-        setBodyCompHistory(res.data.bodyCompHistory || []);
+        setBodyComposition(res.data.bodyComposition && typeof res.data.bodyComposition === 'object' && !Array.isArray(res.data.bodyComposition) ? res.data.bodyComposition : {});
+        setBodyCompHistory(Array.isArray(res.data.bodyCompHistory) ? res.data.bodyCompHistory : []);
       }
     }).catch(() => {});
   });
@@ -115,7 +118,7 @@ export default function RecordsIndexPage() {
   async function loadTrends() {
     const generation=++trendGeneration.current;
     const types=CORE_TYPES;
-    const results=await Promise.allSettled(types.map(type=>recordsAPI.trend(type)));
+    const results=await loadRecordTrends(types, type=>recordsAPI.trend(type));
     if(generation!==trendGeneration.current)return;
     const setters=[setBpTrend,setBsTrend,setWaistTrend,setSleepTrend,setHeartTrend,setWeightTrend];
     setTrendError(results.some(result=>result.status==='rejected'||result.value?.success===false)?'部分趋势更新失败，点击重试':'');
@@ -202,6 +205,7 @@ export default function RecordsIndexPage() {
 
         <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>{t('健康数据趋势')}</Text>
 
+        {!!recordError&&<Text onClick={load} style={{display:'block',color:colors.danger,fontSize:'13px',marginBottom:'8px'}}>{recordError}</Text>}
         {!!trendError&&<Text onClick={loadTrends} style={{display:'block',color:colors.danger,fontSize:'13px',marginBottom:'8px'}}>{trendError}</Text>}
         {/* 趋势图 Tab：血压/血糖/睡眠 */}
         {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0 || heartTrend.length > 0 || weightTrend.length > 0 || waistTrend.length > 0) && (

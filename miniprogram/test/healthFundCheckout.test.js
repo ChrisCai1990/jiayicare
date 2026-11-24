@@ -17,13 +17,13 @@ test('disabled product still allows personal fund', () => {
   }), 4);
 });
 
-test('product fixed-amount cap applies only to reward fund', () => {
+test('legacy fixed-amount product rule does not grant reward fund', () => {
   assert.equal(maxFundDeduction({
     eligible: true, personal: 4,
     corporate: 580,
     policy: { corporateDeductionType: 'fixedAmount', corporateDeductionValue: 1 },
     rule: { enabled: true },
-  }, 20, { id: 'medical-assist', healthFundDeduction: { mode: 'fixedAmount', value: 2 } }), 6);
+  }, 20, { id: 'medical-assist', healthFundDeduction: { mode: 'fixedAmount', value: 2 } }), 4);
 });
 
 test('personal fund precedes reward percentage cap', () => {

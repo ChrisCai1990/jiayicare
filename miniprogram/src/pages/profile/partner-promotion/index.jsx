@@ -15,8 +15,10 @@ export default function PartnerPromotionPage() {
 
   Taro.useDidShow(() => {
     setLoading(true);
-    servicesAPI.myPartnerPromotion().then(res => {
-      setProfile(res?.data || null);
+    Promise.all([servicesAPI.myPartnerPromotion(), servicesAPI.list()]).then(([res, catalog]) => {
+      const pricesById = new Map((catalog?.data?.services || []).map(item => [item.id, item.servicePrices || []]));
+      const data = res?.data || null;
+      setProfile(data ? { ...data, products: (data.products || []).map(item => ({ ...item, servicePrices: pricesById.get(item.id) || [] })) } : null);
       setError(res?.data ? '' : '当前账号没有已开通的市场合伙人身份');
     }).catch(err => setError(err?.message || '商品加载失败'))
       .finally(() => setLoading(false));
@@ -26,8 +28,10 @@ export default function PartnerPromotionPage() {
     const productId = target?.dataset?.productId;
     const product = profile?.products?.find(item => item.id === productId);
     if (!product || !profile?.referralCode) return { title: '嘉医汇服务', path: '/pages/home/index' };
-    return { title: product.name,
-      path: `/pages/services/mall/index?productId=${encodeURIComponent(product.id)}&partnerCode=${encodeURIComponent(profile.referralCode)}`,
+    const specificationLabel = target?.dataset?.specificationLabel || '';
+    const spec = (product.servicePrices || []).find(item => item.label === specificationLabel);
+    return { title: spec ? `${product.name} · ${spec.label}` : product.name,
+      path: `/pages/services/mall/index?productId=${encodeURIComponent(product.id)}&partnerCode=${encodeURIComponent(profile.referralCode)}${spec ? `&specificationLabel=${encodeURIComponent(spec.label)}` : ''}`,
       imageUrl: product.image ? mediaUrl(product.image) : fallbackShareCover };
   });
 
@@ -51,13 +55,20 @@ export default function PartnerPromotionPage() {
         <Button size="mini" style={{ marginTop: '10px' }} onClick={() => Taro.setClipboardData({ data: 'https://admin.jiaycare.com/market-partner' })}>复制工作台地址</Button>
       </View>
       <Input value={keyword} onInput={event => setKeyword(event.detail.value)} placeholder="搜索授权商品"
-        style={{ padding: '12px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, marginBottom: '12px' }} />
+        confirmType="search"
+        style={{ display: 'block', width: '100%', height: '44px', boxSizing: 'border-box', padding: '0 12px', fontSize: '15px', color: colors.textPrimary, backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, marginBottom: '12px' }} />
       {products.length === 0 && <Text style={{ color: colors.textMuted }}>暂无匹配商品</Text>}
       {products.map(item => <View key={item.id} style={{ marginBottom: '10px', padding: '16px', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}` }}>
         <Text style={{ display: 'block', fontWeight: 700, color: colors.textPrimary }}>{item.name}</Text>
+        {(item.servicePrices || []).length > 0 && <View style={{ marginTop: '10px' }}>
+          {item.servicePrices.map(spec => <View key={spec.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '8px' }}>
+            <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary }}>{spec.label} · ¥{spec.price}</Text>
+            <Button size="mini" openType="share" data-product-id={item.id} data-specification-label={spec.label} style={{ margin: 0, backgroundColor: colors.primary, color: '#fff', border: 'none' }}>分享此规格</Button>
+          </View>)}
+        </View>}
         <View style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
           <Button size="mini" onClick={() => Taro.navigateTo({ url: `/pages/services/mall/index?productId=${encodeURIComponent(item.id)}` })}>查看商品</Button>
-          <Button size="mini" openType="share" data-product-id={item.id} style={{ backgroundColor: colors.primary, color: '#fff', border: 'none' }}>分享给客户</Button>
+          {!(item.servicePrices || []).length && <Button size="mini" openType="share" data-product-id={item.id} style={{ backgroundColor: colors.primary, color: '#fff', border: 'none' }}>分享给客户</Button>}
         </View>
       </View>)}
     </View>}

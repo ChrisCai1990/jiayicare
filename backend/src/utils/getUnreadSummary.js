@@ -6,7 +6,7 @@ const { visibleMessageQuery, unreadServiceGroupQuery, isInboxMessage, legacyAnnu
 async function getUnreadSummary(userId) {
   const [unreadMessages, unreadPushes, groupUnread] = await Promise.all([
     Message.find(visibleMessageQuery(userId, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
-    PushRecord.find({ patientId: userId, readAt: null, ...legacyAnnualItemNoticeFilter })
+    PushRecord.find({ patientId: userId, readAt: null, withdrawnAt: null, ...legacyAnnualItemNoticeFilter })
       .select('type questionnaireId sourceOrderId').lean(),
     Message.countDocuments(unreadServiceGroupQuery(userId)),
   ]);

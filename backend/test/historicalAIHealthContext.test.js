@@ -30,7 +30,7 @@ test('historical audit gate checks only reports used by the selected year', asyn
   const context = {
     module: { exports: {} },
     require: name => {
-      if (name === './historicalAIHealthContext') return { reportsThroughYear };
+      if (name === './analysisReportWindow') return require('../src/utils/analysisReportWindow');
       if (name.endsWith('/MedicalReport')) return { find: () => ({ select: () => ({ lean: async () => reports }) }) };
       if (name.endsWith('/User')) return { findById: () => ({ select: async () => ({
         assignedFamilyDoctor: 'doctor', archiveReviewSnapshotAt: '2026-02-01',
@@ -41,7 +41,7 @@ test('historical audit gate checks only reports used by the selected year', asyn
   vm.runInNewContext(source, context);
   assert.equal(await context.module.exports.checkReportAuditGate('member', { throughYear: 2025 }), null);
   reports[0].audit_status = 'pending';
-  assert.match(await context.module.exports.checkReportAuditGate('member', { throughYear: 2025 }), /2025年度还有 1 份/);
+  assert.match(await context.module.exports.checkReportAuditGate('member', { throughYear: 2025 }), /2021—2025年还有 1 份/);
 });
 
 test('backfilling 2025 keeps the existing 2026 analysis as the latest user-facing result', async () => {
