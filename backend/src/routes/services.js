@@ -367,7 +367,7 @@ router.post('/order', auth, async (req, res) => {
   if (pushRecordId) {
     if (!mongoose.isValidObjectId(pushRecordId)) return res.status(400).json({ success: false, message: '医护推荐记录无效' });
     pushedRecommendation = await require('../models/PushRecord').findOne({ _id: pushRecordId,
-      patientId: serviceUser._id, tenantId: serviceUser.tenantId || null, type: 'product' });
+      patientId: serviceUser._id, tenantId: serviceUser.tenantId || null, type: 'product', withdrawnAt: null });
     const recommended = pushedRecommendation?.products?.length ? pushedRecommendation.products
       : pushedRecommendation?.productId ? [{ productId: pushedRecommendation.productId, price: pushedRecommendation.price }] : [];
     pushedItem = recommended.find(item => String(item.productId) === String(serviceId));

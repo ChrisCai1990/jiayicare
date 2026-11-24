@@ -48,7 +48,7 @@ async function loadOverview(actor, memberId, models) {
       $or: [{payerUser: null}, {payerUser: member._id}]})
       .select('user serviceId serviceName servicePrice status tradeStatus paymentStatus paymentExpectedAmount payerUser checkoutGroupId couponId couponDiscount healthFundAmount enterpriseSharedFundAmount pushRecordId createdAt')
       .sort({createdAt: -1}).limit(20).lean(),
-    PushRecord.find({patientId: member._id, tenantId: actor.tenantId || null, type: 'product'})
+    PushRecord.find({patientId: member._id, tenantId: actor.tenantId || null, type: 'product', withdrawnAt: null})
       .select('products productId title price createdAt').sort({createdAt: -1}).limit(15).lean(),
   ]);
   const {canClaimFamilyPayment} = require('./familyProxyPayment');
