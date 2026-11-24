@@ -26,7 +26,10 @@ const clauseFor = (text, matcher) => String(text || '').split(/[；;。\n]/).map
 function fromManagementTargets(records = []) {
   return records.filter(row => row.nutritionRelevant === true).flatMap(row => {
     const status = String(row.sourceStatus || '').toLowerCase();
-    if (status === 'normal') return [];
+    // The source status describes one report item, while the advisor may have
+    // confirmed a broader abnormal management problem from other evidence.
+    const confirmedAbnormalTitle = /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|高血脂|血脂高/.test(String(row.sourceTitle || ''));
+    if (status === 'normal' && !confirmedAbnormalTitle) return [];
     const explicitlyAbnormal = ['abnormal', 'attention'].includes(status)
       || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考|高血脂|血脂高/.test(`${row.sourceTitle || ''} ${row.goal || ''} ${row.focus || ''} ${row.baseline || ''}`);
     const goalMetric = row.goalMetric || {};
@@ -36,7 +39,7 @@ function fromManagementTargets(records = []) {
     const candidates = matches.length ? matches : [[String(goalMetric.name || VITAL_NAMES[goalMetric.key] || row.goal || '').split(/[·：:；;]/)[0].trim(), /.*/]];
     return candidates.map(([name, pattern]) => {
       const metric = String(name).slice(0, 100);
-      const baseline = clauseFor(row.baseline, pattern) || (candidates.length === 1 ? String(row.baseline || '') : '');
+      const baseline = status === 'normal' ? '' : clauseFor(row.baseline, pattern) || (candidates.length === 1 ? String(row.baseline || '') : '');
       const structured = goalMetric.targetValue !== undefined && goalMetric.targetValue !== ''
         && (candidates.length === 1 || String(goalMetric.name || VITAL_NAMES[goalMetric.key] || '').includes(name))
         ? `${OPERATORS[goalMetric.operator] || ''}${goalMetric.targetValue}${goalMetric.unit || ''}` : '';

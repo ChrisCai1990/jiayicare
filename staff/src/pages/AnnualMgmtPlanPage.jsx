@@ -1464,6 +1464,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看筛查事项去向</button></>}
       </div>}
 
+      {patientMode && unresolvedAiCheckups.length > 0 && <div role="alert" style={{ margin: '0 0 20px', padding: '12px 14px', border: '1px solid #E9BB7A', borderRadius: 10, background: '#FFF7ED', color: '#713F12', fontSize: 13 }}>
+        <strong>AI 提示有 {unresolvedAiCheckups.length} 项检查尚待顾问逐项核对</strong>
+        <div style={{ marginTop: 5 }}>这些提示目前不会出现在年度方案的“完善检查”；顾问确认“确需检查”后，再同步草稿或补入已推送方案。</div>
+        <div style={{ marginTop: 5 }}>{unresolvedAiCheckups.slice(0, 3).join('、')}{unresolvedAiCheckups.length > 3 ? `等 ${unresolvedAiCheckups.length} 项` : ''}</div>
+        <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>去逐项核对</button>
+      </div>}
+
       {annualPilot && patientMode && <div style={{ margin: '-12px 0 20px', fontSize: 12, color: '#52675D' }}>
         {confirmedAt ? '客户已确认方案。暂存当前项仅保留医护端修改；核对后点击“发布本次修订”，客户才会看到更新。原执行安排另行核对。'
           : pushedAt ? '方案已推送，等待客户确认。暂存当前项不会更新客户方案或发送通知；核对后再发布本次修订。'
@@ -1705,7 +1712,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
             <section>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>已纳入的问题与对应方案</div>
-            {unresolvedAiCheckups.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>AI健康信息整理还有 {unresolvedAiCheckups.length} 项待完善检查未逐项核对：{unresolvedAiCheckups.join('、')}。请在体检资料覆盖板块处理后再生成或推送方案。</div>}
             {unresolvedSymptoms.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>截至本方案年度有尚未处理的不适主诉（展示最近 {unresolvedSymptoms.length} 条），请先核对是否需要立即就医及是否进入年度管理：{unresolvedSymptoms.map(row => row.value).join('、')}。<a href={`/patients/${id}?tab=symptoms`} style={{ marginLeft: 6 }}>查看并处理主诉</a></div>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。可在专项筛查选择“纳入管理”，或在AI健康信息整理中核对待完善检查。</div>}
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>

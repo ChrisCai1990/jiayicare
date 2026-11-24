@@ -13,6 +13,20 @@ test('高血脂筛查标题带入年度营养评估，已有自动指标继续�
   assert.deepEqual(selectedFromAnnualPlan(plan), ['尿酸']);
 });
 
+test('单项报告正常不抹掉顾问确认的血脂异常营养问题', () => {
+  const source = [{ issueId: 'lipid', nutritionRelevant: true, sourceTitle: '血脂异常', sourceStatus: 'normal',
+    goal: '管控血脂，降低风险', focus: '核对血脂异常的后续需要', baseline: '甘油三酯（TG） 1.35 mmol/L' }];
+  const rows = mergeAdvisorTargets([], source);
+  assert.deepEqual(rows.map(row => row.metric), ['总胆固醇', '高密度脂蛋白', '低密度脂蛋白', '甘油三酯']);
+  assert.ok(rows.every(row => !row.baseline), '正常的单项结果不能当作异常基线');
+  const { metricsFromTargets, selectedFromAnnualPlan } = require('../../shared/nutritionComparisonMetrics.cjs');
+  assert.deepEqual(metricsFromTargets(source), ['总胆固醇', '甘油三酯', '低密度脂蛋白', '高密度脂蛋白']);
+  assert.deepEqual(selectedFromAnnualPlan({ moduleData: { management_targets: { records: source },
+    nutrition_assessment: { enabled: true, nutritionComparisonMetrics: ['体重'] } } }),
+  ['体重', '总胆固醇', '甘油三酯', '低密度脂蛋白', '高密度脂蛋白']);
+  assert.deepEqual(metricsFromTargets([{ ...source[0], sourceTitle: '血脂检查', goal: '核对饮食', focus: '' }]), []);
+});
+
 test('营养相关筛查目标带入异常值和参考目标，顾问修改后保留选择', () => {
   const source = [{ issueId: 'screening:1', nutritionRelevant: true, sourceStatus: 'abnormal', goal: '血压控制', baseline: '收缩压 145 mmHg',
     goalMetric: { key: 'systolic', operator: 'lte', targetValue: 130, unit: 'mmHg' } }];

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import nutritionAdvisor from '../../../shared/annualNutritionAdvisorTargets.cjs'
 
@@ -11,6 +11,9 @@ export default function AnnualNutritionAdvisorTargets({ patientId, plan, rows = 
   const [date, setDate] = useState(executionDate)
   const [executor, setExecutor] = useState(executorId || assignedNutritionistId)
   const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (autoImport) setDraft(current => nutritionAdvisor.mergeAdvisorTargets(current, managementTargets, nutritionEvidence))
+  }, [autoImport, managementTargets, nutritionEvidence])
   if (!canEdit) return null
   const update = (index, key, value) => setDraft(current => current.map((row, i) => i === index ? { ...row, [key]: value } : row))
   const save = async () => {

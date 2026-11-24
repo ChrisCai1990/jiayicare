@@ -31,7 +31,8 @@ function normalizeMetrics(value) {
 
 // Extract only metrics explicitly mentioned by confirmed nutrition-related goals.
 function metricsFromTargets(targets = []) {
-  const text = targets.filter(r => r.nutritionRelevant === true && r.sourceStatus !== 'normal'
+  const text = targets.filter(r => r.nutritionRelevant === true && (r.sourceStatus !== 'normal'
+      || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|高血脂|血脂高/.test(String(r.sourceTitle || '')))
     && (['abnormal', 'attention'].includes(r.sourceStatus) || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|超出参考|高血脂|血脂高/.test(`${r.sourceTitle || ''} ${r.goal || ''} ${r.focus || ''} ${r.baseline || ''}`)))
     .map(r => `${r.sourceTitle || ''} ${r.goal || ''} ${r.focus || ''}`).join('；');
   const selected = COMMON_METRICS.filter(name => text.includes(name));
@@ -61,7 +62,8 @@ module.exports = { OBJECTIVE_METRICS, SUBJECTIVE_METRICS, COMMON_METRICS, MAX_ME
 
 // Keep medical decisions as context. Only explicit metric targets become reference text.
 function nutritionSummary(plan) {
-  const goals = (plan?.moduleData?.management_targets?.records || []).filter(r => r.nutritionRelevant === true && r.sourceStatus !== 'normal');
+  const goals = (plan?.moduleData?.management_targets?.records || []).filter(r => r.nutritionRelevant === true && (r.sourceStatus !== 'normal'
+    || /异常|偏高|偏低|升高|降低|超标|不达标|增高|减低|高血脂|血脂高/.test(String(r.sourceTitle || ''))));
   const text = goals.map(r => `${r.goal || ''} ${r.focus || ''}`).join('；');
   const problems = [[/动脉|斑块|血脂|PLA2/i,'动脉粥样硬化相关营养评估'],[/胃镜|胃炎|胃黏膜/,'胃部疾病相关营养评估'],[/息肉|腺瘤|结肠|直肠/,'肠道疾病相关营养评估']].filter(([pattern])=>pattern.test(text)).map(([,label])=>label);
   const references = goals.flatMap(r => String(r.goal || '').split(/[；;。]/)).filter(clause => /降至|控制在|维持在|达到/.test(clause) && /血脂|胆固醇|甘油三酯|血糖|糖化|HbA1c|LDL|HDL|PLA2|体重|体脂|尿酸/i.test(clause));
