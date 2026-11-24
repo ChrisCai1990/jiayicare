@@ -31,6 +31,15 @@ test('same lab name uses its own panel, never falls into blood when urine panel 
   assert.deepEqual(selectMatchesForItem({ name: '白细胞', sourceSection: '尿常规' }, [index[0]]), []);
 });
 
+test('vaginal discharge enzymes do not fall into urine routine', () => {
+  const index = [entry('尿常规', ['白细胞酯酶', '唾液酸苷酶']), entry('白带常规')];
+  for (const name of ['白细胞酯酶', '唾液酸苷酶', '杆菌', '白细胞']) {
+    const item = { name, itemType: 'lab', sourceSection: '白带生化' };
+    assert.equal(selectMatchesForItem(item, index)[0]?.node.id, '白带常规');
+  }
+  assert.deepEqual(selectMatchesForItem({ name: '白细胞酯酶', itemType: 'lab', sourceSection: '白带生化' }, [index[0]]), []);
+});
+
 test('platelet activation markers use the explicit panel, while CD45 elsewhere stays unclassified', () => {
   const index = [entry('血常规', ['血小板']), entry('血小板活化四项', ['血小板活化检测'])];
   for (const name of ['CD61', 'CD62P', 'CD61抗体(PAC-1)', 'CD45']) {

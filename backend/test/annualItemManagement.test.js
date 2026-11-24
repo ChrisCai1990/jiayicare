@@ -18,7 +18,7 @@ test('managed selection is explicit, preserved in service-request snapshot witho
   }
   assert.throws(() => normalizeAnnualItems({ medical_treatment: { records: [{ serviceMode: 'managed' }] } }, 'manager'), /一站式/);
 });
-test('only three annual modules hide template/person/frequency controls; service fields are separate', async () => {
+test('standard annual modules hide template/person/frequency controls; service fields are separate', async () => {
   const { annualItemLayout } = await import('../../staff/src/utils/annualItemLayout.mjs');
   const def = { fields: ['reason', 'standardPlanName', 'coordinator', 'followUpStaff', 'frequency', 'ownerRole', 'serviceMode', 'serviceType'].map(key => ({ key })) };
   const result = annualItemLayout('medical_treatment', def, '测试健管');
@@ -37,4 +37,23 @@ test('annual review remarks stay visible beside timing and retain the existing i
   assert.deepEqual(fields.map(field => field.key), ['reason', 'time', 'timingReason', 'notes', 'department']);
   assert.equal(fields.find(field => field.key === 'notes').internal, true);
   assert.equal(fields.find(field => field.key === 'notes').label, '备注');
+});
+test('vaccine plan keeps practical fields, assigned manager and conditional service choice', async () => {
+  const { annualItemLayout } = await import('../../staff/src/utils/annualItemLayout.mjs');
+  const keys = ['standardPlanName', 'standardContent', 'standardSchedule', 'name', 'brand', 'time', 'reason', 'institution', 'followUpStaff', 'serviceMode', 'serviceType', 'notes', 'frequency', 'precautions', 'customerAction', 'ownerRole'];
+  const def = { fields: keys.map(key => ({ key, type: key === 'time' ? 'date' : 'text' })) };
+  const layout = annualItemLayout('vaccine', def, '客户所属健管');
+  assert.deepEqual(layout.fields.map(field => field.key), ['name', 'brand', 'time', 'reason', 'institution']);
+  assert.equal(layout.fields.find(field => field.key === 'time').label, '接种时间');
+  assert.equal(layout.managerName, '客户所属健管');
+  assert.deepEqual(layout.serviceFields.map(field => field.key), ['serviceMode', 'serviceType']);
+
+  const source = { name: '乙肝疫苗', time: '2026-12-01', followUpStaff: 'other', serviceMode: 'reminder', serviceType: 'escort_visit' };
+  const reminder = normalizeAnnualItems({ vaccine: { records: [source] } }, 'assigned').vaccine.records[0];
+  assert.equal(reminder.followUpStaff, 'assigned');
+  assert.equal(reminder.serviceType, '');
+  assert.equal(reminder.serviceMode, 'reminder');
+  assert.equal(reminder.time, source.time);
+  const single = normalizeAnnualItems({ vaccine: { records: [{ ...source, serviceMode: 'single' }] } }, 'assigned').vaccine.records[0];
+  assert.equal(single.serviceType, 'escort_visit');
 });

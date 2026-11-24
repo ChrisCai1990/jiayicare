@@ -1,6 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { draftPlanActions, validatePlanCoverage, managementTargets } = require('./annualManagementEvidence');
+const { normalizeAction } = require('./annualManagementAction');
+
+test('日常监测逐项保存，血压与体重独立带入方案并逐项校验', () => {
+  const timing = { monitoring: { items: [{ type: 'bloodPressure', time: '睡前', frequency: '每日1次' }, { type: 'weight', time: '晨起', frequency: '每周1次' }] } };
+  const normalized = normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: timing });
+  assert.deepEqual(normalized.directionTimings.monitoring.items, timing.monitoring.items);
+  assert.throws(() => normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: { monitoring: { items: [{ type: 'weight', time: '' }] } } }), /监测时间/);
+  assert.deepEqual(normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: { monitoring: { items: [{ type: 'waist', time: '', frequency: '每14天1次' }, { type: 'bloodPressure', time: '晨起、中午、下午、睡前', frequency: '每日1次' }] } } }).directionTimings.monitoring.items,
+    [{ type: 'waist', time: '', frequency: '每14天1次' }, { type: 'bloodPressure', time: '晨起、中午、下午、睡前', frequency: '每日1次' }]);
+  assert.throws(() => normalizeAction({ goal: '按时监测', directions: ['monitoring'], direction: 'monitoring', directionTimings: { monitoring: { items: [{ type: 'bloodSugar', time: '空腹', frequency: '' }] } } }), /监测周期/);
+  const evidence = [{ id: 'management_issue:1', content: { direction: 'monitoring', problem: '糖尿病', directionTimings: normalized.directionTimings } }];
+  const actions = draftPlanActions(evidence);
+  assert.deepEqual(actions.map(action => action.record.items), ['血压', '体重']);
+  assert.equal(validatePlanCoverage({ monitoring: { records: actions.map(action => action.record) } }, evidence), '');
+  assert.match(validatePlanCoverage({ monitoring: { records: [actions[0].record] } }, evidence), /日常监测项目/);
+});
 
 test('已确认复查进入方案复查条目，营养问题合并为一个评估', () => {
   const evidence = [
@@ -32,6 +48,17 @@ test('纳入管理时确认的首次日期进入对应方案日期，待确认�
   assert.equal(actions[0].record.appointmentSchedulingVersion, 1);
   assert.equal(actions[1].record.time, '2027-06-01');
   assert.equal(actions[2].record.visit_time, undefined);
+});
+
+test('已逐项确认的当年 AI 待补检查进入完善检查草稿', () => {
+  const evidence = [{ id: 'management_issue:ai-review', content: {
+    direction: 'checkup_completion', problem: '当年待补项目', sourceKind: 'ai_checkup',
+    reportTitle: '已审核AI健康信息整理 · 体检资料覆盖',
+  } }];
+  const [action] = draftPlanActions(evidence);
+  assert.equal(action.key, 'checkup_completion');
+  assert.equal(action.record.items, '当年待补项目');
+  assert.equal(validatePlanCoverage({ checkup_completion: { records: [action.record] } }, evidence), '');
 });
 
 test('同一问题多选复查、就医和营养评估，分别形成行动且逐项校验', () => {

@@ -6684,7 +6684,7 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
       // 健康顾问因任务仍指向一个已不存在的 ID 而永久卡死。
       Object.assign(report, {
         fileUrl: '', fileUrls: [], ossKey: '', ossKeys: [], content: '', mimeType: '', fileSize: '',
-        reportItems: [], aiSummary: '', keyFindings: [], parseJob: null, pageParseStatus: {}, imagePageEvidence: {}, pageParseHistory: [],
+        reportItems: [], aiSummary: '', keyFindings: [], parseJob: null, pageParseStatus: {}, pageParseStatusByPage: {}, imagePageEvidence: {}, pageParseHistory: [],
         audit_status: 'unaudited', aiStatus: 'pending', status: 'pending', audited_by: '', audited_at: null,
         reviewedByStaff: null, reviewedAt: null, reject_reason: '', familyDoctorViewedAt: null, familyDoctorViewedBy: null,
         familyDoctorAudit: { status: 'pending', by: null, byName: '', at: null, editLog: [] },
@@ -10232,7 +10232,6 @@ router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, r
 // the management decision separately; AI cannot set dates or publish a plan.
 router.post('/patients/:id/annual-management-decision-draft', staffAuth, async (req, res) => {
   try {
-    if (!await require('../utils/annualFlowPilot').enabledForYear(req.params.id, req.body.year)) return res.status(404).json({ success: false, message: '当前年度未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可起草管理决定' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -10424,7 +10423,7 @@ router.post('/patients/:id/annual-comprehensive-review', staffAuth, async (req, 
   if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
   const patient = await User.findById(req.params.id).select('_id tenantId aiHealthSummary healthRiskTags').lean();
   if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-  const eligibility = await require('../utils/annualReviewEligibility').check(patient._id, { lookbackMonths: 3 });
+  const eligibility = await require('../utils/annualReviewEligibility').checkForAnnualPlan(patient._id, year);
   if (!eligibility.allowed) return res.status(409).json({ success: false, code: 'RECENT_CHECKUP_REQUIRED', message: eligibility.message });
   const existing = await AiCaseReview.findOne({ user: patient._id, reviewType: 'annual', annualPlanYear: year, status: { $ne: 'archived' } });
   if (existing) return res.json({ success: true, data: { _id: existing._id, title: existing.title, status: existing.conclusion?.status, reused: true } });
@@ -10886,6 +10885,7 @@ router.get('/patients/:id/annual-plan/:planId/preview', staffAuth, async (req, r
     const byPlan = plan.pushedAt ? await require('../utils/publishedAnnualRecommendations')(req.params.id, [plan]) : new Map();
     const recommendations = byPlan.get(String(plan._id)) || [];
     res.json({ success: true, data: { items, pushedAt: plan.pushedAt || null, recommendations,
+      monitoring: plan.moduleData?.monitoring?.enabled === false ? null : customerModuleData(plan.moduleData).monitoring || null,
       nutritionAssessment: plan.moduleData?.nutrition_assessment?.enabled === false ? null : plan.moduleData?.nutrition_assessment || null } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -11020,10 +11020,89 @@ router.post('/patients/:id/annual-plan/:planId/consensus-trial', staffAuth, asyn
 });
 
 // Explicit fallback for a pilot customer who does not use either client app.
-// The usual onboarding monitoring reminders remain untouched.
+// Client monitoring reminders remain independent, including the existing weekly BP/weight reminders.
+router.patch('/patients/:id/annual-plan/:planId/monitoring-cycles', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可调整监测周期' });
+    if (!mongoose.isValidObjectId(req.params.planId)) return res.status(400).json({ success: false, message: '请指定年度方案' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可调整监测周期' });
+    const plan = await AnnualPlan.findOne({ _id: req.params.planId, patientId: patient._id }).select('+supplementRevisions +revisionDraft').lean();
+    if (!plan?.pushedAt || !['approved', null, undefined].includes(plan.reviewStatus))
+      return res.status(409).json({ success: false, message: '请先选择已发布且未驳回的年度方案' });
+    if (plan.revisionDraft) return res.status(409).json({ success: false, message: '请先发布当前暂存修订，再调整监测周期' });
+    if (String(plan.updatedAt?.toISOString()) !== String(req.body.baseUpdatedAt || ''))
+      return res.status(409).json({ success: false, message: '方案已变化，请刷新后重试' });
+    const records = plan.moduleData?.monitoring?.enabled === false ? [] : plan.moduleData?.monitoring?.records || [];
+    const frequencies = req.body.frequencies;
+    if (!Array.isArray(frequencies) || !records.length || frequencies.length !== records.length
+      || frequencies.some(value => !require('../utils/monitoringCycle').monitoringCycleDays(String(value || '').trim())))
+      return res.status(400).json({ success: false, message: '请为每个监测项目选择有效周期' });
+    const clientAppUsage = String(req.body.clientAppUsage || '');
+    const firstManualFollowUpDate = String(req.body.firstManualFollowUpDate || '');
+    if (!['yes', 'no'].includes(clientAppUsage)) return res.status(400).json({ success: false, message: '请确认客户是否使用 App／小程序' });
+    const activeManual = await FollowUp.exists({ patientId: patient._id, sourceAnnualPlanId: plan._id,
+      clientVisible: false, repeatWeekly: true, 'formData.manualNoClientApp': true,
+      status: { $in: ['planned', 'in_progress', 'missed'] } });
+    if (clientAppUsage === 'yes' && activeManual) return res.status(409).json({ success: false, message: '已有人工监测随访，请先处理现有任务再改为使用客户端' });
+    if (clientAppUsage === 'no' && !activeManual && !require('../utils/manualAnnualMonitoringTasks').firstFollowUpDate(firstManualFollowUpDate))
+      return res.status(400).json({ success: false, message: '请确认有效的首次随访日期' });
+    let manager = null;
+    if (clientAppUsage === 'no') {
+      manager = patient.assignedHealthManager && await Admin.findOne({ _id: patient.assignedHealthManager,
+        role: 'healthManager', tenantId: patient.tenantId, staffStatus: { $in: ['active', null] } }).select('_id name').lean();
+      if (!manager) return res.status(409).json({ success: false, message: '请先分配责任健管专员' });
+    }
+    const nextRecords = records.map((row, index) => ({ ...row, frequency: String(frequencies[index]).trim() }));
+    const revision = { id: require('crypto').randomUUID(), kind: 'monitoring_cycles', status: 'applied',
+      createdAt: new Date(), createdBy: req.staff._id,
+      before: records.map(row => ({ metricType: row.metricType, items: row.items, frequency: row.frequency || '' })),
+      after: nextRecords.map(row => ({ metricType: row.metricType, items: row.items, frequency: row.frequency })),
+      note: '顾问逐项确认日常监测周期' };
+    const moduleData = { ...plan.moduleData, monitoring: { ...plan.moduleData.monitoring, records: nextRecords,
+      clientAppUsage, firstManualFollowUpDate: clientAppUsage === 'no' ? firstManualFollowUpDate : '' } };
+    const saved = await AnnualPlan.findOneAndUpdate({ _id: plan._id, patientId: patient._id, updatedAt: plan.updatedAt },
+      { $set: { moduleData }, $push: { supplementRevisions: revision } }, { new: true });
+    if (!saved) return res.status(409).json({ success: false, message: '方案已变化，请刷新后重试' });
+    let warning = '';
+    try {
+      const labels = { bloodPressure: '血压', bloodSugar: '血糖', waist: '腰围', heartRate: '心率', weight: '体重', sleep: '睡眠', mood: '情绪', diet: '饮食', exercise: '运动', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒' };
+      for (const row of nextRecords) {
+        const type = row.metricType || Object.keys(labels).find(key => labels[key] === row.items);
+        if (!type) continue;
+        const content = `客户不使用 App／小程序；请健管专员按${row.frequency}联系客户，记录${labels[type]}${row.measurementPeriod ? `（${row.measurementPeriod}）` : ''}的监测结果；本次完成后按该周期接续。`;
+        await FollowUp.updateMany({ patientId: patient._id, sourceAnnualPlanId: plan._id, clientVisible: false,
+          repeatWeekly: true, checkInItems: type, 'formData.manualNoClientApp': true,
+          status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: {
+          'formData.监测频率': row.frequency, 'weeklyTemplate.formData.监测频率': row.frequency,
+          'weeklyTemplate.content': content, content, plannedContent: content } });
+      }
+      if (clientAppUsage === 'no') await require('../utils/manualAnnualMonitoringTasks').createManualAnnualMonitoringTasks({
+        plan: saved, patient, manager, staffId: req.staff._id });
+      await require('../utils/annualPlanMonitoringReminders').syncServiceCycleMonitoringReminders(patient._id);
+    } catch (error) { warning = '周期已保存，但提醒同步未完成；请稍后刷新核对'; console.error('[monitoring-cycles] sync failed', error); }
+    return res.json({ success: true, data: saved, message: warning || '各项目监测周期已保存并同步提醒' });
+  } catch (error) { return res.status(500).json({ success: false, message: '保存监测周期失败' }); }
+});
+router.get('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可查看人工监测安排' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可查看人工监测安排' });
+    if (!mongoose.isValidObjectId(req.query.planId)) return res.status(400).json({ success: false, message: '请指定年度方案' });
+    const rows = await FollowUp.find({ patientId: patient._id, sourceAnnualPlanId: req.query.planId,
+      clientVisible: false, repeatWeekly: true, 'formData.manualNoClientApp': true,
+      status: { $in: ['planned', 'in_progress', 'missed'] } }).select('_id date checkInItems formData assignedTo').lean();
+    return res.json({ success: true, data: rows.map(row => ({ id: row._id, date: row.date,
+      type: row.checkInItems?.[0], frequency: row.formData?.['监测频率'] || '', assignedTo: row.assignedTo })) });
+  } catch (error) { return res.status(500).json({ success: false, message: '读取人工监测安排失败' }); }
+});
 router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res) => {
   try {
-    if (!await require('../utils/annualFlowPilot').enabledForYear(req.params.id, req.body.year)) return res.status(404).json({ success: false, message: '当前年度未进入新版年度管理' });
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可安排人工提醒' });
     const visibleIds = await getVisiblePlanPatientIds(req.staff);
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权处理该会员' });
@@ -11032,7 +11111,8 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
       || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor) !== String(req.staff._id))
       return res.status(403).json({ success: false, message: '仅所属健康顾问可安排人工提醒' });
     const managerId = String(req.body.managerId || '');
-    if (!mongoose.isValidObjectId(managerId)) return res.status(400).json({ success: false, message: '请选择负责随访的健管专员' });
+    if (!mongoose.isValidObjectId(managerId) || String(patient.assignedHealthManager || '') !== managerId)
+      return res.status(400).json({ success: false, message: '请先为客户指定责任健管专员' });
     const manager = await Admin.findOne({ _id: managerId, role: 'healthManager', tenantId: patient.tenantId,
       staffStatus: { $in: ['active', null] } }).select('_id name').lean();
     if (!manager) return res.status(400).json({ success: false, message: '所选健管专员已停用或不属于当前机构，请重新选择' });
@@ -11041,21 +11121,38 @@ router.post('/patients/:id/annual-monitoring-manual', staffAuth, async (req, res
     if (req.body.noClientAppConfirmed !== true
       || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < today || !Number.isFinite(Date.parse(date)))
       return res.status(400).json({ success: false, message: '请先确认客户不使用客户端，并填写有效首次日期' });
-    const existing = await FollowUp.exists({ patientId: patient._id, repeatWeekly: true, clientVisible: false,
-      checkInItems: { $in: ['bloodPressure', 'weight'] }, status: { $in: ['planned', 'in_progress', 'missed'] } });
-    if (existing) return res.status(409).json({ success: false, message: '已有血压或体重的人工每周提醒，请先核对原任务，避免重复安排' });
-    const content = '客户不使用 App／小程序；请健管专员每周联系客户，同时记录血压和体重实测结果。两项入档后按实际完成日期安排下一周。';
-    const _id = new mongoose.Types.ObjectId(require('crypto').createHash('sha256').update(`manual-monitoring:v2:${patient._id}:bloodPressure+weight`).digest('hex').slice(0, 24));
-    const template = { type: 'phone', theme: '人工健康监测 · 血压和体重', content,
-      formData: { '监测频率': '每周1次', manualNoClientApp: true, confirmedBy: String(req.staff._id) }, checkInItems: ['bloodPressure', 'weight'] };
-    const result = await FollowUp.updateOne({ _id }, { $setOnInsert: { _id, tenantId: patient.tenantId, patientId: patient._id,
-      staffId: req.staff._id, assignedTo: manager._id, date: new Date(`${date}T00:00:00+08:00`),
-      status: 'planned', clientVisible: false, repeatWeekly: true, weeklyTemplate: template,
-      theme: template.theme, content, plannedContent: content, type: 'phone', formData: template.formData, checkInItems: template.checkInItems, aiStatus: 'approved' } },
-    { upsert: true, setDefaultsOnInsert: true });
-    if (!result.upsertedCount) return res.status(409).json({ success: false, message: '血压和体重的人工监测计划已存在，请核对原任务' });
-    res.json({ success: true, message: `已给${manager.name}安排血压和体重的同一条每周任务，完成后接续下一周` });
-  } catch (error) { res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? '人工提醒已存在，请刷新' : '安排人工提醒失败' }); }
+    if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '请指定已确认的年度方案' });
+    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: patient._id, year: Number(req.body.year) })
+      .select('moduleData pushedAt confirmedAt reviewStatus').lean();
+    if (!plan?.pushedAt || !['approved', null, undefined].includes(plan.reviewStatus)
+      || plan.moduleData?.monitoring?.clientAppUsage !== 'no')
+      return res.status(409).json({ success: false, message: '请先发布方案并确认客户不使用 App／小程序' });
+    const rows = require('../utils/manualAnnualMonitoring').manualMonitoringItems(plan.moduleData);
+    const identity = type => new mongoose.Types.ObjectId(require('crypto').createHash('sha256')
+      .update(`manual-monitoring:v3:${patient._id}:${plan._id}:${type}`).digest('hex').slice(0, 24));
+    for (const row of rows) {
+      const conflict = await FollowUp.exists({ patientId: patient._id, repeatWeekly: true, clientVisible: false,
+        checkInItems: row.type, _id: { $ne: identity(row.type) }, status: { $in: ['planned', 'in_progress', 'missed'] } });
+      if (conflict) return res.status(409).json({ success: false, message: `已有${row.label}的人工监测随访，请先核对原任务，避免重复安排` });
+    }
+    let created = 0;
+    for (const row of rows) {
+      const _id = identity(row.type), label = row.label;
+      const content = `客户不使用 App／小程序；请健管专员按${row.frequency}联系客户，记录${label}${row.period ? `（${row.period}）` : ''}的监测结果；本次完成后按该周期接续。`;
+      const formData = { '监测频率': row.frequency, manualNoClientApp: true, monitoringMetricType: row.type, confirmedBy: String(req.staff._id) };
+      const template = { type: 'phone', theme: `人工健康监测 · ${label}`, content, formData, checkInItems: [row.type] };
+      const result = await FollowUp.updateOne({ _id }, { $setOnInsert: { _id, tenantId: patient.tenantId,
+        patientId: patient._id, sourceAnnualPlanId: plan._id, staffId: req.staff._id, assignedTo: manager._id,
+        date: new Date(`${date}T00:00:00+08:00`), status: 'planned', clientVisible: false,
+        repeatWeekly: true, weeklyTemplate: template, theme: template.theme, content, plannedContent: content,
+        type: 'phone', formData, checkInItems: template.checkInItems, aiStatus: 'approved' } },
+      { upsert: true, setDefaultsOnInsert: true });
+      created += result.upsertedCount || 0;
+    }
+    return res.json({ success: true, data: { created, total: rows.length },
+      message: created ? `已给${manager.name}按各项目周期安排${created}条内部随访` : '人工监测随访已安排，无需重复建立' });
+  } catch (error) { res.status(error.statusCode || (error.code === 11000 ? 409 : 500)).json({ success: false,
+    message: error.statusCode ? error.message : error.code === 11000 ? '人工提醒已存在，请刷新' : '安排人工提醒失败' }); }
 });
 
 // Production MongoDB is standalone: keep the plan change atomic in one document,
@@ -11264,6 +11361,31 @@ router.get('/patients/:id/annual-nutrition-task', staffAuth, async (req, res) =>
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+router.post('/patients/:id/annual-nutrition-cancel', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可撤回未开始的营养评估' });
+    const patient = await User.findById(req.params.id).select('tenantId assignedFamilyDoctor').lean();
+    if (!patient || String(patient.tenantId || '') !== String(req.staff.tenantId || '')
+      || req.staff.role === 'familyDoctor' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))
+      return res.status(403).json({ success: false, message: '仅所属健康顾问可处理' });
+    if (!mongoose.isValidObjectId(req.body.planId) || !mongoose.isValidObjectId(req.body.taskId))
+      return res.status(400).json({ success: false, message: '方案或任务标识无效' });
+    const reason = String(req.body.reason || '').trim();
+    if (!reason || reason.length > 500) return res.status(400).json({ success: false, message: '请填写取消原因（最多500字）' });
+    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: patient._id }).lean();
+    if (!plan || plan.pushedAt || plan.confirmedAt) return res.status(409).json({ success: false, message: '仅可在未发布草稿中撤回未开始的独立评估' });
+    const task = await FollowUp.findOne({ _id: req.body.taskId, patientId: patient._id,
+      sourceAnnualPlanId: plan._id, workflowKey: 'annual_nutrition_assessment' }).lean();
+    if (!task || task.status !== 'planned' || task.completedAt || task.formData?.nutritionAssessment || task.formData?.lifestyleInterview)
+      return res.status(409).json({ success: false, message: '评估已开始或已有记录，请进入任务核对处理' });
+    const saved = await FollowUp.findOneAndUpdate({ _id: task._id, status: 'planned', updatedAt: task.updatedAt },
+      { $set: { status: 'cancelled', cancelReason: reason, 'formData.cancelledByAdvisor': String(req.staff._id),
+        'formData.cancelledAt': new Date() } }, { new: true });
+    if (!saved) return res.status(409).json({ success: false, message: '任务已变化，请刷新核对' });
+    return res.json({ success: true, message: '已取消未开始的营养评估，可继续编辑方案草稿' });
+  } catch (error) { return res.status(500).json({ success: false, message: '取消失败，请刷新核对任务状态' }); }
+});
+
 router.post('/patients/:id/annual-nutrition-dispatch', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可派发营养评估' });
   try {
@@ -11360,6 +11482,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
     if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
+    const requestedAdvisorTargets = moduleData?.nutrition_assessment?.advisorTargets !== undefined;
     moduleData = require('../utils/annualPlanDates').normalize(moduleData);
     moduleData = { ...(moduleData || {}), nutrition_assessment: require('../utils/annualNutritionDispatch').draftModule(moduleData) };
     try {
@@ -11396,7 +11519,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       if (issue) return res.status(400).json({ success:false, message:issue });
     }
     const targetYear = year || new Date().getFullYear();
-    const checkup = await require('../utils/annualReviewEligibility').check(req.params.id, { lookbackMonths: 3 });
+    const checkup = await require('../utils/annualReviewEligibility').checkForAnnualPlan(req.params.id, targetYear);
     if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
     if (moduleData.management_targets?.records !== undefined) {
       const records = moduleData.management_targets.records;
@@ -11457,6 +11580,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const annualFlow = existingVersion
       ? require('../utils/annualFlowPilot').enabledForPlan(existingVersion)
       : require('../utils/annualFlowPilot').enabledForNewPlan(req.params.id);
+    // Legacy drafts must not be rejected for fields added by our own normalizer.
+    // Explicit new-flow input still goes through the version gate below.
+    moduleData = require('../utils/annualDraftCompatibility').preserveLegacyNutritionInput(moduleData, annualFlow, requestedAdvisorTargets);
     if (!annualFlow && (moduleData.nutrition_assessment?.advisorTargets !== undefined
       || moduleData.health_consensus?.records?.length
       || (moduleData.management_targets?.records || []).some(row => ['goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'rehabRelevant', 'actionTiming'].some(key => row[key] !== undefined))))
@@ -11683,17 +11809,22 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (plan.confirmedAt) return res.status(409).json({ success: false, message: '客户已确认本年度方案，新检查结果请走单项随访' });
     if (plan.pushedAt) {
       if (!plan.followUpReleasedAt || plan.distributionSyncedAt) return res.status(409).json({ success: false, message: '方案已推送；如需局部修改，请使用方案修订入口' });
-      const patient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist').lean();
+      const patient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist assignedHealthManager').lean();
       if (!patient || patient.isDeleted || String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '无权处理该会员' });
       if (plan.moduleData?.nutrition_assessment?.enabled !== false) {
         if (!patient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再重试分发' });
         await require('../utils/annualNutritionDispatch').dispatch(plan, patient, req.staff, FollowUp);
       }
       const dispatch = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
+      if (plan.moduleData?.monitoring?.clientAppUsage === 'no') {
+        const manager = await Admin.findOne({ _id: patient.assignedHealthManager, role: 'healthManager', tenantId: patient.tenantId,
+          staffStatus: { $in: ['active', null] } }).select('_id name').lean();
+        await require('../utils/manualAnnualMonitoringTasks').createManualAnnualMonitoringTasks({ plan, patient, manager, staffId: req.staff._id });
+      }
       if (!dispatch.warnings?.length) { plan.distributionSyncedAt = new Date(); await plan.save(); }
       return res.json({ success: true, data: plan, dispatch, retried: true });
     }
-    const recentCheckup = await require('../utils/annualReviewEligibility').check(req.params.id, { lookbackMonths: 3 });
+    const recentCheckup = await require('../utils/annualReviewEligibility').checkForAnnualPlan(req.params.id, plan.year);
     if (!recentCheckup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: recentCheckup.message });
     const hasLegacyNutritionAssessment = (plan.moduleData?.personalized_followups?.records || []).some(row =>
       require('../../../shared/annualNutrition.cjs').isRow(row) || /营养评估/.test(row.standardPlanName || ''));
@@ -11730,6 +11861,9 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     plan.markModified('moduleData');
     const issue = require('../utils/annualPlanPublishValidation').validate(plan.moduleData);
     if (issue) return res.status(400).json({ success:false, message:issue });
+    const monitoring = plan.moduleData?.monitoring;
+    if (monitoring?.enabled !== false && monitoring?.records?.length && !['yes', 'no'].includes(monitoring.clientAppUsage))
+      return res.status(400).json({ success: false, message: '请确认客户是否使用 App／小程序，再推送方案' });
     let nutritionPatient = null;
     if (closedLoop) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, targetYear);
@@ -11752,6 +11886,30 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       try { plan.moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(plan.moduleData || {}, patient?.assignedHealthManager, patient); }
       catch (error) { return res.status(400).json({success:false,message:error.message}); }
     }
+    // 新版年度方案的营养交接不依赖旧闭环灰度开关；推送时必须有实际负责人。
+    if (!nutritionPatient && require('../utils/annualFlowPilot').enabledForPlan(plan)
+      && plan.moduleData?.nutrition_assessment?.enabled !== false) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData.nutrition_assessment?.executionDate || ''))
+        return res.status(409).json({ success: false, message: '请先在营养干预中确定计划日期，再推送方案' });
+      nutritionPatient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist').lean();
+      if (!nutritionPatient || nutritionPatient.isDeleted || String(nutritionPatient.tenantId || '') !== String(req.staff.tenantId || ''))
+        return res.status(403).json({ success: false, message: '无权发布该会员的年度方案' });
+      if (!nutritionPatient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再推送方案' });
+      const nutritionist = await Admin.findOne({ _id: nutritionPatient.assignedNutritionist, role: 'nutritionist',
+        tenantId: nutritionPatient.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
+      if (!nutritionist) return res.status(409).json({ success: false, message: '责任营养师不可用，请先核对分配' });
+    }
+    let manualPatient = null, manualManager = null;
+    if (monitoring?.enabled !== false && monitoring?.records?.length && monitoring.clientAppUsage === 'no') {
+      try { require('../utils/manualAnnualMonitoring').manualMonitoringItems(plan.moduleData); }
+      catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+      if (!require('../utils/manualAnnualMonitoringTasks').firstFollowUpDate(monitoring.firstManualFollowUpDate))
+        return res.status(400).json({ success: false, message: '请确认人工监测首次随访日期，再推送方案' });
+      manualPatient = nutritionPatient || await User.findById(req.params.id).select('_id tenantId assignedHealthManager').lean();
+      manualManager = manualPatient?.assignedHealthManager && await Admin.findOne({ _id: manualPatient.assignedHealthManager,
+        role: 'healthManager', tenantId: manualPatient.tenantId, staffStatus: { $in: ['active', null] } }).select('_id name').lean();
+      if (!manualManager) return res.status(409).json({ success: false, message: '请先分配可用的责任健管专员，再推送方案' });
+    }
     const wasReturned = Boolean(plan.returnedAt);
     plan.reviewStatus = 'approved';
     plan.reviewedBy = req.staff._id;
@@ -11768,6 +11926,8 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     if (nutritionPatient && plan.moduleData?.nutrition_assessment?.enabled !== false) {
       await require('../utils/annualNutritionDispatch').dispatch(plan, nutritionPatient, req.staff, FollowUp);
     }
+    if (manualPatient) await require('../utils/manualAnnualMonitoringTasks').createManualAnnualMonitoringTasks({
+      plan, patient: manualPatient, manager: manualManager, staffId: req.staff._id });
     const dispatch = await require('../utils/annualPlanTaskSplit').syncAnnualPlanTaskSplit(plan);
     if (!dispatch.warnings?.length) { plan.distributionSyncedAt = new Date(); await plan.save(); }
     const { byCode } = require('../utils/annualPlanServiceVersions');
@@ -11794,7 +11954,7 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     }
     res.json({ success: true, data: plan, dispatch });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 });
 
@@ -13902,8 +14062,8 @@ router.patch('/user-messages/:messageId/recall', staffAuth, async (req, res) => 
   try {
     const msg = await Message.findById(req.params.messageId);
     if (!msg) return res.status(404).json({ success: false, message: '消息不存在' });
-    if (msg.type === 'user') {
-      return res.status(403).json({ success: false, message: '不能撤回用户发送的消息' });
+    if (msg.type === 'user' || msg.type === 'system' || String(msg.senderStaffId || '') !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '只能撤回自己发送的消息' });
     }
     const channelRole = msg.type;
     if (!assertRoleMatchesChannel(req.staff.role, channelRole)) {
@@ -14021,6 +14181,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       user:    req.params.userId,
       type:    msgType,
       sender:  senderLabel,
+      senderStaffId: req.staff._id,
       title:   `${staff.name} 回复了您的留言`,
       content: content.trim() || (audioUrl ? '[语音消息]' : savedFile ? '[文件]' : '图片'),
       imageUrl: imageUrls[0] || '', imageUrls,
@@ -14336,13 +14497,13 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       });
       if (!hasTargetYearTumorReport) reusedTumorSection = incrementalBase.sections.tumor_risk;
     }
-    const { sections: genResult, failed, validationError } = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => generateHealthSummarySections(user, {
+    const { sections: genResult, failed, validationError } = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => withAiContext({ circuitScope: 'health_summary', actorId: String(req.staff._id), tenantId: String(req.staff.tenantId || ''), stage: scope === 'nutrition' ? 'lifestyle_summary' : 'five_dimension' }, () => generateHealthSummarySections(user, {
       scope,
       existingSections: prevEntry.sections || null,
       analysisYear: year,
       incrementalBase: recheckFromSources || needsTumorRefresh ? null : incrementalBase,
       reusedTumorSection: recheckFromSources || needsTumorRefresh ? null : reusedTumorSection,
-    }));
+    })));
     // AI返回解析失败或本该生成的板块是空壳内容：不写入数据库，直接报错，避免前端显示"已生成"却看不到内容
     // （2026-07-07 赵菲盈反馈"生活方式评估提示已生成但实际没有"即此场景——此前空壳会被当成功写入）
     if (failed) {
@@ -15263,10 +15424,9 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权生成该会员的年度方案' });
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
-    const checkup = await require('../utils/annualReviewEligibility').check(user._id, { lookbackMonths: 3 });
-    if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
-
     const targetYear = Number(req.body.year) || new Date().getFullYear();
+    const checkup = await require('../utils/annualReviewEligibility').checkForAnnualPlan(user._id, targetYear);
+    if (!checkup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: checkup.message });
     if (!req.body.supplement) {
       const publishedPlan = await AnnualPlan.findOne({ patientId: user._id, year: targetYear,
         $or: [{ pushedAt: { $ne: null } }, { confirmedAt: { $ne: null } }] })
@@ -15367,7 +15527,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const { chat } = require('../utils/ai');
     const { nextAnnualCheckupDate, hepatitisBAllNegative, conciseTitle } = require('../utils/annualPlanGeneration');
-    const s = ais?.sections || {};
+    const s = require('../utils/aiHealthCheckupItems').approvedDoctorSections(ais, targetYear);
     const year = targetYear;
 
     const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
@@ -17795,7 +17955,7 @@ function shouldSkipParsedReportPage(parsed) {
   if (!parsed || typeof parsed !== 'object') return false;
   if (parsed.skipPage === true || SKIPPED_REPORT_PAGE_TYPES.has(str(parsed.pageType).toLowerCase())) return true;
   const title = str(parsed.pageTitle).replace(/\s+/g, '');
-  return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
+  return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|^(?:总检|总结|体检总结|体检汇总|报告总结|科普)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
 }
 
 const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
@@ -18940,8 +19100,10 @@ async function runReportParseControlled(reportId) {
   const useZheyiTemplate = !isPrescriptionReport && zheyiTemplate.isZheyiReport(report);
 
   const imagePageEvidence = {};
-  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence) => {
+  const examSectionsByPage = new Map();
+  const parseImage = createReportImageParser(rawParseImage, { report, onEvidence: (page, evidence, sections) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
+    if (sections?.length) examSectionsByPage.set(page, [...(examSectionsByPage.get(page) || []), ...sections]);
   } });
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
@@ -19080,9 +19242,7 @@ async function runReportParseControlled(reportId) {
             const firstPassItems = tagReportPageItems(p.items, pageNum)
               .map(item => isPrescriptionReport ? { ...item, itemType: 'medication', status: 'unknown' } : item);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-            const hasStructuredResults = firstPassItems.some(item => str(item.name)
-              && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
-            if (!isPrescriptionReport && shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+            if (!isPrescriptionReport && shouldSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
               okPages++;
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
@@ -19132,6 +19292,27 @@ async function runReportParseControlled(reportId) {
       // 这样既不会漏把空壳项标为成功，也不会把每一页都昂贵地重跑。
       if (!isPrescriptionReport && report.type !== 'body_comp' && isLargeScannedPdf && qualityRetryPages.size) {
         for (const pageNum of [...qualityRetryPages]) {
+          if (isComprehensiveCheckup) {
+            try {
+              const firstRows = allItems.filter(item => item._page === pageNum);
+              const localRows = await require('../utils/reportFirstPassScanFallback').recoverBlankScannedLabPage({
+                pdfBuffer: pdfBuf, pageNum, existingItems: firstRows,
+                readLayout: require('../utils/reportOcrWords').readPdfPageLayout,
+                renderPage: renderSinglePage,
+                extractTable: require('../utils/reportScanOcr').extractScannedLabTable,
+              });
+              if (localRows.length) {
+                allItems = allItems.concat(tagReportPageItems(localRows, pageNum));
+                const previousEvidence = imagePageEvidence[pageNum] || {};
+                imagePageEvidence[pageNum] = { ...previousEvidence, status: 'needs_review',
+                  message: [previousEvidence.message,
+                    `扫描表格本地OCR补出${localRows.length}条待核对候选；请逐行核对项目、数值、参考范围及异常标记。`].filter(Boolean).join(' ') };
+                console.log(`[parse-ai] 页${pageNum}低分辨率首轮为空，本地扫描表格补出${localRows.length}条待审核候选`);
+              }
+            } catch (error) {
+              console.log(`[parse-ai] 页${pageNum}本地扫描表格补提不可用: ${error.code || error.name || 'ERROR'}`);
+            }
+          }
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, 180);
             if (!img) continue;
@@ -19178,7 +19359,30 @@ async function runReportParseControlled(reportId) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
-            const firstRows = allItems.filter(it => it._page === pageNum);
+            let firstRows = allItems.filter(it => it._page === pageNum);
+            // A scanned lab page can be smaller than the large-PDF threshold.
+            // Recover only empty pages already selected for the normal
+            // page-coverage audit, so covers and template skips are not scanned.
+            if (isComprehensiveCheckup && !firstRows.length) {
+              try {
+                const localRows = await require('../utils/reportFirstPassScanFallback').recoverBlankScannedLabPage({
+                  pdfBuffer: pdfBuf, pageNum, existingItems: firstRows,
+                  readLayout: require('../utils/reportOcrWords').readPdfPageLayout,
+                  renderPage: renderSinglePage,
+                  extractTable: require('../utils/reportScanOcr').extractScannedLabTable,
+                });
+                if (localRows.length) {
+                  firstRows = tagReportPageItems(localRows, pageNum);
+                  allItems = allItems.concat(firstRows);
+                  const previousEvidence = imagePageEvidence[pageNum] || {};
+                  imagePageEvidence[pageNum] = { ...previousEvidence, status: 'needs_review',
+                    message: [previousEvidence.message,
+                      `扫描表格本地OCR补出${localRows.length}条待核对候选；请逐行核对项目、数值、参考范围及异常标记。`].filter(Boolean).join(' ') };
+                }
+              } catch (error) {
+                console.log(`[parse-ai] 页${pageNum}本地扫描表格补提不可用: ${error.code || error.name || 'ERROR'}`);
+              }
+            }
             const firstNames = firstRows.map(it => str(it.name)).filter(Boolean);
             const incompleteNames = firstRows.filter(it => ['lab', 'data'].includes(it.itemType) && !str(it.value))
               .map(it => str(it.name)).filter(Boolean);
@@ -19476,23 +19680,80 @@ async function runReportParseControlled(reportId) {
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
       const departmentNormalized = isPrescriptionReport ? cleanedItems : normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       const filteredItems = isPrescriptionReport ? departmentNormalized : fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
-      const classified = (isPrescriptionReport
+      let classified = (isPrescriptionReport
         ? stripReportSourceOrder(sortReportItemsBySource(filteredItems))
         : await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))))))))
         .map(item => normalizeExplicitNormalStatus({ ...item, examDate: normalizeReportDate(item.examDate) || item.examDate }));
+      // A searchable report may print lab columns as name/reference/unit/result.
+      // Reconcile its complete text-layer rows before the draft is saved, instead
+      // of leaving clear omissions for repeated manual page supplements.
+      if (!isPrescriptionReport && report.type === 'annual') {
+        const { readPdfPageLayout, readPdfPageTextBoxes } = require('../utils/reportOcrWords');
+        const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
+        const { parseTextNamedExamTable, parseCrossPageNamedExamTable,
+          filterUncoveredNamedExams } = require('../utils/reportTextNamedExamTable');
+        const { parseTextLabTable } = require('../utils/reportTextLabTable');
+        const { parseTextResultFirstLab } = require('../utils/reportTextResultFirstLab');
+        const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
+        const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
+        const { parseTextUltrasoundTable } = require('../utils/reportTextUltrasoundTable');
+        const { parseTextAikangExam } = require('../utils/reportTextAikangExam');
+        const missingTextRows = [];
+        for (let page = 1; page <= (knownTotalPages || totalPageCount); page++) {
+          try {
+            const layout = await readPdfPageLayout(pdfBuf, page);
+            let namedBoxes = null;
+            if (/项目名称\s+影像表现\s+诊断结论|(?:^|\n)\s*影像结果\s{2,}/.test(layout)) {
+              try { namedBoxes = await readPdfPageTextBoxes(pdfBuf, page); }
+              catch (error) { console.log(`[parse-ai] 第${page}页文字坐标不可用，继续文字层解析：${error.code || error.name || 'ERROR'}`); }
+            }
+            if (namedBoxes && page > 1) {
+              const previousLayout = await readPdfPageLayout(pdfBuf, page - 1);
+              const continuation = parseCrossPageNamedExamTable(previousLayout, namedBoxes, page);
+              if (continuation.supported) missingTextRows.push(...filterUncoveredNamedExams(
+                [...classified, ...missingTextRows], continuation.items));
+            }
+            for (const parser of [parseTextReferenceFirstLab, parseTextNamedExamTable,
+              parseTextLabTable, parseTextResultFirstLab, parseTextUrineTable, parseTextPhysicalExam,
+              parseTextUltrasoundTable, parseTextAikangExam]) {
+              const transcript = parser === parseTextNamedExamTable
+                ? parser(layout, page, namedBoxes) : parser(layout, page);
+              if (transcript.supported) missingTextRows.push(...(parser === parseTextNamedExamTable
+                ? filterUncoveredNamedExams([...classified, ...missingTextRows], transcript.items)
+                : transcript.items));
+            }
+          } catch (error) {
+            console.log(`[parse-ai] 第${page}页参考值前置表格读取失败：${error.code || error.name || 'ERROR'}`);
+          }
+        }
+        const { filterMissingReportItems } = require('../utils/reportPageSupplement');
+        const missing = filterMissingReportItems(classified, missingTextRows,
+          { preserveDistinctMeasuredSections: true });
+        if (missing.length) {
+          const classifiedMissing = (await classifyItemsAsync(missing)).map(normalizeExplicitNormalStatus);
+          classified = stripReportSourceOrder(sortReportItemsBySource([...classified, ...classifiedMissing]));
+          console.log(`[parse-ai] PDF参考值前置表格补齐 ${classifiedMissing.length} 条待审核行`);
+        }
+      }
       const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
       const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       // Searchable PDF pages are independently checked against printed result
       // rows. This audit records counts only and never adds an unverified item.
-      const textCoverage = !isPrescriptionReport && report.type === 'annual'
+      const textCoverage = !isPrescriptionReport && isComprehensiveCheckup
         ? await require('../utils/reportOcrWords').auditPdfTextCoverage(
           pdfBuf, classified, Array.from({ length: knownTotalPages || totalPageCount }, (_, i) => i + 1))
         : null;
       const textGapWarning = textCoverage?.uncoveredRows
         ? `⚠️ PDF文字层在第${textCoverage.pagesWithGaps.join('、')}页发现至少${textCoverage.uncoveredRows}条有结果的原文行未与草稿同名同值对应，请逐行核对；该数字是保守候选统计，不代表全部漏项。`
         : '';
+      const { applyExamSectionCoverage } = require('../utils/reportImageEvidence');
+      for (const [page, sections] of examSectionsByPage) {
+        imagePageEvidence[page] = applyExamSectionCoverage(imagePageEvidence[page], sections,
+          classified.filter(item => Number(item.sourcePage) === Number(page)));
+      }
       const summaryText = [...new Set([...summaries, ...Object.entries(imagePageEvidence).filter(([, e]) => e.message).map(([p, e]) => `第${p}页：${e.message}`)].map(s => s.trim()).filter(Boolean))].join('\n');
+      const imageEvidenceNeedsReview = Object.values(imagePageEvidence).some(evidence => evidence?.status === 'needs_review');
       const failedPages = totalPageCount - okPages;
       const failedPageList = [...new Set([...failedPageNumbers, ...qualityRetryPages])].sort((a, b) => a - b);
       const failedPageLabel = failedPageList.length ? `（第${failedPageList.join('、')}页）` : '';
@@ -19512,8 +19773,8 @@ async function runReportParseControlled(reportId) {
         imagePageEvidence,
         aiSummary:   reviewedSummary,
         aiStatus:    allFailed ? 'failed' : 'pending',
-        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${textCoverage?.uncoveredRows ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
-          ...(textCoverage ? { textCoverage } : {}) },
+        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${failedPages || textCoverage?.uncoveredRows || imageEvidenceNeedsReview ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
+          failedPages: failedPageList, ...(textCoverage ? { textCoverage } : {}) },
         institution, checkDate: resolvedCheckDate, reportYear: resolvedCheckDate ? Number(resolvedCheckDate.slice(0, 4)) : null,
       });
       if (!savedPdf) throw new Error('审核期间内容已修改，AI结果未覆盖人工数据');
@@ -19533,6 +19794,7 @@ async function runReportParseControlled(reportId) {
     let imageOkCount = 0;
     let lastRawText = '';
     const imageFailures = [];
+    const imageFailedPages = [];
     for (let imageIndex = 0; imageIndex < bufs.length; imageIndex++) {
       const cachedImage = report.parseJob?.imagePages?.[imageIndex + 1];
       if (cachedImage) {
@@ -19699,6 +19961,7 @@ async function runReportParseControlled(reportId) {
         await MedicalReport.findByIdAndUpdate(reportId, { $set: { [`parseJob.imagePages.${imageIndex + 1}`]: { items: imageItems.filter(item => Number(item.sourcePage) === imageIndex + 1), summary: parsedPage.summary || '', institution: imageInstitution, checkDate: imageCheckDate, evidence: imagePageEvidence[imageIndex + 1] } } });
       } catch (e) { rethrowAiControl(e);
         imageFailures.push(`第${imageIndex + 1}张：${e.message}`);
+        imageFailedPages.push(imageIndex + 1);
         console.log(`[parse-ai] 图片${imageIndex + 1}解析异常 ${reportId}: ${e.message}`);
       }
     }
@@ -19741,11 +20004,13 @@ async function runReportParseControlled(reportId) {
     const preservedSummary = completion.reason === 'revision_changed'
       ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 识别期间报告被编辑，本次结果未覆盖人工最新内容。`
       : keepExistingItems ? `${imgSummary}${imgSummary ? '\n' : ''}⚠️ 本次自动识别未提取到有效项目，已保留此前待审核结果。` : imgSummary;
+    const imageNeedsReview = imageFailures.length > 0 || imageOkCount < bufs.length
+      || Object.values(imagePageEvidence).some(evidence => evidence?.status === 'needs_review');
     const imageUpdate = {
       imagePageEvidence,
       aiSummary:   noReviewableItems ? `⚠️ 未提取到可审核项目：${failureDetail}` : preservedSummary,
       aiStatus:    noReviewableItems ? 'failed' : 'pending',
-      parseJob:    { status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `识别完成：${bufs.length}张，提取${resolvedImageItems.length}项` },
+      parseJob:    { status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), failedPages: imageFailedPages, message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `${imageNeedsReview ? '识别待核对' : '识别完成'}：${bufs.length}张，提取${resolvedImageItems.length}项${imageFailures.length ? `；${imageFailures.length}张识别失败` : ''}` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate),
       reportYear: (resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate)) ? Number(String(resolvedImageCheckDate || report.checkDate).slice(0, 4)) : null,
@@ -19786,7 +20051,7 @@ async function runReportPageParse(reportId, pageNum) {
 async function runReportPageParseControlled(reportId, pageNum) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
-  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, splitImageHorizontal, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
@@ -19796,17 +20061,22 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const regionEvidenceSections = new Map();
   const parseImage = createReportImageParser(rawParseImage, { report, verifyTableRows: true, onEvidence: (page, evidence, sections, options) => {
     recordPageEvidence(imagePageEvidence, page, evidence);
-    if (Number.isInteger(options?.regionIndex) && sections) regionEvidenceSections.set(options.regionIndex, sections);
+    if (Number.isInteger(options?.regionIndex) && sections) {
+      const prior = regionEvidenceSections.get(options.regionIndex) || [];
+      const seen = new Set(prior.map(section => `${section.title}|${section.clinicalText}`));
+      regionEvidenceSections.set(options.regionIndex, [...prior,
+        ...sections.filter(section => !seen.has(`${section.title}|${section.clinicalText}`))]);
+    }
   } });
 
-  const { findUncoveredPrintedRows } = require('../utils/reportImageEvidence');
+  const { findUncoveredPrintedRows, findUncoveredExamSections } = require('../utils/reportImageEvidence');
   const { alignSupplementCandidate, describeExistingReportItems, filterMissingReportItems, hasReportItemEvidence, inferMissingUltrasoundOrgans, mergeSupplementItems, supplementMatches } = require('../utils/reportPageSupplement');
   const belongsToRequestedPage = item => Number(item.sourcePage) === pageNum || (!item.sourcePage && pageNum === 1);
   const oldPageAtStart = (report.reportItems || []).filter(belongsToRequestedPage);
   const existingItemText = describeExistingReportItems(oldPageAtStart);
   const targetOrgans = inferMissingUltrasoundOrgans(oldPageAtStart);
   const targetText = targetOrgans.map(item => item.label).join('、');
-  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n程序已确认只缺：${targetText}。仅允许输出这些器官，不得输出任何其他项目。` : ''}\n只输出真实遗漏项目；已有同名同栏目项目的数值、所见或结论为空时可输出该项目补全。超声页若已有检查描述而“超声诊断”为空，须复读页面下方诊断栏，以同一项目名仅补原文diagnosis/conclusion；不要把诊断下方的分级解释或参考文献并入诊断。文字检查虽有非空所见，但原件同一结果栏还有后续编号段落时，也可用相同项目名输出从首行至末行的完整findings；不得另建检查项。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
+  const missingOnlyPrompt = `\n\n【差量补提——最高优先级】本页已有项目：${existingItemText || '无'}。${targetText ? `\n已有复合超声项目的所见疑似缺少：${targetText}；仅在该复合项目的原文确有对应内容时补全。还须检查本页其他独立检查栏目，不得因这个提示忽略心脏、前列腺、血管等真实遗漏项目。` : ''}\n只输出真实遗漏项目；已有同名同栏目项目的数值、所见或结论为空时可输出该项目补全。超声页若已有检查描述而“超声诊断”为空，须复读页面下方诊断栏，以同一项目名仅补原文diagnosis/conclusion；不要把诊断下方的分级解释或参考文献并入诊断。文字检查虽有非空所见，但原件同一结果栏还有后续编号段落时，也可用相同项目名输出从首行至末行的完整findings；不得另建检查项。人工已核对项目不会被程序覆盖。每个影像项的 findings 必须逐字抄录并包含对应器官原词，不得输出“未见明显异常回声”等无器官出处的通用句。lab/data 项没有原文数值时不得输出；如看不清或无遗漏，返回 items=[]，禁止猜测。`;
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
@@ -19850,12 +20120,32 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // Structured annual text-layer lab and department rows can be read locally
   // without consuming visual-model calls. Results remain unverified drafts.
   let localScan = null;
+  let textNarrativeCandidates = [];
   if (isPdf && report.type === 'annual') {
     try {
-      const { readPdfPageLayout } = require('../utils/reportOcrWords');
+      const { readPdfPageLayout, readPdfPageTextBoxes } = require('../utils/reportOcrWords');
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
       const { parseTextLabTable } = require('../utils/reportTextLabTable');
       const textCandidate = parseTextLabTable(layout, pageNum);
+      const { parseTextResultFirstLab } = require('../utils/reportTextResultFirstLab');
+      const resultFirstCandidate = parseTextResultFirstLab(layout, pageNum);
+      const { parseTextReferenceFirstLab } = require('../utils/reportTextReferenceFirstLab');
+      const referenceFirstCandidate = parseTextReferenceFirstLab(layout, pageNum);
+      const { parseTextNamedExamTable, parseCrossPageNamedExamTable,
+        filterUncoveredNamedExams } = require('../utils/reportTextNamedExamTable');
+      let namedBoxes = null;
+      if (/项目名称\s+影像表现\s+诊断结论|(?:^|\n)\s*影像结果\s{2,}/.test(layout)) {
+        try { namedBoxes = await readPdfPageTextBoxes(pdfBuf, pageNum); }
+        catch (error) { console.log(`[parse-page] P${pageNum} 文字坐标不可用，继续文字层解析：${error.code || error.name || 'ERROR'}`); }
+      }
+      const namedExamCandidate = parseTextNamedExamTable(layout, pageNum, namedBoxes);
+      const previousLayout = namedBoxes && pageNum > 1
+        ? await readPdfPageLayout(pdfBuf, pageNum - 1) : '';
+      const crossPageCandidate = previousLayout
+        ? parseCrossPageNamedExamTable(previousLayout, namedBoxes, pageNum) : { items: [] };
+      const missingNamedExams = filterUncoveredNamedExams(oldPageAtStart,
+        [...(namedExamCandidate.supported ? namedExamCandidate.items : []),
+          ...(crossPageCandidate.supported ? crossPageCandidate.items : [])]);
       const { parseTextUrineTable } = require('../utils/reportTextUrineTable');
       const urineCandidate = parseTextUrineTable(layout, pageNum);
       const { parseTextPhysicalExam } = require('../utils/reportTextPhysicalExam');
@@ -19868,13 +20158,24 @@ async function runReportPageParseControlled(reportId, pageNum) {
         && pageNum < Number(report.pdfPageCount || 0)) {
         ultrasoundCandidate = parseTextUltrasoundTable(layout, pageNum, await readPdfPageLayout(pdfBuf, pageNum + 1));
       }
-      if (textCandidate.supported || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported) {
-        localScan = { source: aikangCandidate.supported ? 'pdf_text_exam' : 'pdf_text', items: [
+      const { parseTextNarrativeFindings } = require('../utils/reportTextNarrativeFindings');
+      const narrativeCandidate = parseTextNarrativeFindings(layout, oldPageAtStart, pageNum);
+      if (narrativeCandidate.supported) textNarrativeCandidates = narrativeCandidate.items;
+      const narrativeOnly = narrativeCandidate.supported && !textCandidate.supported
+        && !resultFirstCandidate.supported && !referenceFirstCandidate.supported
+        && !missingNamedExams.length && !urineCandidate.supported && !physicalCandidate.supported
+        && !ultrasoundCandidate.supported && !aikangCandidate.supported;
+      if (textCandidate.supported || resultFirstCandidate.supported || referenceFirstCandidate.supported || missingNamedExams.length || urineCandidate.supported || physicalCandidate.supported || ultrasoundCandidate.supported || aikangCandidate.supported || narrativeCandidate.supported) {
+        localScan = { source: aikangCandidate.supported || narrativeOnly ? 'pdf_text_exam' : 'pdf_text', items: [
           ...(textCandidate.supported ? textCandidate.items : []),
+          ...(resultFirstCandidate.supported ? resultFirstCandidate.items : []),
+          ...(referenceFirstCandidate.supported ? referenceFirstCandidate.items : []),
+          ...missingNamedExams,
           ...(urineCandidate.supported ? urineCandidate.items : []),
           ...(physicalCandidate.supported ? physicalCandidate.items : []),
           ...(ultrasoundCandidate.supported ? ultrasoundCandidate.items : []),
           ...(aikangCandidate.supported ? aikangCandidate.items : []),
+          ...(narrativeCandidate.supported ? narrativeCandidate.items : []),
         ] };
       }
       if (!localScan || (localScan.source !== 'pdf_text_exam' && localScan.items.length < 25)) {
@@ -19884,7 +20185,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
         const { extractScannedLabTable } = require('../utils/reportScanOcr');
         const scanImage = await renderSinglePage(pdfBuf, pageNum, 300);
         const candidate = await extractScannedLabTable(Buffer.from(scanImage, 'base64'), pageNum);
-        if (candidate.supported && candidate.items.length >= 6
+        if (!missingNamedExams.length && candidate.supported && candidate.items.length >= 6
           && candidate.items.length > (localScan?.items.length || 0) + 5) {
           localScan = { ...candidate, source: 'local_ocr' };
         }
@@ -19902,16 +20203,27 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
   const { hasBroadLocalLabScan } = require('../utils/reportPageSupplement');
-  const useLocalScanOnly = localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
-  if (!useLocalScanOnly) await require('../utils/aiBudget').assertSupplementCallCapacity({ reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+  let useLocalScanOnly = localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
+  if (!useLocalScanOnly) {
+    try {
+      await require('../utils/aiBudget').assertSupplementCallCapacity(
+        { reportId: String(reportId), page: pageNum }, undefined, images.length * (runCoverageAudit ? 3 : 2));
+    } catch (error) {
+      if (!localScan?.items?.length || !['AI_PAGE_BUDGET_PAUSED', 'AI_BUDGET_PAUSED'].includes(error.code)) throw error;
+      useLocalScanOnly = true;
+      imagePageEvidence[pageNum] = { status: 'needs_review',
+        message: `视觉补提额度不足；已保留PDF文字层的${localScan.items.length}条候选供人工逐项核对，其他栏目仍需对照原件。` };
+    }
+  }
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
-  for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
+  const regionSplitDepths = images.map(() => 0);
+  regionLoop: for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length === 4
-        ? `这是第${pageNum}页自上而下的第${regionIndex + 1}/4分区，边界有重叠；`
+      const regionHint = images.length >= 4
+        ? `这是第${pageNum}页自上而下的第${regionIndex + 1}/${images.length}分区，边界有重叠；`
         : images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
@@ -19924,6 +20236,15 @@ async function runReportPageParseControlled(reportId, pageNum) {
       // output cap. A fresh request uses four narrower bands and is preflighted
       // against the full per-page call budget before changing any report items.
       if (error.code === 'AI_OUTPUT_LENGTH') {
+        if (isPdf && report.type === 'annual' && images.length >= 4 && regionSplitDepths[regionIndex] === 0) {
+          const halves = await splitImageHorizontal(Buffer.from(images[regionIndex], 'base64'));
+          if (halves.length !== 2 || halves.some(image => !image)) throw new Error(`第${pageNum}页分段渲染不完整`);
+          // Keep earlier successful regions; only retry this truncated crop.
+          images.splice(regionIndex, 1, ...halves);
+          regionSplitDepths.splice(regionIndex, 1, 1, 1);
+          regionIndex--;
+          continue regionLoop;
+        }
         const canNarrow = isPdf && report.type === 'annual' && images.length < 4;
         const message = canNarrow
           ? `第${pageNum}页输出过长；请再次点击补提，系统将改用四段识别，已有审核结果保持不变`
@@ -19962,6 +20283,30 @@ async function runReportPageParseControlled(reportId, pageNum) {
         }
       }
     }
+    if (report.type === 'annual') {
+      const uncoveredExams = findUncoveredExamSections(regionEvidenceSections.get(regionIndex),
+        [...oldPageAtStart, ...parsedItems, ...regionItems]).titles;
+      if (uncoveredExams.length) {
+        let capacity = true;
+        try {
+          await require('../utils/aiBudget').assertSupplementCallCapacity(
+            { reportId: String(reportId), page: pageNum }, undefined,
+            1 + 2 * (images.length - regionIndex - 1));
+        } catch (error) { rethrowAiControl(error); capacity = false; }
+        if (capacity) {
+          try {
+            const focusedRaw = await parseImage(images[regionIndex],
+              `${reportParsePromptForCategory(report.documentCategory)}\n\n【遗漏检查栏目定向补提】独立原文转录发现以下检查栏目尚未进入本页草稿：${uncoveredExams.slice(0, 6).join('、')}。只输出本图可见的这些独立栏目，每个栏目单独一项，保留原栏目名、检查所见和诊断结论的原文及否定词；不要沿用相邻栏目的内容。看不清的字段留空，不要猜测。`,
+              { sourcePage: pageNum, regionIndex, stage: 'focused_exam_supplement',
+                isUrl: false, model: 'qwen-vl-plus', maxTokens: 3500, timeoutMs: 180000 });
+            const focused = safeParseJSON(focusedRaw);
+            if (Array.isArray(focused?.items)) regionItems = mergeCoverageAuditItems(regionItems, focused.items);
+          } catch (error) { rethrowAiControl(error);
+            console.log(`[parse-page] ${reportId} P${pageNum} 遗漏检查栏目定向补提未完成: ${error.message}`);
+          }
+        }
+      }
+    }
     // 两段页做覆盖复核；四段页已有重叠分区，保留独立原文校验并避免超出默认调用额度。
     if (!runCoverageAudit) {
       parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
@@ -19986,6 +20331,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
       pageParseStatus: { pageNum, status: 'image_only', startedAt: report.pageParseStatus?.startedAt || new Date(),
         completedAt: new Date(), itemCount: 0,
         message: `${evidence.message} 已有条目不自动改写，请人工核对。` },
+      [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: 'image_only',
+        completedAt: new Date(), itemCount: 0, message: evidence.message },
     } });
     return;
   }
@@ -20008,9 +20355,16 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item, supplementOptions).length && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
   const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !supplementMatches(deletedItems, item, supplementOptions).length), supplementOptions);
-  const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
   const mergedPage = supplementMerge.items;
-  const classifiedPage = (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus);
+  const { enforceTextNarrativeExtensions, sameReportItem } = require('../utils/reportPageSupplement');
+  const narrativeGuard = enforceTextNarrativeExtensions(
+    (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus), textNarrativeCandidates);
+  const classifiedPage = narrativeGuard.items;
+  const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched]
+    .map(item => narrativeGuard.enriched.find(updated => sameReportItem(updated, item)) || item);
+  for (const updated of narrativeGuard.enriched) {
+    if (!acceptedSupplementItems.some(item => sameReportItem(item, updated))) acceptedSupplementItems.push(updated);
+  }
   const preserved = (latest.reportItems || []).filter(item => !belongsToRequestedPage(item));
   const combined = stripReportSourceOrder(sortReportItemsBySource([...preserved, ...classifiedPage]));
   const completedAt = new Date();
@@ -20025,7 +20379,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
     acceptedItems: acceptedSupplementItems,
     afterItems: classifiedPage,
   }].slice(-3);
-  const pageEvidence = imagePageEvidence[pageNum];
+  const { applyExamSectionCoverage } = require('../utils/reportImageEvidence');
+  const pageEvidence = applyExamSectionCoverage(imagePageEvidence[pageNum],
+    [...regionEvidenceSections.values()].flat(), classifiedPage);
   const candidateDiagnostics = { existing: 0, withoutResult: 0, other: 0 };
   if (!acceptedSupplementItems.length) {
     for (const candidate of parsedItems) {
@@ -20046,6 +20402,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
       : parsedItems.length
         ? `第${pageNum}页识别到${parsedItems.length}项候选${candidateDetail}，未形成可接纳的新项目，已保留原${oldPage.length}项，请核对遗漏`
         : `第${pageNum}页AI未读到可接纳的遗漏项目，已保留原${oldPage.length}项，请对照原件核对是否漏提`;
+  const pageNeedsReview = Boolean(localScan) || pageEvidence?.status === 'needs_review';
+  const finalMessage = pageNeedsReview && pageEvidence?.message
+    ? `${resultMessage} ${pageEvidence.message}` : resultMessage;
   const savedSupplement = await MedicalReport.findOneAndUpdate({ _id: reportId, reviewRevision: reviewRevisionMatch(latest.reviewRevision),
     'pageParseStatus.status': 'processing', 'pageParseStatus.pageNum': pageNum,
     'pageParseStatus.startedAt': report.pageParseStatus?.startedAt }, {
@@ -20053,7 +20412,9 @@ async function runReportPageParseControlled(reportId, pageNum) {
       reportItems: combined,
       ...(pageEvidence ? { [`imagePageEvidence.${pageNum}`]: pageEvidence } : {}),
       aiStatus: 'pending',
-      pageParseStatus: { pageNum, status: localScan ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: resultMessage, itemCount: acceptedSupplementItems.length },
+      pageParseStatus: { pageNum, status: pageNeedsReview ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: finalMessage, itemCount: acceptedSupplementItems.length },
+      [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: pageNeedsReview ? 'needs_review' : acceptedSupplementItems.length ? 'success' : 'needs_review',
+        startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt, message: finalMessage, itemCount: acceptedSupplementItems.length },
       pageParseHistory,
     },
     $inc: { reviewRevision: 1 },
@@ -20144,13 +20505,18 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
       return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
     }
     const claimStartedAt = new Date();
-    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(claimStartedAt.getTime() - PAGE_PARSE_STALE_MS) } }, { 'pageParseStatus.startedAt': { $exists: false } }] }, { pageParseStatus: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` } });
+    const pageClaim = await MedicalReport.findOneAndUpdate({ _id: report._id, archiveOnly: { $ne: true }, aiStatus: { $ne: 'processing' }, 'parseJob.status': { $ne: 'paused' }, $or: [{ 'pageParseStatus.status': { $ne: 'processing' } }, { 'pageParseStatus.startedAt': { $lt: new Date(claimStartedAt.getTime() - PAGE_PARSE_STALE_MS) } }, { 'pageParseStatus.startedAt': { $exists: false } }] }, {
+      pageParseStatus: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` },
+      [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: 'processing', startedAt: claimStartedAt, message: `正在补提第${pageNum}页` },
+    });
     if (!pageClaim) return res.status(409).json({ success: false, message: '报告正在识别、补提或已暂停，请勿重复提交' });
     runReportPageParse(report._id, pageNum).catch(async error => {
       console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);
       await MedicalReport.findOneAndUpdate({ _id: report._id, 'pageParseStatus.status': 'processing',
         'pageParseStatus.pageNum': pageNum, 'pageParseStatus.startedAt': claimStartedAt },
-      { pageParseStatus: { pageNum, status: 'failed', startedAt: claimStartedAt, completedAt: new Date(), message: error.message } }).catch(() => {});
+      { pageParseStatus: { pageNum, status: 'failed', startedAt: claimStartedAt, completedAt: new Date(), message: error.message },
+        [`pageParseStatusByPage.${pageNum}`]: { pageNum, status: 'failed', startedAt: claimStartedAt,
+          completedAt: new Date(), message: error.message } }).catch(() => {});
     });
     res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
   } catch (err) {
@@ -20251,20 +20617,23 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
   }
 });
 
-// POST /staff/patients/:id/reports/:rid/reclassify — 只对报告里未归类项重跑自动归类。
-// 已归类项可能经过医护人工确认，screeningKey 是权威结果，重新归类时不得覆盖。
+// POST /staff/patients/:id/reports/:rid/reclassify — 重新计算待归类项；
+// 医护明确请求时也刷新系统自动归类，始终保留人工确认的分类。
 router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id }).lean();
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const { classifyItemsAsync, hasConfirmedClassification } = require('../utils/screeningMatch');
+    const { shouldReclassifyReportItem } = require('../utils/reportClassificationReview');
     const originalItems = report.reportItems || [];
+    const refreshAutomatic = req.body?.refreshAutomatic === true;
     const pendingIndexes = [];
     const pendingItems = [];
     originalItems.forEach((item, index) => {
-      if (!hasConfirmedClassification(item)) {
+      if (shouldReclassifyReportItem(item, refreshAutomatic, hasConfirmedClassification)) {
         pendingIndexes.push(index);
-        pendingItems.push(item);
+        pendingItems.push({ ...item, screeningKey: '', screeningKeys: [], screeningCategory: '',
+          screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 });
       }
     });
     const newlyClassified = await classifyItemsAsync(pendingItems);

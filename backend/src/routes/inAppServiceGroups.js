@@ -16,6 +16,7 @@ const MedicalReport = require('../models/MedicalReport');
 const materials = require('../utils/inAppGroupMaterials');
 const StaffRole = require('../models/StaffRole');
 const assistant = require('../utils/serviceGroupAssistant');
+const customerMentionDisplay = require('../utils/groupCustomerMentionDisplay');
 const { assignmentFields, assignedIds, canUseGroupModule, isAssignedHealthManager, isAssignedLeader, canCustomerAccess, canStaffAccess,
   canMentorObserve, needsStaffReply, same } = require('../utils/inAppServiceGroupPolicy');
 
@@ -75,7 +76,7 @@ function leaderCanObserve(patient, staff, group) {
     (group.memberIds || []).length > 0;
 }
 async function recentMessages(group, before, extra={}) {
-  const filter={ ...extra, groupId: group._id, tenantId: group.tenantId };
+  const filter={ ...extra, groupId: group._id, tenantId: group.tenantId, recalled:{$ne:true} };
   if(before){const anchor=await Message.findOne({_id:validId(before),...filter}).select('createdAt').lean();if(!anchor)fail('消息不存在',404);filter.$or=[{createdAt:{$lt:anchor.createdAt}},{createdAt:anchor.createdAt,_id:{$lt:anchor._id}}];}
   const rows = await Message.find(filter)
     .sort({ createdAt: -1, _id: -1 }).limit(100).lean();
@@ -96,9 +97,9 @@ async function serializeMessages(group,rows) {
     return { id:row.materialReportId, title:report?.title || '医疗资料', status:materials.statusOf(report),
       mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signStoredUrl(url,report.ossKeys?.[i] || '')) };
   };
-  const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId}).select('senderName content audioUrl fileUrl fileMimeType materialReportId').lean();
+  const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true}}).select('senderName content audioUrl fileUrl fileMimeType materialReportId').lean();
   const quoteMap=new Map(quoted.map(q=>[String(q._id),{id:q._id,senderName:q.senderName,content:q.audioUrl?'[语音消息]':q.fileUrl?(q.fileMimeType?.startsWith('image/')?'[图片]':'[文件]'):q.materialReportId?'[医疗资料]':q.content.slice(0,180)}]));
-  return rows.map(row => ({ id: row._id, quote:row.quotedMessageId?(quoteMap.get(String(row.quotedMessageId))||{unavailable:true,content:'原消息已不可用'}):null, senderType: row.senderType,
+  return rows.map(row => ({ id: row._id, senderId:row.senderId, quote:row.quotedMessageId?(quoteMap.get(String(row.quotedMessageId))||{unavailable:true,content:'原消息已不可用'}):null, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
     audioUrl:row.audioUrl?require('../utils/oss').signStoredUrl(row.audioUrl):'',audioDuration:row.audioDuration||0,audioTranscript:row.audioTranscript||'',
@@ -119,7 +120,7 @@ async function send(group, senderType, sender, content, rawMentions = [], audioF
   const body = contentOf(content);
   if (!body || body.length > 2000) fail('请输入不超过2000字的消息', 400);
   if (mentions.some(m=>m.kind==='ai')) await require('../utils/aiDataConsent').assertPermission(patient._id,'assistant','qwen');
-  if(quotedMessageId&&!await Message.exists({_id:validId(quotedMessageId),groupId:group._id,tenantId:group.tenantId}))fail('引用的消息不在此群内',400);
+  if(quotedMessageId&&!await Message.exists({_id:validId(quotedMessageId),groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true}}))fail('引用的消息不在此群内',400);
   const message = await Message.create({ ...audioFields, quotedMessageId:quotedMessageId||undefined,wecomAlertEligible:senderType==='customer',staffPushEligible:senderType==='customer', tenantId: group.tenantId, groupId: group._id,
     patientId: group.patientId, senderType, senderId: sender._id,
     senderName: sender.name || '服务成员', content: body, mentions });
@@ -144,7 +145,7 @@ customerRouter.get('/:groupId/messages/:messageId/file', wrap(async (req, res) =
   const { group } = await groupAndPatient(req.params.groupId, req.user.tenantId, true);
   if (!canCustomerAccess({ ...group, status: 'active' }, req.user)) fail('无权查看服务群');
   const message = await Message.findOne({ _id: validId(req.params.messageId), groupId: group._id,
-    tenantId: group.tenantId, fileUrl: { $nin: ['', null] } }).select('fileUrl fileName').lean();
+    tenantId: group.tenantId, recalled:{$ne:true}, fileUrl: { $nin: ['', null] } }).select('fileUrl fileName').lean();
   if (!message) fail('文件不存在', 404);
   await require('../utils/chatFileDownload').sendChatFile(res, message);
 }));
@@ -208,8 +209,8 @@ customerRouter.get('/', wrap(async (req, res) => {
   res.json({ success: true, data: await Promise.all(groups.map(async group =>
     ({ ...summary(group, req.user, await groupStaff(group, req.user)),
       unreadCount: await InboxMessage.countDocuments({ user: req.user._id, unread: true, 'action.type': 'service_group', 'action.groupId': String(group._id) }),
-      mentionCount: await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,mentions:{$elemMatch:{id:req.user._id,kind:'customer'}},mentionReadBy:{$ne:req.user._id}}),
-      preview: (await Message.findOne({ groupId: group._id, tenantId: group.tenantId }).sort({ createdAt: -1, _id: -1 }).select('content').lean())?.content?.slice(0, 100) || '' }))) });
+      mentionCount: await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true},mentions:{$elemMatch:{id:req.user._id,kind:'customer'}},mentionReadBy:{$ne:req.user._id}}),
+      preview: customerMentionDisplay.removeCustomerRoleLabel((await Message.findOne({ groupId: group._id, tenantId: group.tenantId,recalled:{$ne:true} }).sort({ createdAt: -1, _id: -1 }).select('content').lean())?.content || '', req.user.name).slice(0, 100) }))) });
 }));
 customerRouter.post('/', wrap(async (req, res) => {
   fail('请等待健管专员配置服务群成员', 409);
@@ -224,13 +225,13 @@ customerRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const firstUnread = data.find(row => unreadKeys.has(`in-app-service-group:${row.id}`));
   if (unread.length) await InboxMessage.updateMany({ user: req.user._id, _id: { $in: unread.map(row => row._id) }, unread: true }, { $set: { unread: false, readAt: new Date() } });
   await Message.updateMany({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},mentions:{$elemMatch:{id:req.user._id,kind:'customer'}}},{$addToSet:{mentionReadBy:req.user._id}});
-  res.json({ success: true, data, hasMore: data.length === 100, firstUnreadMessageId: firstUnread?.id || null });
+  res.json({ success: true, data: data.map(message => customerMentionDisplay.forCustomer(message, req.user.name)), hasMore: data.length === 100, firstUnreadMessageId: firstUnread?.id || null });
 }));
 async function transcribeGroupMessage(req,res){
  const {group,observed}=await readableHistoryGroup(req);
  if(!mongoose.isValidObjectId(req.params.messageId))fail('无效语音消息',400);
  await logHistoryView(req,group,1,observed);
- const message=await Message.findOne({_id:req.params.messageId,groupId:group._id,tenantId:group.tenantId});
+ const message=await Message.findOne({_id:req.params.messageId,groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true}});
  if(!message?.audioUrl)fail('语音不存在',404);
  // Staff may view a customer-authorized transcript but cannot grant consent for them.
  await require('../utils/aiDataConsent').assertPermission(group.patientId,'speech','aliyun-nls');
@@ -367,7 +368,7 @@ staffRouter.get('/', wrap(async (req, res) => {
       leaderCanObserve(patient, req.staff, group));
     const canConfigure = leaderCanConfigure(patient, req.staff);
     if (direct || supervised)
-      data.push({...summary(group, patient, await groupStaff(group, patient), !direct, canConfigure), mentionCount: direct ? await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,mentions:{$elemMatch:{id:req.staff._id,kind:'staff'}},mentionReadBy:{$ne:req.staff._id}}) : 0});
+      data.push({...summary(group, patient, await groupStaff(group, patient), !direct, canConfigure), mentionCount: direct ? await Message.countDocuments({groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true},mentions:{$elemMatch:{id:req.staff._id,kind:'staff'}},mentionReadBy:{$ne:req.staff._id}}) : 0});
   }
   res.json({ success: true, data, page, hasMore,
     canConfigure: req.staff.role === 'superadmin' ||
@@ -477,11 +478,11 @@ const historyHandler=wrap(async(req,res)=>{
   }
   const data=await recentMessages(group,req.query.before,filter);
   await logHistoryView(req,group,data.length,observed);
-  res.json({success:true,data:[...data].reverse(),hasMore:data.length===100,nextBefore:data[0]?.id || null});
+  res.json({success:true,data:[...data].reverse().map(message => req.user ? customerMentionDisplay.forCustomer(message, req.user.name) : message),hasMore:data.length===100,nextBefore:data[0]?.id || null});
 });
 const historyContextHandler=wrap(async(req,res)=>{
   const {group,observed}=await readableHistoryGroup(req);
-  const scope={groupId:group._id,tenantId:group.tenantId};
+  const scope={groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true}};
   const anchor=await Message.findOne({...scope,_id:validId(req.params.messageId)}).lean();
   if(!anchor)fail('消息不存在',404);
   const [before,after]=await Promise.all([
@@ -490,7 +491,7 @@ const historyContextHandler=wrap(async(req,res)=>{
   ]);
   const data=await serializeMessages(group,[...before.reverse(),anchor,...after]);
   await logHistoryView(req,group,data.length,observed);
-  res.json({success:true,data,anchorId:anchor._id});
+  res.json({success:true,data:req.user ? data.map(message => customerMentionDisplay.forCustomer(message, req.user.name)) : data,anchorId:anchor._id});
 });
 for(const router of [staffRouter,customerRouter]) {
  router.get('/:groupId/history',historyHandler);
@@ -506,9 +507,35 @@ staffRouter.get('/:groupId/messages', wrap(async (req, res) => {
   const data = await recentMessages(group, req.query?.before);
   if (supervised) await View.create({ tenantId: group.tenantId, groupId: group._id,
     patientId: patient._id, viewerId: req.staff._id, messageCount: data.length });
-  const unread = await Message.find({groupId:group._id,tenantId:group.tenantId,_id:{$in:data.map(m=>m.id)},mentions:{$elemMatch:{id:req.staff._id,kind:'staff'}},mentionReadBy:{$ne:req.staff._id}}).sort({createdAt:1}).select('_id').lean();
+  const unread = await Message.find({groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true},_id:{$in:data.map(m=>m.id)},mentions:{$elemMatch:{id:req.staff._id,kind:'staff'}},mentionReadBy:{$ne:req.staff._id}}).sort({createdAt:1}).select('_id').lean();
   await Message.updateMany({_id:{$in:unread.map(m=>m._id)}},{$addToSet:{mentionReadBy:req.staff._id}});
   res.json({ success: true, data, hasMore: data.length === 100, supervised, firstMentionMessageId:unread[0]?._id || null });
+}));
+staffRouter.patch('/:groupId/messages/:messageId/recall', wrap(async (req, res) => {
+  const {group,patient}=await groupAndPatient(req.params.groupId,req.staff.tenantId,true);
+  if(!canStaffAccess({...group,status:'active'},patient,req.staff))fail('仅当前入群人员可撤回自己的消息');
+  await events.withGroupLock(group._id,group.tenantId,async () => {
+    const scope={_id:validId(req.params.messageId),groupId:group._id,tenantId:group.tenantId,
+      senderType:'staff',senderId:req.staff._id,recalled:{$ne:true}};
+    const message=await Message.findOne(scope).select('createdAt').lean();
+    if(!message)fail('消息不存在或不能撤回',404);
+    if(Date.now()-new Date(message.createdAt).getTime()>120000)fail('超过2分钟，无法撤回',400);
+    const changed=await Message.updateOne({...scope,createdAt:{$gte:new Date(Date.now()-120000)}},
+      {$set:{recalled:true,recalledAt:new Date()}});
+    if(!changed.modifiedCount)fail('超过2分钟或消息已撤回',400);
+    const visible={groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true}};
+    const [latest,customer,staff]=await Promise.all([
+      Message.findOne(visible).sort({createdAt:-1,_id:-1}).select('createdAt').lean(),
+      Message.findOne({...visible,senderType:'customer'}).sort({createdAt:-1,_id:-1}).select('createdAt').lean(),
+      Message.findOne({...visible,senderType:{$in:['staff','ai']}}).sort({createdAt:-1,_id:-1}).select('createdAt').lean(),
+    ]);
+    const dates=[['lastMessageAt',latest],['lastCustomerMessageAt',customer],['lastStaffMessageAt',staff]];
+    await Group.updateOne({_id:group._id,tenantId:group.tenantId},{$set:Object.fromEntries(dates.filter(([,row])=>row).map(([key,row])=>[key,row.createdAt])),
+      $unset:Object.fromEntries(dates.filter(([,row])=>!row).map(([key])=>[key,1]))});
+    await InboxMessage.updateMany({dedupeKey:`in-app-service-group:${message._id}`,user:patient._id},
+      {$set:{recalled:true,unread:false}});
+  });
+  res.json({success:true,message:'已撤回'});
 }));
 staffRouter.post('/:groupId/presence', wrap(async (req, res) => {
   const { group, patient } = await groupAndPatient(req.params.groupId, req.staff.tenantId);

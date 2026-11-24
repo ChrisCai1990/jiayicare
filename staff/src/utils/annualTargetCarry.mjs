@@ -39,6 +39,19 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
     next.nutrition_assessment = { ...existingNutrition, enabled: true,
       ...(dateFromSource ? { executionDate: suggested, screeningSuggestedDate: suggested } : {}) }
   }
+  const monitoringDrafts = draftActions.filter(action => action.key === 'monitoring').map(action => action.record)
+  const oldMonitoring = modules.monitoring?.records || []
+  const monitoringIds = new Set(monitoringDrafts.flatMap(row => row.sourceIds || []).map(String))
+  const keptMonitoring = oldMonitoring.filter(row => !row.screeningDraft || (row.sourceIds || []).some(id => monitoringIds.has(String(id))))
+    .filter(row => !row.screeningDraft || monitoringDrafts.some(draft => draft.metricType === row.metricType && draft.sourceIds?.some(id => row.sourceIds?.includes(id))))
+  const monitoringRows = keptMonitoring.map(row => {
+    if (!row.screeningDraft) return row
+    const draft = monitoringDrafts.find(item => item.metricType === row.metricType && item.sourceIds?.some(id => row.sourceIds?.includes(id)))
+    return draft ? { ...row, items: draft.items, measurementPeriod: draft.measurementPeriod,
+      ...(draft.frequency !== undefined ? { frequency: draft.frequency } : {}) } : row
+  })
+  for (const draft of monitoringDrafts) if (!monitoringRows.some(row => row.metricType === draft.metricType && row.sourceIds?.some(id => draft.sourceIds?.includes(id)))) monitoringRows.push({ ...draft, screeningDraft: true })
+  if (JSON.stringify(monitoringRows) !== JSON.stringify(oldMonitoring)) next.monitoring = { ...(modules.monitoring || {}), enabled: true, records: monitoringRows }
   for (const key of ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine']) {
     if (modules[key]?.enabled === false) continue
     const sourceDrafts = draftActions.filter(action => action.key === key).map(action => action.record)

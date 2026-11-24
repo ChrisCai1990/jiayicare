@@ -22,7 +22,7 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     const reportPageKey = ctx.business === 'ocr' && Boolean(ctx.reportId) && pageKey;
     const key = ctx.business === 'ocr' && ctx.reportId
       ? `${provider}:${model}:report:${ctx.reportId}${reportPageKey ? `:page:${page}` : ''}`
-      : `${provider}:${model}`;
+      : ctx.circuitScope === 'health_summary' ? `${provider}:${model}:health_summary` : `${provider}:${model}`;
     const circuitLabel = reportPageKey ? `本报告第 ${page} 页` : '本报告';
     let policy, rate, estimatedMicros;
     try {
@@ -30,7 +30,7 @@ function createBudgetRunner(db = store, now = () => new Date()) {
       policy = await db.policy();
       if (policy.paused || (ctx.business === 'ocr' && policy.ocrPaused)) throw new AiControlError('AI 调用已由管理员暂停');
       if (ctx.deadline && started.getTime() >= ctx.deadline) throw new AiControlError('本次 OCR 已到运行时限，已暂停');
-      if ((await db.circuit(key))?.paused) throw new AiControlError(ctx.reportId ? `${circuitLabel}连续调用异常，已暂停，请管理员检查后恢复；其他页面和报告可继续` : '模型连续异常，已自动暂停，请管理员检查后恢复', reportPageKey ? 'AI_PAGE_CIRCUIT_PAUSED' : 'AI_CIRCUIT_PAUSED');
+      if ((await db.circuit(key))?.paused) throw new AiControlError(ctx.reportId ? `${circuitLabel}连续调用异常，已暂停，请管理员检查后恢复；其他页面和报告可继续` : '该类 AI 调用此前连续异常，已暂停；本次未发送模型请求，请管理员核查用量记录后恢复', reportPageKey ? 'AI_PAGE_CIRCUIT_PAUSED' : 'AI_CIRCUIT_PAUSED');
       rate = policy.prices?.[model];
       if ((policy.dailyYuan || policy.monthlyYuan) && !rate) throw new AiControlError(`模型 ${model} 未配置单价，金额预算启用后禁止调用`);
       estimatedMicros = costMicros(estimate, rate);
@@ -75,7 +75,10 @@ function createBudgetRunner(db = store, now = () => new Date()) {
     const failed = Boolean(error || result?.error || malformed || emptyOutput || outputTruncated);
     try {
       // Truncation/invalid JSON are extraction failures, not service failures.
-      await db.outcome(key, Boolean(error || result?.error), policy.failureThreshold);
+      // Supplier content rejection is local to this request, not a model outage.
+      // Keep failure accounting and the rejection; do not retry or trip a global circuit.
+      const contentRejected = !error && result?.error?.code === 'data_inspection_failed';
+      if (!contentRejected) await db.outcome(key, Boolean(error || result?.error), policy.failureThreshold);
       // Missing usage (including timeout) retains its entire reservation. Never refund it
       // merely because our client disconnected; the supplier may have executed the request.
       if (usage) for (const scope of reserved) {

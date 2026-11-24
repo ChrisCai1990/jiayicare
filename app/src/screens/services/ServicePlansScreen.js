@@ -576,7 +576,7 @@ export default function ServicePlansScreen({ navigation, route }) {
         visit_time: '就医时间', hospital: '就医/体检医院', department: '就诊科室',
         expert: '专家姓名', reason: '原因', coordinator: '协调专员',
         plan_time: '计划时间', plan_method: '方式', purpose: '目的',
-        items: '项目', time: '时间', frequency: '频率',
+        items: '项目', time: '时间', measurementPeriod: '监测时段', frequency: '监测周期',
         name: '名称', brand: '品牌', dose: '剂量',
         escort: '陪检服务', institution: '体检机构',
         chemical_name: '药品名', brand_name: '商品名',
@@ -634,11 +634,18 @@ export default function ServicePlansScreen({ navigation, route }) {
       const displayItemRows = item => item.moduleKey === 'annual_checkup' ? [
         ['体检日期', item.schedule || '待确定'],
         ['计划体检机构', item.careTarget?.hospital || '待确定'],
+        ['下一年度重点关注项目', item.focus],
         ['体检服务方式', [item.service?.modeLabel || '仅提醒', item.service?.typeLabel].filter(Boolean).join(' · ')],
-      ] : [
-        ['管理目标', item.goal],
-        ['完成标准', item.completionStandard],
-        ['建议时间', item.schedule],
+      ] : item.moduleKey === 'monitoring' ? [
+        ['监测时段', item.measurementPeriod],
+        ['监测周期', item.frequency],
+        ['注意事项', item.precautions],
+      ].filter(([, value]) => value && String(value).trim()) : [
+        ['本次目标', item.goal],
+        ['复查项目', item.reviewItems?.join('、')],
+        ['具体安排', item.interventionPlan],
+        ['完成后', item.completionStandard],
+        ['安排时间', item.schedule],
         ['执行频率', item.frequency],
         ['需要您完成', item.customerAction],
         ['医院／机构', item.careTarget?.hospital],
@@ -650,6 +657,18 @@ export default function ServicePlansScreen({ navigation, route }) {
       ].filter(([, value]) => value && String(value).trim());
       const displayItemName = item => item.title === item.category || item.title?.startsWith(`${item.category} · `)
         ? item.title : `${item.category} · ${item.title}`;
+      const groupMonitoring = items => {
+        const monitoring = items.filter(item => item.moduleKey === 'monitoring');
+        if (!monitoring.length) return items;
+        if (monitoring.length === 1 && Array.isArray(monitoring[0].monitoringItems)) return items;
+        let inserted = false;
+        return items.flatMap(item => {
+          if (item.moduleKey !== 'monitoring') return [item];
+          if (inserted) return [];
+          inserted = true;
+          return [{ moduleKey: 'monitoring', id: 'monitoring', title: '日常监测', category: '日常监测', monitoringItems: monitoring }];
+        });
+      };
       const annualMgmtPlans = (annualRes.success && annualRes.data?.length > 0)
         ? annualRes.data.map(ap => ({
             _id: ap._id,
@@ -664,11 +683,12 @@ export default function ServicePlansScreen({ navigation, route }) {
             confirmedAt: ap.confirmedAt || null,
             serviceRecommendations: ap.serviceRecommendations || [],
             pushedAt: ap.pushedAt || null,
-            items: Array.isArray(ap.displayItems) ? ap.displayItems.map(item => ({
-              _id: item.id, name: displayItemName(item),
+            items: Array.isArray(ap.displayItems) ? groupMonitoring(ap.displayItems).map(item => ({
+              _id: item.id, name: item.monitoringItems ? '日常监测' : displayItemName(item),
               goal: item.goal, schedule: item.schedule,
               summaryRows: item.moduleKey === 'annual_checkup' ? displayItemRows(item) : null,
-              detailRows: displayItemRows(item), status: 'pending',
+              detailRows: item.monitoringItems ? item.monitoringItems.map(row => [row.title,
+                [row.measurementPeriod, row.frequency].filter(Boolean).join(' · ')]) : displayItemRows(item), status: 'pending',
             })) : Object.entries(ap.moduleData || {})
               .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : v.enabled !== false))
               .map(([key, v]) => ({

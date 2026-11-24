@@ -1,6 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { findUnconfirmedMultiClassifiedItems, collapseStaleAutomaticCandidates } = require('../src/utils/reportClassificationReview');
+const { findUnconfirmedMultiClassifiedItems, collapseStaleAutomaticCandidates,
+  shouldReclassifyReportItem } = require('../src/utils/reportClassificationReview');
+
+test('explicit refresh recomputes only automatic classifications', () => {
+  const confirmed = item => Boolean(item.screeningKey);
+  assert.equal(shouldReclassifyReportItem({ name: '白细胞酯酶', screeningKey: 'urine' }, true, confirmed), true);
+  assert.equal(shouldReclassifyReportItem({ name: '白细胞酯酶', screeningKey: 'urine' }, false, confirmed), false);
+  assert.equal(shouldReclassifyReportItem({ name: '白细胞酯酶', screeningKey: 'vaginal', classificationSource: 'manual' }, true, confirmed), false);
+  assert.equal(shouldReclassifyReportItem({ name: '白细胞酯酶', screeningKey: 'vaginal', classificationReviewedAt: new Date() }, true, confirmed), false);
+  assert.equal(shouldReclassifyReportItem({ name: '白细胞酯酶' }, false, confirmed), true);
+});
 
 test('multi-classified results require an explicit reviewer choice', () => {
   const base = { name: '脂蛋白(a)', screeningKeys: ['category-a', 'category-b'], screeningKey: 'category-a' };

@@ -159,12 +159,35 @@ function mergeSupplementItems(existingItems, candidates, options = {}) {
   return { items: result, added, enriched };
 }
 
+// The final page write must retain a longer paragraph transcribed from the
+// same PDF findings block. Only a unique, still-unreviewed existing row may
+// be extended; this never creates an item or changes a human-reviewed result.
+function enforceTextNarrativeExtensions(items, candidates) {
+  const result = [...(items || [])];
+  const enriched = [];
+  for (const candidate of candidates || []) {
+    if (candidate?.itemType !== 'imaging' || !cleanPart(candidate.findings)) continue;
+    const matches = result.map((item, index) => ({ item, index })).filter(({ item }) =>
+      item?.itemType === 'imaging' && !isHumanReviewed(item)
+      && cleanPart(item.name) === cleanPart(candidate.name)
+      && Number(item.sourcePage) === Number(candidate.sourcePage)
+      && (!cleanPart(item.sourceSection) || !cleanPart(candidate.sourceSection)
+        || cleanPart(item.sourceSection) === cleanPart(candidate.sourceSection))
+      && extendsNarrative(item.findings, candidate.findings));
+    if (matches.length !== 1) continue;
+    const { item, index } = matches[0];
+    result[index] = { ...item, findings: candidate.findings };
+    enriched.push(result[index]);
+  }
+  return { items: result, enriched };
+}
+
 const ULTRASOUND_ORGANS = [
   { key: 'liver', label: '肝脏', descriptor: /肝(?:脏)?/, evidence: /肝(?:脏|实质|内|包膜|回声|结节)/ },
   { key: 'gallbladder', label: '胆囊', descriptor: /胆(?:囊)?/, evidence: /胆(?:囊|总管|汁)/ },
   { key: 'spleen', label: '脾脏', descriptor: /脾(?:脏)?/, evidence: /脾(?:脏|大|实质|门|静脉)/ },
   { key: 'pancreas', label: '胰腺', descriptor: /胰(?:腺|管)?/, evidence: /胰(?:腺|管|头|体|尾)/ },
-  { key: 'kidney', label: '肾脏', descriptor: /肾(?:脏)?/, evidence: /(?:双|左|右)?肾(?:脏|实质|皮质|集合系统|盂)/ },
+  { key: 'kidney', label: '肾脏', descriptor: /肾(?:脏)?/, evidence: /(?:双|左|右)?肾(?:脏|实质|皮质|集合系统|盂)?/ },
   { key: 'ureter', label: '输尿管', descriptor: /输尿管/, evidence: /输尿管/ },
   { key: 'bladder', label: '膀胱', descriptor: /膀胱/, evidence: /膀胱/ },
   { key: 'prostate', label: '前列腺', descriptor: /前列腺/, evidence: /前列腺/ },
@@ -209,6 +232,12 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
   const acceptedKeys = new Set();
   const acceptedItems = [];
   const targetKeys = new Set((options.targetOrgans || []).map(target => typeof target === 'string' ? target : target.key));
+  // A missing organ inside an existing combined ultrasound is a hint for that
+  // exam only. The same printed page may also contain independent heart,
+  // prostate or vascular exams that must remain eligible for supplement.
+  const targetSections = new Set((existingItems || [])
+    .filter(item => item?.itemType === 'imaging' && organsInDescriptor(item).length > 1)
+    .map(item => cleanPart(item.orderName || item.sourceSection)).filter(Boolean));
   const existingCoveredOrgans = new Set();
   for (const item of (existingItems || [])) {
     for (const organ of organsInDescriptor(item)) {
@@ -218,13 +247,17 @@ function filterMissingReportItems(existingItems, candidates, options = {}) {
   return (candidates || []).filter(item => {
     if (!cleanPart(item?.name)) return false;
     if (item?.itemType === 'imaging' && targetKeys.size) {
+      const candidateSection = cleanPart(item.orderName || item.sourceSection);
+      const independentExam = candidateSection && !targetSections.has(candidateSection);
       const candidateOrgans = organsInDescriptor(item);
       const targeted = candidateOrgans.filter(organ => targetKeys.has(organ.key));
-      // 有明确缺失器官时，禁止模型自由扩展其他影像项。
-      if (!targeted.length) return false;
-      // 所见必须带对应器官原词，拒绝“未见异常”等无出处内容和串行。
-      if (!targeted.some(organ => hasNamedOrganEvidence(item, organ))) return false;
-      if (targeted.every(organ => existingCoveredOrgans.has(organ.key))) return false;
+      if (!independentExam) {
+        // In the combined exam, accept only the missing organs with findings
+        // that actually name them. Other sections are verified independently.
+        if (!targeted.length) return false;
+        if (!targeted.some(organ => hasNamedOrganEvidence(item, organ))) return false;
+        if (targeted.every(organ => existingCoveredOrgans.has(organ.key))) return false;
+      }
     }
     const key = reportItemIdentityKey(item);
     if (existingKeys.has(key) || supplementMatches(existingItems, item, options).length
@@ -244,6 +277,7 @@ module.exports = {
   inferMissingUltrasoundOrgans,
   isActivePageParse,
   mergeSupplementItems,
+  enforceTextNarrativeExtensions,
   PAGE_PARSE_STALE_MS,
   reportItemIdentityKey,
   sameReportItem,

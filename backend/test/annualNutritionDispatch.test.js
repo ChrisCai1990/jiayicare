@@ -73,3 +73,25 @@ test('重复点击派发复用同一任务；取消后再次派发保留旧任�
   assert.notEqual(String(third.task._id), String(first.task._id));
   assert.equal(rows.size, 2);
 });
+
+test('已派发但未开始的营养任务跟随已确认的执行营养师和日期', async () => {
+  const oldNutritionist = new mongoose.Types.ObjectId();
+  const newNutritionist = new mongoose.Types.ObjectId();
+  const patient = { _id: new mongoose.Types.ObjectId(), assignedNutritionist: newNutritionist };
+  const plan = { _id: new mongoose.Types.ObjectId(), year: 2026, moduleData: {
+    nutrition_assessment: { executionDate: '2026-11-27' },
+  } };
+  const actor = { _id: new mongoose.Types.ObjectId() };
+  const existing = { ...buildTask(plan, patient, actor), assignedTo: oldNutritionist,
+    date: new Date('2026-11-20T09:00:00+08:00'), status: 'planned' };
+  let update;
+  const FollowUp = {
+    findOne: () => ({ sort: () => ({ lean: async () => existing }) }),
+    updateOne: async (_filter, value) => { update = value.$set; Object.assign(existing, update) },
+    findById: () => ({ lean: async () => existing }),
+  };
+  const result = await dispatch(plan, patient, actor, FollowUp);
+  assert.equal(result.reused, true);
+  assert.equal(String(update.assignedTo), String(newNutritionist));
+  assert.equal(update.date.toISOString(), new Date('2026-11-27T09:00:00+08:00').toISOString());
+});

@@ -7,6 +7,8 @@ import appointment from '../../../shared/annualAppointment.cjs'
 import DateInput from './DateInput'
 import { concretePlanText } from '../utils/annualItemLayout.mjs'
 import nutritionComparisonMetrics from '../../../shared/nutritionComparisonMetrics.cjs'
+import { MONITORING_METRICS, MONITORING_PERIODS } from '../utils/monitoringMetrics'
+import { splitMonitoringPeriods, toggleMonitoringPeriod } from '../utils/monitoringPeriodSelection.mjs'
 
 const { COMMON_METRICS, OBJECTIVE_METRICS, SUBJECTIVE_METRICS, MAX_METRICS } = nutritionComparisonMetrics
 
@@ -88,6 +90,22 @@ export function FieldRow({ label, internal, children }) {
 const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
 
 export function FieldInput({ field, value, onChange }) {
+  if (field.type === 'monitoring-metrics') {
+    return <select aria-label="选择日常监测项目" value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle}>
+      <option value="">请选择项目；多项可新增多条</option>
+      {value && !MONITORING_METRICS.some(([, label]) => label === value) && <option value={value}>{value}（原有项目）</option>}
+      {MONITORING_METRICS.map(([, label]) => <option key={label} value={label}>{label}</option>)}
+    </select>
+  }
+  if (field.type === 'monitoring-period') {
+    const metric = MONITORING_METRICS.find(([, label]) => label === field.record?.items)?.[0]
+    const options = MONITORING_PERIODS[metric] || []
+    const selected = splitMonitoringPeriods(value)
+    if (!options.length) return <input type="text" value={value || ''} onChange={e => onChange(e.target.value)} placeholder="无需标注监测时段" style={inputStyle} />
+    return <div role="group" aria-label={`${field.record?.items || '日常监测'}监测时间（可多选）`} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {[...options, ...selected.filter(period => !options.includes(period))].map(period => <label key={period} style={{ whiteSpace: 'nowrap', fontSize: 12 }}><input type="checkbox" checked={selected.includes(period)} onChange={() => onChange(toggleMonitoringPeriod(value, period))} /> {period}</label>)}
+    </div>
+  }
   if (field.type === 'medical-experts') return <MedicalExpertPicker field={field} value={value} onChange={onChange} />
   if (field.type === 'department-experts') {
     const rows = Array.isArray(value) ? value : []
@@ -214,7 +232,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
   const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
   const optionalEmpty = field => supplementalKeys.includes(field.key)
   const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
-    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(['expertIds', 'orderExpertIds'].includes(field.key) && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
+    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.type === 'monitoring-metrics' && val !== record.items ? { measurementPeriod: '' } : {}), ...(['expertIds', 'orderExpertIds'].includes(field.key) && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
   </FieldRow>
   return (
     <div style={{ border: '1px solid #E8E3DC', borderRadius: 8, marginBottom: 8, background: '#FAFAF8' }}>

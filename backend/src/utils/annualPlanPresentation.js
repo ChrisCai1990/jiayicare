@@ -14,6 +14,8 @@ function normalizeItem(moduleKey, record, index) {
   if (moduleKey === 'annual_checkup') return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: MODULE_NAME[moduleKey],
     schedule: record.date || '',
+    focus: record.focus || '',
+    customerAction: record.focus ? `在下一年度体检中重点关注：${String(record.focus).split(/\r?\n/).map(row => row.trim()).filter(Boolean).join('、')}` : '',
     careTarget: { hospital: record.institution || '', department: '', expert: '' },
     service: { mode: record.serviceMode || 'reminder', modeLabel: ({ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' })[record.serviceMode || 'reminder'],
       type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
@@ -28,15 +30,28 @@ function normalizeItem(moduleKey, record, index) {
     schedule: record.actionTiming?.firstDueDate || '',
     frequency: record.actionTiming?.mode === 'rolling' ? record.actionTiming.frequency || '本轮完成后再确定下一轮' : '',
   };
-  const title = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
+  if (moduleKey === 'monitoring') return {
+    id: `${moduleKey}:${index}`, moduleKey, category: '日常监测', title: record.items || `监测项目 ${index + 1}`,
+    measurementPeriod: record.measurementPeriod || record.time || '', frequency: record.frequency || '',
+    precautions: record.precautions || '',
+  };
+  const rawTitle = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
+  const title = moduleKey === 'medical_treatment' && /^(需要安排就医|安排就医)$/.test(rawTitle) && record.department
+    ? `前往${record.department}就诊` : rawTitle;
   const schedule = first(record.visit_time, record.plan_time, record.executionDate, record.date, record.time);
+  const rawGoal = moduleKey === 'nutrition_assessment'
+    ? (record.nutritionComparisonMetrics?.filter(name => !isInternalNutritionMetric(name)).length ? `前后对比：${record.nutritionComparisonMetrics.filter(name => !isInternalNutritionMetric(name)).join('、')}` : '核实膳食与体成分情况')
+    : first(record.goal, record.purpose, record.focus, record.personalization);
+  const goal = /^(管控|管理|评估)$/.test(String(rawGoal).trim()) ? ({
+    medical_treatment: '请专科医生评估并明确后续诊治安排',
+    abnormal_followup: '核对复查结果并确定下一步处理',
+    checkup_completion: '完成检查并核对结果',
+  }[moduleKey] || '完成本项安排后确认下一步') : rawGoal;
   return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey] || moduleKey, title,
     problem: first(record.reason, record.current, record.finding),
     evidence: first(record.basisSummary, record.matchReason, record.sourceRule),
-    goal: moduleKey === 'nutrition_assessment'
-      ? (record.nutritionComparisonMetrics?.filter(name => !isInternalNutritionMetric(name)).length ? `前后对比：${record.nutritionComparisonMetrics.filter(name => !isInternalNutritionMetric(name)).join('、')}` : '核实膳食与体成分情况')
-      : first(record.goal, record.purpose, record.focus, record.personalization),
+    goal,
     completionStandard: record.completionStandard || '',
     interventionPlan: first(record.personalizedAdvice, record.personalization, record.standardContent, record.plan),
     reviewItems: Array.isArray(record.reviewItems) ? record.reviewItems : [],
@@ -51,7 +66,9 @@ function normalizeItem(moduleKey, record, index) {
         orderExperts: [...(record.orderExpertSnapshots || []).map(person => person.name), record.order_expert].filter(Boolean),
         examExperts: [...(record.expertSnapshots || []).map(person => person.name), record.expert].filter(Boolean) },
     } : {}),
-    customerAction: record.customerAction || '', precautions: record.precautions || '',
+    customerAction: record.customerAction || ({ medical_treatment: '按约定时间就诊，完成后将医生意见交给健康顾问',
+      abnormal_followup: '按计划完成复查，并将结果交给健康顾问',
+      checkup_completion: '完成检查后将结果交给健康顾问' }[moduleKey] || ''), precautions: record.precautions || '',
     service: { mode: record.serviceMode || 'reminder', modeLabel: SERVICE_MODE[record.serviceMode || 'reminder'], type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
     reviewStatus: record.reviewStatus || '',
   };
@@ -66,12 +83,23 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
     const records = moduleKey === 'nutrition_assessment' && Array.isArray(module.records) && module.records.length
       ? module.records
       : Array.isArray(module) ? module : Array.isArray(module.records) ? module.records : [module];
+    if (moduleKey === 'monitoring') {
+      const monitoringItems = records.filter(row => row?.items).map((row, index) => ({
+        id: `monitoring:${index}`, title: row.items, measurementPeriod: row.measurementPeriod || row.time || '',
+        frequency: row.frequency || '', precautions: row.precautions || '',
+      }));
+      if (monitoringItems.length) items.push({ id: 'monitoring', moduleKey, category: '日常监测', title: '项目与周期',
+        monitoringItems, customerAction: monitoringItems.map(row =>
+          `${row.title}：${[row.measurementPeriod, row.frequency].filter(Boolean).join(' · ')}`).join('\n'),
+        service: { mode: 'monitoring', modeLabel: '按方案监测' } });
+      return;
+    }
     records.forEach((record, index) => { if (record && Object.keys(record).length && !(moduleKey === 'personalized_followups' && internalDaily(record))) items.push(normalizeItem(moduleKey, record, index)); });
   });
   return items;
 }
 
-const internalFields = new Set(['advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
+const internalFields = new Set(['clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
@@ -82,6 +110,7 @@ function customerModuleData(value) {
       ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
       : key === 'annual_checkup'
       ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '',
+          focus: /内部|来源[:：]|missing:/i.test(String(child?.focus || '')) ? '' : child?.focus || '',
           serviceMode: child?.serviceMode || 'reminder', serviceType: child?.serviceType || '' }
       : key === 'health_consensus'
       ? { enabled: child?.enabled !== false, shareWithCustomer: true, records: (child?.records || []).map(row => ({ question: row.question || '', method: row.method || '', frequency: row.frequency || '', firstDate: row.firstDate || '' })) }

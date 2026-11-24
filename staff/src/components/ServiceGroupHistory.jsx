@@ -7,6 +7,7 @@ import './ServiceGroupHistory.css';
 const stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'});
 const roles={customer:'客户',healthManager:'健管专员',familyDoctor:'健康顾问',nutritionist:'营养师',medicalAssistant:'就医专员',specialist:'专科医师',ai:'AI健康管家'};
 export default function ServiceGroupHistory({group,onClose,initialMessageId=null}) {
+  const [previewImage,setPreviewImage]=useState('');
   const [calendarOpen,setCalendarOpen]=useState(false);
   const [filters,setFilters]=useState({q:'',date:'',kind:'all'});
   const [rows,setRows]=useState([]),[context,setContext]=useState(null),[next,setNext]=useState(null);
@@ -62,7 +63,7 @@ export default function ServiceGroupHistory({group,onClose,initialMessageId=null
         {(context?.data || rows).map(message=><article key={message.id} ref={String(message.id)===String(context?.anchorId)?anchor:null} className={String(message.id)===String(context?.anchorId)?'gh-anchor':''}>
           <small>{message.senderName} · {roles[message.senderRole] || '服务成员'} · {stamp(message.createdAt)}</small>
           {message.audioUrl?<GroupVoiceMessage groupId={group.id} message={message}/>:(!message.fileUrl || !['[文件]','[图片]'].includes(message.content))&&<p>{message.content}</p>}
-          {message.fileUrl&&(message.fileMimeType?.startsWith('image/')?<a href={message.fileUrl} target="_blank" rel="noreferrer" aria-label={message.fileName||'查看图片'}><img className="gh-message-image" src={message.fileUrl} alt={message.fileName||'聊天图片'}/></a>:<a href={message.fileUrl} target="_blank" rel="noreferrer" download={message.fileName}>📎 {message.fileName||'查看文件'}</a>)}
+          {message.fileUrl&&(message.fileMimeType?.startsWith('image/')?<button type="button" className="sg-image-open" onClick={()=>setPreviewImage(message.fileUrl)} aria-label={message.fileName||'查看图片'}><img className="gh-message-image" src={message.fileUrl} alt={message.fileName||'聊天图片'}/></button>:<a href={message.fileUrl} target="_blank" rel="noreferrer" download={message.fileName}>📎 {message.fileName||'查看文件'}</a>)}
           {message.material&&<div><small>{message.material.title} · {message.material.status}</small>
             <div className="gh-files">{(message.material.files||[]).map((url,i)=><a key={i} href={url} target="_blank" rel="noreferrer">{message.material.mimeType==='application/pdf'?'查看PDF原件':<img src={url} alt={`资料第${i+1}页`}/>}</a>)}</div>
           </div>}
@@ -71,5 +72,6 @@ export default function ServiceGroupHistory({group,onClose,initialMessageId=null
         {!context&&next&&<button disabled={busy} onClick={()=>run(true)}>加载更多结果</button>}
       </div>
     </section>
+    {previewImage&&<div className="sg-image-preview" role="dialog" aria-modal="true" aria-label="查看聊天图片" onClick={()=>setPreviewImage('')}><button type="button" aria-label="关闭图片" onClick={()=>setPreviewImage('')}>×</button><img src={previewImage} alt="聊天原图" onClick={event=>event.stopPropagation()}/></div>}
   </div>;
 }

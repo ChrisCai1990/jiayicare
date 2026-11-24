@@ -44,6 +44,18 @@ test('已有人工监测规则时保留其频率和时间', () => {
   assert.equal(bp.reminderTime, '07:30');
 });
 
+test('年度方案只为顾问新增选择的其他记录项目建立对应提醒', () => {
+  const specs = buildMonitoringReminderSpecs({}, { monitoring: { records: [
+    { items: '血糖', measurementPeriod: '早餐后2小时', frequency: '每日1次', time: '09:30' },
+    { items: '情绪', frequency: '每周1次' },
+  ] } });
+  assert.deepEqual(specs.map(row => row.sourceKey), ['blood_pressure', 'weight', 'bloodSugar', 'mood']);
+  assert.equal(specs[2].reminderTime, '09:30');
+  assert.equal(specs[2].customEveryNDays, 1);
+  assert.match(specs[2].description, /早餐后2小时/);
+  assert.equal(specs[3].rollingWeekly, true);
+});
+
 test('生日未到时年龄不会提前增加', () => {
   assert.equal(patientAge({ birthDate: '1991-12-01' }, new Date('2026-09-18T00:00:00Z')), 34);
 });

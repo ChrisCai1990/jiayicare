@@ -43,6 +43,7 @@ import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
 import PackageHistoryReview from '../components/PackageHistoryReview'
 import customerNumber from '../../../shared/customerNumber.cjs'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
+import { reportRangeMismatches } from '../utils/reportRangeMismatch.mjs'
 import { groupImagingReportItems } from '../utils/groupImagingReportItems.mjs'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
@@ -74,6 +75,7 @@ import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../com
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
+import { summarizeReportPages } from '../utils/reportPageCoverage.mjs'
 import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
@@ -13631,7 +13633,8 @@ export default function PatientDetailPage() {
         const activePage = ocrReviewPage || firstSourcePage
         const activeImageEvidence = ocrReviewReport.imagePageEvidence?.[activePage]
         const isImageOnlyPage = activeImageEvidence?.status === 'image_only'
-        const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
+        const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage
+          ? ocrReviewReport.pageParseStatus : ocrReviewReport.pageParseStatusByPage?.[activePage] || null
         // 后端补提是进程内异步任务；发布重启等中断可能遗留 processing。
         // 超过15分钟后不再锁死按钮，让后端按同一规则接受重新补提。
         const pageParseStartedAt = new Date(activePageParse?.startedAt || '').getTime()
@@ -13640,7 +13643,12 @@ export default function PatientDetailPage() {
           && Date.now() - pageParseStartedAt >= 0
           && Date.now() - pageParseStartedAt < 15 * 60 * 1000
         const pageParseStale = activePageParse?.status === 'processing' && !pageParsing
-        const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
+        const pageCoverage = summarizeReportPages(expectedPages, ocrEditItems,
+          ocrReviewReport.imagePageEvidence, ocrReviewReport.parseJob?.textCoverage,
+          { ...ocrReviewReport.pageParseStatusByPage,
+            ...(ocrReviewReport.pageParseStatus?.pageNum ? { [ocrReviewReport.pageParseStatus.pageNum]: ocrReviewReport.pageParseStatus } : {}) },
+          ocrReviewReport.parseJob?.failedPages)
+        const attentionPages = pageCoverage.filter(row => row.needsAttention)
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
         // 格式：[{ label: 'L1分类名', opts: [{value: 'L1|packageName|itemName', label: '...', groupLabel: 'L1分类名'}] }]
@@ -13717,8 +13725,8 @@ export default function PatientDetailPage() {
           // 审核内容多且耗时，鼠标稍微移出弹窗点到遮罩层就会误触关闭丢失未保存的编辑，去掉点遮罩关闭，
           // 只能点右上角✕关闭（2026-07-13 反馈：之前只改了纯查看用的"体检报告详情弹窗"，这个才是真正
           // 审核AI识别结果、会长时间编辑的弹窗，之前漏改了）
-          <div className="modal-overlay">
-            <div className="modal ocr-review-modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal-overlay ocr-review-overlay">
+            <div className="modal ocr-review-modal">
               <ReportReviewQuality report={ocrReviewReport} items={ocrEditItems} onChange={patch => {
                 setOcrReviewReport(current => ({ ...current, ...patch }))
                 // The save handlers read ocrReportMeta. Keep the header edits in that
@@ -13736,28 +13744,40 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
                   <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
-                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{unclassifiedByPage[page] ? `（未归类 ${unclassifiedByPage[page]} 项）` : ocrReviewReport.imagePageEvidence?.[page]?.status === 'image_only' ? '（影像资料）' : missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                    {pageCoverage.map(row => <option key={row.page} value={row.page}>第 {row.page} 页（{row.label}{unclassifiedByPage[row.page] ? `；未归类 ${unclassifiedByPage[row.page]} 项` : ''}）</option>)}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
                 </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
-              {unclassifiedN > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF1F0', borderBottom: '1px solid #FCA5A5', color: '#B42318', fontSize: 12 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>⚠ 未归类 {unclassifiedN} 项：可以保存草稿，全部归类后才能提交审核。点击下列项目直接定位：</div>
+              {(attentionPages.length > 0 || unclassifiedN > 0 || ambiguousItems.length > 0) && <div className="ocr-review-notices">
+              {attentionPages.length > 0 && <details className="ocr-review-notice ocr-review-notice-coverage">
+                <summary>原件覆盖待核对：{attentionPages.length}/{expectedPages.length} 页 <span>展开查看页码</span></summary>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, maxHeight: 96, overflowY: 'auto' }}>
+                  {attentionPages.map(row => <button key={row.page} type="button" onClick={() => setOcrReviewPage(row.page)}
+                    style={{ border: '1px solid #FCD34D', borderRadius: 5, padding: '4px 8px', background: activePage === row.page ? '#FEF3C7' : '#fff', color: '#92400E', cursor: 'pointer', textAlign: 'left' }}>
+                    第 {row.page} 页 · {row.reasons.join('；')}
+                  </button>)}
+                </div>
+                <div style={{ marginTop: 4 }}>无提取数据仅表示草稿为空，请对照原件判断该页是否有检查结果。</div>
+              </details>}
+              {unclassifiedN > 0 && <details className="ocr-review-notice ocr-review-notice-unclassified">
+                <summary>⚠ 未归类 {unclassifiedN} 项：可保存草稿，全部归类后才能提交审核 <span>展开定位项目</span></summary>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 104, overflowY: 'auto' }}>
                   {unclassifiedItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)}
                     style={{ color: '#B42318', border: '1px solid #FCA5A5', background: '#fff', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', fontSize: 12, textAlign: 'left', maxWidth: '100%' }}>
                     第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.sourceSection || entry.it.orderName || '未识别栏目'} · <strong>{entry.it.name || '未命名项目'}</strong>
                   </button>)}
                 </div>
-              </div>}
-              {ambiguousItems.length > 0 && <div role="alert" style={{ flexShrink: 0, padding: '9px 14px', background: '#FFF8E6', borderBottom: '1px solid #FCD34D', color: '#92400E', fontSize: 12 }}>
-                <strong>⚠ {ambiguousItems.length} 项同时匹配多个分类，须逐项核对归属后才能提交审核。可先保存草稿：</strong>
+              </details>}
+              {ambiguousItems.length > 0 && <details className="ocr-review-notice ocr-review-notice-coverage">
+                <summary>⚠ {ambiguousItems.length} 项匹配多个分类，须逐项核对后提交 <span>展开定位项目</span></summary>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, maxHeight: 104, overflowY: 'auto' }}>
                   {ambiguousItems.map(entry => <button key={entry.it.itemId || entry.i} type="button" onClick={() => jumpToUnclassified(entry)} style={{ border: '1px solid #FCD34D', borderRadius: 5, padding: '4px 8px', background: '#fff', color: '#92400E', cursor: 'pointer', textAlign: 'left' }}>
                     第 {Number(entry.it.sourcePage) || 1} 页 · {entry.it.name}：{reportClassificationLabels(entry.it, screeningCatalog).join('；')}
                   </button>)}
                 </div>
+              </details>}
               </div>}
               <div className="ocr-review-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 {/* 左：原始报告预览 */}
@@ -13854,6 +13874,8 @@ export default function PatientDetailPage() {
                   const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
                   const abnN = abn.filter(it => it.status === 'abnormal').length
                   const attN = abn.filter(it => it.status === 'attention').length
+                  const rangeMismatches = reportRangeMismatches(labRows.map(({ it }) => it))
+                  const textLayerGap = ocrReviewReport.parseJob?.textCoverage?.pagesWithGaps?.includes(activePage)
                   return (
                     <>
                       {(() => {
@@ -13896,13 +13918,18 @@ export default function PatientDetailPage() {
                       </div>
                       })()}
                       <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
+                      {rangeMismatches.length > 0 && <div role="alert" style={{ padding: '10px 14px', marginBottom: 12, border: '1px solid #F3C3A8', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12 }}>
+                        本页 {rangeMismatches.length} 项录入数值超出录入的参考范围，但未标为异常：{rangeMismatches.map(it => it.name).join('、')}。请逐项对照原件核对数值、参考范围和异常状态；已核对项目不会自动改写。
+                      </div>}
                       {/* 异常快览仅适用于检验数值，不用于处方。 */}
                       {!isPrescription && <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
                           本页检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 本页影像/检查 ${imgRows.length} 项` : ''}
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
-                          {labRows.length > 0 && !activeImageEvidence?.message && abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
+                          {labRows.length > 0 && abn.length === 0 && (textLayerGap || activeImageEvidence?.message || !pageAllReviewed
+                            ? <span style={{ color: '#D97706', marginLeft: 8, fontWeight: 400 }}>· 本页尚不能判定无异常，请核对原件</span>
+                            : <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 已核对项目未见异常标记</span>)}
                           <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 整份报告已归类 {matchedN} 项（提交审核后写入专项筛查）</span>
                           <span style={{ marginLeft: 8, fontWeight: 400, color: reviewedCount === indexedAll.length ? '#16A34A' : '#D97706' }}>· 整份报告人工已核对 {reviewedCount}/{indexedAll.length}（仅记录核对进度，不阻止保存）</span>
                         </div>
@@ -15478,7 +15505,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             const showTime = i === 0 || (new Date(m.createdAt) - new Date(prevMsg.createdAt)) > 300000
             const showDateDivider = i === 0 || new Date(m.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString()
             // 撤回：仅限医护自己发的消息（isStaff），2分钟内可撤回，与用户端 messages.js 规则一致
-            const canRecall = isStaff && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000)
+            const canRecall = isStaff && String(m.senderStaffId || '') === String(staff?._id || '') && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000)
             if (m.type === 'system') {
               return (
                 <div key={m._id}>

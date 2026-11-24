@@ -45,6 +45,22 @@ test('institution call ceiling stops the provider before send without spending a
 });
 const { createBudgetRunner, withAiContext } = require('../src/utils/aiBudget');
 
+test('five dimension calls use their own circuit and a paused circuit does not send', async () => {
+  const checked = [];
+  const db = {
+    policy: async () => DEFAULT_POLICY,
+    circuit: async key => { checked.push(key); return key.endsWith(':health_summary') ? { paused: true } : null; },
+    reserve: async () => true, insert: async () => {}, outcome: async () => {},
+    adjust: async () => {}, finish: async () => {},
+  };
+  const run = createBudgetRunner(db);
+  const call = context => run({ provider: 'qwen', model: 'qwen-plus', messages: [{ content: 'synthetic' }], maxTokens: 32, context },
+    async () => { throw new Error('provider request was sent'); });
+  await assert.rejects(call({ circuitScope: 'health_summary' }), error => error.code === 'AI_CIRCUIT_PAUSED' && /本次未发送模型请求/.test(error.message));
+  await assert.rejects(call({}), /provider request was sent/);
+  assert.deepEqual(checked, ['qwen:qwen-plus:health_summary', 'qwen:qwen-plus']);
+});
+
 test('provider error code is retained without copying a sensitive message', async () => {
   let settled;
   const db = {

@@ -161,6 +161,50 @@ function countUncoveredPrintedRows(sections, items) {
   return { total: result.total, uncovered: result.rows.length };
 }
 
+// Check named narrative examinations in the independent transcription against
+// the final page draft. A missing whole section is invisible to candidate-only
+// validation, even when every returned candidate is individually correct.
+function findUncoveredExamSections(sections, items) {
+  const groups = new Map();
+  const uncovered = [];
+  for (const section of sections || []) {
+    const title = String(section?.title || '').trim();
+    const clinicalText = cleanClinicalTranscript(section?.clinicalText);
+    if (!title || /^(?:影像|超声)?(?:检查|检验|检测)?(?:项目|结果|名称|所见|描述|诊断|提示|结论|印象|医师意见)$/u.test(title)
+        || section.rows?.some(row => String(row.name || '').trim() && String(row.value || '').trim())
+        || normalizeText(clinicalText).length < 6) continue;
+    const key = normalizeText(title);
+    if (!groups.has(key)) groups.set(key, { title, sections: [] });
+    groups.get(key).sections.push({ ...section, clinicalText });
+  }
+  const representativeSections = [...groups.values()].map(group => group.sections[0]);
+  for (const group of groups.values()) {
+    // Overlapping page bands can transcribe the same section differently. One
+    // matching band is enough; the other copy must not create a false gap.
+    const covered = group.sections.some(section => (items || []).some(item => {
+      if (!['imaging', 'diagnosis', 'pathology'].includes(item?.itemType)
+          || sectionForItem(item, representativeSections) !== group.sections[0]) return false;
+      if (item.manualReviewStatus === 'reviewed' && String(item.findings || item.diagnosis || item.conclusion || '').trim()) return true;
+      return ['findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']
+        .some(field => String(item[field] || '').trim() && isNarrativeAnchored(item[field], section.clinicalText));
+    }));
+    if (!covered) uncovered.push(group.title);
+  }
+  return { total: groups.size, titles: uncovered };
+}
+
+function applyExamSectionCoverage(evidence, sections, items) {
+  const coverage = findUncoveredExamSections(sections, items);
+  if (!coverage.titles.length || evidence?.status === 'image_only') return evidence;
+  const message = `原件有${coverage.titles.length}个检查栏目未与审核草稿核对匹配：${coverage.titles.slice(0, 8).join('、')}；请逐项对照原件核对。`;
+  return {
+    ...(evidence || {}), status: 'needs_review',
+    blockedReasons: { ...(evidence?.blockedReasons || {}), uncovered_sections: coverage.titles.length },
+    uncoveredSections: coverage.titles.slice(0, 20),
+    message: [evidence?.message, message].filter(Boolean).join(' '),
+  };
+}
+
 function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, verifyTableRows = false, existingItems = [], allowStandaloneExamHeadings = false } = {}) {
   if (!evidence || typeof evidence.hasMedicalImages !== 'boolean'
       || !['clear', 'unreadable'].includes(evidence.readability)
@@ -253,7 +297,8 @@ function createReportImageParser(parseImage, { onEvidence = () => {}, report = {
     if (!parsed || !Array.isArray(parsed.items)) return raw;
     // Only this guard may attach verification metadata; model/source-provided flags are untrusted.
     delete parsed.imageEvidence;
-    const needsCheck = imageReport || parsed.hasMedicalImages === true || parsed.pageType === 'image_only'
+    const needsCheck = report.type === 'annual' || report.documentCategory === 'physical_exam'
+      || imageReport || parsed.hasMedicalImages === true || parsed.pageType === 'image_only'
       || verifyTableRows
       || parsed.items.some(item => ['imaging', 'diagnosis', 'pathology'].includes(item.itemType)
         || item.findings || item.diagnosis || /超声|彩超|B超|内镜|心电|CT|MRI/i.test(item.name || ''));
@@ -300,4 +345,5 @@ function recordPageEvidence(pages, page, evidence) {
 }
 
 module.exports = { IMAGE_ONLY_MESSAGE, UNVERIFIED_MESSAGE, IMAGE_EVIDENCE_PROMPT,
-  guardImageEvidence, createReportImageParser, recordPageEvidence, findUncoveredPrintedRows };
+  guardImageEvidence, createReportImageParser, recordPageEvidence, findUncoveredPrintedRows,
+  findUncoveredExamSections, applyExamSectionCoverage };

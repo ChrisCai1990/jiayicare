@@ -12,13 +12,18 @@ function normalizeExplicitNormalStatus(item) {
   // printed reference interval excludes the measured value. Human-reviewed
   // statuses remain authoritative.
   if (item.itemType === 'lab' && !item.manualReviewedAt && !item.manualReviewedBy
-    && item.manualReviewStatus !== 'reviewed' && (!item.status || ['normal', 'unknown'].includes(item.status))) {
+    && item.manualReviewStatus !== 'reviewed' && (!item.status || ['normal', 'unknown', 'attention'].includes(item.status))) {
     const value = text(item.value).normalize('NFKC');
     const range = text(item.referenceRange).normalize('NFKC');
     const numeric = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
     const bounds = range.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*[-~–—至]\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))$/);
-    if (numeric.test(value) && bounds && Number(bounds[1]) <= Number(bounds[2])
-      && (Number(value) < Number(bounds[1]) || Number(value) > Number(bounds[2]))) {
+    const limit = range.match(/^(<|>|≤|≥|<=|>=)\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))$/);
+    const outsideLimit = numeric.test(value) && limit && ({
+      '<': Number(value) >= Number(limit[2]), '<=': Number(value) > Number(limit[2]), '≤': Number(value) > Number(limit[2]),
+      '>': Number(value) <= Number(limit[2]), '>=': Number(value) < Number(limit[2]), '≥': Number(value) < Number(limit[2]),
+    })[limit[1]];
+    if (outsideLimit || (numeric.test(value) && bounds && Number(bounds[1]) <= Number(bounds[2])
+      && (Number(value) < Number(bounds[1]) || Number(value) > Number(bounds[2])))) {
       return { ...item, status: 'abnormal' };
     }
   }
