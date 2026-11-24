@@ -14,6 +14,8 @@ const schema = new mongoose.Schema({
   senderId: { type: mongoose.Schema.Types.ObjectId, required: true },
   senderName: { type: String, required: true, maxlength: 120 },
   content: { type: String, required: true, maxlength: 2000 },
+  recalled: {type:Boolean,default:false},
+  recalledAt: Date,
   fileUrl: {type:String,default:''},
   fileName: {type:String,default:''},
   fileMimeType: {type:String,default:''},

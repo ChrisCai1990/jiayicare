@@ -5,6 +5,7 @@ const messageSchema = new mongoose.Schema({
   type:    { type: String, enum: ['doctor', 'manager', 'planner', 'medicalAssistant', 'system', 'user', 'nutritionist'], required: true },
   pushCategory: { type: String, enum: require('../utils/nativePushCategory').categories, default: undefined },
   sender:  { type: String, required: true },
+  senderStaffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   title:   { type: String },
   content: { type: String, required: true },
   imageUrl: { type: String, default: '' },

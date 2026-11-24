@@ -14010,8 +14010,8 @@ router.patch('/user-messages/:messageId/recall', staffAuth, async (req, res) => 
   try {
     const msg = await Message.findById(req.params.messageId);
     if (!msg) return res.status(404).json({ success: false, message: '消息不存在' });
-    if (msg.type === 'user') {
-      return res.status(403).json({ success: false, message: '不能撤回用户发送的消息' });
+    if (msg.type === 'user' || msg.type === 'system' || String(msg.senderStaffId || '') !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '只能撤回自己发送的消息' });
     }
     const channelRole = msg.type;
     if (!assertRoleMatchesChannel(req.staff.role, channelRole)) {
@@ -14129,6 +14129,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       user:    req.params.userId,
       type:    msgType,
       sender:  senderLabel,
+      senderStaffId: req.staff._id,
       title:   `${staff.name} 回复了您的留言`,
       content: content.trim() || (audioUrl ? '[语音消息]' : savedFile ? '[文件]' : '图片'),
       imageUrl: imageUrls[0] || '', imageUrls,

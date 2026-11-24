@@ -15,6 +15,8 @@ const mentionLabel = person => person.kind === 'customer' || person.role === '�
 const memberLabel = person => `${person.name} · ${roleLabel(person)}`;
 
 export default function InAppServiceGroupsPage() {
+  const staffId = (() => { try { return String(JSON.parse(localStorage.getItem('jy_staff_info'))?._id || ''); } catch { return ''; } })();
+  const [previewImage,setPreviewImage]=useState('');
   const [historyOpen,setHistoryOpen]=useState(false);
   const [quote,setQuote]=useState(null),[quoteMenu,setQuoteMenu]=useState(null),[historyAnchor,setHistoryAnchor]=useState(null);
   const [archive, setArchive] = useState(false);
@@ -145,7 +147,7 @@ export default function InAppServiceGroupsPage() {
   const loadMessages = async (id, before = '') => {
     try {
       const res = await api.messages(id, before);
-      if (currentId.current === id) { setMessages(prev=>[...new Map([...prev,...(res.data||[])].map(m=>[String(m.id),m])).values()].sort((a,b)=>+new Date(a.createdAt)-+new Date(b.createdAt)||String(a.id).localeCompare(String(b.id)))); if(before || !messages.length)setOlder(!!res.hasMore); if(res.firstMentionMessageId){setMentionAnchor(String(res.firstMentionMessageId));followLatest.current=false;setTimeout(()=>document.getElementById('sg-msg-'+res.firstMentionMessageId)?.scrollIntoView({block:'center'}),100);} }
+      if (currentId.current === id) { const rows=res.data||[];setMessages(prev=>{const retained=before?prev:(rows.length?prev.filter(m=>+new Date(m.createdAt)<+new Date(rows[0].createdAt)):[]);return [...new Map([...retained,...rows].map(m=>[String(m.id),m])).values()].sort((a,b)=>+new Date(a.createdAt)-+new Date(b.createdAt)||String(a.id).localeCompare(String(b.id)));}); if(before || !messages.length)setOlder(!!res.hasMore); if(res.firstMentionMessageId){setMentionAnchor(String(res.firstMentionMessageId));followLatest.current=false;setTimeout(()=>document.getElementById('sg-msg-'+res.firstMentionMessageId)?.scrollIntoView({block:'center'}),100);} }
     } catch (e) { setError(e.message || '群消息读取失败'); }
   };
   useEffect(() => { loadedPages.current = 1; setGroups([]); refresh(true); const timer = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 5000); return () => clearInterval(timer); }, [category, archive, groupQuery]);
@@ -198,6 +200,19 @@ export default function InAppServiceGroupsPage() {
       setPendingFile(null);setMentionIds([]); setShowMentions(false); followLatest.current = true; setDraft('');setQuote(null);setQuoteMenu(null); await loadMessages(selected.id); await refresh(); window.dispatchEvent(new Event('notif-refresh')); }
     catch (e) { setError(e.message || '发送失败'); }
     finally { setBusy(false); }
+  };
+  const recall = async message => {
+    if (!selected || busy || !window.confirm('确定撤回这条消息吗？')) return;
+    setBusy(true);setError('');
+    try {
+      await api.recall(selected.id,message.id);
+      setMessages(rows=>rows.filter(row=>String(row.id)!==String(message.id)));
+      setQuote(current=>String(current?.id)===String(message.id)?null:current);
+      setQuoteMenu(null);
+      await refresh();
+      window.dispatchEvent(new Event('notif-refresh'));
+    } catch(e) {setError(e.message || '撤回失败');}
+    finally {setBusy(false);}
   };
   const loadTasks = async () => { try { const result = await api.lifecycle(); setTasks(result.data || []); } catch(e){setError(e.message || '确认待办读取失败');} };
   useEffect(()=>{loadTasks();const timer=setInterval(()=>{if(document.visibilityState==='visible')loadTasks();},30000);return()=>clearInterval(timer);},[]);
@@ -321,11 +336,12 @@ export default function InAppServiceGroupsPage() {
                 <small className="sg-sender-name">{message.senderName} · {({ familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员', medicalAssistant: '就医专员', specialist: '专科医师', customer: '客户', ai: '嘉医汇AI健康管家' })[message.senderRole] || '服务人员'}</small>
                 <div className="sg-bubble">
               {mentionAnchor===String(message.id)&&<strong className="sg-mention-badge">有人@我</strong>}
-              {quoteMenu?.id===message.id&&<div className="sg-message-menu" role="group" aria-label="消息操作"><button onClick={()=>{setQuote(message);setQuoteMenu(null);draftInput.current?.focus();}}>引用</button><button onClick={()=>setQuoteMenu(null)}>取消</button></div>}
+              {quoteMenu?.id===message.id&&<div className="sg-message-menu" role="group" aria-label="消息操作"><button onClick={()=>{setQuote(message);setQuoteMenu(null);draftInput.current?.focus();}}>引用</button>{message.senderType==='staff'&&String(message.senderId)===staffId&&Date.now()-new Date(message.createdAt).getTime()<120000&&<button disabled={busy} onClick={()=>recall(message)}>撤回</button>}<button onClick={()=>setQuoteMenu(null)}>取消</button></div>}
               {message.audioUrl?<GroupVoiceMessage groupId={selected.id} message={message}/>:(!message.fileUrl || !['[文件]','[图片]'].includes(message.content))&&<div style={{whiteSpace:'pre-wrap'}}>{message.content}</div>}
               {message.fileUrl && (message.fileMimeType?.startsWith('image/')
-                ? <a href={message.fileUrl} target="_blank" rel="noreferrer" aria-label={message.fileName || '查看图片'}><img className="sg-message-image" src={message.fileUrl} alt={message.fileName || '聊天图片'} /></a>
+                ? <button type="button" className="sg-image-open" onClick={()=>setPreviewImage(message.fileUrl)} aria-label={message.fileName || '查看图片'}><img className="sg-message-image" src={message.fileUrl} alt={message.fileName || '聊天图片'} /></button>
                 : <a href={message.fileUrl} target="_blank" rel="noreferrer" download={message.fileName} style={{display:'block',overflowWrap:'anywhere'}}>📎 {message.fileName||'查看文件'}</a>)}
+              {message.senderType==='staff'&&String(message.senderId)===staffId&&Date.now()-new Date(message.createdAt).getTime()<120000&&<button type="button" className="sg-message-action" aria-label="消息操作" onClick={()=>setQuoteMenu(message)}>···</button>}
               {message.material && <div style={{marginTop:8}}>
                 <small>{message.material.status}</small>
                 <div style={{display:'flex',flexWrap:'wrap',gap:8}}>{(message.material.files||[]).map((url,i)=><a key={i} href={url} target="_blank" rel="noreferrer">{message.material.mimeType==='application/pdf'?'查看PDF':<img src={url} alt={`资料第${i+1}页`} style={{width:100,height:100,objectFit:'contain'}}/>}</a>)}</div>
@@ -349,5 +365,6 @@ export default function InAppServiceGroupsPage() {
         </> : <p className="sg-select-prompt">从左侧选择一个服务群，查看对话记录。</p>}
       </section>
     </div>
+    {previewImage&&<div className="sg-image-preview" role="dialog" aria-modal="true" aria-label="查看聊天图片" onClick={()=>setPreviewImage('')}><button type="button" aria-label="关闭图片" onClick={()=>setPreviewImage('')}>×</button><img src={previewImage} alt="聊天原图" onClick={event=>event.stopPropagation()}/></div>}
   </main>;
 }

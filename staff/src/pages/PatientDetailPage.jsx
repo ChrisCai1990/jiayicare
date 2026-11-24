@@ -15498,7 +15498,7 @@ function SendMessageModal({ patientId, patientName, serviceBooking, initialOrder
             const showTime = i === 0 || (new Date(m.createdAt) - new Date(prevMsg.createdAt)) > 300000
             const showDateDivider = i === 0 || new Date(m.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString()
             // 撤回：仅限医护自己发的消息（isStaff），2分钟内可撤回，与用户端 messages.js 规则一致
-            const canRecall = isStaff && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000)
+            const canRecall = isStaff && String(m.senderStaffId || '') === String(staff?._id || '') && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000)
             if (m.type === 'system') {
               return (
                 <div key={m._id}>
