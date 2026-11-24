@@ -159,6 +159,29 @@ function mergeSupplementItems(existingItems, candidates, options = {}) {
   return { items: result, added, enriched };
 }
 
+// The final page write must retain a longer paragraph transcribed from the
+// same PDF findings block. Only a unique, still-unreviewed existing row may
+// be extended; this never creates an item or changes a human-reviewed result.
+function enforceTextNarrativeExtensions(items, candidates) {
+  const result = [...(items || [])];
+  const enriched = [];
+  for (const candidate of candidates || []) {
+    if (candidate?.itemType !== 'imaging' || !cleanPart(candidate.findings)) continue;
+    const matches = result.map((item, index) => ({ item, index })).filter(({ item }) =>
+      item?.itemType === 'imaging' && !isHumanReviewed(item)
+      && cleanPart(item.name) === cleanPart(candidate.name)
+      && Number(item.sourcePage) === Number(candidate.sourcePage)
+      && (!cleanPart(item.sourceSection) || !cleanPart(candidate.sourceSection)
+        || cleanPart(item.sourceSection) === cleanPart(candidate.sourceSection))
+      && extendsNarrative(item.findings, candidate.findings));
+    if (matches.length !== 1) continue;
+    const { item, index } = matches[0];
+    result[index] = { ...item, findings: candidate.findings };
+    enriched.push(result[index]);
+  }
+  return { items: result, enriched };
+}
+
 const ULTRASOUND_ORGANS = [
   { key: 'liver', label: '肝脏', descriptor: /肝(?:脏)?/, evidence: /肝(?:脏|实质|内|包膜|回声|结节)/ },
   { key: 'gallbladder', label: '胆囊', descriptor: /胆(?:囊)?/, evidence: /胆(?:囊|总管|汁)/ },
@@ -254,6 +277,7 @@ module.exports = {
   inferMissingUltrasoundOrgans,
   isActivePageParse,
   mergeSupplementItems,
+  enforceTextNarrativeExtensions,
   PAGE_PARSE_STALE_MS,
   reportItemIdentityKey,
   sameReportItem,

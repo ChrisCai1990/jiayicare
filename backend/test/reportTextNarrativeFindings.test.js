@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseTextNarrativeFindings } = require('../src/utils/reportTextNarrativeFindings');
-const { mergeSupplementItems } = require('../src/utils/reportPageSupplement');
+const { mergeSupplementItems, enforceTextNarrativeExtensions } = require('../src/utils/reportPageSupplement');
 
 const layout = `超声检查报告
 检查所见：
@@ -45,4 +45,21 @@ test('ambiguous or reviewed findings stay untouched', () => {
   assert.equal(parseTextNarrativeFindings(layout.replace('双肾形态正常', '两肾形态正常'),
     [{ ...existing, findings: '另一段不匹配的检查所见，不能据此覆盖原有项目。' }], 17).supported, false);
   assert.equal(parseTextNarrativeFindings(layout.replace('诊断意见：', '检查所见：'), [existing], 17).supported, false);
+});
+
+test('final save restores an exact longer PDF paragraph without touching reviewed rows', () => {
+  const kidney = { itemId: 'kidney', name: '双肾超声', itemType: 'imaging', sourcePage: 17,
+    sourceSection: '检查所见', findings: '双肾切面形态、大小未见异常，', manualReviewStatus: 'pending' };
+  const reviewed = { itemId: 'liver', name: '肝脏超声', itemType: 'imaging', sourcePage: 17,
+    sourceSection: '检查所见', findings: '肝脏大小正常。', manualReviewStatus: 'reviewed' };
+  const full = { ...kidney, findings: `${kidney.findings}实质回声均匀，集合系统未见分离。CDFI：未见异常血流信号。` };
+  const result = enforceTextNarrativeExtensions([kidney, reviewed], [full,
+    { ...reviewed, findings: `${reviewed.findings}额外文字` }]);
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items[0].findings, full.findings);
+  assert.equal(result.items[0].itemId, kidney.itemId);
+  assert.deepEqual(result.items[1], reviewed);
+  assert.equal(result.enriched.length, 1);
+  assert.equal(enforceTextNarrativeExtensions([kidney], [{ ...full, findings: '不同的原文。' }]).enriched.length, 0);
+  assert.equal(enforceTextNarrativeExtensions([kidney, { ...kidney, itemId: 'duplicate' }], [full]).enriched.length, 0);
 });

@@ -20069,6 +20069,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // Structured annual text-layer lab and department rows can be read locally
   // without consuming visual-model calls. Results remain unverified drafts.
   let localScan = null;
+  let textNarrativeCandidates = [];
   if (isPdf && report.type === 'annual') {
     try {
       const { readPdfPageLayout, readPdfPageTextBoxes } = require('../utils/reportOcrWords');
@@ -20108,6 +20109,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
       }
       const { parseTextNarrativeFindings } = require('../utils/reportTextNarrativeFindings');
       const narrativeCandidate = parseTextNarrativeFindings(layout, oldPageAtStart, pageNum);
+      if (narrativeCandidate.supported) textNarrativeCandidates = narrativeCandidate.items;
       const narrativeOnly = narrativeCandidate.supported && !textCandidate.supported
         && !resultFirstCandidate.supported && !referenceFirstCandidate.supported
         && !missingNamedExams.length && !urineCandidate.supported && !physicalCandidate.supported
@@ -20292,9 +20294,16 @@ async function runReportPageParseControlled(reportId, pageNum) {
   const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item, supplementOptions).length && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
   const supplementMerge = mergeSupplementItems(oldPage, [...latestMissing, ...latestEnrichment].filter(item => !supplementMatches(deletedItems, item, supplementOptions).length), supplementOptions);
-  const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched];
   const mergedPage = supplementMerge.items;
-  const classifiedPage = (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus);
+  const { enforceTextNarrativeExtensions, sameReportItem } = require('../utils/reportPageSupplement');
+  const narrativeGuard = enforceTextNarrativeExtensions(
+    (await classifyItemsAsync(mergedPage)).map(normalizeExplicitNormalStatus), textNarrativeCandidates);
+  const classifiedPage = narrativeGuard.items;
+  const acceptedSupplementItems = [...supplementMerge.added, ...supplementMerge.enriched]
+    .map(item => narrativeGuard.enriched.find(updated => sameReportItem(updated, item)) || item);
+  for (const updated of narrativeGuard.enriched) {
+    if (!acceptedSupplementItems.some(item => sameReportItem(item, updated))) acceptedSupplementItems.push(updated);
+  }
   const preserved = (latest.reportItems || []).filter(item => !belongsToRequestedPage(item));
   const combined = stripReportSourceOrder(sortReportItemsBySource([...preserved, ...classifiedPage]));
   const completedAt = new Date();
