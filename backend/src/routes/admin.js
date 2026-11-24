@@ -2281,7 +2281,8 @@ router.post('/products', adminAuth, async (req, res) => {
   if (settlementError) return res.status(400).json({ success: false, message: settlementError });
   const attributionError = productBusinessAttributionRequired({ status: status || 'off', servicePrices, businessAllocations, originalPrice });
   if (attributionError) return res.status(400).json({ success: false, message: attributionError });
-  const fundRuleError = require('../utils/productFundRule').validateProductFundRule(healthFundDeduction);
+  const fundRuleError = require('../utils/productFundRule').validateProductFundRule(healthFundDeduction)
+    || (servicePrices || []).map(row => require('../utils/productFundRule').validateProductFundRule(row.healthFundDeduction)).find(Boolean);
   if (fundRuleError) return res.status(400).json({ success:false, message:fundRuleError });
   if (stock !== undefined && (!Number.isInteger(Number(stock)) || Number(stock) < 0)) return res.status(400).json({ success: false, message: '库存必须是非负整数' });
   if (!name || !category) return res.status(400).json({ success: false, message: '名称、分类为必填项' });
@@ -2321,6 +2322,9 @@ router.put('/products/:id', adminAuth, async (req, res) => {
   const existingProduct = await Product.findById(req.params.id);
   if (!existingProduct) return res.status(404).json({ success: false, message: '产品不存在' });
   const mergedServicePrices = servicePrices?.map(price => ({ ...price,
+    healthFundDeduction: price.healthFundDeduction === undefined
+      ? existingProduct.servicePrices.find(row => row.label === price.label)?.healthFundDeduction
+      : price.healthFundDeduction,
     performanceConfig: price.performanceConfig === undefined
       ? existingProduct.servicePrices.find(row => row.label === price.label)?.performanceConfig || null
       : price.performanceConfig,
@@ -2330,6 +2334,8 @@ router.put('/products/:id', adminAuth, async (req, res) => {
       ? existingProduct.serviceItems.find(row => row.key === item.key)?.performers || []
       : item.performers,
   }));
+  const specRuleError = (mergedServicePrices || []).map(row => require('../utils/productFundRule').validateProductFundRule(row.healthFundDeduction?.mode ? row.healthFundDeduction : existingProduct.healthFundDeduction)).find(Boolean);
+  if (specRuleError) return res.status(400).json({ success:false, message:specRuleError });
   const settlementError = await validateProductSettlementConfig({ serviceItems, servicePrices, businessAllocations,
     originalPrice: originalPrice === undefined ? existingProduct.originalPrice : originalPrice,
     staffPerformanceOverrides }, req.admin.tenantId, existingProduct._id);
@@ -2408,6 +2414,16 @@ router.patch('/products/:id/health-fund-deduction', adminAuth, async (req, res) 
   if (error) return res.status(400).json({ success:false, message:error });
   const mode = req.body.mode;
   const value = mode === 'percentage' ? Number(req.body.value) : 0;
+  if (req.body.specificationLabel !== undefined) {
+    const label = String(req.body.specificationLabel);
+    const product = await Product.findOneAndUpdate(
+      { _id:req.params.id, 'servicePrices.label':label },
+      { $set:{ 'servicePrices.$.healthFundDeduction':{ mode, value } } },
+      { new:true, runValidators:true }
+    );
+    if (!product) return res.status(404).json({ success:false, message:'商品收费规格不存在，请刷新后重试' });
+    return res.json({ success:true, data:product.servicePrices.find(row=>row.label===label)?.healthFundDeduction, message:'收费规格健康礼遇金抵扣规则已更新' });
+  }
   const product = await Product.findByIdAndUpdate(
     req.params.id,
     { $set: { healthFundDeduction: { mode, value } } },

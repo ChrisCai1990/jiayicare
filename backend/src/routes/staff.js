@@ -8248,7 +8248,7 @@ async function staffFundOrderQuote(req) {
     throw Object.assign(new Error('该客户已有可用或待核对的套餐服务权益，请先从会员档案办理'), { status: 409 });
   const fund = await require('../utils/healthFundPayment').validateHealthFundDeduction({
     user: patient, requested: price, orderAmount: price, category: product.category,
-    productId: product._id, maximize: true,
+    productId: product._id, specificationLabel: label, maximize: true,
   });
   return { patient, product, price, label, fund, shortage: Math.round((price - fund.allowed) * 100) / 100 };
 }

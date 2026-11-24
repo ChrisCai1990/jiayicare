@@ -28,6 +28,10 @@ const productSchema = new mongoose.Schema({
   originalPrice: { type: Number, required: function () { return this.status === 'on'; }, min: 0, default: null },
   servicePrices: [{
     label: { type: String }, price: { type: Number },
+    healthFundDeduction: {
+      mode: { type: String, enum: ['disabled', 'percentage'] },
+      value: { type: Number, default: 0, min: 0, max: 100 },
+    },
     businessAllocations: [{
       key: { type: String, required: true }, name: { type: String, required: true },
       businessType: { type: String, enum: ['service', 'product', 'enterprise'], default: 'service' },

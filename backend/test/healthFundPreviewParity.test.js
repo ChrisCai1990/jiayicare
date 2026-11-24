@@ -5,7 +5,8 @@ function server(config={}) {
   const mocks={
     '../models/Enterprise':{findById:async()=>config.enterprise},
     '../models/SystemConfig':{findOne:()=>({lean:async()=>null})},
-    '../models/Product':{findById:()=>({select:()=>({lean:async()=>({healthFundDeduction:config.rule})})})},
+    '../models/Product':{findById:()=>({select:()=>({lean:async()=>({healthFundDeduction:config.rule,servicePrices:config.servicePrices})})})},
+    './productFundRule':require('../src/utils/productFundRule'),
     './packageFeatureEntitlements':{hasHealthFundAccess:async()=>config.eligible!==false},
     mongoose:{Types:{ObjectId:{isValid:()=>true}}},
   };
@@ -14,7 +15,7 @@ function server(config={}) {
     getPersonalFundAvailable=async()=>${config.personal??0};
     getVitalityFundAvailable=async()=>${config.vitality??0};
     getCorporateFundAvailable=async()=>${config.corporate??1000};`,ctx);
-  return (requested,maximize=false)=>ctx.module.exports.validateHealthFundDeduction({user:{_id:'synthetic',enterpriseId:config.enterprise?'enterprise':undefined},requested,orderAmount:100,productId:'product',category:'test',productLimit:config.productLimit,maximize});
+  return (requested,maximize=false)=>ctx.module.exports.validateHealthFundDeduction({user:{_id:'synthetic',enterpriseId:config.enterprise?'enterprise':undefined},requested,orderAmount:100,productId:'product',category:'test',productLimit:config.productLimit,specificationLabel:config.specificationLabel||'',maximize});
 }
 test('single-product request is a ceiling, never a second percentage base',async()=>{
   const validate=server();
@@ -30,6 +31,24 @@ test('single-product preview agrees with actual validator across product rules a
       assert.equal(Math.round((result.breakdown.personal+result.breakdown.vitality+result.breakdown.corporate)*100),Math.round(result.allowed*100));
       assert.ok(estimate<=100);
     }
+  }
+});
+test('preview uses the selected charge specification',()=>{
+  const product={id:'product',healthFundDeduction:{mode:'percentage',value:5},servicePrices:[
+    {label:'代配药',healthFundDeduction:{mode:'percentage',value:3}},
+    {label:'代约检',healthFundDeduction:{mode:'percentage',value:10}},
+  ]};
+  const balance={eligible:true,corporate:100};
+  assert.equal(preview.maxFundDeduction(balance,100,product,'代配药'),3);
+  assert.equal(preview.maxFundDeduction(balance,100,product,'代约检'),10);
+  assert.equal(preview.maxFundDeduction(balance,100,product,'未售卖规格'),0);
+});
+test('settlement uses the selected charge specification',async()=>{
+  const servicePrices=[{label:'代配药',healthFundDeduction:{mode:'percentage',value:3}},
+    {label:'代约检',healthFundDeduction:{mode:'percentage',value:10}}];
+  for(const [specificationLabel,expected] of [['代配药',3],['代约检',10],['未知规格',0]]){
+    const result=await server({rule:{mode:'percentage',value:5},servicePrices,specificationLabel})(100);
+    assert.equal(result.allowed,expected);
   }
 });
 test('自有基金和活力基金不受会员资格限制，奖励基金仍受限制',async()=>{

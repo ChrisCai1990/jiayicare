@@ -609,6 +609,7 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
       status: product.status || 'off',
       images: product.images || [],
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price),
+        healthFundDeduction: sp.healthFundDeduction?.mode ? sp.healthFundDeduction : product.healthFundDeduction,
         businessAllocations: (sp.businessAllocations || []).map(row => ({ key: row.key, name: row.name,
           businessType: row.businessType || 'service', teamRole: row.teamRole, childProductId: row.childProductId || '',
           revenueSharePercent: row.revenueSharePercent, allocationAmountCents: row.allocationAmountCents })),
@@ -768,7 +769,12 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
       || (!hasSeparateAllocations && Math.abs(allocatedItems.reduce((sum,item)=>sum+Number(item.revenueSharePercent || 0),0)-100)>0.001))) {
       toast('请为每项业务填写归属金额；产品／检测须关联产品库，金额合计须覆盖产品原价'); setTab('businessAllocation'); return
     }
-    if (!['percentage', 'disabled'].includes(form.healthFundDeduction?.mode)) { toast('请为商品明确设置健康礼遇金抵扣规则'); setTab('fund'); return }
+    const hasFundSpecs=(form.servicePrices||[]).some(row=>row.label?.trim())
+    if (!hasFundSpecs && !['percentage', 'disabled'].includes(form.healthFundDeduction?.mode)) { toast('请为商品明确设置健康礼遇金抵扣规则'); setTab('fund'); return }
+    if ((form.servicePrices || []).some(row => row.label?.trim() && (!['percentage','disabled'].includes(row.healthFundDeduction?.mode)
+      || (row.healthFundDeduction.mode === 'percentage' && (!Number.isFinite(Number(row.healthFundDeduction.value)) || Number(row.healthFundDeduction.value) < 1 || Number(row.healthFundDeduction.value) > 100))))) {
+      toast('请逐个收费规格设置1%-100%的抵扣比例或明确选择不支持'); setTab('fund'); return
+    }
     const fundValue = Number(form.healthFundDeduction?.value)
     if (form.healthFundDeduction?.mode === 'percentage' && (!Number.isFinite(fundValue) || fundValue < 1 || fundValue > 100)) { toast('商品抵扣比例须为1%-100%'); return }
     const isUnpricedIbdDraft = form.category === '专病管理' && /IBD|炎症性肠病/i.test(form.name) && form.status === 'off'
@@ -781,6 +787,7 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
       const cleanedPrices = form.servicePrices
         .filter(sp => sp.label.trim() && sp.price !== '' && !isNaN(parseFloat(sp.price)))
         .map(sp => ({ label: sp.label.trim(), price: parseFloat(sp.price),
+          healthFundDeduction: { mode:sp.healthFundDeduction?.mode, value:Number(sp.healthFundDeduction?.value)||0 },
           businessAllocations: (sp.businessAllocations || []).map(row => ({
             key: row.key, name: `${sp.label.trim()} · ${allocationItemName(row, productsForBundle).trim().replace(`${sp.label.trim()} · `, '')}`,
             businessType: row.businessType || 'service', teamRole: row.businessType === 'enterprise' ? 'enterpriseResource' : row.teamRole || 'healthManager',
@@ -815,8 +822,8 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
         validityDays: Math.max(1, parseInt(form.validityDays) || 365),
         refundPolicy: form.refundPolicy,
         healthFundDeduction: {
-          mode: form.healthFundDeduction.mode,
-          value: Math.max(0, Number(form.healthFundDeduction?.value) || 0),
+          mode: hasFundSpecs ? 'disabled' : form.healthFundDeduction.mode,
+          value: hasFundSpecs ? 0 : Math.max(0, Number(form.healthFundDeduction?.value) || 0),
         },
         memberBundle: form.memberBundle?.enabled ? {
           enabled: true,
@@ -1064,6 +1071,23 @@ function ProductModal({ product, categoryGroups, onClose, onSaved, commissionMod
           {tab === 'fund' && (() => {
             const rule = form.healthFundDeduction || { mode:'', value:'' }
             const setRule = (key, value) => set('healthFundDeduction', { ...rule, [key]:value })
+            if (form.servicePrices?.some(row => row.label?.trim())) return <div>
+              <p style={{color:'#667a6d'}}>每个收费规格单独设置健康礼遇金抵扣比例；客户结算按所选规格计算。</p>
+              {form.servicePrices.filter(row=>row.label?.trim()).map((row,index)=>{
+                const current=row.healthFundDeduction || {mode:'',value:''}
+                const updateRule=(patch)=>set('servicePrices',form.servicePrices.map(item=>item===row?{...item,healthFundDeduction:{...current,...patch}}:item))
+                return <div key={`${row.label}:${index}`} style={{padding:12,border:'1px solid #e0d9ce',borderRadius:8,marginBottom:10}}>
+                  <strong>{row.label} · ¥{row.price}</strong>
+                  <div style={{display:'flex',gap:8,marginTop:8}}>
+                    <select className="form-input" value={current.mode||''} onChange={e=>updateRule({mode:e.target.value,value:0})}>
+                      <option value="">请选择抵扣规则</option><option value="percentage">按订单比例抵扣</option><option value="disabled">不支持健康礼遇金抵扣</option>
+                    </select>
+                    {current.mode==='percentage'&&<input className="form-input" type="number" min="1" max="100" value={current.value??''} onChange={e=>updateRule({value:e.target.value})} aria-label={`${row.label}抵扣比例`} />}
+                    {current.mode==='percentage'&&<span>%</span>}
+                  </div>
+                </div>
+              })}
+            </div>
             return <div>
               <div style={{padding:14,background:'#ecfdf5',border:'1px solid #bbf7d0',borderRadius:10,color:'#166534',fontSize:13,marginBottom:18}}>
                 商品规则是健康基金的最终抵扣上限；仅有效的365、年度、疗程或企业会员可用，基础会员仍可原价购买。

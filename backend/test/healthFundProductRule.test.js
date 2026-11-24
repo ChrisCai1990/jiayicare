@@ -1,7 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { productDeductionLimit, allocateHealthFund } = require('../src/utils/healthFundPayment');
-const { validateProductFundRule } = require('../src/utils/productFundRule');
+const { validateProductFundRule, resolveProductFundRule } = require('../src/utils/productFundRule');
+
+test('each charge specification resolves its own gift fund percentage', () => {
+  const product = { healthFundDeduction:{mode:'percentage',value:5}, servicePrices:[
+    {label:'代配药',price:280,healthFundDeduction:{mode:'percentage',value:3}},
+    {label:'代约检（常规）',price:380,healthFundDeduction:{mode:'percentage',value:10}},
+    {label:'代约检（特殊）',price:480,healthFundDeduction:{mode:'disabled',value:0}},
+  ] };
+  assert.equal(productDeductionLimit(resolveProductFundRule(product,'代配药'),280),8.4);
+  assert.equal(productDeductionLimit(resolveProductFundRule(product,'代约检（常规）'),380),38);
+  assert.equal(productDeductionLimit(resolveProductFundRule(product,'代约检（特殊）'),480),0);
+  assert.equal(resolveProductFundRule(product,'不存在'),null);
+});
 test('explicit product rules allow 5, 30 and 100 percent without a platform cap', () => {
   for (const value of [5,30,100]) assert.equal(productDeductionLimit({mode:'percentage',value},500),500*value/100);
   assert.equal(productDeductionLimit({mode:'disabled'},500),0);

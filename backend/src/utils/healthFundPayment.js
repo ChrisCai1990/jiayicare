@@ -105,7 +105,7 @@ async function getPersonalFundAvailable(user) {
   return Math.max(0, Math.min(totalBalance, totalBalance - corporateAvailable - vitalityAvailable));
 }
 
-async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit, maximize = false }) {
+async function validateHealthFundDeduction({ user, requested, orderAmount, category, categories, productId, productIds, productLimit, specificationLabel = '', maximize = false }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
   const memberEligible = await require('./packageFeatureEntitlements').hasHealthFundAccess(user);
@@ -113,8 +113,8 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
   let productRule = null;
   let finalProductLimit = Number.isFinite(Number(productLimit)) ? Math.max(0, Number(productLimit)) : orderAmount;
   if (productId && productLimit === undefined && require('mongoose').Types.ObjectId.isValid(productId)) {
-    const product = await Product.findById(productId).select('healthFundDeduction').lean();
-    productRule = product?.healthFundDeduction;
+    const product = await Product.findById(productId).select('healthFundDeduction servicePrices.label servicePrices.healthFundDeduction').lean();
+    productRule = require('./productFundRule').resolveProductFundRule(product, specificationLabel);
     finalProductLimit = productDeductionLimit(productRule, orderAmount);
   }
   const corporateEligible = (productLimit !== undefined
