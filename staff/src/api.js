@@ -140,6 +140,7 @@ export const staffAPI = {
   submitFeedbackResult: (id, data) => req(`/feedback/${id}/result`, { method: 'POST', body: JSON.stringify(data) }),
   expertConsultationCases: () => req('/expert-consultations/staff'),
   createExpertConsultation: data => req('/expert-consultations/staff', { method: 'POST', body: JSON.stringify(data) }),
+  expertConsultationMaterialOptions: patientId => req(`/expert-consultations/staff/material-options/${patientId}`),
   expertConsultationExperts: () => req('/expert-consultations/staff/experts'),
   expertConsultationCaseExperts: id => req(`/expert-consultations/staff/${id}/experts`),
   expertConsultationMaterials: id => req(`/expert-consultations/staff/${id}/materials`),
