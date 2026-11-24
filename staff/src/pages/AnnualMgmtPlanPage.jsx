@@ -1129,7 +1129,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }))
   })
   const defaultActionGoals = { medical_treatment: '及时完成就医，明确诊治方案', specialist_collab: '完成专家会诊，明确后续诊治方案', checkup_completion: '完成检查，明确结果与后续处理方向', abnormal_followup: '按计划完成复查，明确变化与后续管理措施', vaccine: '核实接种适宜性，按确认的方案完成接种', annual_checkup: '按计划完成年度体检，核对重点项目结果', rehab_assessment: '完成运动复健评估，明确干预方案', health_consensus: '完成本次主题沟通，确认客户理解与下一步安排' }
-  const goalForAction = action => action.record.goal || defaultActionGoals[action.key] || ''
+  const goalForAction = action => !action.record.goal || ['管控', '管理', '评估'].includes(String(action.record.goal).trim())
+    ? defaultActionGoals[action.key] || '完成本项安排后与健康顾问确认结果'
+    : action.record.goal
   const displayedGoals = managementTargets.length ? managementTargets.map((row, index) => ({ id: targetIssueId(row, index), title: row.sourceTitle || `问题 ${index + 1}`, goal: row.goal || '目标待健康顾问确认' }))
     : planActions.filter(action => defaultActionGoals[action.key]).map(action => ({ id: `${action.key}:${action.index}`, title: action.title, goal: action.record.goal || defaultActionGoals[action.key] }))
   const integratedActions = planActions.map(action => ({ ...action, issueId: patientMode ? displayIssueId(action.record, managementTargets) : '' }))
@@ -1222,6 +1224,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     nutritionScreeningIssues={nutritionScreeningIssues}
     nutritionAdvisorTargets={moduleData.nutrition_assessment?.advisorTargetsManuallyAdjusted || pushedAt ? moduleData.nutrition_assessment?.advisorTargets || [] : nutritionAdvisorTargets.mergeAdvisorTargets(moduleData.nutrition_assessment?.advisorTargets || [], managementTargets, nutritionEvidence)} nutritionEnabled={!!moduleData.nutrition_assessment && moduleData.nutrition_assessment.enabled !== false}
     nutritionExecutionDate={moduleData.nutrition_assessment?.executionDate || ''} nutritionExecutorName={staffList.find(staff => String(staff._id) === String(moduleData.nutrition_assessment?.executorId || patient?.assignedNutritionist?._id || patient?.assignedNutritionist || ''))?.name || patient?.assignedNutritionist?.name || ''}
+    nutritionTask={nutritionTask} nutritionTaskLoading={nutritionTaskLoading} canDispatchNutrition={canEdit}
     nutritionAdvisorEditor={nutritionEditor}
     onNutrition={() => {
       if (annualPilot && pushedAt) {

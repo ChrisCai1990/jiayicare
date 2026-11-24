@@ -15,6 +15,17 @@ test('年度方案生成统一的客户展示卡片字段', () => {
   assert.equal(items[0].service.typeLabel, '代约/代办');
 });
 
+test('就医安排把泛化标题和目标转成客户能理解的下一步', () => {
+  const [item] = buildAnnualPlanDisplayItems(customerModuleData({ medical_treatment: { records: [{
+    items: '需要安排就医', department: '消化内科', hospital: '邵逸夫医院', goal: '管控',
+    visit_time: '2026-11-28', serviceMode: 'single', serviceType: 'proxy_booking',
+  }] } }));
+  assert.equal(item.title, '前往消化内科就诊');
+  assert.equal(item.goal, '请专科医生评估并明确后续诊治安排');
+  assert.match(item.customerAction, /医生意见/);
+  assert.equal(item.careTarget.hospital, '邵逸夫医院');
+});
+
 test('内部备注不会进入客户展示结构', () => {
   const [item] = buildAnnualPlanDisplayItems({ vaccine: { records: [{ name: '流感疫苗', notes: '内部沟通记录' }] } });
   assert.equal(Object.values(item).includes('内部沟通记录'), false);
