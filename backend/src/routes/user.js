@@ -2083,7 +2083,7 @@ router.post('/ai-health-summary', auth, async (req, res) => {
     // 双审强制前置：有健康顾问的客户，必须先由家医审核确认所有体检报告才能生成（2026-07-21新增，
     // 此前只在 staff.js 医护端生成入口拦截，客户自助生成这条路完全没走这道校验，是遗漏的漏洞）
     const { checkReportAuditGate } = require('../utils/reportAuditGate');
-    const gateMsg = await checkReportAuditGate(req.user._id);
+    const gateMsg = await checkReportAuditGate(req.user._id, { analysisYear: new Date().getFullYear() });
     if (gateMsg) return res.status(403).json({ success: false, code: 'REPORT_AUDIT_PENDING', message: gateMsg });
     const { checkupAnalysisReadiness } = require('../utils/checkupAnalysisReadiness');
     const readiness = await checkupAnalysisReadiness(req.user._id, new Date().getFullYear());

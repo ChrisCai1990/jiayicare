@@ -8,17 +8,10 @@ const { classifyTumorMarkerItem, findUnsupportedTumorMarkerElevation } = require
 const { focusedReportHits, reconcileFocusedTopics } = require('./focusedTrendEvidence');
 const { HOMOCYSTEINE_INTERVENTION_THRESHOLD, enforceHomocysteineIntervention } = require('./homocysteineIntervention');
 const { buildEchoChamberTrend } = require('./echoChamberTrend');
+const { reportsInAnalysisWindow } = require('./analysisReportWindow');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
-
-function reportsInAnalysisWindow(reports, targetYear) {
-  return reports.filter(report => {
-    const date = String(report.checkDate || report.date || '').slice(0, 10);
-    const year = Number(date.slice(0, 4) || report.reportYear);
-    return Number.isInteger(year) && year >= targetYear - 4 && year <= targetYear;
-  });
-}
 
 const COMMON_CANCER_CATALOG = {
   M: ['肺癌', '结直肠癌', '肝癌', '胃癌', '食管癌', '前列腺癌', '甲状腺癌', '膀胱癌', '胰腺癌', '淋巴瘤'],
@@ -883,5 +876,5 @@ function attachSourceLinks(sections, allReports, referenceYear = new Date().getF
   }
 }
 
-module.exports = { generateHealthSummarySections, reportsInAnalysisWindow, reconcileGynecologicUltrasoundCoverage,
+module.exports = { generateHealthSummarySections, reconcileGynecologicUltrasoundCoverage,
   buildStructuredSourceEvidence, CANCER_EVIDENCE_RULES, DOCTOR_KEYS, LIFESTYLE_KEY };

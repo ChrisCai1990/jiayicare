@@ -17,18 +17,19 @@ const MedicalReport = require('../models/MedicalReport');
 const User = require('../models/User');
 
 // 返回 null 表示放行；返回字符串表示拦截原因（用作 message 直接展示给用户）
-async function checkReportAuditGate(userId, { throughYear } = {}) {
+async function checkReportAuditGate(userId, { throughYear, analysisYear } = {}) {
   const user = await User.findById(userId)
     .select('assignedFamilyDoctor archiveReviewStatus archiveReviewSnapshotAt archiveChangeLog archiveAutoLog archiveConfirmLog lifestyleHistory');
   if (!user || !user.assignedFamilyDoctor) return null; // 无健康顾问的客户不受此拦截，维持原有逻辑
 
-  if (throughYear) {
-    const { reportsThroughYear } = require('./historicalAIHealthContext');
-    const reports = reportsThroughYear(await MedicalReport.find({ user: userId, archiveOnly: { $ne: true } })
-      .select('reportYear checkDate date documentCategory audit_status createdAt familyDoctorViewedAt advisorCorrection.resubmittedAt').lean(), throughYear);
-    if (!reports.length) return '请先上传目标年度及此前的体检报告后再生成历史AI健康信息整理';
+  if (analysisYear || throughYear) {
+    const targetYear = Number(analysisYear || throughYear);
+    const { reportsInAnalysisWindow } = require('./analysisReportWindow');
+    const reports = reportsInAnalysisWindow(await MedicalReport.find({ user: userId, archiveOnly: { $ne: true } })
+      .select('reportYear checkDate date documentCategory audit_status createdAt familyDoctorViewedAt advisorCorrection.resubmittedAt').lean(), targetYear);
+    if (!reports.length) return `请先上传${targetYear - 4}—${targetYear}年的体检报告后再生成AI健康信息整理`;
     const notStaffAudited = reports.filter(report => report.audit_status !== 'audited').length;
-    if (notStaffAudited) return `截至${throughYear}年度还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;
+    if (notStaffAudited) return `${targetYear - 4}—${targetYear}年还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;
     const snapshotAt = user.archiveReviewSnapshotAt ? new Date(user.archiveReviewSnapshotAt).getTime() : 0;
     if (reports.some(report => report.documentCategory !== 'prescription_order' && reportNeedsAdvisorView(report, snapshotAt))) {
       return '历史体检报告有新增内容，健康顾问需先查看确认后再生成';

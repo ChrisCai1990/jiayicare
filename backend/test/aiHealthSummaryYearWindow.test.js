@@ -1,12 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../src/utils/aiHealthSummary.js'), 'utf8');
-const context = {};
-vm.runInNewContext(source.slice(source.indexOf('function reportsInAnalysisWindow'), source.indexOf('const COMMON_CANCER_CATALOG')), context);
-const reportsInAnalysisWindow = (reports, year) => Array.from(context.reportsInAnalysisWindow(reports, year));
+const { reportsInAnalysisWindow } = require('../src/utils/analysisReportWindow');
 
 test('2026 five-dimensional analysis excludes 2020 reports from every report-derived input', () => {
   const reports = [

@@ -14331,8 +14331,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 没做这层校验的漏洞）。
     if (scope === 'doctor' || scope === 'nutrition' || scope === 'all') {
       const { checkReportAuditGate } = require('../utils/reportAuditGate');
-      const gateMsg = await checkReportAuditGate(req.params.id,
-        requestedYear < currentYear ? { throughYear: requestedYear } : undefined);
+      const gateMsg = await checkReportAuditGate(req.params.id, { analysisYear: requestedYear });
       if (gateMsg) return res.status(403).json({ success: false, needReportAudit: true, message: gateMsg });
     }
     // 生活方式评估（nutrition维度）额外要求：该客户的膳食调查问卷必须已完成营养师复核
