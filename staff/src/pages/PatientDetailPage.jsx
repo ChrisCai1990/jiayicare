@@ -9068,7 +9068,7 @@ export default function PatientDetailPage() {
             )}
             <details style={{ marginBottom: 12, padding: '10px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#1E6B50' }}>评估管理与依据</summary>
-            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、历年体检与检验检查、专项筛查、健康监测、问卷和近期记录，按年度与历史数据比较。5维分析须由家庭医生审核；未审核内容仅为草稿。</div></details>
+            <details style={{ marginBottom: 12, padding: '8px 12px', border: '1px solid #DCE5E0', borderRadius: 9, background: '#FAFBFA' }}><summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>生成依据</summary><div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.8, color: '#65776F' }}>AI读取已确认档案、分析年度及此前四年的体检与检验检查、专项筛查、健康监测、问卷和近期记录。5维分析须由家庭医生审核；未审核内容仅为草稿。</div></details>
 <p style={{ fontSize: 12, color: '#65776F' }}>团队成员可查看已审核结果，生成和审核按专业角色权限开放。</p>
               {aiSummaryLoading && <div role="status" style={{ marginTop: 10, color: '#1E6B50' }}>正在生成，资料较多时可能需要2–4分钟，请勿重复提交。</div>}
               {aiSummaryError && <div role="alert" style={{ marginTop: 10, color: '#B91C1C' }}>{aiSummaryError}</div>}
@@ -9077,7 +9077,7 @@ export default function PatientDetailPage() {
               历史年度补生成仅依据截至{curYear}年末有明确检查年度的报告；当前档案、用药、生活方式和近期记录不作为当年事实。
             </div>}
             <div style={{ fontSize: 12, color: '#65776F', marginBottom: 12 }}>
-              五维趋势范围：{Number(curYear) - 4}—{curYear}年（最近5个自然年）；更早检查记录只作历史背景，并须注明发生年份。
+              五维分析报告范围：{Number(curYear) - 4}—{curYear}年（5个自然年）；更早的报告不参与本次分析。
             </div>
             {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>
