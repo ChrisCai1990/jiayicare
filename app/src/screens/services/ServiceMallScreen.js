@@ -171,7 +171,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
       )
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
-  const fundMaximum = maxFundDeduction(user?.healthFund, priceAfterCoupon, item);
+  const fundMaximum = maxFundDeduction(user?.healthFund, priceAfterCoupon, item, currentSpecLabel);
   const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, fundMaximum) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 

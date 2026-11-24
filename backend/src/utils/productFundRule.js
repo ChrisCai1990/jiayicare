@@ -11,4 +11,12 @@ function validateProductFundRule(rule) {
   }
   return null;
 }
-module.exports = { validateProductFundRule };
+function resolveProductFundRule(product, specificationLabel = '') {
+  if (!product) return null;
+  const prices = product.servicePrices || [];
+  if (!prices.length) return product.healthFundDeduction;
+  const row = prices.find(price => price.label === specificationLabel);
+  if (!row) return null;
+  return row.healthFundDeduction?.mode ? row.healthFundDeduction : product.healthFundDeduction;
+}
+module.exports = { validateProductFundRule, resolveProductFundRule };

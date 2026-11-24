@@ -238,7 +238,7 @@ function PurchaseModal({ item, mode, onClose, shareToken = '', partnerCode = '',
     userAPI.enterpriseSharedFundQuote(item.id, priceAfterCoupon).then(r => { if (live) setSharedQuote(Number(r.data?.amount || 0)); }).catch(() => { if (live) setSharedQuote(0); });
     return () => { live = false; };
   }, [isPay, item?.id, priceAfterCoupon, benefitsRefresh]);
-  const fundMaximum = maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, item);
+  const fundMaximum = maxFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, item, currentSpecLabel);
   const canUseFund = fundBalance > 0 && fundMaximum > 0;
   const fundApplied = canUseFund && useFund ? Math.round(Math.min(fundBalance, fundMaximum) * 100) / 100 : 0;
   const sharedApplied = useSharedFund ? sharedQuote : 0;

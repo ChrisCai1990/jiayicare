@@ -53,8 +53,9 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
       const enterpriseEligible = !user.enterpriseId || (enterprise?.status === 'active' && (!enterpriseRule?.enabled || (
         afterTotal >= cents(enterpriseRule.minOrderAmount || 0) && (!enterpriseRule.eligibleCategories?.length || enterpriseRule.eligibleCategories.includes(product.category))
       )));
-      if (!enterpriseEligible || !fund.corporateProductEligible(policy, product._id, product.category, product.healthFundDeduction)) return 0;
-      return Math.min(afterUnrestricted[index], Math.floor(fund.productDeductionLimit(product.healthFundDeduction, afterCoupon[index] / 100) * 100 + 1e-7));
+      const rule = require('./productFundRule').resolveProductFundRule(product, items[index].specificationLabel || '');
+      if (!enterpriseEligible || !fund.corporateProductEligible(policy, product._id, product.category, rule)) return 0;
+      return Math.min(afterUnrestricted[index], Math.floor(fund.productDeductionLimit(rule, afterCoupon[index] / 100) * 100 + 1e-7));
     });
     corporate = splitCents(Math.min(requested - personal.reduce((s, v) => s + v, 0) - vitality.reduce((s, v) => s + v, 0), corporateAvailable, capacities.reduce((s, v) => s + v, 0)), capacities);
   }

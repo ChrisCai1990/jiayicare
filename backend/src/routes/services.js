@@ -92,7 +92,8 @@ router.get('/', async (req, res) => {
       iconColor: '#1E6B50',
       features: p.features || [],
       images: p.images || [],
-      servicePrices: p.servicePrices || [],
+      servicePrices: (p.servicePrices || []).map(row => ({ ...row,
+        healthFundDeduction: require('../utils/productFundRule').resolveProductFundRule(p, row.label) })),
       description: p.description || '',
       fulfillmentType: p.fulfillmentType || 'offline_service',
       paymentChannel: p.paymentChannel || 'wechat_pay',
@@ -600,7 +601,7 @@ router.post('/order', auth, async (req, res) => {
   let fundBreakdown = { personal: 0, vitality: 0, corporate: 0 };
   if (useHealthFund > 0) {
     try {
-      const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '', productId: product?._id || serviceId, maximize:true });
+      const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '', productId: product?._id || serviceId, specificationLabel:service.specificationLabel || '', maximize:true });
       fundUsed = checked.allowed; fundEnterprise = checked.enterprise; fundBreakdown = checked.breakdown;
     } catch (err) { return res.status(400).json({ success:false, message:err.message }); }
   }

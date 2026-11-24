@@ -1330,8 +1330,8 @@ router.get('/push-records', auth, async (req, res) => {
     ]);
     const records = require('../utils/messageInbox').mergeInboxRecords(recent, unread).map(row => row.toObject ? row.toObject() : { ...row });
     const productIds = [...new Set(records.flatMap(row => row.products?.length ? row.products.map(p=>String(p.productId)) : row.productId ? [String(row.productId)] : []))].filter(id=>mongoose.Types.ObjectId.isValid(id));
-    const fundProducts = await require('../models/Product').find({ _id: { $in: productIds } }).select('_id category healthFundDeduction').lean();
-    const fundById = new Map(fundProducts.map(p=>[String(p._id), { id:String(p._id), category:p.category, healthFundDeduction:p.healthFundDeduction }]));
+    const fundProducts = await require('../models/Product').find({ _id: { $in: productIds } }).select('_id category healthFundDeduction servicePrices.label servicePrices.healthFundDeduction').lean();
+    const fundById = new Map(fundProducts.map(p=>[String(p._id), { id:String(p._id), category:p.category, healthFundDeduction:p.healthFundDeduction, servicePrices:p.servicePrices }]));
     for (const row of records) {
       if (row.products?.length) row.products = row.products.map(p=>({ ...p, fundProduct:fundById.get(String(p.productId)) || null }));
       else if (row.productId) row.fundProduct = fundById.get(String(row.productId)) || null;
@@ -1484,13 +1484,13 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     let fundBreakdown = { personal: 0, vitality: 0, corporate: 0 };
     if (useHealthFund > 0) {
       try {
-        const productDocs = await Product.find({ _id:{ $in:toPay.map(p=>p.productId).filter(id=>require('mongoose').Types.ObjectId.isValid(id)) } }).select('category healthFundDeduction');
+        const productDocs = await Product.find({ _id:{ $in:toPay.map(p=>p.productId).filter(id=>require('mongoose').Types.ObjectId.isValid(id)) } }).select('category healthFundDeduction servicePrices.label servicePrices.healthFundDeduction');
         const categories = [...new Set(productDocs.map(p=>p.category).filter(Boolean))];
         const { productDeductionLimit } = require('../utils/healthFundPayment');
         const productById = new Map(productDocs.map(item=>[String(item._id),item]));
         const productLimit = toPay.reduce((sum,item)=>{
           const shareAfterCoupon = totalPrice > 0 ? priceAfterCoupon * (Number(item.price)||0) / totalPrice : 0;
-          return sum + productDeductionLimit(productById.get(String(item.productId))?.healthFundDeduction, shareAfterCoupon);
+          return sum + productDeductionLimit(require('../utils/productFundRule').resolveProductFundRule(productById.get(String(item.productId)),item.specificationLabel||''), shareAfterCoupon);
         },0);
         const productIds = toPay.map(item=>String(item.productId));
         // 单件推送订单也必须传入商品本身的分类和 ID。此前只传了数组参数，
