@@ -1457,6 +1457,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       </div>
 
+      {patientMode && planType && canEdit && <div style={{ margin: '-12px 0 20px', padding: '12px 14px', border: '1px solid #C7DCCF', borderRadius: 10, background: '#F4FAF6', fontSize: 13, color: '#365E4C' }}>
+        {!pushedAt ? <><strong>核对已纳入的问题</strong><span style={{ marginLeft: 8 }}>新确认的专项筛查与 AI 待完善检查，先由顾问核对，再同步到草稿。</span>
+          <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={reloadManagementTargets}>同步最新纳入问题</button></>
+          : <><strong>此方案已推送</strong><span style={{ marginLeft: 8 }}>新增检查请到客户档案的“筛查事项去向”核对并补入；营养指标请在本页“营养干预”中留痕调整。</span>
+            <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>查看筛查事项去向</button></>}
+      </div>}
+
       {annualPilot && patientMode && <div style={{ margin: '-12px 0 20px', fontSize: 12, color: '#52675D' }}>
         {confirmedAt ? '客户已确认方案。暂存当前项仅保留医护端修改；核对后点击“发布本次修订”，客户才会看到更新。原执行安排另行核对。'
           : pushedAt ? '方案已推送，等待客户确认。暂存当前项不会更新客户方案或发送通知；核对后再发布本次修订。'
@@ -1698,7 +1705,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
             <section>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>已纳入的问题与对应方案</div>
-            {canEdit && !pushedAt && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={reloadManagementTargets}>同步最新纳入问题</button>}
             {unresolvedAiCheckups.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>AI健康信息整理还有 {unresolvedAiCheckups.length} 项待完善检查未逐项核对：{unresolvedAiCheckups.join('、')}。请在体检资料覆盖板块处理后再生成或推送方案。</div>}
             {unresolvedSymptoms.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>截至本方案年度有尚未处理的不适主诉（展示最近 {unresolvedSymptoms.length} 条），请先核对是否需要立即就医及是否进入年度管理：{unresolvedSymptoms.map(row => row.value).join('、')}。<a href={`/patients/${id}?tab=symptoms`} style={{ marginLeft: 6 }}>查看并处理主诉</a></div>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。可在专项筛查选择“纳入管理”，或在AI健康信息整理中核对待完善检查。</div>}
