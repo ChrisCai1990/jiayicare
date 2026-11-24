@@ -497,6 +497,7 @@ export const staffAPI = {
   getProductCategories: () => req('/staff/product-categories'),
   pushProduct:    (id, data) => req(`/staff/products/${id}/push`, { method: 'POST', body: JSON.stringify(data) }),
   pushBundle:     (data)     => req('/staff/products/push-bundle', { method: 'POST', body: JSON.stringify(data) }),
+  updateProductPushQuantity: (id, quantity) => req(`/staff/products/push-quantity/${id}`, { method: 'PATCH', body: JSON.stringify({ quantity }) }),
 
   // P3 — Team
   getTeam: () => req('/staff/team'),

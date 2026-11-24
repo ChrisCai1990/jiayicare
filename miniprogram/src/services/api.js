@@ -279,7 +279,9 @@ export const inAppServiceGroupAPI = {
 
 // ── Push Records (医护端推送) ─────────────────────────────────────
 export const pushRecordsAPI = {
-  sharedFundQuote: (id, selectedProductIds, couponId) => request(`/user/push-records/${id}/shared-fund-quote`, { method: 'POST', body: JSON.stringify({ selectedProductIds, couponId }) }),
+  sharedFundQuote: (id, selectedProductIds, couponId, recordIds) => request(`/user/push-records/${id}/shared-fund-quote`, { method: 'POST', body: JSON.stringify({ selectedProductIds, couponId, recordIds }) }),
+  combinedOptions: (id, beneficiaryUserId = '') => request(`/user/push-records/${id}/combined-options?beneficiaryUserId=${encodeURIComponent(beneficiaryUserId)}`),
+  payCombined: (id, body) => request(`/user/push-records/${id}/pay-combined`, { method: 'POST', body: JSON.stringify(body) }),
   list: (memberId = '') => request(`/user/push-records${memberId ? `?memberId=${encodeURIComponent(memberId)}` : ''}`),
   markRead: (id) => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
   pay: (id, data) => request(`/user/push-records/${id}/pay`, { method: 'POST', body: JSON.stringify(data) }),

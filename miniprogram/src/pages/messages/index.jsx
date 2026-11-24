@@ -572,6 +572,26 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍', fundProduct: msg.fundProduct }] : []);
 
   const [checkedIds, setCheckedIds] = useState(() => productList.map(p => p.productId));
+  const [combinedIds, setCombinedIds] = useState([]);
+  const [quantity, setQuantity] = useState(1);
+  const [combinedLoading, setCombinedLoading] = useState(productList.length === 1);
+  const [combinedError, setCombinedError] = useState('');
+  useEffect(() => {
+    if (productList.length !== 1) return;
+    let live = true;
+    setCombinedLoading(true);
+    setCombinedError('');
+    pushRecordsAPI.combinedOptions(msg._id, msg.beneficiaryUserId || '').then(result => {
+      if (live && result.success) {
+        const ids = result.data?.recordIds || [];
+        setCombinedIds(ids);
+        setQuantity(Math.max(ids.length, 1));
+        if (!ids.length) setCombinedError('这次推荐已有订单，请前往“我的订单”查看');
+      } else if (live) setCombinedError('暂时无法核对可购买数量，请关闭后重试');
+    }).catch(() => { if (live) setCombinedError('暂时无法核对可购买数量，请关闭后重试'); })
+      .finally(() => { if (live) setCombinedLoading(false); });
+    return () => { live = false; };
+  }, [msg._id, msg.beneficiaryUserId]);
   const payingRef = useRef(false);
   const [checkoutQuote, setCheckoutQuote] = useState(null);
   const [pendingOrderId, setPendingOrderId] = useState('');
@@ -602,7 +622,11 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     setCheckedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
   const checkedItems = productList.filter((p) => checkedIds.includes(p.productId));
-  const total = checkedItems.reduce((s, p) => s + (p.price || 0), 0);
+  const selectedRecordIds = productList.length === 1 && (combinedIds.length > 1 ||
+    (combinedIds.length === 1 && String(combinedIds[0]) !== String(msg._id)))
+    ? combinedIds.slice(0, quantity) : [];
+  const total = checkedItems.reduce((s, p) => s + (p.price || 0), 0)
+    * (checkedItems.length === 1 && selectedRecordIds.length ? quantity : 1);
 
   const selectedCoupon = coupons.find((c) => c._id === couponId) || null;
   const couponDiscount = selectedCoupon
@@ -614,9 +638,9 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
     if (!checkedIds.length) { setSharedQuote(0); return; }
     let live = true;
     setSharedQuote(0);
-    pushRecordsAPI.sharedFundQuote(msg._id, checkedIds, couponId).then(r => { if (live) setSharedQuote(Number(r.data?.enterpriseSharedFundUsed || 0)); }).catch(() => { if (live) setSharedQuote(0); });
+    pushRecordsAPI.sharedFundQuote(msg._id, checkedIds, couponId, selectedRecordIds).then(r => { if (live) setSharedQuote(Number(r.data?.enterpriseSharedFundUsed || 0)); }).catch(() => { if (live) setSharedQuote(0); });
     return () => { live = false; };
-  }, [msg._id, checkedIds.join(','), couponId]);
+  }, [msg._id, checkedIds.join(','), couponId, selectedRecordIds.join(',')]);
   const fundMaximum = checkedItems.length === 1
     ? (checkedItems[0].fundProduct ? maxSingleFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems[0].fundProduct) : 0)
     : maxGroupFundDeduction(checkoutUser?.healthFund, priceAfterCoupon, checkedItems);
@@ -625,13 +649,16 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
   const finalPrice = checkoutQuote?.finalPrice ?? Math.max(0, Math.round((priceAfterCoupon - fundApplied - sharedApplied) * 100) / 100);
 
   const handlePay = async () => {
-    if (!checkedIds.length || payingRef.current) return;
+    if (!checkedIds.length || payingRef.current || combinedLoading || combinedError) return;
     if (pendingOrderId) { Taro.navigateTo({ url: '/pages/orders/index?tab=payment' }); return; }
     payingRef.current = true;
     paymentActivityRef.current = true;
     setPaying(true); setPayError('');
     try {
-      const result = await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds, beneficiaryUserId: msg.beneficiaryUserId || '', useHealthFund: fundApplied, useEnterpriseSharedFund: !familyPayment && useSharedFund, couponId: familyPayment ? null : couponId, paymentMethod: 'wechat', paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice });
+      const body = { selectedProductIds: checkedIds, beneficiaryUserId: msg.beneficiaryUserId || '', useHealthFund: fundApplied, useEnterpriseSharedFund: !familyPayment && useSharedFund, couponId: familyPayment ? null : couponId, paymentMethod: 'wechat', paymentCapability: 'wechat_jsapi_v1', expectedAmount: finalPrice };
+      const result = selectedRecordIds.length > 0
+        ? await pushRecordsAPI.payCombined(msg._id, { ...body, recordIds: selectedRecordIds })
+        : await pushRecordsAPI.pay(msg._id, body);
       if (result.code === 'CHECKOUT_QUOTE_CHANGED') { setCheckoutQuote(result.summary); throw new Error(result.message); }
       if (!result.success) throw new Error(result.message || '下单失败，请稍后重试');
       if (result.summary) setCheckoutQuote(result.summary);
@@ -660,7 +687,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
             <Icon name="✅" size={40} color={colors.primary} />
           </View>
           <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>支付已完成</Text>
-          <Text style={{ fontSize: '14px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>共 {checkedItems.length} 项，实付 ¥{finalPrice}</Text>
+          <Text style={{ fontSize: '14px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>共 {selectedRecordIds.length || checkedItems.length} 件，实付 ¥{finalPrice}</Text>
           <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: '32px' }}>健管师将尽快与您确认并安排后续服务</Text>
           <View onClick={onClose} style={{ backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '14px 40px', display: 'inline-block' }}>
             <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>完成</Text>
@@ -708,6 +735,16 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
               </View>
             );
           })}
+        {productList.length === 1 && combinedIds.length > 1 && <View style={{ padding: '10px 12px', marginBottom: `${spacing.sm}px`, border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px` }}>
+          <Text style={{ fontSize: '13px', color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>同款推荐共 {combinedIds.length} 瓶，可减少购买数量</Text>
+          <View style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <Text onClick={() => { if (!payingRef.current) { setCheckoutQuote(null); setQuantity(Math.max(1, quantity - 1)); } }} style={{ fontSize: '22px', color: colors.primary, padding: '0 8px' }}>−</Text>
+            <Text style={{ fontSize: '16px', fontWeight: 700 }}>{quantity} 瓶</Text>
+            <Text onClick={() => { if (!payingRef.current) { setCheckoutQuote(null); setQuantity(Math.min(combinedIds.length, quantity + 1)); } }} style={{ fontSize: '22px', color: colors.primary, padding: '0 8px' }}>＋</Text>
+          </View>
+        </View>}
+        {combinedLoading && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在核对可购买数量…</Text>}
+        {!!combinedError && <Text style={{ fontSize: '12px', color: colors.danger }}>{combinedError}</Text>}
         {!familyPayment && (
           <View style={{ marginBottom: `${spacing.sm}px` }}>
             <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>抵用券</Text>
@@ -754,7 +791,7 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
 
         <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>
-            已选 {checkedIds.length}/{productList.length} 项{(couponDiscount > 0 || fundApplied > 0 || sharedApplied > 0) ? `（原价¥${total}，企业基金抵扣¥${sharedApplied.toFixed(2)}）` : ''}
+            {selectedRecordIds.length ? `已选 ${selectedRecordIds.length} 瓶` : `已选 ${checkedIds.length}/${productList.length} 项`}{(couponDiscount > 0 || fundApplied > 0 || sharedApplied > 0) ? `（原价¥${total}，企业基金抵扣¥${sharedApplied.toFixed(2)}）` : ''}
           </Text>
           <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>合计 ¥{finalPrice}</Text>
         </View>
@@ -763,8 +800,8 @@ function ProductPushDetail({ msg, onClose, paymentActivityRef = { current: false
           <View onClick={paying ? undefined : onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary }}>
             <Text style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>关闭</Text>
           </View>
-          <View onClick={!checkedIds.length || paying ? undefined : handlePay} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: (!checkedIds.length || paying) ? 0.5 : 1 }}>
-            <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{paying ? '正在发起微信支付...' : pendingOrderId ? '查看待支付订单' : `微信支付 ¥${finalPrice}${checkedIds.length > 1 ? `（合并${checkedIds.length}项）` : ''}`}</Text>
+          <View onClick={!checkedIds.length || paying || combinedLoading || !!combinedError ? undefined : handlePay} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: (!checkedIds.length || paying || combinedLoading || !!combinedError) ? 0.5 : 1 }}>
+            <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{paying ? '正在发起微信支付...' : pendingOrderId ? '查看待支付订单' : `微信支付 ¥${finalPrice}${selectedRecordIds.length > 1 ? `（合并${selectedRecordIds.length}瓶）` : checkedIds.length > 1 ? `（合并${checkedIds.length}项）` : ''}`}</Text>
           </View>
         </View>
       </View>

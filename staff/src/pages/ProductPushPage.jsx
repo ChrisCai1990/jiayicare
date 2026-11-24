@@ -10,6 +10,22 @@ const CAT_COLOR = { '检测套餐':'#0077B6', '专家咨询':'#1E6B50', '上门�
 const CAT_PALETTE = ['#0077B6', '#1E6B50', '#22A06B', '#8e44ad', '#D97706', '#DC3545', '#0EA5E9', '#EA580C']
 const catColor = (name) => CAT_COLOR[name] || CAT_PALETTE[[...(name || '')].reduce((s, c) => s + c.charCodeAt(0), 0) % CAT_PALETTE.length]
 
+function groupedPushRecords(records) {
+  const groups = new Map()
+  for (const record of records) {
+    const item = record.products?.length === 1 ? record.products[0] : null
+    const key = item && new Date(record.createdAt).getTime() >= Date.now() - 30 * 86400000
+      ? [record.patientId?._id || record.patientId, record.staffId?._id || record.staffId,
+        item.productId, item.specificationLabel || '', Math.round(Number(item.price) * 100)].join('|')
+      : String(record._id)
+    if (!groups.has(key)) groups.set(key, { record, count: 0, maximum: 0 })
+    const group = groups.get(key)
+    group.maximum += 1
+    if (!record.withdrawnAt) group.count += 1
+  }
+  return [...groups.values()]
+}
+
 export default function ProductPushPage() {
   const location = useLocation()
   const requestedMedicalProxy = new URLSearchParams(location.search).get('medicalProxy') === '1'
@@ -25,6 +41,7 @@ export default function ProductPushPage() {
   const [categories, setCategories] = useState(['全部'])
   const [selected, setSelected] = useState([])   // 已选产品 id 数组
   const [selectedPrices, setSelectedPrices] = useState({})  // { productId: price }
+  const [quantity, setQuantity] = useState(1)
   const [pushRecords, setPushRecords] = useState([])
   const [showPatientModal, setShowPatientModal] = useState(false)
   const [bookingContext, setBookingContext] = useState(null)
@@ -34,7 +51,7 @@ export default function ProductPushPage() {
     Promise.all([
       staffAPI.getProducts(),
       requestedPatientId ? staffAPI.getPatient(requestedPatientId).then(r => ({ data: { patients: [r.data.user] } })) : Promise.resolve({ data: { patients: [] } }),
-      staffAPI.getPushRecords({ type: 'product', limit: 20 }),
+      staffAPI.getPushRecords({ type: 'product', limit: 100 }),
       staffAPI.getProductCategories().catch(() => ({ data: { categories: [] } })),
     ]).then(([p, pt, pr, cat]) => {
       setProducts(p.data.products)
@@ -57,7 +74,7 @@ export default function ProductPushPage() {
   }, [])
 
   const reload = async () => {
-    const pr = await staffAPI.getPushRecords({ type: 'product', limit: 20 })
+    const pr = await staffAPI.getPushRecords({ type: 'product', limit: 100 })
     setPushRecords(pr.data.records)
   }
 
@@ -81,7 +98,22 @@ export default function ProductPushPage() {
   }
 
   const selectedItems = products.filter(p => selected.includes(p.id))
-  const totalPrice = selectedItems.reduce((sum, p) => sum + (selectedPrices[p.id] ?? p.price ?? 0), 0)
+  const totalPrice = selectedItems.reduce((sum, p) => sum + (selectedPrices[p.id] ?? p.price ?? 0), 0) * (selectedItems.length === 1 ? quantity : 1)
+  const displayPushRecords = groupedPushRecords(pushRecords)
+  const changePushQuantity = async group => {
+    const entered = window.prompt(`本组共推送 ${group.maximum} 件，当前可购买 ${group.count} 件。请输入新的可购买数量（1-${Math.min(group.maximum, 10)}）：`, String(group.count))
+    if (entered === null) return
+    const next = Number(entered)
+    if (!Number.isInteger(next) || next < 1 || next > Math.min(group.maximum, 10)) {
+      toast('请输入有效的整数数量')
+      return
+    }
+    try {
+      await staffAPI.updateProductPushQuantity(group.record._id, next)
+      await reload()
+      toast(`推荐数量已调整为 ${next} 件`)
+    } catch (error) { toast(error.message || '调整失败，请刷新后重试') }
+  }
 
   if (loading) return <div className="page-loading">加载中...</div>
 
@@ -210,7 +242,7 @@ export default function ProductPushPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span style={{ fontSize: 15, fontWeight: 700 }}>📋 推送清单</span>
               {selected.length > 0 && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setSelected([])}>清空</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setSelected([]); setQuantity(1) }}>清空</button>
               )}
             </div>
 
@@ -253,6 +285,12 @@ export default function ProductPushPage() {
                     )
                   })}
                 </div>
+                {selectedItems.length === 1 && <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13 }}>
+                  推送数量（瓶 / 件）
+                  <input type="number" min="1" max="10" step="1" value={quantity} aria-label="推送数量"
+                    onChange={event => setQuantity(Math.min(10, Math.max(1, Number.parseInt(event.target.value, 10) || 1)))}
+                    style={{ width: 64, padding: '4px 8px', borderRadius: 6, border: '1px solid #ddd' }} />
+                </label>}
                 <div style={{ borderTop: '1px solid #f5f2ec', paddingTop: 10, marginBottom: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
                     <span style={{ color: '#8AA89C' }}>共 {selectedItems.length} 项</span>
@@ -273,21 +311,25 @@ export default function ProductPushPage() {
           {/* 推送记录 */}
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>🕐 最近推送记录</div>
-            {pushRecords.length === 0 ? (
+            {displayPushRecords.length === 0 ? (
               <div className="card" style={{ padding: 24, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无推送记录</div>
             ) : (
               <div className="card">
-                {pushRecords.map((r, i) => (
-                  <div key={r._id} style={{ padding: '12px 16px', borderBottom: i < pushRecords.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
+                {displayPushRecords.map((group, i) => { const r = group.record; return (
+                  <div key={r._id} style={{ padding: '12px 16px', borderBottom: i < displayPushRecords.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
                     <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 2 }}>{r.title}</div>
                     <div style={{ fontSize: 12, color: '#8AA89C' }}>
                       {r.patientId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                     </div>
+                    {group.maximum > 1 && <div style={{ fontSize: 12, marginTop: 4 }}>
+                      可购买 {group.count}/{group.maximum} 件
+                      <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => changePushQuantity(group)}>调整数量</button>
+                    </div>}
                     {r.readAt
                       ? <span style={{ fontSize: 11, color: '#22A06B' }}>✓ 已读</span>
                       : <span style={{ fontSize: 11, color: '#D97706' }}>未读</span>}
                   </div>
-                ))}
+                ) })}
               </div>
             )}
           </div>
@@ -300,12 +342,14 @@ export default function ProductPushPage() {
           selectedItems={selectedItems}
           totalPrice={totalPrice}
           selectedPrices={selectedPrices}
+          quantity={quantity}
           initialPatientId={requestedPatientId}
           onClose={() => setShowPatientModal(false)}
           onSaved={async (n) => {
             setShowPatientModal(false)
             setSelected([])
             setSelectedPrices({})
+            setQuantity(1)
             toast(`产品组合已推送给 ${n} 位会员`)
             await reload()
           }}
@@ -313,6 +357,7 @@ export default function ProductPushPage() {
             setShowPatientModal(false)
             setSelected([])
             setSelectedPrices({})
+            setQuantity(1)
             toast(`健康基金已扣款，服务订单 ${result.orderNo} 已创建`)
           }}
         />
@@ -408,7 +453,7 @@ const PERFORMER_ROLE_LABEL = {
   specialist: '专科医师', tcmDoctor: '中医师',
 }
 
-function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, initialPatientId = '', onClose, onSaved, onDirectPaid }) {
+function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, quantity = 1, initialPatientId = '', onClose, onSaved, onDirectPaid }) {
   const [selectedPatients, setSelectedPatients] = useState(() => patients.some(patient => String(patient._id || patient.id) === initialPatientId) ? [initialPatientId] : [])
   const [search, setSearch] = useState('')
   const [pushing, setPushing] = useState(false)
@@ -454,8 +499,8 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
   const patientSearch = usePatientSearch(search)
   const filtered = patientSearch.patients
 
-  const directPatientId = selectedPatients.length === 1 && selectedItems.length === 1 ? selectedPatients[0] : ''
-  const directProduct = selectedItems.length === 1 ? selectedItems[0] : null
+  const directPatientId = selectedPatients.length === 1 && selectedItems.length === 1 && quantity === 1 ? selectedPatients[0] : ''
+  const directProduct = selectedItems.length === 1 && quantity === 1 ? selectedItems[0] : null
   useEffect(() => {
     setFundQuote(null)
     setFundError('')
@@ -498,7 +543,8 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
         productIds: selectedItems.map(p => p.id),
         patientIds: selectedPatients,
         pricedProducts: selectedItems.map(p => { const selected = withSelectedRoles(p); return { productId: p.id,
-          price: selectedPrices?.[p.id] ?? p.price, specificationLabel: selected.specificationLabel } }),
+          price: selectedPrices?.[p.id] ?? p.price, specificationLabel: selected.specificationLabel,
+          quantity: selectedItems.length === 1 ? quantity : 1 } }),
         servicePerformers,
       })
       onSaved(selectedPatients.length)
@@ -516,7 +562,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
           <div>
             <h3 className="modal-title">选择推送会员</h3>
             <div style={{ fontSize: 13, color: '#8AA89C', marginTop: 2 }}>
-              {selectedItems.length} 项产品 · 合计 ¥{totalPrice}
+              {selectedItems.length === 1 ? `${quantity} 瓶 / 件` : `${selectedItems.length} 项产品`} · 合计 ¥{totalPrice}
             </div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -529,7 +575,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
               <span key={p.id} style={{
                 fontSize: 12, padding: '2px 10px', borderRadius: 99,
                 background: '#1E6B5020', color: '#1E6B50',
-              }}>{p.name} ¥{p.price}</span>
+              }}>{p.name} ×{selectedItems.length === 1 ? quantity : 1} ¥{selectedPrices?.[p.id] ?? p.price}</span>
             ))}
           </div>
         </div>

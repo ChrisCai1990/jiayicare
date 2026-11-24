@@ -45,6 +45,8 @@ const pushRecordSchema = new mongoose.Schema({
   }],
   // 阅读状态
   readAt: { type: Date, default: null },
+  withdrawnAt: { type: Date, default: null },
+  withdrawnBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   checkoutLockUntil: { type: Date, default: null },
   checkoutLockToken: { type: String, default: '' },
 }, { timestamps: true });

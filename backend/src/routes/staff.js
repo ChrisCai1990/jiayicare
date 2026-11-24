@@ -8358,6 +8358,42 @@ router.get('/product-categories', staffAuth, checkPermission('products', 'view')
 });
 
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
+router.patch('/products/push-quantity/:id', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  const quantity = Number(req.body.quantity);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10)
+    return res.status(400).json({ success: false, message: '数量须为 1 至 10 件' });
+  const anchor = await PushRecord.findOne({ _id: req.params.id, type: 'product', staffId: req.staff._id });
+  if (!anchor) return res.status(404).json({ success: false, message: '找不到本人推送的商品' });
+  const peers = (await require('../utils/combinableProductPushes').samePushes(anchor, anchor.patientId))
+    .filter(row => String(row.staffId) === String(req.staff._id));
+  if (!peers.length || quantity > peers.length || peers.length > 10)
+    return res.status(409).json({ success: false, message: '本组推荐数量已变化，请刷新后重试' });
+  const token = new mongoose.Types.ObjectId().toString();
+  const locked = [];
+  try {
+    for (const row of [...peers].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
+      const claim = await PushRecord.findOneAndUpdate({ _id: row._id, staffId: req.staff._id,
+        $or: [{ checkoutLockUntil: null }, { checkoutLockUntil: { $lt: new Date() } }] },
+      { $set: { checkoutLockToken: token, checkoutLockUntil: new Date(Date.now() + 120000) } }, { new: true });
+      if (!claim) return res.status(409).json({ success: false, message: '推荐正在下单或调整，请稍后刷新' });
+      locked.push(row._id);
+    }
+    const existing = await Order.findOne({ user: anchor.patientId, pushRecordId: { $in: locked },
+      status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } }).select('_id');
+    if (existing) return res.status(409).json({ success: false, message: '已有待支付或已付款订单，请先处理订单，不能修改推荐数量' });
+    const keep = new Set([...peers].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .slice(0, quantity).map(row => String(row._id)));
+    for (const row of peers) await PushRecord.updateOne({ _id: row._id, checkoutLockToken: token },
+      { $set: { withdrawnAt: keep.has(String(row._id)) ? null : (row.withdrawnAt || new Date()),
+        withdrawnBy: keep.has(String(row._id)) ? null : req.staff._id } });
+    return res.json({ success: true, data: { quantity, maximum: peers.length } });
+  } catch (error) { return res.status(409).json({ success: false, message: error.message || '调整数量失败' }); }
+  finally {
+    for (const id of locked) await PushRecord.updateOne({ _id: id, checkoutLockToken: token },
+      { $set: { checkoutLockUntil: null, checkoutLockToken: '' } });
+  }
+});
+
 router.post('/products/push-bundle', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const { productIds, patientIds, pricedProducts, servicePerformers } = req.body;
   if (!await allPushPatientsBelongToStaff(patientIds, req.staff)) return res.status(403).json({ success: false, message: '只能推送给本机构客户' });
@@ -8374,6 +8410,9 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
     price: priceMap[p._id.toString()] ?? p.originalPrice, specificationLabel: specificationMap[p._id.toString()] || '', category: p.category, icon: '🛍',
     images: p.images || [], servicePrices: p.servicePrices || [],
   }));
+  const requestedQuantity = products.length === 1 ? Number(pricedProducts?.find(pp => String(pp.productId) === String(products[0]._id))?.quantity || 1) : 1;
+  if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1 || requestedQuantity > 10)
+    return res.status(400).json({ success: false, message: '推送数量须为 1 至 10 件' });
   const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);
   const title = products.length === 1 ? products[0].name : `产品推荐（${products.length}项）`;
   const content = productItems.map(p => `${p.name} ¥${p.price}`).join('、');
@@ -8382,14 +8421,14 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
     ? servicePerformers.filter(sp => sp && sp.role && sp.staffId)
         .map(sp => ({ productId: sp.productId || null, role: sp.role, staffId: sp.staffId }))
     : [];
-  const records = patientIds.map(pid => ({
+  const records = patientIds.flatMap(pid => Array.from({ length: requestedQuantity }, () => ({
     staffId: req.staff._id, patientId: pid,
     type: 'product', title, content,
     price: totalPrice,
     productId: products.length === 1 ? products[0]._id.toString() : null,
     products: productItems,
     servicePerformers: cleanPerformers,
-  }));
+  })));
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
 });
