@@ -43,6 +43,7 @@ import MembershipBenefitsSummary from '../components/MembershipBenefitsSummary'
 import PackageHistoryReview from '../components/PackageHistoryReview'
 import customerNumber from '../../../shared/customerNumber.cjs'
 import { reportClassificationLabels, reportItemNameConcern, reportNameCorrection, sameReportConclusion } from '../utils/reportReviewQuality'
+import { reportRangeMismatches } from '../utils/reportRangeMismatch.mjs'
 import { groupImagingReportItems } from '../utils/groupImagingReportItems.mjs'
 import { isManualOnlyReport } from '../utils/reportManualReview'
 import { belongsToCheckupPlan, checkupProgress, groupCheckupPlans, checkupServiceMode } from '../utils/checkupProgress'
@@ -13873,6 +13874,7 @@ export default function PatientDetailPage() {
                   const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
                   const abnN = abn.filter(it => it.status === 'abnormal').length
                   const attN = abn.filter(it => it.status === 'attention').length
+                  const rangeMismatches = reportRangeMismatches(labRows.map(({ it }) => it))
                   const textLayerGap = ocrReviewReport.parseJob?.textCoverage?.pagesWithGaps?.includes(activePage)
                   return (
                     <>
@@ -13916,6 +13918,9 @@ export default function PatientDetailPage() {
                       </div>
                       })()}
                       <ReportImageEvidenceNotice evidence={activeImageEvidence} hasItems={indexed.length > 0} />
+                      {rangeMismatches.length > 0 && <div role="alert" style={{ padding: '10px 14px', marginBottom: 12, border: '1px solid #F3C3A8', borderRadius: 8, background: '#FFF7ED', color: '#9A3412', fontSize: 12 }}>
+                        本页 {rangeMismatches.length} 项录入数值超出录入的参考范围，但未标为异常：{rangeMismatches.map(it => it.name).join('、')}。请逐项对照原件核对数值、参考范围和异常状态；已核对项目不会自动改写。
+                      </div>}
                       {/* 异常快览仅适用于检验数值，不用于处方。 */}
                       {!isPrescription && <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>

@@ -318,6 +318,25 @@ async function splitImageColumns(imageBuffer) {
   })));
 }
 
+// Retry only the dense crop that exceeded the model output limit. The small
+// overlap keeps a printed result row on at least one of the two images.
+async function splitImageHorizontal(imageBuffer) {
+  const Jimp = require('jimp-compact');
+  const image = await Jimp.read(imageBuffer);
+  const width = image.bitmap.width;
+  const height = image.bitmap.height;
+  if (width < 100 || height < 100) throw new Error('报告分区图像过小，无法继续拆分');
+  const midpoint = Math.floor(height / 2);
+  const overlap = Math.max(8, Math.round(height * 0.04));
+  const crops = [
+    image.clone().crop(0, 0, width, midpoint + overlap),
+    image.clone().crop(0, midpoint - overlap, width, height - midpoint + overlap),
+  ];
+  return Promise.all(crops.map(crop => new Promise((resolve, reject) => {
+    crop.getBase64(Jimp.MIME_JPEG, (error, value) => error ? reject(error) : resolve(String(value).split(',')[1]));
+  })));
+}
+
 // 判断报告是否为 PDF
 function isPdfReport(report) {
   return report.mimeType === 'application/pdf'
@@ -325,4 +344,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, getPdfPageCountFromBuffer, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, getPdfPageCountFromBuffer, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, splitImageHorizontal };

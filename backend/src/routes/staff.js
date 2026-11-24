@@ -17916,7 +17916,7 @@ function shouldSkipParsedReportPage(parsed) {
   if (!parsed || typeof parsed !== 'object') return false;
   if (parsed.skipPage === true || SKIPPED_REPORT_PAGE_TYPES.has(str(parsed.pageType).toLowerCase())) return true;
   const title = str(parsed.pageTitle).replace(/\s+/g, '');
-  return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
+  return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|^(?:总检|总结|体检总结|体检汇总|报告总结|科普)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
 }
 
 const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
@@ -19203,9 +19203,7 @@ async function runReportParseControlled(reportId) {
             const firstPassItems = tagReportPageItems(p.items, pageNum)
               .map(item => isPrescriptionReport ? { ...item, itemType: 'medication', status: 'unknown' } : item);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-            const hasStructuredResults = firstPassItems.some(item => str(item.name)
-              && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
-            if (!isPrescriptionReport && shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+            if (!isPrescriptionReport && shouldSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
               okPages++;
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
@@ -20014,7 +20012,7 @@ async function runReportPageParse(reportId, pageNum) {
 async function runReportPageParseControlled(reportId, pageNum) {
   const { parseImage: rawParseImage } = require('../utils/ai');
   const { createReportImageParser, recordPageEvidence } = require('../utils/reportImageEvidence');
-  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageBands, renderSinglePageColumns, splitImageColumns, splitImageHorizontal, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
@@ -20180,12 +20178,13 @@ async function runReportPageParseControlled(reportId, pageNum) {
   }
   let parsedItems = localScan?.items || [];
   let allRegionsImageOnly = !localScan;
-  for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
+  const regionSplitDepths = images.map(() => 0);
+  regionLoop: for (let regionIndex = 0; regionIndex < (useLocalScanOnly ? 0 : images.length); regionIndex++) {
     let parsed = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const regionHint = images.length === 4
-        ? `这是第${pageNum}页自上而下的第${regionIndex + 1}/4分区，边界有重叠；`
+      const regionHint = images.length >= 4
+        ? `这是第${pageNum}页自上而下的第${regionIndex + 1}/${images.length}分区，边界有重叠；`
         : images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
@@ -20198,6 +20197,15 @@ async function runReportPageParseControlled(reportId, pageNum) {
       // output cap. A fresh request uses four narrower bands and is preflighted
       // against the full per-page call budget before changing any report items.
       if (error.code === 'AI_OUTPUT_LENGTH') {
+        if (isPdf && report.type === 'annual' && images.length >= 4 && regionSplitDepths[regionIndex] === 0) {
+          const halves = await splitImageHorizontal(Buffer.from(images[regionIndex], 'base64'));
+          if (halves.length !== 2 || halves.some(image => !image)) throw new Error(`第${pageNum}页分段渲染不完整`);
+          // Keep earlier successful regions; only retry this truncated crop.
+          images.splice(regionIndex, 1, ...halves);
+          regionSplitDepths.splice(regionIndex, 1, 1, 1);
+          regionIndex--;
+          continue regionLoop;
+        }
         const canNarrow = isPdf && report.type === 'annual' && images.length < 4;
         const message = canNarrow
           ? `第${pageNum}页输出过长；请再次点击补提，系统将改用四段识别，已有审核结果保持不变`

@@ -12,6 +12,7 @@ test('dense annual page checks four bands and does not stop after a partial loca
   let bandsRendered = 0;
   let modelCalls = 0;
   let localOcrCalls = 0;
+  let cropsSplit = 0;
   const report = { _id: 'synthetic', user: 'synthetic', type: 'annual', title: '合成体检', reportItems: [] };
   const modules = {
     '../utils/ai': { parseImage: async () => {
@@ -29,6 +30,7 @@ test('dense annual page checks four bands and does not stop after a partial loca
       fetchReportBuffer: async () => Buffer.from('fixture'),
       renderSinglePageBands: async () => { bandsRendered++; return ['a', 'b', 'c', 'd']; },
       renderSinglePage: async () => Buffer.from('page').toString('base64'),
+      splitImageHorizontal: async () => { cropsSplit++; return ['half-a', 'half-b']; },
     },
     '../utils/reportPageSupplement': require('../src/utils/reportPageSupplement'),
     '../utils/aiBudget': { assertSupplementCallCapacity: async (_, __, count) => { requiredCalls = count; } },
@@ -46,6 +48,7 @@ test('dense annual page checks four bands and does not stop after a partial loca
     '../utils/reportTextPhysicalExam': { parseTextPhysicalExam: () => ({ supported: false, items: [] }) },
     '../utils/reportTextAikangExam': { parseTextAikangExam: () => ({ supported: false, items: [] }) },
     '../utils/reportTextUltrasoundTable': { parseTextUltrasoundTable: () => ({ supported: false, items: [] }) },
+    '../utils/reportTextNarrativeFindings': { parseTextNarrativeFindings: () => ({ supported: false, items: [] }) },
     '../utils/shaoyifuReportTemplate': { isShaoyifuReport: () => false },
     '../utils/zheyiReportTemplate': { isZheyiReport: () => false },
     '../utils/screeningMatch': { classifyItemsAsync: () => { throw new Error('Unexpected classification'); } },
@@ -67,5 +70,6 @@ test('dense annual page checks four bands and does not stop after a partial loca
   assert.equal(bandsRendered, 1);
   assert.equal(localOcrCalls, 1);
   assert.equal(requiredCalls, 8);
-  assert.equal(modelCalls, 1);
+  assert.equal(cropsSplit, 1);
+  assert.equal(modelCalls, 2);
 });
