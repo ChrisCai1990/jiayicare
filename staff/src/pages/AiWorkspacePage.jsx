@@ -15,10 +15,18 @@ const IDEAS = {
 }
 
 function readSessions(key) {
-  try {
-    const value = JSON.parse(sessionStorage.getItem(key))
-    return Array.isArray(value) ? value.filter(s => s && ['free', 'reply'].includes(s.mode) && Array.isArray(s.messages)).slice(0, 20) : []
-  } catch { return [] }
+  const read = storage => {
+    try {
+      const rows = JSON.parse(storage.getItem(key) || 'null')
+      return Array.isArray(rows) ? rows : []
+    } catch { return [] }
+  }
+  const merged = new Map()
+  for (const item of [...read(localStorage), ...read(sessionStorage)]) {
+    if (!item || typeof item.id !== 'string' || !['free', 'reply'].includes(item.mode) || !Array.isArray(item.messages)) continue
+    if (!merged.has(item.id) || Number(item.updatedAt) > Number(merged.get(item.id).updatedAt)) merged.set(item.id, item)
+  }
+  return [...merged.values()]
 }
 
 export default function AiWorkspacePage() {
@@ -29,6 +37,9 @@ export default function AiWorkspacePage() {
 function AiWorkspaceContent({ staff }) {
   const storageKey = `jiayicare-ai-workspace-trial:${staff?._id || staff?.id || 'unknown'}`
   const [sessions, setSessions] = useState(() => readSessions(storageKey))
+  const [loaded, setLoaded] = useState(false)
+  const [saveState, setSaveState] = useState('')
+  const [saveRetry, setSaveRetry] = useState(0)
   const [activeId, setActiveId] = useState(null)
   const [mode, setMode] = useState('free')
   const [webSearch, setWebSearch] = useState(true)
@@ -42,23 +53,56 @@ function AiWorkspaceContent({ staff }) {
   const composerRef = useRef(null)
   const fileRef = useRef(null)
   const messagesRef = useRef(null)
+  const saveQueue = useRef(new Map())
+  const savedVersions = useRef(new Map())
 
   useEffect(() => {
     let live = true
     staffAPI.aiWorkspaceStatus().then(result => { if (live) setStatus(result.data) }).catch(() => { if (live) setStatus({ enabled: false, ready: false }) })
     return () => { live = false }
   }, [])
-  useEffect(() => { sessionStorage.setItem(storageKey, JSON.stringify(sessions.slice(0, 20))) }, [storageKey, sessions])
+  useEffect(() => {
+    if (!status?.enabled) return
+    let live = true
+    staffAPI.aiWorkspaceDiscussions().then(result => {
+      if (!live) return
+      const remote = result.data || []
+      const local = readSessions(storageKey)
+      const merged = new Map(remote.map(s => [s.id, s]))
+      for (const item of local) if (!merged.has(item.id) || item.updatedAt > merged.get(item.id).updatedAt) merged.set(item.id, item)
+      for (const item of remote) savedVersions.current.set(item.id, JSON.stringify(item))
+      setSessions([...merged.values()].sort((a, b) => b.updatedAt - a.updatedAt))
+      setLoaded(true)
+      sessionStorage.removeItem(storageKey)
+    }).catch(() => { if (live) { setSaveState('读取云端讨论失败；当前显示浏览器副本，请稍后刷新重试'); setLoaded(true) } })
+    return () => { live = false }
+  }, [status?.enabled, storageKey])
+  useEffect(() => {
+    if (!loaded) return
+    try { localStorage.setItem(storageKey, JSON.stringify(sessions)) }
+    catch { setSaveState('浏览器空间不足，讨论副本未能保存') }
+    for (const session of sessions) {
+      const version = JSON.stringify(session)
+      if (savedVersions.current.get(session.id) === version) continue
+      setSaveState('正在保存讨论…')
+      const previous = saveQueue.current.get(session.id) || Promise.resolve()
+      const next = previous.catch(() => {}).then(() => staffAPI.saveAiWorkspaceDiscussion(session)).then(() => {
+        savedVersions.current.set(session.id, version)
+        setSaveState('讨论已保存到账号')
+      }).catch(e => { setSaveState(e.message || '讨论保存失败，已留在本浏览器；请保持页面并重试') })
+      saveQueue.current.set(session.id, next)
+    }
+  }, [loaded, sessions, storageKey, saveRetry])
   useEffect(() => { if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight }, [sessions, activeId])
 
   const active = sessions.find(s => s.id === activeId)
   const selectedMode = active?.mode || mode
-  const ready = status?.enabled && status?.ready && status.dailyUsed < status.dailyLimit
-  const unavailableMessage = !status?.ready ? '通义千问尚未配置，请联系管理员' : status.dailyUsed >= status.dailyLimit ? '今天的试用次数已用完，请明天再试' : ''
+  const ready = loaded && status?.enabled && status?.ready && status.dailyUsed < status.dailyLimit
+  const unavailableMessage = !loaded ? '正在读取讨论记录…' : !status?.ready ? '通义千问尚未配置，请联系管理员' : status.dailyUsed >= status.dailyLimit ? '今天的试用次数已用完，请明天再试' : ''
 
   const createDiscussion = (nextMode = selectedMode, preserveAttachment = false) => {
     const session = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, mode: nextMode, title: '新讨论', updatedAt: Date.now(), messages: [] }
-    setSessions(prev => [session, ...prev].slice(0, 20))
+    setSessions(prev => [session, ...prev])
     setActiveId(session.id)
     setMode(nextMode)
     setDraft('')
@@ -131,18 +175,34 @@ function AiWorkspaceContent({ staff }) {
     catch { setError('复制失败，请手动选择内容') }
   }
 
+  const clearDiscussion = async () => {
+    if (!active || busy) return
+    try {
+      await (saveQueue.current.get(active.id) || Promise.resolve())
+      await staffAPI.deleteAiWorkspaceDiscussion(active.id)
+      savedVersions.current.delete(active.id)
+      setSessions(prev => prev.filter(s => s.id !== active.id))
+      setActiveId(null)
+      setDraft('')
+      setAttachment(null)
+      setError('')
+      setSaveState('讨论已删除')
+    } catch { setSaveState('删除失败，讨论仍保留；请重试') }
+  }
+
   if (status === null) return <div className="aiw-unavailable">正在检查 AI 工作台试用权限…</div>
   if (!status.enabled) return <div className="aiw-unavailable"><h2>AI 工作台试用尚未开放</h2><p>管理员开启试用开关并设置试用人员后，这里会显示讨论页面。</p></div>
 
   return <div className="aiw-shell">
     <aside className="aiw-sessions">
-      <div className="aiw-sessions-head"><div className="aiw-eyebrow">AI WORKSPACE · 试用</div><h2>我的讨论</h2><button type="button" className="aiw-primary" disabled={busy} onClick={() => createDiscussion()}>＋ 新建讨论</button></div>
-      <div className="aiw-session-list">{sessions.map(s => <button type="button" disabled={busy} key={s.id} className={`aiw-session ${s.id === activeId ? 'active' : ''}`} onClick={() => { setActiveId(s.id); setMode(s.mode); setDraft(''); setAttachment(null); setError('') }}><strong>{s.title}</strong><small>{s.mode === 'reply' ? '客户回复草稿' : '自由探讨'} · {new Date(s.updatedAt).toLocaleDateString('zh-CN')}</small></button>)}{!sessions.length && <p className="aiw-empty-list">尚无讨论</p>}</div>
-      <p className="aiw-local-note">讨论暂存于当前浏览器标签页。<br />请勿输入真实客户信息。</p>
+      <div className="aiw-sessions-head"><div className="aiw-eyebrow">AI WORKSPACE · 试用</div><h2>我的讨论</h2><button type="button" className="aiw-primary" disabled={busy || !loaded} onClick={() => createDiscussion()}>＋ 新建讨论</button></div>
+      <div className="aiw-session-list">{sessions.map(s => <button type="button" disabled={busy} key={s.id} className={`aiw-session ${s.id === activeId ? 'active' : ''}`} onClick={() => { setActiveId(s.id); setMode(s.mode); setDraft(''); setAttachment(null); setError('') }}><strong>{s.title}</strong><small>{s.mode === 'reply' ? '客户回复草稿' : '自由探讨'} · {new Date(s.updatedAt).toLocaleDateString('zh-CN')}</small></button>)}{!sessions.length && <p className="aiw-empty-list">{loaded ? '尚无讨论' : '正在读取讨论…'}</p>}</div>
+      <p className="aiw-local-note">{saveState || '讨论按当前员工账号保存，并在本浏览器留有副本。'}{saveState.includes('失败') && <button type="button" onClick={() => setSaveRetry(value => value + 1)}>重试保存</button>}<br />请勿输入真实客户信息。</p>
     </aside>
     <section className="aiw-main">
-      <header className="aiw-header"><div><h1>嘉医汇 AI 工作台 <span>试用</span></h1><p>通义千问辅助讨论 · 不连接客户档案</p></div><button type="button" className="aiw-clear" disabled={!active || busy} onClick={() => { setSessions(prev => prev.filter(s => s.id !== activeId)); setActiveId(null); setDraft(''); setAttachment(null); setError('') }}>清空当前讨论</button></header>
-      <div className="aiw-mode-row">{MODES.map(item => <button type="button" key={item.key} disabled={item.disabled || busy} className={`aiw-mode ${selectedMode === item.key ? 'active' : ''}`} onClick={() => createDiscussion(item.key)}><strong>{item.title}</strong><small>{item.detail}</small></button>)}</div>
+      <header className="aiw-header"><div><h1>嘉医汇 AI 工作台 <span>试用</span></h1><p>通义千问辅助讨论 · 不连接客户档案</p></div><button type="button" className="aiw-clear" disabled={!active || busy || !loaded} onClick={clearDiscussion}>清空当前讨论</button></header>
+      {saveState.includes('失败') && <p className="aiw-mobile-save">{saveState}<button type="button" onClick={() => setSaveRetry(value => value + 1)}>重试保存</button></p>}
+      <div className="aiw-mode-row">{MODES.map(item => <button type="button" key={item.key} disabled={item.disabled || busy || !loaded} className={`aiw-mode ${selectedMode === item.key ? 'active' : ''}`} onClick={() => createDiscussion(item.key)}><strong>{item.title}</strong><small>{item.detail}</small></button>)}</div>
       <div className="aiw-info">{selectedMode === 'reply' ? '客户回复草稿：只输入模拟客户消息；生成后由员工核对，系统不会自动发送，也不会联网搜索。' : '自由探讨：不读取内部知识库、产品实时数据或客户资料。近期事实请核对检索结果。'}</div>
       {selectedMode === 'free' && <label className="aiw-search-option"><input type="checkbox" checked={webSearch} disabled={busy} onChange={e => setWebSearch(e.target.checked)} /> 联网查最新信息 <small>默认开启；可能增加调用费用。请勿输入真实客户信息。</small></label>}
       {attachment && selectedMode === 'free' && webSearch && <p className="aiw-attachment-note">本次附带文件或图片，联网检索将暂时关闭。</p>}

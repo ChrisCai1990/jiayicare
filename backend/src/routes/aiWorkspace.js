@@ -4,6 +4,7 @@ const { chat } = require('../utils/ai');
 const { withAiContext } = require('../utils/aiBudget');
 const { isAiControlError } = require('../utils/aiBudgetPolicy');
 const { withStaffService } = require('../utils/aiDataConsent');
+const AiWorkspaceDiscussion = require('../models/AiWorkspaceDiscussion');
 
 const router = express.Router();
 router.use(staffAuth);
@@ -52,6 +53,55 @@ const prompts = {
   reply: '你是嘉医汇医护团队的内部回复草稿助手。用户只应输入模拟客户消息。起草自然、简洁、可供员工审核的中文回复；不得编造产品价格、服务承诺、预约结果、诊断或治疗建议。信息不足时列出需要人工核实的点。结尾另起一行写“员工核对：”并列出关键待核对事项。',
 };
 
+function validDiscussion(body) {
+  return body && typeof body.id === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(body.id)
+    && ['free', 'reply'].includes(body.mode)
+    && typeof body.title === 'string' && body.title.trim().length > 0 && body.title.length <= 120
+    && Number.isSafeInteger(body.updatedAt) && body.updatedAt > 0
+    && Array.isArray(body.messages) && body.messages.length <= 1000
+    && body.messages.every(m => m && ['user', 'assistant'].includes(m.role)
+      && typeof m.content === 'string' && m.content.trim() && m.content.length <= 12000
+      && (m.webSearch === undefined || typeof m.webSearch === 'boolean'));
+}
+
+function discussionScope(req, id) {
+  return { tenantId: req.staff.tenantId, staffId: req.staff._id, discussionId: id };
+}
+
+router.get('/discussions', async (req, res) => {
+  if (!enabledFor(req.staff)) return res.status(403).json({ success: false, message: 'AI 工作台试用尚未对当前账号开放' });
+  try {
+    const rows = await AiWorkspaceDiscussion.find({ tenantId: req.staff.tenantId, staffId: req.staff._id })
+      .select('discussionId mode title messages clientUpdatedAt').sort({ clientUpdatedAt: -1 }).lean();
+    res.json({ success: true, data: rows.map(row => ({ id: row.discussionId, mode: row.mode, title: row.title, messages: row.messages.map(m => ({ role: m.role, content: m.content, webSearch: m.webSearch })), updatedAt: row.clientUpdatedAt })) });
+  } catch { res.status(503).json({ success: false, message: '讨论记录暂时无法读取' }); }
+});
+
+router.put('/discussions/:id', async (req, res) => {
+  if (!enabledFor(req.staff)) return res.status(403).json({ success: false, message: 'AI 工作台试用尚未对当前账号开放' });
+  if (req.params.id !== req.body?.id || !validDiscussion(req.body)) return res.status(400).json({ success: false, message: '讨论记录无效或过长' });
+  const { id, mode, title, messages, updatedAt } = req.body;
+  try {
+    const scope = discussionScope(req, id);
+    const values = { ...scope, mode, title, messages: messages.map(m => ({ role: m.role, content: m.content, webSearch: Boolean(m.webSearch) })), clientUpdatedAt: updatedAt };
+    const result = await AiWorkspaceDiscussion.updateOne({ ...scope, clientUpdatedAt: { $lte: updatedAt } }, { $set: values }, { runValidators: true });
+    if (!result.matchedCount) {
+      if (await AiWorkspaceDiscussion.exists(scope)) return res.status(409).json({ success: false, message: '其他标签页已有更新，请刷新后核对讨论' });
+      await AiWorkspaceDiscussion.create(values);
+    }
+    res.json({ success: true });
+  } catch (error) { res.status(error.code === 11000 ? 409 : 503).json({ success: false, message: error.code === 11000 ? '其他标签页已有更新，请刷新后核对讨论' : '讨论记录保存失败' }); }
+});
+
+router.delete('/discussions/:id', async (req, res) => {
+  if (!enabledFor(req.staff)) return res.status(403).json({ success: false, message: 'AI 工作台试用尚未对当前账号开放' });
+  if (!/^[a-zA-Z0-9-]{1,80}$/.test(req.params.id)) return res.status(400).json({ success: false, message: '讨论编号无效' });
+  try {
+    await AiWorkspaceDiscussion.deleteOne(discussionScope(req, req.params.id));
+    res.json({ success: true });
+  } catch { res.status(503).json({ success: false, message: '删除失败，请重试' }); }
+});
+
 router.get('/status', (req, res) => {
   res.json({ success: true, data: { enabled: enabledFor(req.staff), ready: Boolean(process.env.QWEN_API_KEY), model: 'qwen-plus', knowledgeReady: false, dailyUsed: callCount(req.staff), dailyLimit: DAILY_LIMIT } });
 });
@@ -88,3 +138,4 @@ module.exports.enabledFor = enabledFor;
 module.exports.validMessages = validMessages;
 module.exports.needsFreshSearch = needsFreshSearch;
 module.exports.validAttachment = validAttachment;
+module.exports.validDiscussion = validDiscussion;

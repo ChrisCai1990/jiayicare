@@ -132,6 +132,9 @@ export const inAppServiceGroupAPI = {
 
 export const staffAPI = {
   aiWorkspaceStatus: () => req('/staff/ai-workspace/status'),
+  aiWorkspaceDiscussions: () => req('/staff/ai-workspace/discussions'),
+  saveAiWorkspaceDiscussion: discussion => req(`/staff/ai-workspace/discussions/${encodeURIComponent(discussion.id)}`, { method: 'PUT', body: JSON.stringify(discussion) }),
+  deleteAiWorkspaceDiscussion: id => req(`/staff/ai-workspace/discussions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   aiWorkspaceChat: (mode, messages, webSearch = false, attachment = null) => req('/staff/ai-workspace/chat', { method: 'POST', body: JSON.stringify({ mode, messages, webSearch, attachment }) }),
   getAssignedFeedback: (params = {}) => req('/feedback/assigned?' + new URLSearchParams(params)),
   submitFeedbackResult: (id, data) => req(`/feedback/${id}/result`, { method: 'POST', body: JSON.stringify(data) }),
