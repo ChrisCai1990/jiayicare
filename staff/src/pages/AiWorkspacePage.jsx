@@ -41,6 +41,8 @@ function AiWorkspaceContent({ staff }) {
   const [saveState, setSaveState] = useState('')
   const [saveRetry, setSaveRetry] = useState(0)
   const [activeId, setActiveId] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editingTitle, setEditingTitle] = useState('')
   const [mode, setMode] = useState('free')
   const [webSearch, setWebSearch] = useState(true)
   const [draft, setDraft] = useState('')
@@ -190,13 +192,32 @@ function AiWorkspaceContent({ staff }) {
     } catch { setSaveState('删除失败，讨论仍保留；请重试') }
   }
 
+  const renameDiscussion = event => {
+    event.preventDefault()
+    const title = editingTitle.trim()
+    if (!title || title.length > 120) return
+    setSessions(prev => prev.map(s => s.id === editingId
+      ? { ...s, title, updatedAt: Math.max(Date.now(), Number(s.updatedAt) + 1) }
+      : s).sort((a, b) => b.updatedAt - a.updatedAt))
+    setEditingId(null)
+    setEditingTitle('')
+  }
+
   if (status === null) return <div className="aiw-unavailable">正在检查 AI 工作台试用权限…</div>
   if (!status.enabled) return <div className="aiw-unavailable"><h2>AI 工作台试用尚未开放</h2><p>管理员开启试用开关并设置试用人员后，这里会显示讨论页面。</p></div>
 
   return <div className="aiw-shell">
     <aside className="aiw-sessions">
       <div className="aiw-sessions-head"><div className="aiw-eyebrow">AI WORKSPACE · 试用</div><h2>我的讨论</h2><button type="button" className="aiw-primary" disabled={busy || !loaded} onClick={() => createDiscussion()}>＋ 新建讨论</button></div>
-      <div className="aiw-session-list">{sessions.map(s => <button type="button" disabled={busy} key={s.id} className={`aiw-session ${s.id === activeId ? 'active' : ''}`} onClick={() => { setActiveId(s.id); setMode(s.mode); setDraft(''); setAttachment(null); setError('') }}><strong>{s.title}</strong><small>{s.mode === 'reply' ? '客户回复草稿' : '自由探讨'} · {new Date(s.updatedAt).toLocaleDateString('zh-CN')}</small></button>)}{!sessions.length && <p className="aiw-empty-list">{loaded ? '尚无讨论' : '正在读取讨论…'}</p>}</div>
+      <div className="aiw-session-list">{sessions.map(s => editingId === s.id
+        ? <form key={s.id} className="aiw-session-edit" onSubmit={renameDiscussion}>
+            <input aria-label="讨论主题" autoFocus maxLength={120} value={editingTitle} onChange={e => setEditingTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { setEditingId(null); setEditingTitle('') } }} />
+            <button type="submit" disabled={!editingTitle.trim()}>保存</button><button type="button" onClick={() => { setEditingId(null); setEditingTitle('') }}>取消</button>
+          </form>
+        : <div key={s.id} className={`aiw-session-row ${s.id === activeId ? 'active' : ''}`}>
+            <button type="button" disabled={busy} className="aiw-session" onClick={() => { setActiveId(s.id); setMode(s.mode); setDraft(''); setAttachment(null); setError('') }}><strong>{s.title}</strong><small>{s.mode === 'reply' ? '客户回复草稿' : '自由探讨'} · {new Date(s.updatedAt).toLocaleDateString('zh-CN')}</small></button>
+            <button type="button" className="aiw-rename" disabled={busy || !loaded || !s.messages.length} aria-label={`修改主题：${s.title}`} title="修改主题" onClick={() => { setEditingId(s.id); setEditingTitle(s.title) }}>修改</button>
+          </div>)}{!sessions.length && <p className="aiw-empty-list">{loaded ? '尚无讨论' : '正在读取讨论…'}</p>}</div>
       <p className="aiw-local-note">{saveState || '讨论按当前员工账号保存，并在本浏览器留有副本。'}{saveState.includes('失败') && <button type="button" onClick={() => setSaveRetry(value => value + 1)}>重试保存</button>}<br />请勿输入真实客户信息。</p>
     </aside>
     <section className="aiw-main">
