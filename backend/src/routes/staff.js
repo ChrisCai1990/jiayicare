@@ -14264,18 +14264,6 @@ router.get('/patients/:id/ai-health-summary/checkup-readiness', staffAuth, async
 // member/scope in flight so a timed-out browser request or a second tab cannot append
 // a duplicate history record while the first request is still working.
 const activeAIHealthSummaryJobs = new Set();
-const hepatitisEvidencePattern = /乙肝|乙型肝炎|丙肝|丙型肝炎|HBsAg|HBV[\s-]?DNA|\bHBV\b|HCV[\s-]?(?:RNA|抗体)|抗[\s-]?HCV|\bHCV\b/i;
-const tumorReportConditions = [
-  { screeningCategory: 'tumor' }, { 'reportItems.screeningCategory': 'tumor' },
-  { screeningL1: /肿瘤筛查/ },
-  ...['title', 'screeningL2', 'examConclusion', 'note', 'reportItems.name',
-    'reportItems.sourceSection', 'reportItems.orderName', 'reportItems.value',
-    'reportItems.findings', 'reportItems.diagnosis', 'reportItems.conclusion']
-    .map(field => ({ [field]: hepatitisEvidencePattern })),
-];
-const tumorEvidenceStale = (scope, current, baseline) =>
-  (scope === 'doctor' || scope === 'all')
-  && [current, baseline].some(section => section && section.evidenceVersion !== 2);
 router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   let generationJobKey = null;
   let ownsGenerationJob = false;
@@ -14410,60 +14398,14 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       }
     }
 
-    // 跨年度优先采用增量生成：继承最近一个更早年度中“已审核”的健康顾问结果，
-    // 只把目标年度新增报告交给AI。没有已审核基线时自动回退到原来的全量生成。
-    let incrementalBase = null;
-    if (scope === 'doctor' || scope === 'all') {
-      const priorYears = Object.keys(byYear)
-        .filter(y => Number(y) < Number(year))
-        .sort((a, b) => Number(b) - Number(a));
-      for (const priorYear of priorYears) {
-        const entry = byYear[priorYear] || {};
-        const candidates = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : []);
-        const approved = candidates.find(record =>
-          (record.doctorApprovedAt || record.approvedAt)
-          && DOCTOR_KEYS.some(key => record.sections?.[key]));
-        if (approved) {
-          incrementalBase = { year: priorYear, sections: approved.sections };
-          break;
-        }
-      }
-    }
-    let reusedTumorSection = null;
-    // 只复用已经升级为“10项肿瘤趋势卡”的新版板块。旧版只有 completed/abnormal/missing，
-    // 若直接复用会导致新生成的5维分析中唯独肿瘤板块仍停留在旧展示结构。
-    const isStructuredTumorSection = section => Array.isArray(section?.cancers)
-      && section.cancers.length === 10 && !!section.overview;
-    // Old tumor cards predate cross-category hepatitis evidence. Rebuild once from all
-    // historical reports even if their source reports have not changed since generation.
-    const needsTumorRefresh = tumorEvidenceStale(scope,
-      prevDoctorEntry.sections?.tumor_risk, incrementalBase?.sections?.tumor_risk);
-    if (!needsTumorRefresh && (scope === 'doctor' || scope === 'all') && isStructuredTumorSection(prevDoctorEntry.sections?.tumor_risk) && prevDoctorEntry.generatedAt) {
-      const tumorChanged = await MedicalReport.exists({
-        user: req.params.id,
-        updatedAt: { $gt: new Date(prevDoctorEntry.generatedAt) },
-        $or: tumorReportConditions,
-      });
-      if (!tumorChanged) reusedTumorSection = prevDoctorEntry.sections.tumor_risk;
-    }
-    if (!needsTumorRefresh && !reusedTumorSection && isStructuredTumorSection(incrementalBase?.sections?.tumor_risk)) {
-      const yearStart = `${year}-01-01`;
-      const nextYearStart = `${Number(year) + 1}-01-01`;
-      const hasTargetYearTumorReport = await MedicalReport.exists({
-        user: req.params.id,
-        $and: [
-          { $or: [{ reportYear: Number(year) }, { reportYear: year }, { checkDate: { $gte: yearStart, $lt: nextYearStart } }] },
-          { $or: tumorReportConditions },
-        ],
-      });
-      if (!hasTargetYearTumorReport) reusedTumorSection = incrementalBase.sections.tumor_risk;
-    }
+    // Regenerate the five dimensions from reports in the selected five-year window.
+    // Earlier approved prose may contain reports that now fall outside that window.
     const { sections: genResult, failed, validationError } = await require('../utils/aiDataConsent').withPersonalData(req.params.id, 'health', () => withAiContext({ circuitScope: 'health_summary', actorId: String(req.staff._id), tenantId: String(req.staff.tenantId || ''), stage: scope === 'nutrition' ? 'lifestyle_summary' : 'five_dimension' }, () => generateHealthSummarySections(user, {
       scope,
-      existingSections: prevEntry.sections || null,
+      existingSections: scope === 'nutrition' ? prevEntry.sections || null : null,
       analysisYear: year,
-      incrementalBase: recheckFromSources || needsTumorRefresh ? null : incrementalBase,
-      reusedTumorSection: recheckFromSources || needsTumorRefresh ? null : reusedTumorSection,
+      incrementalBase: null,
+      reusedTumorSection: null,
     })));
     // AI返回解析失败或本该生成的板块是空壳内容：不写入数据库，直接报错，避免前端显示"已生成"却看不到内容
     // （2026-07-07 赵菲盈反馈"生活方式评估提示已生成但实际没有"即此场景——此前空壳会被当成功写入）
