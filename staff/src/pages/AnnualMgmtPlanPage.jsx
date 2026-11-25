@@ -1468,7 +1468,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <strong>AI 提示有 {unresolvedAiCheckups.length} 项检查尚待顾问逐项核对</strong>
         <div style={{ marginTop: 5 }}>这些提示目前不会出现在年度方案的“完善检查”；顾问确认“确需检查”后，再同步草稿或补入已推送方案。</div>
         <div style={{ marginTop: 5 }}>{unresolvedAiCheckups.slice(0, 3).join('、')}{unresolvedAiCheckups.length > 3 ? `等 ${unresolvedAiCheckups.length} 项` : ''}</div>
-        <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai`)}>去逐项核对</button>
+        <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => nav(`/patients/${id}?tab=ai&checkupReview=1&checkupYear=${year}&checkupText=${encodeURIComponent(unresolvedAiCheckups[0])}#ai-checkup-review`)}>去逐项核对</button>
       </div>}
 
       {annualPilot && patientMode && <div style={{ margin: '-12px 0 20px', fontSize: 12, color: '#52675D' }}>

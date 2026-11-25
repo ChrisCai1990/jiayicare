@@ -19,7 +19,7 @@ const hepatitisAllNegative = reports => hepatitisMarkers.every(pattern => {
   return latest && /阴性|negative|未检出|^\s*[-－]\s*$/i.test(String(latest.value || ''))
 })
 
-export default function CurrentScreeningChecklist({ patientId, year, reports = [], staff, toast, onOpenReport }) {
+export default function CurrentScreeningChecklist({ patientId, year, reports = [], staff, toast, onOpenReport, focusCheckupText = '', openCheckupReview = false }) {
   const [state, setState] = useState({ loading: true, error: '', decisions: [], checkup: null, plan: null })
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({})
@@ -108,7 +108,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
           <p style={{ margin: '4px 0', color: '#52675D' }}>顾问确认后在<a href={`/patients/${patientId}/annual-health?year=${year}`}>年度方案的“疫苗接种”</a>填写疫苗、时间和执行人；此处仅供核对，不自动派发。</p>
         </div>
       </details>
-      <details style={{ marginTop: 12 }}><summary style={{ cursor: 'pointer' }}>查看报告与 AI 核对线索</summary>
+      <details open={openCheckupReview || undefined} style={{ marginTop: 12 }}><summary style={{ cursor: 'pointer' }}>查看报告与 AI 核对线索</summary>
       <div style={{ fontSize: 12, color: '#7A5B24', marginTop: 8 }}>检查记录不等于仍在有效期内；异常线索须结合原报告、后续检查和顾问解读判断。</div>
       <details style={{ marginTop: 10 }}><summary>已有检查记录的专项（{covered.length}，时效待核对）</summary>
         {covered.map(({ report, item }, index) => <div key={`${item.screeningKey || item.screeningKeys?.[0]}:${index}`} style={{ padding: 8, background: '#fff', marginTop: 6, borderRadius: 7, fontSize: 13 }}>
@@ -127,8 +127,8 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
         </div>)}
         {findingsOpen && findingPages > 1 && <div className="report-table-pager" style={{ marginTop: 8 }}><button type="button" disabled={currentFindingPage <= 1} onClick={() => setFindingPage(currentFindingPage - 1)}>上一页</button><span>第 {currentFindingPage} / {findingPages} 页</span><button type="button" disabled={currentFindingPage >= findingPages} onClick={() => setFindingPage(currentFindingPage + 1)}>下一页</button></div>}
       </details>
-      <details style={{ marginTop: 10 }}><summary>AI 提示的待完善检查（{state.checkup?.items?.length || 0}）</summary>
-        <AICheckupReview patientId={patientId} year={year} versionKey={state.checkup?.version || ''} staff={staff} toast={toast} onSaved={refresh} />
+      <details id="ai-checkup-review" open={openCheckupReview || undefined} style={{ marginTop: 10 }}><summary>AI 提示的待完善检查（{state.checkup?.items?.length || 0}）</summary>
+        <AICheckupReview patientId={patientId} year={year} versionKey={state.checkup?.version || ''} staff={staff} toast={toast} onSaved={refresh} focusText={focusCheckupText} />
       </details>
       </details>
     </>}

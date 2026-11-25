@@ -2196,6 +2196,9 @@ export default function PatientDetailPage() {
   const workflowSearch = new URLSearchParams(location.search)
   const annualWorkflowYear = workflowSearch.get('annualWorkflowYear')
   const annualWorkflowStep = workflowSearch.get('workflowStep')
+  const checkupReviewYear = workflowSearch.get('checkupReview') === '1' && /^\d{4}$/.test(workflowSearch.get('checkupYear') || '')
+    ? Number(workflowSearch.get('checkupYear')) : null
+  const checkupReviewText = workflowSearch.get('checkupReview') === '1' ? workflowSearch.get('checkupText') || '' : ''
   const annualWorkflowBack = /^\d{4}$/.test(annualWorkflowYear || '')
     && ['preparation', 'interpretation', 'screening', 'execution', 'assessment'].includes(annualWorkflowStep)
     ? `/patients/${id}/annual-workflow?year=${annualWorkflowYear}` : ''
@@ -2495,8 +2498,8 @@ export default function PatientDetailPage() {
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [currentScreeningPilot, setCurrentScreeningPilot] = useState(null)
-  const [screeningSummaryYear, setScreeningSummaryYear] = useState(() => annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')
-    ? Number(annualWorkflowYear) : new Date().getFullYear())
+  const [screeningSummaryYear, setScreeningSummaryYear] = useState(() => checkupReviewYear || (annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')
+    ? Number(annualWorkflowYear) : new Date().getFullYear()))
   useEffect(() => {
     let active = true
     setCurrentScreeningPilot(null)
@@ -2513,6 +2516,7 @@ export default function PatientDetailPage() {
   useEffect(() => {
     if (annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')) setScreeningSummaryYear(Number(annualWorkflowYear))
   }, [annualWorkflowStep, annualWorkflowYear, id])
+  useEffect(() => { if (checkupReviewYear) setScreeningSummaryYear(checkupReviewYear) }, [checkupReviewYear, id])
   const [screeningFiles, setScreeningFiles] = useState([])
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -7247,7 +7251,7 @@ export default function PatientDetailPage() {
                 </div>
               </div>
               <AnnualReviewCommunicationPanel patientId={id} year={screeningSummaryYear} staff={staff} toast={toast} onOpenReview={openSpecialtyReview} />
-              {currentScreeningPilot === null ? <div style={{ margin: '0 16px 14px', padding: 14 }}>正在读取筛查核对方式…</div> : currentScreeningPilot ? <CurrentScreeningChecklist patientId={id} year={Number(screeningSummaryYear)} reports={screeningReports} staff={staff} toast={toast} onOpenReport={openReportDetail} /> : null}
+              {currentScreeningPilot === null ? <div style={{ margin: '0 16px 14px', padding: 14 }}>正在读取筛查核对方式…</div> : currentScreeningPilot ? <CurrentScreeningChecklist patientId={id} year={Number(screeningSummaryYear)} reports={screeningReports} staff={staff} toast={toast} onOpenReport={openReportDetail} focusCheckupText={checkupReviewYear === Number(screeningSummaryYear) ? checkupReviewText : ''} openCheckupReview={!!checkupReviewYear} /> : null}
               {(() => {
                 // 2026-07-02：体检方案里已开具但客户还未做/未上传报告的检验检查项目，在这里做一条轻量提示——
                 // 不把方案项目直接并入下面的三层筛查树渲染（那块逻辑已经很复杂，硬塞进去容易出连锁问题），

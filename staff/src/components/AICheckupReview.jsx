@@ -2,8 +2,15 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 
 const LABELS = { needs_exam: '已纳入完善检查', request_records: '仅需补传资料', already_managed: '已有事项覆盖', not_needed: '无需安排' }
+const matchesFocus = (item, focusText) => {
+  const text = String(item.text || '').trim()
+  const title = String(item.title || '').trim()
+  const focus = String(focusText || '').trim()
+  const core = focus.split(/[（(]/)[0].trim()
+  return !!focus && (text === focus || title === focus || text.includes(focus) || (core.length >= 3 && (text.includes(core) || title.includes(core))))
+}
 
-export default function AICheckupReview({ patientId, year, versionKey, staff, toast, onSaved }) {
+export default function AICheckupReview({ patientId, year, versionKey, staff, toast, onSaved, focusText = '' }) {
   const [data, setData] = useState(null), [decisions, setDecisions] = useState([]), [loadError, setLoadError] = useState('')
   const [error, setError] = useState(''), [successMessage, setSuccessMessage] = useState('')
   const [editing, setEditing] = useState(null), [form, setForm] = useState({}), [busy, setBusy] = useState(false)
@@ -14,6 +21,12 @@ export default function AICheckupReview({ patientId, year, versionKey, staff, to
       .catch(e => { if (active) setLoadError(e.message || '读取核对状态失败') })
     return () => { active = false }
   }, [patientId, year, versionKey])
+  useEffect(() => {
+    if (!focusText || !data?.items?.length) return
+    const target = data.items.find(item => matchesFocus(item, focusText))
+    if (!target) return
+    requestAnimationFrame(() => document.getElementById(`ai-checkup-${encodeURIComponent(target.sourceKey)}`)?.scrollIntoView({ block: 'center' }))
+  }, [data, focusText])
   if (loadError) return <div role="alert" style={{ color: '#B42318', fontSize: 12 }}>{loadError}</div>
   if (!data?.approved) return <div style={{ color: '#64748B', fontSize: 12 }}>本板块审核后，可逐项核对是否进入年度管理。</div>
   if (!data.items?.length) return null
@@ -41,7 +54,7 @@ export default function AICheckupReview({ patientId, year, versionKey, staff, to
   }
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
     {successMessage && <div role="status" style={{ color: '#1E6B50', background: '#EAF7EF', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>{successMessage}</div>}
-    {data.items.map(item => { const saved = current(item); return <div key={item.sourceKey} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '8px 10px', background: '#FAFAF8', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+    {data.items.map(item => { const saved = current(item); const focused = matchesFocus(item, focusText); return <div id={`ai-checkup-${encodeURIComponent(item.sourceKey)}`} key={item.sourceKey} style={{ border: focused ? '2px solid #D97706' : '1px solid #E0D9CE', borderRadius: 8, padding: '8px 10px', background: focused ? '#FFF7ED' : '#FAFAF8', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
       <div style={{ minWidth: 0, fontSize: 13, lineHeight: 1.6 }}><b>{item.text}</b><div style={{ color: saved || item.autoDisposition ? '#1E6B50' : '#B45309', fontSize: 12 }}>{saved ? LABELS[saved.disposition] + (saved.note ? ` · ${saved.note}` : '') : item.autoDisposition === 'needs_exam' ? '已审核整理带入年度草稿，推送前可调整' : item.autoDisposition === 'request_records' ? '已审核整理提示核对资料，不生成检查行动' : '待顾问核对'}</div></div>
       {editable && <button type="button" className="btn btn-secondary btn-sm" onClick={() => open(item)}>{saved || item.autoDisposition ? '调整去向' : '核对去向'}</button>}
     </div> })}
