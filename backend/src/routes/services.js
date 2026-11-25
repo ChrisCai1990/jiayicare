@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
       iconColor: '#1E6B50',
       features: p.features || [],
       images: p.images || [],
-      servicePrices: (p.servicePrices || []).map(row => ({ ...row,
+      servicePrices: (p.servicePrices || []).map(row => ({ ...(typeof row.toObject === 'function' ? row.toObject() : row),
         healthFundDeduction: require('../utils/productFundRule').resolveProductFundRule(p, row.label) })),
       description: p.description || '',
       fulfillmentType: p.fulfillmentType || 'offline_service',
