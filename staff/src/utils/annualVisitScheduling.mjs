@@ -53,8 +53,8 @@ export function changeVisitSeparationReason(data, moduleKey, index, reason) {
 export function matchingVisitLeaders(data, moduleKey, index) {
   const rows = visitRows(data)
   const target = rows.find(row => row.moduleKey === moduleKey && row.index === index)
-  if (!target?.date || !target.hospital) return []
-  return rows.filter(row => row.key !== target.key && row.date === target.date && row.hospital === target.hospital
+  if (!target?.date) return []
+  return rows.filter(row => row.key !== target.key && row.date === target.date && row.hospital && (!target.hospital || row.hospital === target.hospital)
     && (row.row.serviceMode === 'single' || row.row.serviceMode === 'managed' && row.row.managedServiceType === 'outpatient'))
 }
 
@@ -73,9 +73,42 @@ export function assignSharedVisit(data, moduleKey, index, leaderKey) {
     if (!next[row.moduleKey] || next[row.moduleKey] === data[row.moduleKey]) next[row.moduleKey] = { ...data[row.moduleKey], records: [...data[row.moduleKey].records] }
     next[row.moduleKey].records[row.index] = row.key === leader.key
       ? { ...row.row, visitGroupId: groupId }
-      : { ...row.row, visitGroupId: groupId, serviceMode: 'shared', serviceType: '', managedServiceType: '' }
+      : { ...row.row, hospital: row.row.hospital || leader.row.hospital, visitGroupId: groupId, serviceMode: 'shared', serviceType: '', managedServiceType: '',
+        ...(!row.row.hospital ? { followVisitHospital: true } : {}) }
   }
   return next
+}
+
+export function syncSharedVisitProviders(data) {
+  const rows = visitRows(data)
+  let next = data
+  for (const item of rows) {
+    if (item.row.serviceMode !== 'shared' || !item.row.visitGroupId || !['checkup_completion', 'abnormal_followup'].includes(item.moduleKey)) continue
+    const leaders = rows.filter(row => row.moduleKey === 'medical_treatment' && row.row.visitGroupId === item.row.visitGroupId && ['single', 'managed'].includes(row.row.serviceMode))
+    if (leaders.length !== 1) continue
+    const leader = leaders[0].row
+    const changes = {}
+    if (item.row.followVisitHospital && leader.hospital && item.row.hospital !== leader.hospital) changes.hospital = leader.hospital
+    if (item.row.followVisitOrdering && leader.department) {
+      if (item.row.order_dept !== leader.department) changes.order_dept = leader.department
+      if (item.row.order_expert !== (leader.expert || '')) changes.order_expert = leader.expert || ''
+      if (JSON.stringify(item.row.orderExpertIds || []) !== JSON.stringify(leader.expertIds || [])) changes.orderExpertIds = [...(leader.expertIds || [])]
+    }
+    if (!Object.keys(changes).length) continue
+    if (next === data) next = { ...data }
+    if (next[item.moduleKey] === data[item.moduleKey]) next[item.moduleKey] = { ...data[item.moduleKey], records: [...data[item.moduleKey].records] }
+    next[item.moduleKey].records[item.index] = { ...next[item.moduleKey].records[item.index], ...changes }
+  }
+  return next
+}
+
+export function changeSharedVisitProvider(data, moduleKey, index, field, enabled) {
+  if (!['followVisitHospital', 'followVisitOrdering'].includes(field)) return data
+  const row = data[moduleKey]?.records?.[index]
+  if (!row?.visitGroupId || row.serviceMode !== 'shared') return data
+  const next = { ...data, [moduleKey]: { ...data[moduleKey], records: [...data[moduleKey].records] } }
+  next[moduleKey].records[index] = { ...row, [field]: enabled }
+  return syncSharedVisitProviders(next)
 }
 
 export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, serviceType = '', trackResults = false }) {
@@ -146,11 +179,12 @@ export function autoGroupAnnualVisits(data) {
         (mode === 'single' && !leader.row.serviceType)) continue
     next = groupVisitRows(next, items.map(item => item.key), { date: leader.date, leaderKey: leader.key, serviceMode: mode, serviceType: leader.row.serviceType, trackResults: true })
   }
-  return next
+  return syncSharedVisitProviders(next)
 }
 
 export function nearDateCandidates(data) {
   const rows = nearbyVisitRows(data).filter(item => item.hospital && item.date && !item.row.scheduleSeparationReason?.trim() && !item.row.datePending)
-  return rows.filter(item => rows.some(other => other.hospital === item.hospital && other.date !== item.date &&
+  return rows.filter(item => rows.some(other => other.key !== item.key && other.hospital === item.hospital &&
+    (other.date !== item.date || !item.row.visitGroupId || item.row.visitGroupId !== other.row.visitGroupId) &&
     Math.abs(Date.parse(other.date) - Date.parse(item.date)) <= 14 * 86400000))
 }

@@ -38,20 +38,48 @@ function validateVisitGroups(data = {}) {
     if (entries.some(e => !validDay(e.date) || e.date !== entries[0].date)) return `“${id}”的就诊日期须一致且有效`;
     if ((!reminders && entries.some(e => !e.hospital)) || entries.some(e => e.hospital !== entries[0].hospital)) return `“${id}”的就诊医院须一致；不同医院请分别安排`;
   }
+  const byDateAndHospital = new Map();
+  for (const [moduleKey, dateKey] of Object.entries(MODULE_DATES)) {
+    if (data[moduleKey]?.enabled === false) continue;
+    for (const row of data[moduleKey]?.records || []) {
+      const date = text(row[dateKey]), hospital = hospitalIdentity(row.hospital);
+      if (!validDay(date) || !hospital || /待定|待确认|待核|或|就近/.test(hospital)) continue;
+      const key = JSON.stringify([date, hospital]);
+      if (!byDateAndHospital.has(key)) byDateAndHospital.set(key, []);
+      byDateAndHospital.get(key).push(row);
+    }
+  }
+  for (const [key, rows] of byDateAndHospital) {
+    if (rows.length < 2) continue;
+    const unresolved = rows.some((row, index) => rows.slice(index + 1).some(other =>
+      (!row.visitGroupId || row.visitGroupId !== other.visitGroupId)
+      && !text(row.scheduleSeparationReason) && !text(other.scheduleSeparationReason)));
+    if (unresolved) {
+      const [date, hospital] = JSON.parse(key);
+      return `${date} ${hospital}有同日就医和检查尚未核对：请归为同次就诊，确需分开则写明实际原因`;
+    }
+  }
   return '';
 }
 
 function sharedVisitItems(data, id) {
-  return (visitGroups(data).get(text(id)) || []).map(({ moduleKey, index, row, title }) => ({
+  return (visitGroups(data).get(text(id)) || []).map(({ moduleKey, index, row, title }) => {
+    const examExpert = text(row.expert || (row.expertSnapshots || []).map(item => item.name).join('、'));
+    const orderExpert = text(row.order_expert || (row.orderExpertSnapshots || []).map(item => item.name).join('、'));
+    return {
     moduleKey, recordIndex: index, title,
     department: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1
       ? row.order_dept || row.department : row.department || row.order_dept),
     expert: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1
-      ? row.order_expert || row.expert : row.expert || row.order_expert), reason: text(row.reason || row.purpose),
+      ? orderExpert || examExpert : examExpert || orderExpert),
+    orderDepartment: text(row.order_dept), orderExpert,
+    examDepartment: text(row.department), examExpert,
+    reason: text(row.reason || row.purpose),
     basisSummary: text(row.basisSummary), goal: text(row.goal), completionStandard: text(row.completionStandard),
     communicationContent: text(row.communicationContent), customerAction: text(row.customerAction),
     precautions: text(row.precautions || row.notes), issueId: row.issueId || null, issueIds: row.issueIds || [],
-  }));
+  };
+  });
 }
 
-module.exports = { MODULE_DATES, visitGroups, validateVisitGroups, sharedVisitItems };
+module.exports = { MODULE_DATES, visitGroups, validateVisitGroups, sharedVisitItems, hospitalIdentity };

@@ -18,7 +18,7 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
   useEffect(() => setSelected(previous => previous.filter(key => rows.some(row => row.key === key))), [data])
   useEffect(() => {
     if (!chosen.length) return
-    const leader = chosen.find(row => ['managed', 'single'].includes(row.row.serviceMode)) || chosen[0]
+    const leader = chosen.find(row => row.moduleKey === 'medical_treatment' && ['managed', 'single'].includes(row.row.serviceMode)) || chosen.find(row => ['managed', 'single'].includes(row.row.serviceMode)) || chosen[0]
     setLeaderKey(leader.key)
     setServiceMode(['reminder', 'managed', 'single'].includes(leader.row.serviceMode) ? leader.row.serviceMode : '')
     setServiceType(leader.row.serviceType || '')
@@ -37,9 +37,9 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
     } catch (error) { onError(error.message) }
   }
   const inputStyle = { padding: '6px 8px', border: '1px solid #D6DED8', borderRadius: 6, maxWidth: '100%' }
-  return <details id="annual-visit-schedule-review" style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>{nearbyOnly ? '待核对 · 同院就诊日期相近' : '排期工具：合并多项同次就医与检查'}</summary>
-    <p style={{ fontSize: 12, color: '#62776A' }}>下面是年度方案中已有的就医和检查事项，仅供核对是否能同次办理，不会另生成方案。相隔 14 天以内的日期相邻显示；核实医院、时限、准备要求后可统一日期和服务安排。</p>
+  return <details id="annual-visit-schedule-review" open={nearbyOnly} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+    <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 15 }}>{nearbyOnly ? `待核对 · 同院同日或日期相近的就医与检查（${rows.length} 项）` : '排期工具：合并多项同次就医与检查'}</summary>
+    <p style={{ fontSize: 12, color: '#62776A' }}>下面是年度方案中同院同日或日期相近的就医和检查事项。核实医院、时限、准备要求后，可选“安排就医”为主事项统一成一次服务；确需分开时请填写具体原因。</p>
     {groups.map((group, groupIndex) => <div key={group[0].cluster} style={{ borderTop: '1px solid #E5ECE7', paddingTop: 10, marginTop: 10 }}>
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 5 }}>排期段 {groupIndex + 1} · {group.length} 项{group.length > 1 ? '（相邻日期不代表必须同次就诊）' : ''}</div>
       {group.map(item => <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(180px,1fr) minmax(165px,auto)', gap: 9, alignItems: 'center', padding: '7px 0' }}>

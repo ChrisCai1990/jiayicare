@@ -3,6 +3,7 @@ import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import itemTools from '../../../shared/annualServiceItem.cjs'
 import planTools from '../../../shared/annualBookingPlan.cjs'
+import { bookingRequirements } from '../../../shared/annualBookingDisplay.cjs'
 import CareFlowCard from './CareFlowCard'
 
 export function BookingSummary({ booking }) {
@@ -24,15 +25,21 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
   const [fullFlow,setFullFlow] = useState(false)
   if(task.careFlowId || fullFlow) return <CareFlowCard task={task} staff={staff} onCompleted={()=>onLinked?.(null)}/>
   if (!itemTools.isAssistance(task)) return null
-  const plan = planTools.bookingPlan(task), booked = task.annualBooking
+  const requirements = bookingRequirements(task), plan = requirements.plan, booked = task.annualBooking
   const canEdit = staff?.role === 'superadmin' || (staff?.role === 'healthManager' && String(task.assignedTo?._id || task.assignedTo) === String(staff._id))
   const change = (id, key, value) => setEntries(prev => prev.map(e => e.id === id ? { ...e, [key]: value } : e))
   const valid = entries.every((e, i) => e.mode === 'prebook' ? e.date && e.time && slots[i].department && (slots[i].hospital || e.hospital.trim()) && (!slots[i].candidates?.length || e.bookedExpertId) : e.note.trim() && (e.mode !== 'onsite' || slots[i].department))
   return <section style={{ fontSize: 14, lineHeight: 1.6 }}>
     {task.deliveryMode==='single' && canEdit && <button className="btn btn-primary" onClick={()=>setFullFlow(true)}>进入完整流程 / 回退顾问修订</button>}
-    <h3>顾问预约要求（只读）</h3>
-    <p>建议日期：{plan.suggestedDate || '待确认'}{plan.precautions && ` · ${plan.precautions}`}</p>
-    <details style={{ margin: '12px 0', color: '#65776F' }}><summary>查看顾问完整依据与原计划</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{plan.text}</div></details>
+    <div style={{ border: '1px solid #CDE3D8', borderRadius: 12, padding: 16, background: '#F7FBF8', display: 'grid', gap: 14 }}>
+      <div><h3 style={{ margin: '0 0 4px' }}>顾问预约要求 <small style={{ fontWeight: 400, color: '#65776F' }}>只读</small></h3><div style={{ color: '#65776F' }}>请按以下原计划逐项核对预约信息。</div></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+        {[['就诊医院', plan.hospital || '待顾问明确'], ['预约安排日期', requirements.appointmentDate || '待确认'], ['建议就医日期', plan.suggestedDate || '待确认']].map(([label, value]) => <div key={label} style={{ background: '#FFF', border: '1px solid #E1EAE4', borderRadius: 8, padding: '9px 12px' }}><div style={{ fontSize: 12, color: '#65776F' }}>{label}</div><strong style={{ color: '#1A2B24', overflowWrap: 'anywhere' }}>{value}</strong></div>)}
+      </div>
+      {requirements.visitItems.length ? <div style={{ display: 'grid', gap: 10 }}><b>同次就诊事项 · {requirements.visitItems.length} 项</b>{requirements.visitItems.map((item, index) => <div key={`${item.title}-${index}`} style={{ background: '#FFF', border: '1px solid #DCE8E2', borderRadius: 9, padding: '11px 14px', display: 'grid', gap: 6 }}><strong>{index + 1}. {item.title}</strong><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8 }}><div><span style={{ color: '#65776F' }}>科室　</span>{item.department || '待顾问明确'}</div><div><span style={{ color: '#65776F' }}>专家　</span>{item.expert || '未指定'}</div></div>{item.reason && <div><span style={{ color: '#65776F' }}>就医原因　</span>{item.reason}</div>}</div>)}</div> : <div style={{ display: 'grid', gap: 6 }}><b>本次事项 · {plan.items || task.theme || '待确认'}</b><div>科室：{plan.department || '待顾问明确'}　专家：{plan.expert || '未指定'}</div>{plan.reason && <div>就医原因：{plan.reason}</div>}</div>}
+      {(requirements.goal || requirements.precautions || requirements.frequency) && <div style={{ display: 'grid', gap: 5, borderTop: '1px solid #DCE8E2', paddingTop: 12 }}>{requirements.goal && <div><b>管理目标：</b>{requirements.goal}</div>}{requirements.precautions && <div><b>注意事项：</b>{requirements.precautions}</div>}{requirements.frequency && <div><b>执行频次：</b>{requirements.frequency}</div>}</div>}
+      <details style={{ color: '#4A6558' }}><summary style={{ cursor: 'pointer' }}>查看顾问完整依据与原计划</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 10, padding: 12, background: '#FFF', borderRadius: 8, overflowWrap: 'anywhere' }}>{plan.text}</div></details>
+    </div>
     {planTools.bookingReady(booked) ? <><b>预约安排已确认</b><BookingSummary booking={booked} /><p>现场预约仍待执行；预约安排不代表就医或检查完成。</p></> : canEdit && itemTools.needsBooking(task) ? <div style={{ display: 'grid', gap: 16 }}>
       {slots.map((s, i) => { const e = entries[i]; return <section key={s.id} style={{ background: '#F6FBF8', padding: 16, border: '1px solid #DCE9E2', borderRadius: 10, display: 'grid', gap: 10 }}>
         <b>{s.type === 'exam' ? '检查预约' : '门诊预约'} · {s.title}</b>

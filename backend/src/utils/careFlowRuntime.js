@@ -13,6 +13,11 @@ function runtime(injected = {}) {
     const flow = await Flow.findOne({ _id: flowId, tenantId: tenant(actor) }).lean();
     if (!flow || (!enabled(flow.patientId) && !(flow.state?.mode === 'reminder' && flow.state?.adHocMedicalReminder === true))) fail('未找到已开放的本次服务', 404);
     if (actor.staffStatus === 'inactive' || (actor.role !== 'superadmin' && !Object.values(flow.state.people).some(p => id(p.id) === id(actor._id) && p.role === actor.role))) fail('无本次服务权限', 403);
+    if (flow.state?.stage === 'booking' && !flow.state.data?.visitItems?.length) {
+      const request = await Task.findById(flow._id).lean();
+      const visitItems = request?.annualDispatch?.itemSnapshot?.visitItems || request?.formData?.serviceRequest?.itemSnapshot?.visitItems;
+      if (visitItems?.length > 1) flow.state.data.visitItems = visitItems;
+    }
     return flow;
   }
   async function resolve(taskId, actor) {
@@ -146,7 +151,7 @@ function runtime(injected = {}) {
     const visitBrief = visitItems.length > 1 ? `\n同次就诊需逐项核对：\n${visitItems.map((item, index) => `${index + 1}. ${item.title}${item.reason ? `；原因：${item.reason}` : ''}${item.basisSummary ? `；依据：${item.basisSummary}` : ''}${item.goal ? `；目标：${item.goal}` : ''}${item.precautions ? `；注意事项：${item.precautions}` : ''}`).join('\n')}` : '';
     const plan = `${request.annualDispatch?.advisorPlanText || parent.plannedContent || parent.content || ''}${visitBrief}`;
     const state = { stage, sequence: 0, title: request.formData.serviceRequest.itemSnapshot?.items || request.theme,
-      people, returns: [], initialDueAt: parent.remindAt || parent.date || null, data: { advisor: { text: plan }, booking: parent.annualBooking || null, planner: request.annualDispatch || null,
+      people, returns: [], initialDueAt: parent.remindAt || parent.date || null, data: { advisor: { text: plan }, visitItems, booking: parent.annualBooking || null, planner: request.annualDispatch || null,
         execute: request.annualDispatch?.result || null, upload: { reportIds: [] } }, sourceScheduleKey: parent.sourceScheduleKey };
     // Claim first; an interrupted start can be retried without reviving the legacy writer.
     const claimed = await Task.updateOne({ _id: request._id, updatedAt: request.updatedAt, 'serviceTracking.linkId': null, status: { $in: ['planned', 'in_progress', 'missed'] } }, { $set: { careFlowId: request._id } });
@@ -170,7 +175,8 @@ function runtime(injected = {}) {
     if(s.bookingStale && ['planner','execute'].includes(s.stage)) fail('顾问要求已修订，请定向退回健管预约核对，再直返本环节');
     switch (s.stage) {
       case 'advisor': return { text: text(input.text) };
-      case 'booking': return require('./annualBookingReceipt').receipt(input, actor._id, { plannedContent: s.data.advisor.text, sourceScheduleKey: s.sourceScheduleKey });
+      case 'booking': return require('./annualBookingReceipt').receipt(input, actor._id, { plannedContent: s.data.advisor.text, sourceScheduleKey: s.sourceScheduleKey,
+        visitItems: s.data.visitItems?.length > 1 ? s.data.visitItems : require('../../../shared/annualBookingDisplay.cjs').bookingRequirements({ plannedContent: s.data.advisor.text }).visitItems });
       case 'planner': {
         const p = await Admin.findOne({ _id: input.assigneeId, role: 'medicalAssistant', staffStatus: 'active', tenantId: flow.tenantId }).lean();
         if (!p) fail('请选择本机构有效就医专员', 400);

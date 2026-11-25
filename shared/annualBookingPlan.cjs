@@ -32,6 +32,17 @@ function protectedEdit(task, role, body) {
 // from the ordering department or split a clinical item on arbitrary punctuation.
 function bookingSlots(task) {
   const p = bookingPlan(task);
+  if (Array.isArray(task.visitItems) && task.visitItems.length > 1) {
+    return task.visitItems.map((item, index) => ({
+      id: `visit-${item.moduleKey || 'item'}-${item.recordIndex ?? index}`,
+      type: ['checkup_completion', 'abnormal_followup'].includes(item.moduleKey) ? 'exam' : 'outpatient',
+      title: item.title || `就诊事项 ${index + 1}`,
+      hospital: p.hospital, campus: p.campus,
+      department: item.department || '', expert: item.expert || '',
+      orderDepartment: item.orderDepartment || '', orderExpert: item.orderExpert || '',
+      examDepartment: item.examDepartment || '', examExpert: item.examExpert || '',
+    }));
+  }
   const toCandidates = items => Array.isArray(items) ? items.filter(item => item.id && item.name).map(item => ({ id: String(item.id), name: item.name, title: item.title || '', campus: item.campus || '' })) : [];
   const candidates = toCandidates(task.formData?.bookingRequest?.experts);
   const orderCandidates = toCandidates(task.formData?.bookingRequest?.orderExperts);

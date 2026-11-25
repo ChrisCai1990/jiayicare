@@ -32,7 +32,7 @@ import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
-import { autoGroupAnnualVisits, VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit } from '../utils/annualVisitScheduling.mjs'
+import { autoGroupAnnualVisits, VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit, changeSharedVisitProvider, syncSharedVisitProviders } from '../utils/annualVisitScheduling.mjs'
 import { removeWithdrawnDraftSources, mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
 const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
@@ -1183,13 +1183,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       {!!action.record.reviewItems?.length && <div style={{ fontSize: 13, color: '#254C3B', marginBottom: 5 }}>本次复查项目：{action.record.reviewItems.join('、')}</div>}
       {pushedAt && canEdit && ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine', 'nutrition_assessment'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 8 }} onClick={() => window.dispatchEvent(new CustomEvent('annual-plan-edit-item', { detail: { key: action.key, target: action.index } }))}>修改本项</button>}
       <fieldset disabled={!!pushedAt} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-      {entry.def.multi ? <RecordEditor def={{ ...def, summaryKey: '__displayTitle' }} record={{ ...action.record, __displayTitle: action.title }} index={action.index} total={Math.max(2, planActions.length)} executionReviewChanges={changes}
+      {entry.def.multi ? <RecordEditor def={{ ...def, moduleKey: action.key, summaryKey: '__displayTitle' }} record={{ ...action.record, __displayTitle: action.title }} index={action.index} total={Math.max(2, planActions.length)} executionReviewChanges={changes}
         visitCandidates={visitCandidates} onShareVisit={() => {
           if (visitCandidates.length === 1) { selectVisitLeader(visitCandidates[0].key); return }
           if (!visitCandidates.length) { toast('请先核对日期和医院，并将其中一项设为门诊一站式或单项服务'); return }
           handleVisitScheduleChange({ ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? { ...row, serviceMode: 'shared', serviceType: '', managedServiceType: '', visitGroupId: '' } : row) } })
-        }} onSelectVisitLeader={selectVisitLeader}
-        onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next) }}
+        }} onSelectVisitLeader={selectVisitLeader} onFollowVisit={(field, enabled) => handleVisitScheduleChange(changeSharedVisitProvider(moduleData, action.key, action.index, field, enabled))}
+        onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(syncSharedVisitProviders(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next)) }}
         onDelete={() => handleModuleChange(action.key, 'records', moduleData[action.key].records.filter((_, index) => index !== action.index))} />
         : <ModulePanel moduleKey={action.key} def={def} data={moduleData[action.key]} onChange={handleModuleChange} showPlanSummary executionReviewChanges={changes} />}
       </fieldset>

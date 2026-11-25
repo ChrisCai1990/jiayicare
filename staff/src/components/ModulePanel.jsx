@@ -221,9 +221,10 @@ function MedicalExpertPicker({ field, value, onChange }) {
 }
 
 // ── 单条记录编辑区（多条模块用）─────────────────────────────────────
-export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [], issues = [], visitCandidates = [], onShareVisit, onSelectVisitLeader }) {
+export function RecordEditor({ def, record, onChange, onDelete, index, total, executionReviewChanges = [], issues = [], visitCandidates = [], onShareVisit, onSelectVisitLeader, onFollowVisit }) {
   const [open, setOpen] = useState(index === 0 && total === 1)
   const soleVisitLeaderKey = visitCandidates.length === 1 ? visitCandidates[0].key : ''
+  const medicalVisit = visitCandidates.find(candidate => candidate.moduleKey === 'medical_treatment' && candidate.row.visitGroupId === record.visitGroupId && record.visitGroupId)
   useEffect(() => {
     if (def.visitGrouping && record.serviceMode === 'shared' && !record.visitGroupId && soleVisitLeaderKey && !record.scheduleSeparationReason?.trim() && !visitCandidates[0].row.scheduleSeparationReason?.trim()) onSelectVisitLeader?.(soleVisitLeaderKey)
   }, [def.visitGrouping, record.serviceMode, record.visitGroupId, record.scheduleSeparationReason, soleVisitLeaderKey, visitCandidates[0]?.row.scheduleSeparationReason])
@@ -232,7 +233,7 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
   const [supplementalKeys] = useState(() => def.reviewDriven ? def.fields.filter(field=>['basisSummary','precautions','customerAction'].includes(field.key) && !readableValue(record[field.key]).trim()).map(field=>field.key) : [])
   const optionalEmpty = field => supplementalKeys.includes(field.key)
   const renderField = field => <FieldRow key={field.key} label={def.reviewDriven ? ({notes:'备注',basisSummary:'制定依据',precautions:'客户注意事项'}[field.key] || field.label) : field.label} internal={field.internal}>
-    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.type === 'monitoring-metrics' && val !== record.items ? { measurementPeriod: '' } : {}), ...(['expertIds', 'orderExpertIds'].includes(field.key) && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
+    <FieldInput field={def.reviewDriven && ['basisSummary','precautions','customerAction'].includes(field.key) ? {...field,placeholder:'研判未明确，暂无补充；可核对后修改'} : { ...field, record }} value={field.concretePlan ? concretePlanText(record[field.key], record.standardPlanName) : record[field.key]} onChange={val => onChange({ ...record, [field.key]: val, ...(field.key === 'hospital' ? { followVisitHospital: false } : {}), ...(['order_dept', 'order_expert', 'orderExpertIds'].includes(field.key) ? { followVisitOrdering: false } : {}), ...(field.type === 'monitoring-metrics' && val !== record.items ? { measurementPeriod: '' } : {}), ...(['expertIds', 'orderExpertIds'].includes(field.key) && val.length ? { bookingRequired: true } : {}), ...(field.appointmentDate ? { appointmentSchedulingVersion: 1 } : {}) })} />
   </FieldRow>
   return (
     <div style={{ border: '1px solid #E8E3DC', borderRadius: 8, marginBottom: 8, background: '#FAFAF8' }}>
@@ -282,6 +283,11 @@ export function RecordEditor({ def, record, onChange, onDelete, index, total, ex
                     : <select aria-label="选择随同的就医协助" value={visitCandidates.find(candidate => candidate.row.visitGroupId && candidate.row.visitGroupId === record.visitGroupId)?.key || ''} onChange={event => event.target.value && onSelectVisitLeader?.(event.target.value)} style={inputStyle}><option value="">请选择主服务</option>{visitCandidates.map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.date} · {candidate.row.hospital} · {candidate.title}</option>)}</select>}
                 </>}
                 <div style={{ fontSize: 12, color: '#64796E', marginTop: 5 }}>同次就诊关联由系统生成，顾问核对后保存；只派一次服务，就医专员会看到全部事项。</div>
+              </div></FieldRow>}
+              {medicalVisit && ['checkup_completion', 'abnormal_followup'].includes(def.moduleKey) && <FieldRow label="沿用主就医安排"><div style={{ display: 'grid', gap: 6, paddingTop: 5, fontSize: 13 }}>
+                <label><input type="checkbox" checked={!!record.followVisitHospital} onChange={event => onFollowVisit?.('followVisitHospital', event.target.checked)} /> 医院跟就医一致：{medicalVisit.row.hospital || '待明确'}</label>
+                <label><input type="checkbox" checked={!!record.followVisitOrdering} disabled={!medicalVisit.row.department} onChange={event => onFollowVisit?.('followVisitOrdering', event.target.checked)} /> 先就诊／开单科室和专家跟就医一致：{medicalVisit.row.department || '科室待明确'}{medicalVisit.row.expert ? ` · ${medicalVisit.row.expert}` : ' · 专家未指定'}</label>
+                <small style={{ color: '#64796E' }}>实际检查科室、检查医生仍可单独填写；主就医安排变更时，所选字段会在保存时同步。</small>
               </div></FieldRow>}
               {def.visitGrouping && ['single', 'managed'].includes(record.serviceMode) && record.visitGroupId && <div style={{ fontSize: 12, color: '#64796E', marginTop: 6 }}>本项为同次就诊的主服务，其他事项会随同办理。</div>}
               {record.serviceMode === 'managed' && <FieldRow label="一站式服务类型"><FieldInput field={{ type: 'select', options: [{ value: '', label: '请选择' }, { value: 'outpatient', label: '门诊一站式' }, { value: 'checkup', label: '体检一站式' }] }} value={record.managedServiceType} onChange={val => onChange({ ...record, managedServiceType: val })} /></FieldRow>}
