@@ -46,3 +46,18 @@ test('目标年度已审核胸部 CT 与碳13呼气试验不会再次变成待�
   assert.equal(approvedItems(summary, 2027, reports).items.length, 3);
   assert.equal(approvedItems(summary, 2026, reports.map(report => ({ ...report, audit_status: 'pending' }))).items.length, 3);
 });
+
+test('通用目录项目按唯一归类与已审核检查核对，含糊多项目不自动略过', () => {
+  const boneId = 'catalog|骨质疏松|骨密度';
+  const thyroidId = 'catalog|甲状腺|甲状腺超声';
+  const index = [
+    { node: { id: boneId, label: '骨密度' }, cands: [{ n: '骨密度' }, { n: '骨密度测定' }] },
+    { node: { id: thyroidId, label: '甲状腺超声' }, cands: [{ n: '甲状腺超声' }] },
+  ];
+  const summary = { sections: { checkup_completeness: { missing: ['骨密度检查', '甲状腺超声', '骨密度和甲状腺超声待核实'] } }, approvedAt: '2026-11-24' };
+  const reports = [{ audit_status: 'audited', checkDate: '2026-06-01', reportItems: [{ name: '双能骨密度测定', screeningKey: boneId }] }];
+  const items = approvedItems(summary, 2026, reports, index).items;
+  assert.deepEqual(items.map(item => item.text), ['甲状腺超声', '骨密度和甲状腺超声待核实']);
+  assert.equal(items[0].autoDisposition, 'needs_exam');
+  assert.equal(items[1].autoDisposition, '');
+});

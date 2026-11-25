@@ -166,8 +166,10 @@ async function load(patientId, year, dependencies = {}) {
   const patient = await User.findById(patientId).select('aiHealthSummary').lean();
   const screeningReports = dependencies.screeningReports || (dependencies.Decision || dependencies.User || dependencies.Report ? [] : Report.find
     ? await Report.find({ user: patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
-      .select('checkDate date reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningParent').lean() : []);
-  const approved = require('./aiHealthCheckupItems').approvedItems(patient?.aiHealthSummary, year, screeningReports);
+      .select('checkDate date reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean() : []);
+  const catalogIndex = dependencies.catalogIndex || (dependencies.Decision || dependencies.User || dependencies.Report
+    ? [] : await require('./screeningMatch').buildAdminIndex());
+  const approved = require('./aiHealthCheckupItems').approvedItems(patient?.aiHealthSummary, year, screeningReports, catalogIndex);
   const reviews = approved.approved ? await CheckupReview.find({ patientId, year, sourceVersion: approved.version }).lean() : [];
   const byKey = new Map(reviews.map(row => [row.sourceKey, row]));
   const unresolved = [];

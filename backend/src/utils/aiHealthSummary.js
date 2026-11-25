@@ -607,7 +607,8 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
 
   // The model can still propose a repeat of a documented same-year examination.
   // Keep the original report as authority for the structured missing lists.
-  if (!parseFailed && wantDoctor) reconcileCompletedExamMissing(sections, allHistoricalReports, targetYear);
+  if (!parseFailed && wantDoctor) reconcileCompletedExamMissing(sections, allHistoricalReports, targetYear,
+    await require('./screeningMatch').buildAdminIndex());
 
   // AI 可能无视提示词，把同一份子宫附件超声同时写成“卵巢癌已覆盖”和
   // “子宫内膜癌/经阴道超声缺失”。结构化规则证据优先于模型措辞，生成后强制纠正。
@@ -701,15 +702,15 @@ function reconcileGynecologicUltrasoundCoverage(sections, coverageResults = []) 
   }
 }
 
-function reconcileCompletedExamMissing(sections, reports = [], year) {
+function reconcileCompletedExamMissing(sections, reports = [], year, catalogIndex = []) {
   const { checkupMeaning, currentYearExam } = require('./aiHealthCheckupItems');
   const audited = reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly);
   for (const key of ['checkup_completeness', 'tumor_risk']) {
     const missing = sections?.[key]?.missing;
     if (!Array.isArray(missing)) continue;
     sections[key].missing = missing.filter(text => {
-      const meaning = checkupMeaning(text);
-      return !meaning || !currentYearExam(audited, year, meaning.key);
+      const meaning = checkupMeaning(text, catalogIndex);
+      return !meaning || !currentYearExam(audited, year, meaning.key, catalogIndex);
     });
   }
 }

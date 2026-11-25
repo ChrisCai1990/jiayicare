@@ -1,8 +1,16 @@
 const crypto = require('node:crypto');
 
 function hash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
-function currentYearExam(reports = [], year, key) {
-  if (!['chest_ct', 'h_pylori'].includes(key)) return false;
+function catalogExam(text, catalogIndex = []) {
+  const normalized = require('./screeningMatch').norm(text);
+  const matches = catalogIndex.filter(({ cands }) => cands.some(candidate => {
+    const alias = candidate.n;
+    return alias && alias.length >= 3 && normalized.includes(alias);
+  }));
+  return matches.length === 1 ? matches[0].node : null;
+}
+function currentYearExam(reports = [], year, key, catalogIndex = []) {
+  if (!['chest_ct', 'h_pylori'].includes(key) && !key.startsWith('catalog:')) return false;
   return reports.some(report => {
     if (report.audit_status && report.audit_status !== 'audited' || report.archiveOnly) return false;
     const date = report.checkDate || report.date;
@@ -10,6 +18,12 @@ function currentYearExam(reports = [], year, key) {
     if (reportYear !== Number(year)) return false;
     return (report.reportItems || []).some(item => {
       const name = [item.name, item.orderName, item.screeningKey, item.screeningParent].filter(Boolean).join(' ');
+      if (key.startsWith('catalog:')) {
+        const expected = key.slice('catalog:'.length);
+        const confirmed = [item.screeningKey, ...(item.screeningKeys || [])].filter(Boolean);
+        if (confirmed.includes(expected)) return true;
+        return catalogExam(item.name || item.orderName || '', catalogIndex)?.id === expected;
+      }
       return key === 'chest_ct'
         ? /(?:胸|肺).{0,12}(?:CT|低剂量螺旋)|(?:CT|低剂量螺旋).{0,12}(?:胸|肺)/i.test(name) && !/胸片|X光/i.test(name)
         : /(?:碳|C)\s*[-－]?\s*(?:13|14)\s*(?:C)?|(?:13|14)\s*C\s*呼气|幽门螺[杆旋]杆?菌|尿素呼气|HP呼气/i.test(name);
@@ -23,15 +37,17 @@ const EXAM_NAMES = [
   ['liver_ultrasound', '肝脏超声', /肝脏超声|肝脏B超/],
   ['h_pylori', '幽门螺杆菌复查', /幽门螺杆菌|HP复查/i],
 ];
-function checkupMeaning(text) {
+function checkupMeaning(text, catalogIndex = []) {
   const value = String(text || '').trim();
   const names = EXAM_NAMES.filter(([, , pattern]) => pattern.test(value));
   const alreadyDone = /已做|已完成|已检查/.test(value) && !/未做|补做|待做|需做|需要补做|优先补做/.test(value);
   if (alreadyDone && !/年度复查|每年复查|仍需复查|补传|核对资料|确认是否已完成/.test(value)) return null;
+  const catalog = names.length ? null : catalogExam(value, catalogIndex);
   const disposition = /确认是否已完成|补传|核对资料/.test(value) ? 'request_records'
     : names.length > 1 ? '' : 'needs_exam';
-  return { key: names.length === 1 ? names[0][0] : value.replace(/\s+/g, ''),
-    title: names.length === 1 ? names[0][1] : value.slice(0, 80), autoDisposition: disposition };
+  return { key: names.length === 1 ? names[0][0] : catalog ? `catalog:${catalog.id}` : value.replace(/\s+/g, ''),
+    title: names.length === 1 ? names[0][1] : catalog?.label || value.slice(0, 80),
+    autoDisposition: names.length || catalog ? disposition : '' };
 }
 function approvedDoctorSections(summary, year) {
   const byYear = summary?.byYear || {};
@@ -43,7 +59,7 @@ function approvedDoctorSections(summary, year) {
   return Object.fromEntries(Object.entries(record.sections || {}).filter(([key]) =>
     record.sectionReviews?.[key]?.status === 'approved'));
 }
-function approvedItems(summary, year, reports = []) {
+function approvedItems(summary, year, reports = [], catalogIndex = []) {
   const entry = summary?.byYear?.[String(year)] || (!Object.keys(summary?.byYear || {}).length && summary?.sections ? summary : {});
   const records = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : []);
   const record = records.find(row => row.scope === 'doctor' || row.scope === 'all' || (!row.scope && row.sections?.checkup_completeness));
@@ -76,8 +92,8 @@ function approvedItems(summary, year, reports = []) {
   });
   const seenMeaning = new Set();
   const items = rawItems.flatMap(item => {
-    const meaning = checkupMeaning(item.text);
-    if (!meaning || seenMeaning.has(meaning.key) || currentYearExam(reports, year, meaning.key)) return [];
+    const meaning = checkupMeaning(item.text, catalogIndex);
+    if (!meaning || seenMeaning.has(meaning.key) || currentYearExam(reports, year, meaning.key, catalogIndex)) return [];
     // A narrative mentioning several tests is context, not a separate examination.
     if (!meaning.autoDisposition && EXAM_NAMES.filter(([, , pattern]) => pattern.test(item.text)).some(([key]) => seenMeaning.has(key))) return [];
     seenMeaning.add(meaning.key);
@@ -86,4 +102,4 @@ function approvedItems(summary, year, reports = []) {
   return { approved: true, items, version };
 }
 
-module.exports = { approvedItems, approvedDoctorSections, checkupMeaning, currentYearExam };
+module.exports = { approvedItems, approvedDoctorSections, checkupMeaning, currentYearExam, catalogExam };
