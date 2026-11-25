@@ -136,7 +136,7 @@ async function generateHealthSummarySections(user, {
 
   const fetchedReports = await MedicalReport.find({ user: user._id })
     .sort({ checkDate: -1, date: -1, createdAt: -1 })
-    .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note');
+    .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note audit_status archiveOnly');
   // Five-dimensional analysis uses only the target year and the four preceding calendar years.
   // Filter before deriving latest values, coverage, evidence, and source links as well as trends.
   const allHistoricalReports = reportsInAnalysisWindow(
@@ -222,7 +222,7 @@ async function generateHealthSummarySections(user, {
   const examFindingsText = extractExamFindings(allReports);
   // 肿瘤筛查覆盖度（规则引擎确定性结论，按男女前十大肿瘤逐项判断"该做的筛查做了没"，
   // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
-  const cancerCoverage = reuseTumor ? [] : assessCancerCoverage(user, allHistoricalReports);
+  const cancerCoverage = reuseTumor ? [] : assessCancerCoverage(user, allHistoricalReports, targetYear);
   const coverageText = reuseTumor ? '本次复用已生成肿瘤板块，不重复分析' : buildCoverageText(cancerCoverage);
   const cancerCatalogText = reuseTumor ? '本次复用' : buildCancerCatalogText(user);
   const cancerEvidenceText = reuseTumor ? '本次复用' : buildCancerEvidenceText(user, allReports, targetYear);
@@ -361,7 +361,7 @@ ${retrospective ? `【历史年度补生成，最高优先级】本次回溯分�
 ⑩胰弹性蛋白酶/粪便胰弹性蛋白酶反映胰腺外分泌功能，不得作为胰腺癌筛查证据、异常或趋势。胰腺癌基础覆盖只认明确观察胰腺的腹部影像；CA19-9仅作辅助。
 ⑪已经有有效期内肠镜时，粪便隐血/FOBT不得列为“需关注、到期或优先补做”；已经完成胃肠镜也不得仅因粪便隐血阳性直接生成“优先排查消化道器质性病变”，只能忠实记录该结果并提示结合已完成内镜结论由医生判断。
 
-【体检资料覆盖与待完善检查】checkup_completeness.missing只列有已审核报告、已确认评估或适用筛查依据支持的当前资料缺口；不要把所有未做项目列成必做。需要完善的检查归入目标年度待核对、待完善事项，不默认顺延到下一年度；若原报告或医生明确了复查期限，按原期限描述。仅资料不足时写先核对适用性，不擅自建议补做。
+【体检资料覆盖与待完善检查】checkup_completeness.missing只列有已审核报告、已确认评估或适用筛查依据支持的当前资料缺口；不要把所有未做项目列成必做。目标年度已做普通胸部CT或低剂量胸部CT，肺癌筛查均视为已覆盖，不得再要求低剂量CT；碳13/14尿素呼气试验就是幽门螺杆菌检测，目标年度已做后不得再列同年度HP复查，下一年度仍按既有规则评估。需要完善的检查归入目标年度待核对、待完善事项，不默认顺延到下一年度；若原报告或医生明确了复查期限，按原期限描述。仅资料不足时写先核对适用性，不擅自建议补做。
 
 【用药及营养补充信息】仅复述会员当前记录，并标注信息来源或待人工核对状态。不得自行建立药物、营养补充剂与检查异常之间的因果关系；不得建议新增、停用、更换或调整剂量、频次和用法。如原始报告明确要求复核，应原样概述并提示携带原始资料咨询正规医疗机构。
 
@@ -605,6 +605,10 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // 模型偶尔仍会把血糖或血脂子指标拆成多张卡；展示前做确定性归并。
   if (!parseFailed && wantDoctor) normalizeTrendSections(sections, user, allHistoricalReports, targetYear);
 
+  // The model can still propose a repeat of a documented same-year examination.
+  // Keep the original report as authority for the structured missing lists.
+  if (!parseFailed && wantDoctor) reconcileCompletedExamMissing(sections, allHistoricalReports, targetYear);
+
   // AI 可能无视提示词，把同一份子宫附件超声同时写成“卵巢癌已覆盖”和
   // “子宫内膜癌/经阴道超声缺失”。结构化规则证据优先于模型措辞，生成后强制纠正。
   if (!parseFailed && wantDoctor && !reuseTumor) reconcileGynecologicUltrasoundCoverage(sections, cancerCoverage);
@@ -694,6 +698,19 @@ function reconcileGynecologicUltrasoundCoverage(sections, coverageResults = []) 
       .replace(/补做及/g, '补做')
       .replace(/[、，,]+(?=[；。]|$)/g, '')
       .trim();
+  }
+}
+
+function reconcileCompletedExamMissing(sections, reports = [], year) {
+  const { checkupMeaning, currentYearExam } = require('./aiHealthCheckupItems');
+  const audited = reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly);
+  for (const key of ['checkup_completeness', 'tumor_risk']) {
+    const missing = sections?.[key]?.missing;
+    if (!Array.isArray(missing)) continue;
+    sections[key].missing = missing.filter(text => {
+      const meaning = checkupMeaning(text);
+      return !meaning || !currentYearExam(audited, year, meaning.key);
+    });
   }
 }
 
@@ -876,5 +893,5 @@ function attachSourceLinks(sections, allReports, referenceYear = new Date().getF
   }
 }
 
-module.exports = { generateHealthSummarySections, reconcileGynecologicUltrasoundCoverage,
+module.exports = { generateHealthSummarySections, reconcileGynecologicUltrasoundCoverage, reconcileCompletedExamMissing,
   buildStructuredSourceEvidence, CANCER_EVIDENCE_RULES, DOCTOR_KEYS, LIFESTYLE_KEY };

@@ -45,7 +45,7 @@ function project(patient, year, plans, reports, now = new Date(), aiReviews = []
     { lookbackMonths: 12, allowHistoricalFullExam: !renewal }).allowed;
   const planConfirmed = Boolean(plan?.confirmedAt);
   const planReleased = Boolean(plan?.pushedAt || planConfirmed);
-  const checkup = approvedItems(patient.aiHealthSummary, year);
+  const checkup = approvedItems(patient.aiHealthSummary, year, currentReports);
   const screeningConfirmed = !pending.length && checkup.items.every(item => !!item.autoDisposition || aiReviews.some(row =>
     String(row.patientId) === id && Number(row.year) === Number(year)
     && row.sourceVersion === checkup.version && row.sourceKey === item.sourceKey && row.itemText === item.text));
@@ -107,7 +107,7 @@ async function load(staff, now = new Date(), deps = {}, onlyPatientId = '', incl
   if (!eligible.length) return [];
   const reports = await (deps.MedicalReport || MedicalReport).find({ user: { $in: eligible.map(item => item.user._id) },
     audit_status: 'audited', archiveOnly: { $ne: true } })
-    .select('user _id title type status documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt advisorCorrection.status audited_at updatedAt createdAt').lean();
+    .select('user _id title type status documentCategory checkDate date audit_status screeningL1 screeningL2 screeningCategory reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningParent reportItems.sourceSection examDescription examConclusion examMainConclusions advisorInterpretationConfirmedAt advisorCorrection.status audited_at updatedAt createdAt').lean();
   const reviews = await (deps.AIHealthCheckupReview || AIHealthCheckupReview).find({
     patientId: { $in: eligible.map(item => item.user._id) }, year: { $in: [...new Set(eligible.map(item => item.year))] },
   }).select('patientId year sourceVersion sourceKey itemText').lean();

@@ -2,6 +2,19 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { carryAnnualTargets } from './annualTargetCarry.mjs'
 
+test('同步草稿时移除已被原报告证明做过的自动待补检查', () => {
+  const staleId = 'management_issue:ai_approved_old_ct';
+  const keepId = 'management_issue:manual';
+  const modules = {
+    management_targets: { records: [{ issueId: staleId }, { issueId: keepId }] },
+    checkup_completion: { records: [{ items: '低剂量胸部CT', sourceIds: [staleId], screeningDraft: true },
+      { items: '顾问自行确认', sourceIds: [keepId] }] },
+  };
+  const result = carryAnnualTargets(modules, [{ issueId: keepId, goal: '已确认事项' }], []);
+  assert.deepEqual(result.modules.management_targets.records.map(row => row.issueId), [keepId]);
+  assert.deepEqual(result.modules.checkup_completion.records.map(row => row.items), ['顾问自行确认']);
+});
+
 test('血压和体重作为独立监测草稿承接，调整时间和取消选项同步更新', () => {
   const targets = [{ issueId: 'monitor:1', sourceGoal: '日常监测' }]
   const draft = (type, label, time) => ({ key: 'monitoring', record: { sourceIds: ['monitor:1'], metricType: type, items: label, measurementPeriod: time } })

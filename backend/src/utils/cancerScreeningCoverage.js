@@ -38,7 +38,7 @@ function findDoneRecords(reports, matchNames) {
 
 // HP 专用：判断是否"连续3年阴性可停"。返回 { done, lastDate, canStop, needCheck, reason }
 // 阴性判断：reportItem.status==='normal' 或 value/结论含"阴性/(-)/negative"
-function evalHp(reports, matchNames) {
+function evalHp(reports, matchNames, targetYear) {
   const records = findDoneRecords(reports, matchNames);
   if (!records.length) {
     return { done: false, needCheck: true, reason: '未见幽门螺杆菌检测记录，建议检测（碳13/14呼气试验）' };
@@ -63,9 +63,10 @@ function evalHp(reports, matchNames) {
   }
   const lastNeg = isNeg(lastRec);
   return {
-    done: true, lastDate: lastRec.date, canStop: false, needCheck: !lastNeg || years.length < 3,
+    done: true, lastDate: lastRec.date, canStop: false,
+    needCheck: !lastNeg || (Number(targetYear) !== Number(lastRec.year) && years.length < 3),
     reason: lastNeg
-      ? `最近一次（${(lastRec.date || '').slice(0,10)}）HP阴性，但尚无连续3年阴性记录，建议继续每年检测`
+      ? `最近一次（${(lastRec.date || '').slice(0,10)}）HP阴性，本年度已完成检测；尚无连续3年阴性记录，下年度再评估是否继续检测`
       : `最近一次（${(lastRec.date || '').slice(0,10)}）HP阳性，建议评估根除治疗后复查`,
   };
 }
@@ -131,7 +132,7 @@ function evalCancer(cancerKey, rule, ctx) {
   // special 独立规则（HP）
   (rule.special || []).forEach(sp => {
     if (sp.rule === 'independent_yearly_stop_after_3neg') {
-      const hp = evalHp(reports, sp.matchNames);
+      const hp = evalHp(reports, sp.matchNames, ctx.year);
       result.notes.push(`【${sp.label}】${hp.reason}`);
       if (hp.needCheck) {
         if (result.status === 'ok') result.status = 'partial';
@@ -145,10 +146,10 @@ function evalCancer(cancerKey, rule, ctx) {
 }
 
 // 主入口：评估该会员所有适用肿瘤的覆盖度
-function assessCancerCoverage(user, reports) {
+function assessCancerCoverage(user, reports, year) {
   const genderF = user.gender === '女';
   const age = user.age != null ? Number(user.age) : null;
-  const ctx = { reports: reports || [], age };
+  const ctx = { reports: reports || [], age, year };
 
   const results = [];
   for (const [key, rule] of Object.entries(CANCER_RULES)) {

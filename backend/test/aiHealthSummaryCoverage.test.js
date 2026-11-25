@@ -1,7 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { reconcileGynecologicUltrasoundCoverage } = require('../src/utils/aiHealthSummary');
+const { reconcileGynecologicUltrasoundCoverage, reconcileCompletedExamMissing } = require('../src/utils/aiHealthSummary');
+
+test('AI生成的待补清单按当年已审核胸部CT和碳13结果纠错', () => {
+  const sections = { tumor_risk: { missing: ['低剂量胸部CT（LDCT）', '结肠镜'] },
+    checkup_completeness: { missing: ['幽门螺杆菌年度复查', '胃镜（含食管）'] } };
+  const reports = [
+    { audit_status: 'audited', checkDate: '2026-10-23', reportItems: [{ name: '胸部CT平扫' }] },
+    { audit_status: 'audited', checkDate: '2026-10-23', reportItems: [{ name: '碳-13呼气', value: '阴性' }] },
+  ];
+  reconcileCompletedExamMissing(sections, reports, 2026);
+  assert.deepEqual(sections.tumor_risk.missing, ['结肠镜']);
+  assert.deepEqual(sections.checkup_completeness.missing, ['胃镜（含食管）']);
+});
 
 test('子宫附件超声规则证据纠正AI生成的缺失结论和补做建议', () => {
   const sections = {

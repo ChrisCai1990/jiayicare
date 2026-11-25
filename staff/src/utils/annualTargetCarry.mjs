@@ -28,7 +28,8 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
   if (!confirmed.length) return { modules, changed: false }
   const existing = modules.management_targets?.records || []
   const ids = new Set(confirmed.map(row => row.issueId))
-  const records = [...mergeManagementTargetEdits(confirmed, existing), ...existing.filter(row => !ids.has(row.issueId))]
+  const records = [...mergeManagementTargetEdits(confirmed, existing), ...existing.filter(row =>
+    !ids.has(row.issueId) && !String(row.issueId || '').startsWith('management_issue:ai_approved_'))]
   const next = { ...modules, management_targets: { ...(modules.management_targets || {}), enabled: true, records } }
   const nutritionIssues = confirmed.filter(row => row.sourceGoals?.includes('营养评估') || row.sourceGoal === '营养评估')
   if (nutritionIssues.length && modules.nutrition_assessment?.enabled !== false) {

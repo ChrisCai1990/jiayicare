@@ -164,7 +164,10 @@ async function load(patientId, year, dependencies = {}) {
     } });
   }
   const patient = await User.findById(patientId).select('aiHealthSummary').lean();
-  const approved = require('./aiHealthCheckupItems').approvedItems(patient?.aiHealthSummary, year);
+  const screeningReports = dependencies.screeningReports || (dependencies.Decision || dependencies.User || dependencies.Report ? [] : Report.find
+    ? await Report.find({ user: patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
+      .select('checkDate date reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningParent').lean() : []);
+  const approved = require('./aiHealthCheckupItems').approvedItems(patient?.aiHealthSummary, year, screeningReports);
   const reviews = approved.approved ? await CheckupReview.find({ patientId, year, sourceVersion: approved.version }).lean() : [];
   const byKey = new Map(reviews.map(row => [row.sourceKey, row]));
   const unresolved = [];

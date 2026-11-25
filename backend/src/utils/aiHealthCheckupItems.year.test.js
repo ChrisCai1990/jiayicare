@@ -35,3 +35,14 @@ test('肿瘤总评明确优先补做检查时也供顾问核对', () => {
   summary.byYear[2026].records[0].sections.tumor_risk.summary = '乳腺钼靶为优先补做项目。';
   assert.deepEqual(approvedItems(summary, 2026).items.map(row => row.text), ['乳腺钼靶为优先补做项目']);
 });
+
+test('目标年度已审核胸部 CT 与碳13呼气试验不会再次变成待补检查', () => {
+  const summary = { sections: { checkup_completeness: { missing: ['低剂量胸部CT（LDCT）', '幽门螺杆菌年度复查', '结肠镜'] } }, approvedAt: '2026-11-24' };
+  const reports = [
+    { audit_status: 'audited', checkDate: '2026-10-23', reportItems: [{ name: '胸部CT平扫' }] },
+    { audit_status: 'audited', checkDate: '2026-10-23', reportItems: [{ name: '碳-13呼气', value: '阴性' }] },
+  ];
+  assert.deepEqual(approvedItems(summary, 2026, reports).items.map(item => item.title), ['结肠镜']);
+  assert.equal(approvedItems(summary, 2027, reports).items.length, 3);
+  assert.equal(approvedItems(summary, 2026, reports.map(report => ({ ...report, audit_status: 'pending' }))).items.length, 3);
+});
