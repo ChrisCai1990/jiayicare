@@ -1,3 +1,4 @@
+import {AudioLines, Keyboard, Smile, CirclePlus, Image as ImageIcon, FileText} from 'lucide-react';
 import GroupVoiceInput from '../components/GroupVoiceInput';
 import { readGroupChatAttachment } from '../utils/groupChatAttachment';
 import GroupVoiceMessage from '../components/GroupVoiceMessage';
@@ -43,6 +44,7 @@ export default function InAppServiceGroupsPage() {
   const [search, setSearch] = useState('');
   const [patients, setPatients] = useState([]);
   const [emojiOpen,setEmojiOpen]=useState(false);
+  const [attachmentOpen,setAttachmentOpen]=useState(false);
   const emojiPicker=useRef(null);
   const draftInput=useRef(null);
   useEffect(()=>{if(!emojiOpen)return;const outside=event=>{if(!emojiPicker.current?.contains(event.target))setEmojiOpen(false);};document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[emojiOpen]);
@@ -354,14 +356,13 @@ export default function InAppServiceGroupsPage() {
             </article></React.Fragment>)}
           </div>
           {selected.status==='closed' ? <p className="sg-readonly">本次服务已结束，历史记录仅供查看。</p> : selected.supervised ? <p className="sg-readonly">仅监管查看，未入群不能回复。</p>
-            : <div className="sg-composer">
-              <button type="button" aria-label={voiceMode?'切换到键盘':'切换到语音'} title={voiceMode?'切换到键盘':'切换到语音'} style={{width:44,minWidth:44,height:44,padding:8,flexShrink:0}} onClick={()=>{setEmojiOpen(false);setShowMentions(false);setVoiceMode(v=>!v);}}>{voiceMode?<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M6 16h12"/></svg>:<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg>}</button>
-              <div ref={emojiPicker} className="sg-mention-picker"><button type="button" aria-label="选择表情" onClick={()=>{setEmojiOpen(v=>!v);setShowMentions(false);setVoiceMode(false);}}>☺</button>{emojiOpen&&<div style={{display:'flex',flexWrap:'wrap'}}>{emojis.map(emoji=><button key={emoji} style={{width:48,minWidth:48,fontSize:22}} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))}>{emoji}</button>)}</div>}{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
-              <label className="sg-file-control" aria-label="选择图片或文件" title="添加图片或文件">＋<input type="file" accept="image/jpeg,image/png,image/webp,image/gif,.pdf,.docx,.xlsx,.pptx" hidden onChange={e=>{const file=e.target.files?.[0];e.target.value='';void addAttachment(file);}}/></label>
+            : <><div className="sg-composer">
+              <button type="button" aria-label={voiceMode?'切换到键盘':'切换到语音'} title={voiceMode?'切换到键盘':'切换到语音'} style={{width:44,minWidth:44,height:44,padding:8,flexShrink:0}} onClick={()=>{setEmojiOpen(false);setShowMentions(false);setVoiceMode(v=>!v);setAttachmentOpen(false);}}>{voiceMode?<Keyboard size={28}/>:<AudioLines size={28}/>}</button>
               <div className="sg-composer-field" style={{display:'flex',flexDirection:'column',flex:1,minWidth:0}}>{quote&&<div>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)} <button onClick={()=>setQuote(null)}>取消引用</button></div>}{attaching&&<div className="sg-pending-file">正在读取附件…</div>}{pendingFile&&(pendingFile.mimeType.startsWith('image/')?<div className="sg-pending-image"><img src={pendingFile.data} alt="待发送图片"/><button type="button" onClick={()=>setPendingFile(null)}>移除图片</button></div>:<div className="sg-pending-file">📎 {pendingFile.name} <button type="button" onClick={()=>setPendingFile(null)}>移除</button></div>)}{voiceMode?<GroupVoiceInput key={selected.id} groupId={selected.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;loadMessages(selected.id);refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<textarea ref={draftInput} aria-label="服务群消息" onFocus={()=>setEmojiOpen(false)} onClick={()=>setEmojiOpen(false)} onPaste={pasteAttachment} value={draft} onChange={e => {setDraft(e.target.value);const at=e.target.selectionStart-1;mentionPosition.current=e.target.value[at]==='@'?at:null;setShowMentions(mentionPosition.current!==null);if(mentionPosition.current!==null)setEmojiOpen(false);}}
                 maxLength={2000} rows={1} placeholder="给客户发送消息…" />}</div>
-              {!voiceMode&&<button type="button" className="sa-primary" disabled={busy || attaching || (!draft.trim()&&!pendingFile)} onClick={send}>发送</button>}
-            </div>}
+              <div ref={emojiPicker} className="sg-mention-picker"><button type="button" aria-label="选择表情" onClick={()=>{setEmojiOpen(v=>!v);setShowMentions(false);setVoiceMode(false);setAttachmentOpen(false);}}><Smile size={28}/></button>{emojiOpen&&<div style={{display:'flex',flexWrap:'wrap'}}>{emojis.map(emoji=><button key={emoji} style={{width:48,minWidth:48,fontSize:22}} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))}>{emoji}</button>)}</div>}{showMentions&&<div>{mentionCandidates.map(p=><button key={p.id} onClick={()=>mention(p)}>{memberLabel(p)}</button>)}</div>}</div>
+              {!voiceMode&&(draft.trim()||pendingFile)?<button type="button" className="sa-primary" disabled={busy || attaching || (!draft.trim()&&!pendingFile)} onClick={send}>发送</button>:<button type="button" aria-label="添加图片或文件" onClick={()=>{setAttachmentOpen(v=>!v);setEmojiOpen(false);}}><CirclePlus size={28}/></button>}
+            </div>{attachmentOpen&&<div className="chat-attachment-panel"><label><ImageIcon size={28}/><span>图片</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onChange={e=>{const file=e.target.files?.[0];e.target.value='';void addAttachment(file);}}/></label><label><FileText size={28}/><span>文件</span><input type="file" accept=".pdf,.docx,.xlsx,.pptx" hidden onChange={e=>{const file=e.target.files?.[0];e.target.value='';void addAttachment(file);}}/></label></div>}</>}
         </> : <p className="sg-select-prompt">从左侧选择一个服务群，查看对话记录。</p>}
       </section>
     </div>

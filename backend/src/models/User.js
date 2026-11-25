@@ -344,6 +344,8 @@ const userSchema = new mongoose.Schema({
   // ── 会员运营字段 ─────────────────────────────────────────────────
   cardNumber: { type: String, default: '' },   // 会员卡号
   points:     { type: Number, default: 0 },    // 积分
+  personalFundGrants: {type:[{requestId:String, amount:Number, remark:String, operatorName:String, operatorId:mongoose.Schema.Types.ObjectId, createdAt:Date}], select:false},
+  rechargeAdjustments: {type:[{ amount:Number, remark:String, operatorName:String, createdAt:Date }], select:false},
   rechargeBalance: { type: Number, default: 0 }, // 充值余额（元）
 
   // ── 共享人账户（家庭成员，旧版） ─────────────────────────────────

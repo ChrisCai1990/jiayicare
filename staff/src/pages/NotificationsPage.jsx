@@ -1,3 +1,5 @@
+import ChatVoicePlayer from '../components/ChatVoicePlayer';
+import {AudioLines, Keyboard, Smile, CirclePlus, Image as ImageIcon, FileText} from 'lucide-react';
 import { useGroupReminders } from '../components/NotificationSummary'
 import ConsultationReadStatus from '../components/ConsultationReadStatus'
 import ReferralScreeningList, { ScreeningResult } from '../components/ReferralScreeningList'
@@ -1013,8 +1015,7 @@ function ThreadVoiceMessage({ message, userId, roleKey }) {
     finally { setBusy(false) }
   }
   return <div className="staff-thread-voice-message">
-    <div>语音{message.audioDuration ? ` ${Math.round(message.audioDuration)}″` : ''}</div>
-    <audio controls preload="metadata" src={message.audioUrl.startsWith('/') ? `${API_ORIGIN}${message.audioUrl}` : message.audioUrl} />
+    <ChatVoicePlayer src={message.audioUrl.startsWith('/') ? `${API_ORIGIN}${message.audioUrl}` : message.audioUrl} duration={message.audioDuration}/>
     {text ? <p className="staff-thread-transcript">转写：{text}</p> : <button type="button" disabled={busy} onClick={convert}>{busy ? '正在转文字…' : '转文字'}</button>}
     {error && <p role="alert">{error}</p>}
   </div>
@@ -1041,6 +1042,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const [voiceMode, setVoiceMode] = useState(false)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [threadMenuOpen, setThreadMenuOpen] = useState(false)
+  const [attachmentOpen,setAttachmentOpen]=useState(false)
   const [humanActive, setHumanActive] = useState(false)
   const scrollRef = useRef(null)
   const recorderRef = useRef(null)
@@ -1245,8 +1247,6 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           <div className="staff-thread-mobile-heading"><strong>与 {userName} 的对话</strong><small>{ROLE_LABEL[roleKey] || roleKey} · {humanActive ? '人工沟通' : 'AI助理承接'}</small></div>
           <button type="button" className="staff-thread-more" aria-label="更多会话操作" onClick={() => setThreadMenuOpen(value => !value)}>…</button>
           {threadMenuOpen && <div className="staff-thread-menu">
-            <label className="staff-thread-menu-upload">发送图片<input type="file" accept="image/*" multiple hidden onChange={selectReplyImages} /></label>
-            <label className="staff-thread-menu-upload">发送文件<input type="file" accept=".pdf,.docx,.xlsx,.pptx" hidden onChange={selectReplyFile} /></label>
             {onNavigate && <button type="button" onClick={() => { onNavigate(`/patients/${userId}?tab=reports`); onClose() }}>查看原始资料</button>}
             {proxyOrders.map(order => onNavigate && <button key={order._id} type="button" onClick={() => { onNavigate(`/patients/${userId}?openChat=1`, { state: { serviceBooking: { sourceOrderId: order } } }); onClose() }}>确认代诊订单{proxyOrders.length > 1 ? ` ${order.orderNo || String(order._id).slice(-6)}` : ''}</button>)}
           </div>}
@@ -1284,7 +1284,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                       <span style={{ fontSize: 10, fontWeight: 700, color: '#D97706', background: '#D9780618', padding: '1px 6px', borderRadius: 99 }}>AI已代答</span>
                     )}
                   </div>
-                  <div style={{
+                  <div className={`staff-thread-bubble ${isUser?'is-incoming':'is-own'}`} style={{
                     padding: '10px 14px', borderRadius: isUser ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
                     background: isUser ? '#fff' : (m.isAI ? '#D97706' : '#1E6B50'), color: isUser ? '#1A2B24' : '#fff',
                     fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap',
@@ -1317,15 +1317,16 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           {replyFile && <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,fontSize:13}}>📎 {replyFile.name}<button type="button" onClick={()=>setReplyFile(null)} aria-label="移除文件">×</button></div>}
           {androidStaff && <div className="staff-thread-mobile-composer">
             {recording && <div className={`staff-thread-voice-status${recordCancelling ? ' is-cancelling' : ''}`} role="status"><strong>● {recordSeconds} 秒</strong><span>{recordCancelling ? '松开取消' : '正在录音 · 上滑取消'}</span></div>}
-            <button type="button" aria-label={voiceMode ? '切换到文字' : '切换到语音'} onClick={() => { if (!recording) { setVoiceMode(value => !value); setEmojiOpen(false) } }}>{voiceMode ? <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M6 16h12"/></svg> : <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="8" y="2" width="8" height="13" rx="4"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg>}</button>
+            <button type="button" aria-label={voiceMode ? '切换到文字' : '切换到语音'} onClick={() => { if (!recording) { setVoiceMode(value => !value); setEmojiOpen(false);setAttachmentOpen(false) } }}>{voiceMode ? <Keyboard size={28}/> : <AudioLines size={28}/>}</button>
             {voiceMode
               ? <button type="button" className={`staff-thread-record-button${recording ? ' is-recording' : ''}`} disabled={submitting} onPointerDown={event => { recordPointerYRef.current = event.clientY; recordCancelRef.current = false; setRecordCancelling(false); try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* gesture can continue without capture */ } void startVoice() }} onPointerMove={event => { if (recording) { recordCancelRef.current = recordPointerYRef.current - event.clientY > 60; setRecordCancelling(recordCancelRef.current) } }} onPointerUp={() => recordCancelRef.current ? cancelVoice() : stopVoice()} onPointerCancel={cancelVoice}>{recording ? '松开发送，上滑取消' : '按住说话'}</button>
               : <textarea className="form-input" rows={1} aria-label="输入回复" value={content} onChange={event => { setContent(event.target.value); setErr('') }} placeholder="给客户发送消息…" />}
-            <div className="staff-thread-emoji-control"><button type="button" aria-label="选择表情" disabled={recording} onClick={() => { setVoiceMode(false); setEmojiOpen(value => !value) }}>☺</button>
+            <div className="staff-thread-emoji-control"><button type="button" aria-label="选择表情" disabled={recording} onClick={() => { setVoiceMode(false); setEmojiOpen(value => !value);setAttachmentOpen(false) }}><Smile size={28}/></button>
               {emojiOpen && <div className="staff-thread-emoji-list">{['😊','🙂','🙏','👍','❤️','🌹','💪','✅'].map(emoji => <button key={emoji} type="button" onClick={() => { setContent(value => value + emoji); setEmojiOpen(false) }}>{emoji}</button>)}</div>}
             </div>
-            {!voiceMode && <button type="button" className="staff-thread-mobile-send" disabled={submitting || (!content.trim() && !replyImages.length && !replyFile)} onClick={handleSend}>{submitting ? '…' : '发送'}</button>}
+            {!voiceMode && (content.trim() || replyImages.length || replyFile) ? <button type="button" className="staff-thread-mobile-send" disabled={submitting || (!content.trim() && !replyImages.length && !replyFile)} onClick={handleSend}>{submitting ? '…' : '发送'}</button> : <button type='button' aria-label='添加图片或文件' onClick={()=>{setAttachmentOpen(v=>!v);setEmojiOpen(false)}}><CirclePlus size={28}/></button>}
           </div>}
+          {androidStaff&&attachmentOpen&&<div className='chat-attachment-panel'><label><ImageIcon size={28}/><span>图片</span><input type='file' accept='image/*' multiple hidden onChange={selectReplyImages}/></label><label><FileText size={28}/><span>文件</span><input type='file' accept='.pdf,.docx,.xlsx,.pptx' hidden onChange={selectReplyFile}/></label></div>}
           {!androidStaff && <div className="staff-thread-composer" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>图片<input type="file" accept="image/*" multiple hidden onChange={e=>{Array.from(e.target.files||[]).slice(0,9-replyImages.length).forEach(file=>{const reader=new FileReader();reader.onload=()=>setReplyImages(v=>[...v,{data:reader.result,mimeType:file.type||'image/jpeg'}].slice(0,9));reader.readAsDataURL(file)});e.target.value='' }}/></label>
             <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>文件<input type="file" accept=".pdf,.docx,.xlsx,.pptx" hidden onChange={selectReplyFile} /></label>

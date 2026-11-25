@@ -1,3 +1,4 @@
+import { groupPurchasedItems } from '../../../shared/groupPurchasedItems.cjs'
 import React, { useState } from 'react'
 import { staffAPI, getToken } from '../api'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
@@ -24,26 +25,29 @@ export default function OrderShipmentsPanel() {
   const [company, setCompany] = useState(''), [tracking, setTracking] = useState('')
   const [shippingContact, setShippingContact] = useState({ recipientName: '', recipientPhone: '', deliveryAddress: '' })
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const shipments = groupPurchasedItems(resource.data).map(items => ({
+    ...items[0], items, quantity:items.reduce((sum,item)=>sum+(item.quantity || 1),0),
+  }))
   const canShip = ['healthManager', 'superadmin'].includes(staff?.role)
   if (!resource.loading && !resource.error && !resource.data.length && !history.loading && !history.error && !history.data.total) return null
   if (!resource.loading && !resource.error && !resource.data.length && !history.loading && !history.error && !historyOpen && !selected) return <section className="workbench-compact"><span>订单发货 · 暂无待发货</span><button type="button" className="btn btn-secondary btn-sm" onClick={() => setHistoryOpen(true)}>查看已处理发货 {history.data.total}</button></section>
   return <section className="shipment-panel">
     <div className="shipment-panel__heading">
-      <div><span className="shipment-panel__eyebrow">订单履约</span><h2>{resource.data.length ? <>待发货订单 <b>{resource.data.length}</b></> : '订单发货记录'}</h2></div>
+      <div><span className="shipment-panel__eyebrow">订单履约</span><h2>{resource.data.length ? <>待发货订单 <b>{shipments.length}</b></> : '订单发货记录'}</h2></div>
       <span className="shipment-panel__hint">{resource.data.length ? '确认快递信息后即可完成登记' : '可查看已处理的发货记录'}</span>
     </div>
     <div className="shipment-panel__content">
       {resource.loading && <p className="shipment-panel__empty">正在加载订单…</p>}
       {resource.error && <p className="shipment-panel__empty" role="alert">{resource.error} <button onClick={resource.refresh}>重试</button></p>}
-      {resource.data.map(order => <article className="shipment-order" key={order._id}>
+      {shipments.map(order => <article className="shipment-order" key={order._id}>
         <div className="shipment-order__main">
           <div className="shipment-order__top">
-            <div className="shipment-order__customer"><span className="shipment-order__avatar">{(order.user?.name || '?').slice(0, 1)}</span><div><strong>{order.user?.name || '客户信息待核实'}</strong><span>{order.serviceName}</span></div></div>
+            <div className="shipment-order__customer"><span className="shipment-order__avatar">{(order.user?.name || '?').slice(0, 1)}</span><div><strong>{order.user?.name || '客户信息待核实'}</strong><span>{order.serviceName}{order.quantity > 1 && <strong> × {order.quantity} 件</strong>}</span></div></div>
             <span className="shipment-order__status">待发货</span>
           </div>
           <div className="shipment-order__facts">
-            <span>规格：{order.specificationLabel || '待核实'}</span>
-            {amount(order) > 0 && <span>实付 ¥{amount(order).toFixed(2)}</span>}
+            <span>发货数量：{order.quantity || 1} 件</span><span>规格：{order.specificationLabel || '待核实'}</span>
+            {order.items.some(item=>amount(item) > 0) && <span>实付 ¥{order.items.reduce((sum,item)=>sum+amount(item),0).toFixed(2)}</span>}
           </div>
           <div className="shipment-order__address"><span>配送至</span><p>{deliveryAddress(order)}<i />{recipient(order)} · {contactPhone(order)}</p></div>
           {displayNote(order.note) && <p className="shipment-order__note">备注：{displayNote(order.note)}</p>}
@@ -59,9 +63,16 @@ export default function OrderShipmentsPanel() {
     </div>
     {selected && <div className="modal-overlay"><form className="modal" onSubmit={async e => {
       e.preventDefault(); if (busy) return; setBusy(true); setError('')
-      try { await staffAPI.shipOrder(selected._id, { deliveryCompany: company, trackingNo: tracking, ...shippingContact }); setSelected(null); await resource.refresh() }
+      try {
+        for (const item of selected.items) {
+          await staffAPI.shipOrder(item._id, { deliveryCompany:company, trackingNo:tracking, ...shippingContact })
+          setSelected(current=>current && {...current, items:current.items.filter(row=>row._id !== item._id)})
+        }
+        setSelected(null)
+        await resource.refresh()
+      }
       catch (err) { setError(err.message) } finally { setBusy(false) }
-    }}><div className="modal-header"><h3>登记发货 · {selected.user?.name}</h3></div><div className="modal-body">
+    }}><div className="modal-header"><h3>登记发货 · {selected.user?.name} · {selected.serviceName} × {selected.quantity || 1}</h3></div><div className="modal-body">
       <div className="shipment-recipient shipment-recipient--editing"><p>已带入客户档案；本次修改仅用于此订单发货。</p><label>收件人<input className="form-input" required value={shippingContact.recipientName} onChange={e => setShippingContact(value => ({ ...value, recipientName: e.target.value }))} /></label><label>联系电话<input className="form-input" required value={shippingContact.recipientPhone} onChange={e => setShippingContact(value => ({ ...value, recipientPhone: e.target.value }))} /></label><label className="shipment-recipient__address">配送地址<input className="form-input" required value={shippingContact.deliveryAddress} onChange={e => setShippingContact(value => ({ ...value, deliveryAddress: e.target.value }))} /></label></div>
       <label>快递公司<input className="form-input" required value={company} onChange={e => setCompany(e.target.value)} /></label>
       <label>运单号<input className="form-input" required value={tracking} onChange={e => setTracking(e.target.value)} /></label>

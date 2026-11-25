@@ -1,3 +1,4 @@
+import { readChatFile } from '../../../utils/readChatFile';
 import React, { useEffect, useState } from 'react';
 import { Canvas, Input, Picker, ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -89,15 +90,14 @@ export default function IbdFcPage() {
       const selected = await chooseImageWithPrivacy({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const filePath = selected.tempFilePaths?.[0];
       if (!filePath) return;
-      const ext = (filePath.split('.').pop() || 'jpg').toLowerCase();
-      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : (ext === 'heic' || ext === 'heif') ? 'image/heic' : 'image/jpeg';
-      const base64 = Taro.getFileSystemManager().readFileSync(filePath, 'base64');
       setUploadMessage('正在上传报告…');
-      const uploaded = await reportsAPI.uploadBase64(`data:${mimeType};base64,${base64}`, mimeType);
+      const data = await readChatFile(filePath, selected.tempFiles?.[0]?.originalFileObj);
+      const mimeType = data.slice(5, data.indexOf(';'));
+      const uploaded = await reportsAPI.uploadBase64(data, mimeType);
       if (!uploaded?.data?.fileUrl) throw new Error('报告上传未完成');
       const created = await reportsAPI.create({
         title: `IBD 粪便钙卫蛋白检验报告 ${today()}`, type: 'other',
-        fileUrl: uploaded.data.fileUrl, fileUrls: [uploaded.data.fileUrl], ossKeys: [uploaded.data.ossKey],
+        fileUrl: uploaded.data.fileUrl, fileUrls: [uploaded.data.fileUrl], ossKeys: [uploaded.data.ossKey], uploadTokens:[uploaded.data.uploadToken],
         mimeType: uploaded.data.mimeType || mimeType, pages: 1, fileSize: uploaded.data.fileSize || 0,
       });
       if (!created?.data?._id) throw new Error('报告存档未完成');

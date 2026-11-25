@@ -23,7 +23,7 @@ function transactionMatchesGift(transaction, gift) {
   return Number.isFinite(transactionAt) && Number.isFinite(giftAt) && Math.abs(transactionAt - giftAt) <= 10000;
 }
 
-function mergeHealthFundLedger(transactions = [], grants = []) {
+function mergeHealthFundLedger(transactions = [], grants = [], personalGrants = []) {
   const transactionRows = transactions.map(item => ({
     _id:item._id, type:item.type, source:displaySource(item), amount:Number(item.amount)||0,
     remark:item.remark||'', orderName:item.orderId?.serviceName||'',
@@ -36,7 +36,9 @@ function mergeHealthFundLedger(transactions = [], grants = []) {
       remark:item.remark||'奖励基金入账',
       orderName:'', orderNo:'', operatorName:item.staffId?.name||'', createdAt:item.createdAt,
     }));
-  return [...transactionRows, ...legacyGiftRows]
+  const personalRows = personalGrants.map(row => ({_id:row._id, type:'grant', source:'other',
+    amount:row.amount, remark:row.remark, operatorName:row.operatorName, createdAt:row.createdAt}));
+  return [...transactionRows, ...legacyGiftRows, ...personalRows]
     .sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))
     .slice(0,100);
 }

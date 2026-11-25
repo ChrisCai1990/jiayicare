@@ -1,3 +1,4 @@
+import { groupPurchasedItems } from '../../../../shared/groupPurchasedItems.cjs';
 import React, { useState, useCallback, useRef } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
@@ -41,6 +42,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const payingRef = useRef(false);
   const initialTab = ORDER_TABS.some((tab) => tab.key === router.params?.tab) ? router.params.tab : 'all';
+  const [expandedGroup, setExpandedGroup] = useState('');
   const [activeTab, setActiveTab] = useState(initialTab);
 
   const load = useCallback(() => {
@@ -150,7 +152,8 @@ export default function OrdersPage() {
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>{memberOrders.length === 0 ? '暂无订单' : '当前分类暂无订单'}</Text>
         </View>
       ) : (
-        visibleList.map((o) => {
+        groupPurchasedItems(visibleList).map(items => {
+          const renderItem = (o) => {
           const meta = TRADE_STATUS_META[o.tradeStatus] || STATUS_META[o.status] || STATUS_META.pending;
           const packageRightsOrder = !!o.packageEntitlementUsage?.entitlementId;
           const canCancelPackageRights = packageRightsOrder && o.status === 'pending'
@@ -164,7 +167,7 @@ export default function OrdersPage() {
               backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card,
             }}>
               <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{o.serviceName || o.itemName || '服务订单'}</Text>
+                <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{o.serviceName || o.itemName || '服务订单'}{o.quantity > 1 ? ' × ' + o.quantity + ' 件' : ''}</Text>
                 <Text style={{ fontSize: '12px', color: meta.color, fontWeight: 700 }}>{meta.label}</Text>
               </View>
               <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block' }}>
@@ -214,6 +217,16 @@ export default function OrdersPage() {
               )}
             </View>
           );
+          };
+          if (items.length === 1) return renderItem(items[0]);
+          const key = String(items[0]._id);
+          return <View key={key} style={{backgroundColor:'#fff',padding:'12px',marginBottom:'10px',borderRadius:'12px'}}>
+            <View onClick={()=>setExpandedGroup(expandedGroup === key ? '' : key)}>
+              <Text>{items[0].serviceName} × {items.length} 件</Text>
+              <Text style={{display:'block'}}>合计 ¥{items.reduce((sum,item)=>sum+Number(item.servicePrice || 0),0).toFixed(2)} · {expandedGroup === key ? '收起' : '查看明细'}</Text>
+            </View>
+            {expandedGroup === key && items.map(renderItem)}
+          </View>;
         })
       )}
       </View>

@@ -104,7 +104,7 @@ async function createCombinedPushCheckout({ records, user, serviceUser = user, o
       locked.push(record._id);
     }
     const items = records.map(record => ({ ...require('./combinableProductPushes').singleItem(record), sourceRecord: record }));
-    const active = await Order.findOne({ user: serviceUser._id, pushRecordId: { $in: locked },
+    const active = await Order.findOne({ user: serviceUser._id, ...require('./combinableProductPushes').orderPushFilter(locked),
       status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } });
     if (active) throw checkoutError('其中一瓶已有订单，请刷新后重新选择数量');
     return await createLocked({ record: records[0], user, serviceUser, items,
@@ -120,7 +120,7 @@ async function createLocked({ record, user, serviceUser, items, options }) {
   if (appPayment) wechatPay.assertAppReady();
   if (items.length > 10 || (!options.allowRepeatedProducts && new Set(items.map(p => String(p.productId))).size !== items.length)) throw checkoutError('每次最多合并 10 件商品，请重新选择');
   const sourceIds = items.map(item => item.sourceRecord?._id || record._id);
-  const pending = await Order.findOne({ user: serviceUser._id, pushRecordId: { $in: sourceIds }, serviceId: { $in: items.map(p => String(p.productId)) }, paymentStatus: 'pending', tradeStatus: { $ne: 'closed' } });
+  const pending = await Order.findOne({ user: serviceUser._id, ...require('./combinableProductPushes').orderPushFilter(sourceIds), serviceId: { $in: items.map(p => String(p.productId)) }, paymentStatus: 'pending', tradeStatus: { $ne: 'closed' } });
   if (pending) throw checkoutError('这些商品已有待支付订单，请前往“我的订单”继续支付，或取消后重新选择');
   const products = [];
   const assignees = [];
@@ -151,7 +151,16 @@ async function createLocked({ record, user, serviceUser, items, options }) {
     if (products.some(p => !['wechat_pay', 'both'].includes(p.paymentChannel))) throw checkoutError('所选商品中有商品未配置普通微信支付，请联系客服');
   }
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
-  const ids = items.map(() => new mongoose.Types.ObjectId());
+  // Only a single staff recommendation has identical ownership and fulfillment terms.
+  const physical = products[0].fulfillmentType === 'delivery_and_service' ||
+    require('../../../shared/orderShipping.cjs').isShippingOrder({serviceName:products[0].name, serviceWorkflowSnapshot:products[0].serviceWorkflow});
+  const combined = physical && items.length > 1 && record.recommendationBatchId && items.every(item =>
+    String(item.sourceRecord?.recommendationBatchId) === String(record.recommendationBatchId));
+  const quantity = combined ? items.length : 1;
+  const orderProducts = combined ? products.slice(0, 1) : products;
+  const allocations = combined ? [Object.fromEntries(Object.keys(quote.allocations[0]).map(key =>
+    [key, quote.allocations.reduce((sum, row) => sum + cents(row[key]), 0) / 100]))] : quote.allocations;
+  const ids = orderProducts.map(() => new mongoose.Types.ObjectId());
   const orders = [];
   const sharedReservations = [];
   const unownedReservations = new Map();
@@ -159,11 +168,11 @@ async function createLocked({ record, user, serviceUser, items, options }) {
   let gatewayAttempted = false;
   let settlementAttempted = false;
   try {
-    for (const [index, product] of products.entries()) {
-      const inventory = await reserveProduct(product);
+    for (const [index, product] of orderProducts.entries()) {
+      const inventory = await reserveProduct(product, quantity);
       if (!inventory.available) throw checkoutError(`“${items[index].name}”已售罄，请重新选择`);
-      if (inventory.reserved) unownedReservations.set(String(product._id), (unownedReservations.get(String(product._id)) || 0) + 1);
-      const allocation = quote.allocations[index];
+      if (inventory.reserved) unownedReservations.set(String(product._id), (unownedReservations.get(String(product._id)) || 0) + quantity);
+      const allocation = allocations[index];
       if (allocation.shared > 0) {
         const reservation = { _id: ids[index], enterpriseSharedFundId: quote.sharedAccount._id, enterpriseSharedFundAmount: allocation.shared };
         await require('./enterpriseSharedFund').reserve({ account: quote.sharedAccount, orderId: ids[index], userId: user._id, amount: allocation.shared });
@@ -172,6 +181,7 @@ async function createLocked({ record, user, serviceUser, items, options }) {
       const order = await Order.create({
         _id: ids[index], checkoutGroupId: ids[0], user: serviceUser._id, payerUser: user._id,
         beneficiaryName: serviceUser.name || '', tenantId: serviceUser.tenantId || null,
+        quantity, pushRecordIds: combined ? sourceIds : [],
         serviceId: String(product._id), serviceName: items[index].name,
         specificationLabel: items[index].specificationLabel || '',
         businessAllocationsSnapshot: require('./productBusinessAllocations').snapshot(product, items[index].specificationLabel),
@@ -181,7 +191,7 @@ async function createLocked({ record, user, serviceUser, items, options }) {
         ...orderOwnershipFields({ supervisorId: assignees[index], initiationSource: 'customer' }),
         orderNo: `${outTradeNo}-${index + 1}`, status: 'pending', tradeStatus: 'awaiting_payment', paymentStatus: 'pending',
         paymentMethod: finalPrice > 0 ? 'wechat' : 'healthFund', paidAmount: 0, paymentExpectedAmount: allocation.cash,
-        checkoutPointsAmount: points[index],
+        checkoutPointsAmount: combined ? points.reduce((sum, value) => sum + value, 0) : points[index],
         paymentOutTradeNo: outTradeNo, paymentEnvironment: finalPrice > 0 ? 'production' : '', inventoryReserved: inventory.reserved,
         fulfillmentType: product.fulfillmentType || 'offline_service',
         performanceRuleSnapshot: require('./productPerformanceSnapshot').snapshot(product, items[index].specificationLabel).performanceRule,
@@ -196,12 +206,12 @@ async function createLocked({ record, user, serviceUser, items, options }) {
       });
       orders.push(order);
       if (inventory.reserved) {
-        const remaining = unownedReservations.get(String(product._id)) - 1;
+        const remaining = unownedReservations.get(String(product._id)) - quantity;
         if (remaining) unownedReservations.set(String(product._id), remaining);
         else unownedReservations.delete(String(product._id));
       }
     }
-    payment = await Payment.create({ order: ids[0], allocations: orders.map((order, index) => ({ order: order._id, amount: quote.allocations[index].cash })), user: user._id,
+    payment = await Payment.create({ order: ids[0], allocations: orders.map((order, index) => ({ order: order._id, amount: allocations[index].cash })), user: user._id,
       channel: finalPrice > 0 ? 'wechat_pay' : 'health_fund', amount: finalPrice, outTradeNo, tradeType: appPayment ? 'APP' : 'JSAPI', appId: appPayment ? process.env.WECHAT_APP_APPID : '', status: 'created' });
     await Order.updateMany({ _id: { $in: ids } }, { $set: { paymentId: payment._id } });
     if (finalPrice === 0) {

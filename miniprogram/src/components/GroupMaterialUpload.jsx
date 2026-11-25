@@ -1,4 +1,5 @@
-import Icon from './Icon';
+import ChatAttachment from './ChatAttachment';
+import { readChatFile } from '../utils/readChatFile';
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -7,7 +8,7 @@ import { chooseImageWithPrivacy, isImagePickerCancelled } from '../utils/imagePi
 import { ensureAiDataConsent } from '../utils/aiDataConsent';
 import { chooseBrowserFile } from '../utils/chooseBrowserFile';
 
-export default function GroupMaterialUpload({ groupId, onSent, expanded=false }) {
+export default function GroupMaterialUpload({ groupId, onSent, expanded=false, panelOpen=true }) {
   const [busy,setBusy]=useState(false);
   const [pending,setPending]=useState(null);
   const lock=useRef(false);
@@ -24,7 +25,7 @@ export default function GroupMaterialUpload({ groupId, onSent, expanded=false })
     try {
       let data=pending;
       if(!data){
-        setShowSources(false);
+        setShowSources(expanded);
         setChoosing(true);
         let result;
         if(sourceIndex===1&&process.env.TARO_ENV==='h5') {
@@ -38,9 +39,10 @@ export default function GroupMaterialUpload({ groupId, onSent, expanded=false })
         }else if(sourceIndex===1){
           const picked=await Taro.chooseMessageFile({count:1,type:'file',extension:['pdf']});
           result={tempFilePaths:picked.tempFilePaths?.length?picked.tempFilePaths:(picked.tempFiles||[]).map(f=>f.path||f.tempFilePath).filter(Boolean)};
-        }else result=await chooseImageWithPrivacy({count:9,sizeType:['compressed'],sourceType:['album','camera']});
+        }else result=await chooseImageWithPrivacy({count:9,sizeType:['compressed'],sourceType:[sourceIndex===2?'camera':'album']});
         setChoosing(false);
-        setPhase('正在读取资料…');
+        setBusy(true);
+        setPhase('正在读取所选资料…');
         const files=[...(result.contents||[])];
         const selected=result.tempFilePaths?.length?result.tempFilePaths:(result.tempFiles||[]).map(f=>f.path||f.tempFilePath).filter(Boolean);
         const sizes=(result.tempFiles||[]).map(file=>Number(file.size)||0);
@@ -48,45 +50,36 @@ export default function GroupMaterialUpload({ groupId, onSent, expanded=false })
         for(let index=0;index<selected.length;index++) {
           const path=selected[index];
           setPhase(`正在读取资料 ${index+1}/${selected.length}…`);
-          if(process.env.TARO_ENV==='h5'){
-            const blob=await(await fetch(path)).blob();
-            if(blob.size>15*1024*1024)throw new Error('资料总大小不能超过15MB');
-            files.push(await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);}));
-          }else{
-            const raw=await new Promise((resolve,reject)=>Taro.getFileSystemManager().readFile({
-              filePath:path,encoding:'base64',success:response=>resolve(response.data),
-              fail:error=>reject(new Error(error?.errMsg||'图片读取失败，请重新选择')),
-            }));
-            files.push((sourceIndex===1?'data:application/pdf;base64,':'data:image/jpeg;base64,')+raw);
-          }
+          files.push(await readChatFile(path, result.tempFiles?.[index]?.originalFileObj, sourceIndex===1));
           if(files.reduce((sum,file)=>sum+file.length,0)>21*1024*1024)throw new Error('资料总大小不能超过15MB，请减少图片数量');
         }
         if(!files.length)throw new Error('未读取到所选资料，请重新选择');
-        setBusy(true);
-        setPhase('正在确认资料处理方式…');
-        await ensureAiDataConsent('health',{cancelText:'仅保存原件'});
         data={category:'auto',files,requestId:'material_'+Date.now()+'_'+Math.random().toString(36).slice(2)};
         setPending(data);
       }
       setBusy(true);
-      setPhase('正在上传资料…');
+      setPhase('已选 '+data.files.length+' 份资料，正在确认处理方式…');
+      await ensureAiDataConsent('health',{cancelText:'仅保存原件'});
+      setPhase('正在上传 '+data.files.length+' 份资料…');
       const response=await inAppServiceGroupAPI.uploadMaterial(groupId,data);
       if(!response?.success||!response?.data?.reportId)throw new Error('提交结果未确认，请点“重试提交医疗资料”核对');
       setPending(null);
       Taro.showToast({title:'资料已提交',icon:'success'});
       onSent?.();
-    }catch(error){if(!isImagePickerCancelled(error)){const message=error.message||'请重试，重复提交不会重复建档';setLastError(message);Taro.showModal({title:'资料未确认提交',content:message,showCancel:false});}}
+    }catch(error){if(!isImagePickerCancelled(error)){const message=error.message||error.errMsg||'请重试，重复提交不会重复建档';setLastError(message);Taro.showModal({title:'资料未确认提交',content:message,showCancel:false});}}
     finally{picker.current=null;lock.current=false;setChoosing(false);setBusy(false);setPhase('');}
   };
-  return <View style={{flexShrink:0,padding:'6px 12px',background:'#fff',borderTop:'1px solid #eee'}}>
-    {(!expanded||pending||choosing)&&<View onClick={()=>{if(lock.current)return;pending?upload():setShowSources(value=>!value);}} style={{minHeight:'44px',display:'flex',alignItems:'center',color:'#187e87',fontSize:'14px'}}>
+  if (!panelOpen && !busy && !choosing && !pending && !lastError) return null;
+  return <View style={{flexShrink:0,padding:'6px 12px',background:'#F7F7F7',borderTop:'1px solid #eee'}}>
+    {(!expanded||pending||choosing||busy)&&<View onClick={()=>{if(lock.current)return;pending?upload():setShowSources(value=>!value);}} style={{minHeight:'44px',display:'flex',alignItems:'center',color:'#187e87',fontSize:'14px'}}>
       {phase|| (choosing?'正在准备选择资料…':pending?'重试提交医疗资料':showSources?'收起上传选项':'＋ 上传医疗资料')}
     </View>}
-    {showSources&&!pending&&!choosing&&<View style={{display:'flex',gap:'10px',padding:'4px 0 10px'}}>
-      <View onClick={()=>upload(0)} style={{flex:1,minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'8px',padding:'12px',border:'1px solid #B7D7C9',borderRadius:'10px',color:'#1E6B50'}}><Icon name='image' size={28}/><Text>图片资料</Text></View>
-      <View onClick={()=>upload(1)} style={{flex:1,minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'8px',padding:'12px',border:'1px solid #B7D7C9',borderRadius:'10px',color:'#1E6B50'}}><Icon name='file-text' size={28}/><Text>PDF 资料</Text></View>
+    {panelOpen&&showSources&&!pending&&!choosing&&!busy&&<View style={{display:'flex',gap:'10px',padding:'4px 0 10px'}}>
+      <ChatAttachment icon="image" label="照片" onClick={()=>upload(0)}/>
+      <ChatAttachment icon="camera" label="拍摄" onClick={()=>upload(2)}/>
+      <ChatAttachment icon="file-text" label="PDF 文件" onClick={()=>upload(1)}/>
     </View>}
-    {choosing&&<Text onClick={()=>picker.current?.abort()} style={{marginLeft:'20px',color:'#187e87',fontSize:'12px'}}>取消选择</Text>}
+    {choosing&&picker.current&&<Text onClick={()=>picker.current?.abort()} style={{marginLeft:'20px',color:'#187e87',fontSize:'12px'}}>取消选择</Text>}
     {!!lastError&&<Text style={{display:'block',padding:'8px 0',color:'#B42318',fontSize:'12px'}}>{lastError}{pending?'；可点上方重试，不会重复建档':''}</Text>}
     {!busy&&pending&&<Text onClick={()=>setPending(null)} style={{marginLeft:'20px',fontSize:'12px'}}>重新选择</Text>}
   </View>;

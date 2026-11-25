@@ -11,6 +11,9 @@ import { useLanguage } from '../../i18n';
 import useNavBar from '../../hooks/useNavBar';
 import { storedArchiveId } from '../../hooks/useArchiveSubject';
 import Icon from '../../components/Icon';
+import { chooseBrowserFile } from '../../utils/chooseBrowserFile';
+import { readChatFile } from '../../utils/readChatFile';
+import ChatAttachment from '../../components/ChatAttachment';
 import { chooseImageWithPrivacy, showImagePickerError } from '../../utils/imagePicker';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
 import { refreshUnreadBadge, withUnreadBadgeUpdate } from '../../utils/unreadBadge';
@@ -310,7 +313,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
     setShowNotif(true);
     // 进入通知分类即视为已经查看该分类；待填问卷必须提交后才消除，因此不在这里清除。
     if (tab === '待填问卷') return;
-    const viewed = notificationsForTab(tab).filter((m) => m.unread && m._id && m.action?.type !== 'service_group');
+    const viewed = notificationsForTab(tab).filter((m) => m.type !== 'product' && m.unread && m._id && m.action?.type !== 'service_group');
     if (!viewed.length) return;
     const viewedIds = new Set(viewed.map((m) => String(m._id)));
     listRequestRef.current += 1;
@@ -447,6 +450,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
       {showNotif && (
         <NotifModal
           messages={[...questionnaireMessages, ...notifMessages.filter((m) => m.type !== 'questionnaire')]}
+          systemUnread={systemMessages.filter(m => m.unread).length}
           tab={notifTab}
           setTab={openNotifications}
           loadError={loadError}
@@ -463,7 +467,7 @@ export default function MessagesPage({ embedded = false, active = true, refreshK
   );
 }
 
-function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetry }) {
+function NotifModal({ messages, systemUnread, tab, setTab, onClose, onPress, loadError, onRetry }) {
   const { t } = useLanguage();
   const { statusBarHeight } = useNavBar();
   const filtered = messages.filter((m) => {
@@ -482,7 +486,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress, loadError, onRetr
       <View style={{ display: 'flex', margin: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#EEEAE3', borderRadius: `${radius.sm}px`, padding: '3px' }}>
         {['全部', '待填问卷', '每日关怀', '系统通知'].map((tabName) => (
           <View key={tabName} onClick={() => setTab(tabName)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.xs}px`, backgroundColor: tab === tabName ? '#fff' : 'transparent' }}>
-            <Text style={{ fontSize: '13px', color: tab === tabName ? colors.textPrimary : colors.textMuted, fontWeight: tab === tabName ? 600 : 500 }}>{t(tabName)}</Text>
+            <Text style={{ fontSize: '13px', color: tab === tabName ? colors.textPrimary : colors.textMuted, fontWeight: tab === tabName ? 600 : 500 }}>{t(tabName)}{tabName === '系统通知' && systemUnread > 0 && <Text style={{marginLeft:'3px',backgroundColor:'#D83243',color:'#fff',borderRadius:'10px',padding:'1px 4px',fontSize:'10px'}}>{systemUnread > 99 ? '99+' : systemUnread}</Text>}</Text>
           </View>
         ))}
       </View>
@@ -824,6 +828,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
   const [unreadAnchorId, setUnreadAnchorId] = useState('');
   const [scrollTarget, setScrollTarget] = useState('');
   const [scrollTop, setScrollTop] = useState(0);
+  const [attachment, setAttachment] = useState(null);
   const [foodImages, setFoodImages] = useState([]);
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -923,18 +928,19 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
 
   const send = async () => {
     const text = input.trim();
-    if ((!text && !foodImages.length) || sending) return;
+    if ((!text && !foodImages.length && !attachment) || sending) return;
     setSending(true);
     setSendError('');
     setInput('');
     try {
-      const allowAI = meta.aiEnabled && !humanActive ? await ensureAiDataConsent('assistant', { cancelText: '不用AI' }) : false;
-      let extra = { suppressAI: !allowAI };
+      const allowAI = !attachment && meta.aiEnabled && !humanActive ? await ensureAiDataConsent('assistant', { cancelText: '不用AI' }) : false;
+      let extra = { suppressAI: !allowAI, file:attachment };
       if (foodImages.length) {
         extra = { ...extra, images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
       }
-      const res = await messagesAPI.send(role, text || '图片记录', extra);
+      const res = await messagesAPI.send(role, text || (attachment ? '[文件]' : '图片记录'), extra);
       if (!res?.success) throw new Error(res?.message || '消息未发送成功');
+      if (attachment && !res.data?.fileUrl) throw new Error('服务器未确认收到文件，请重试');
       if (foodImages.length && (res.data?.imageUrls?.length || 0) !== foodImages.length) {
         throw new Error('服务端未确认全部照片，请勿认为已发送成功');
       }
@@ -943,6 +949,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
       setUnreadAnchorId('');
       scrollToThreadBottom();
       setFoodImages([]);
+      setAttachment(null);
       // 服务团队频道只负责沟通，不把每轮问答自动写成“日常健康打卡”。
       // 用户需要形成饮食记录时，应从专门的营养记录入口明确提交餐食/照片。
       refreshAfterSend();
@@ -958,15 +965,29 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
     }
   };
 
-  const chooseFoodImage = async () => {
+  const choosePdf = async () => {
     try {
-      const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - foodImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const next = (result.tempFilePaths || []).map((path) => {
-        const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
-        const ext = (path.split('.').pop() || 'jpg').toLowerCase();
-        const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-        return { path, mimeType, data: `data:${mimeType};base64,${base64}` };
-      });
+      const browser = process.env.TARO_ENV === 'h5';
+      const file = browser ? await chooseBrowserFile({accept:'application/pdf,.pdf'})
+        : (await Taro.chooseMessageFile({count:1,type:'file',extension:['pdf']})).tempFiles?.[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) throw new Error('PDF不能超过10MB');
+      const data = await readChatFile(file.path || file.tempFilePath, browser ? file : null, true);
+      setAttachment({name:file.name || '资料.pdf', mimeType:'application/pdf',data:data.replace(/^data:[^;]*;/,'data:application/pdf;')});
+      setMoreOpen(false);
+    } catch (error) {
+      if (!/cancel/i.test(error.errMsg || error.message || '')) Taro.showModal({title:'无法读取文件',content:error.message || error.errMsg || '请重新选择',showCancel:false});
+    }
+  };
+
+  const chooseFoodImage = async (source) => {
+    try {
+      const result = await chooseImageWithPrivacy({ count: Math.max(1, 9 - foodImages.length), sizeType: ['compressed'], sourceType: [source] });
+      const next = [];
+      for (const [index, path] of result.tempFilePaths.entries()) {
+        const data = await readChatFile(path, result.tempFiles?.[index]?.originalFileObj);
+        next.push({path, mimeType: data.slice(5, data.indexOf(';')), data});
+      }
       setFoodImages((prev) => [...prev, ...next].slice(0, 9));
     } catch (err) {
       showImagePickerError(err);
@@ -1218,6 +1239,7 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
 
       {!!unreadAnchorId && <View onClick={() => setScrollTarget(`thread-msg-${unreadAnchorId}`)} style={{ position: 'absolute', right: '14px', bottom: '78px', zIndex: 30, padding: '7px 12px', borderRadius: '16px', backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxShadow: shadow.sm }}><Text style={{ fontSize: '11px', color: colors.primary }}>查看未读消息 ↑</Text></View>}
 
+      {attachment && <View style={{padding:'8px 12px',background:'#fff'}}><Text>{attachment.name}　</Text><Text onClick={()=>setAttachment(null)}>移除</Text></View>}
       {foodImages.length > 0 && (
         <View style={{ padding: `8px ${spacing.lg}px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
           {foodImages.map((img, index) => <View key={img.path} style={{ position: 'relative' }}><Image src={img.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} /><Text onClick={() => setFoodImages((prev) => prev.filter((_, i) => i !== index))} style={{ position: 'absolute', right: 0, top: 0, color: '#fff', backgroundColor: colors.danger }}>×</Text></View>)}
@@ -1228,10 +1250,14 @@ function ConversationThread({ role, member, onClose, closeLabel = '返回', embe
           <View onClick={() => { setVoiceMode(v=>!v); setEmojiOpen(false); setMoreOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name={voiceMode ? 'keyboard' : 'audio-lines'} size={28} color={colors.textPrimary} /></View>
           {voiceMode ? <View onTouchStart={startRecording} onTouchMove={moveRecording} onTouchEnd={() => stopRecording(recordingCancelledRef.current)} onTouchCancel={() => stopRecording(true)} style={{ flex:1,height:'40px',borderRadius:'6px',backgroundColor:recording ? (recordingCancelling ? '#FDECEC' : '#E8F3EE') : '#fff',display:'flex',alignItems:'center',justifyContent:'center',border:`1px solid ${recording ? (recordingCancelling ? colors.danger : colors.primary) : colors.border}` }}><Text style={{fontWeight:700,color:recording?colors.danger:colors.textPrimary}}>{recording?(recordingCancelling?'松开取消':'松开发送'):'按住说话'}</Text></View> : <Input value={input} onInput={(e)=>setInput(e.detail.value)} placeholder={`发消息给${meta.label}`} confirmType="send" onConfirm={send} adjustPosition cursorSpacing={12} maxlength={500} style={{flex:1,height:'40px',minWidth:0,boxSizing:'border-box',backgroundColor:'#fff',borderRadius:'6px',padding:'0 10px',fontSize:'15px'}} />}
           <View onClick={() => { setEmojiOpen(v=>!v); setMoreOpen(false); setVoiceMode(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="smile" size={28} color={colors.textPrimary} /></View>
-          {(input.trim() || foodImages.length || sending) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>{sending ? (foodImages.length ? '照片上传中…' : '发送中…') : '发送'}</Text> : <View onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="circle-plus" size={28} color={colors.textPrimary} /></View>}
+          {(input.trim() || foodImages.length || attachment || sending) ? <Text onClick={send} style={{padding:'7px 10px',borderRadius:'5px',backgroundColor:colors.primary,color:'#fff',fontWeight:700}}>{sending ? (foodImages.length ? '照片上传中…' : '发送中…') : '发送'}</Text> : <View onClick={() => { setMoreOpen(v=>!v); setEmojiOpen(false); }} style={{ width:'40px', height:'40px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}><Icon name="circle-plus" size={28} color={colors.textPrimary} /></View>}
         </View>
         {emojiOpen && <View style={{display:'flex',flexWrap:'wrap',gap:'12px',padding:'12px 4px 4px'}}>{['😊','👍','🌙','❤️','谢谢','收到'].map(e=><Text key={e} onClick={()=>setInput(v=>`${v}${e}`)} style={{fontSize:'21px'}}>{e}</Text>)}</View>}
-        {moreOpen && <View style={{display:'flex',padding:'12px 4px 4px'}}><View onClick={chooseFoodImage} style={{textAlign:'center'}}><View style={{width:'48px',height:'48px',borderRadius:'9px',backgroundColor:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}><Icon name="image" size={28} color={colors.textPrimary}/></View><Text style={{fontSize:'11px',color:colors.textMuted}}>图片</Text></View></View>}
+        {moreOpen && <View style={{display:'flex',padding:'12px 0'}}>
+          <ChatAttachment icon="image" label="照片" onClick={()=>chooseFoodImage('album')}/>
+          <ChatAttachment icon="camera" label="拍摄" onClick={()=>chooseFoodImage('camera')}/>
+          <ChatAttachment icon="file-text" label="PDF 文件" onClick={choosePdf}/>
+        </View>}
       </View>
     </View>
   );

@@ -1,3 +1,4 @@
+import { readChatFile } from '../../../utils/readChatFile';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { View, Text, Button, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -41,8 +42,6 @@ export default function ReportUploadPage() {
     if (uploadLock.current || archive.loading || archive.error) return;
     const patientId = archive.subject?.id || '';
     const ownerName = archive.subject?.name || archive.user?.name || '本人';
-    const confirmation = await Taro.showModal({ title: '确认报告所属档案', content: `本次报告将存入「${ownerName}」的健康档案，是否继续？`, confirmText: '确认上传' });
-    if (!confirmation.confirm) return;
     uploadLock.current = true;
     setUploading(true);
     setUploadError('');
@@ -52,16 +51,14 @@ export default function ReportUploadPage() {
       const res = await chooseImageWithPrivacy({ count: 9, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const filePaths = res.tempFilePaths || [];
       if (!filePaths.length) { setProgress({ done: 0, total: 0, stage: '' }); return; }
+      const confirmation = await Taro.showModal({ title: '确认报告所属档案', content: `本次报告将存入「${ownerName}」的健康档案，是否继续？`, confirmText: '确认上传' });
+      if (!confirmation.confirm) { setProgress({done:0,total:0,stage:''}); return; }
       setProgress({ done: 0, total: filePaths.length, stage: '正在上传' });
       const uploadedFiles = [];
-      for (const filePath of filePaths) {
-        const base64 = Taro.getFileSystemManager().readFileSync(filePath, 'base64');
-        const ext = (filePath.split('.').pop() || 'jpg').toLowerCase();
-        const mimeType = ext === 'png' ? 'image/png'
-          : ext === 'webp' ? 'image/webp'
-          : (ext === 'heic' || ext === 'heif') ? 'image/heic'
-          : 'image/jpeg';
-        const uploaded = await reportsAPI.uploadBase64(`data:${mimeType};base64,${base64}`, mimeType);
+      for (const [index,filePath] of filePaths.entries()) {
+        const data = await readChatFile(filePath, res.tempFiles?.[index]?.originalFileObj);
+        const mimeType = data.slice(5, data.indexOf(';'));
+        const uploaded = await reportsAPI.uploadBase64(data, mimeType);
         if (!uploaded?.success || !uploaded.data?.fileUrl || !uploaded.data?.uploadToken) throw new Error(uploaded?.message || '图片上传凭证未返回，请重试');
         uploadedFiles.push(uploaded.data);
         setProgress({ done: uploadedFiles.length, total: filePaths.length, stage: '正在上传' });

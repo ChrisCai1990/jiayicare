@@ -229,7 +229,7 @@ export default function ServiceGroupPage() {
         {group.status==='closed' ? <Text style={{padding:'16px',background:'#fff',color:colors.textMuted}}>本次服务已结束，历史记录仅供查看。</Text> : <>
         {quote&&<View style={{padding:'8px',background:'#eef1ef',display:'flex',gap:'10px'}}><Text style={{flex:1,fontSize:'12px'}}>{quote.senderName}：{quote.audioUrl?'[语音消息]':quote.content.slice(0,120)}</Text><Text onClick={()=>setQuote(null)}>取消引用</Text></View>}
 
-        {emojiOpen&&<View onClick={event=>event.stopPropagation()} style={{display:'flex',flexWrap:'wrap',flexShrink:0,padding:'8px',background:'#fff'}}>{emojis.map(emoji=><Text key={emoji} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))} style={{fontSize:'24px',padding:'8px'}}>{emoji}</Text>)}</View>}
+
         {showMentions&&<ScrollView scrollY style={{flexShrink:0,height:Math.min(160,mentionCandidates.length*44+16)+'px',maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+p.name+' '+text.slice(at+1):text+'@'+p.name+' ';});setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{' · '+(p.kind==='ai'?'AI健康管家':mentionRoles[p.role]||'服务人员')}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#F7F7F7' }}>
           <Text aria-label={voiceMode?'切换到键盘':'切换到语音'} onClick={()=>{setVoiceMode(v=>!v);setShowMentions(false);setEmojiOpen(false);setMoreOpen(false);}} style={{padding:'8px',fontSize:'24px',lineHeight:'28px',color:colors.primary,flexShrink:0}}><Icon name={voiceMode?'keyboard':'audio-lines'} size={28}/></Text>
@@ -240,7 +240,8 @@ export default function ServiceGroupPage() {
             <Text style={{ color: '#fff' }}>发送</Text>
           </View>:<View onClick={event=>{event.stopPropagation();setMoreOpen(v=>!v);setEmojiOpen(false);}} style={{width:'40px',height:'40px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name='circle-plus' size={28}/></View>}
         </View>
-        {<View style={{display:moreOpen?'block':'none',flexShrink:0}} onClick={event=>event.stopPropagation()}><GroupMaterialUpload expanded key={group.id} groupId={group.id} onSent={()=>{setMoreOpen(false);followLatest.current=true;refresh();}} /></View>}
+        {emojiOpen&&<View onClick={event=>event.stopPropagation()} style={{display:'flex',flexWrap:'wrap',flexShrink:0,padding:'8px',background:'#fff'}}>{emojis.map(emoji=><Text key={emoji} onClick={()=>setDraft(text=>(text+emoji).slice(0,2000))} style={{fontSize:'24px',padding:'8px'}}>{emoji}</Text>)}</View>}
+        {<View style={{flexShrink:0}} onClick={event=>event.stopPropagation()}><GroupMaterialUpload expanded panelOpen={moreOpen} key={group.id} groupId={group.id} onSent={()=>{setMoreOpen(false);followLatest.current=true;refresh();}} /></View>}
         </>}
       </>}
     {historyOpen&&group&&<GroupHistory key={group.id} topInset={safeHeaderTop} initialMessageId={historyAnchor} group={group} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}

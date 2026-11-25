@@ -44,7 +44,7 @@ router.get('/unread-count', auth, async (req, res) => {
   const [unreadMessages, unreadPushes, groupUnread] = await Promise.all([
     Message.find(visibleMessageQuery(req.user._id, true)).select('type questionnaireId conversationId sender title createdAt').sort({ createdAt: -1 }).lean(),
     PushRecord.find({ patientId: req.user._id, readAt: null, withdrawnAt: null, ...legacyAnnualItemNoticeFilter })
-      .select('type questionnaireId sourceOrderId').lean(),
+      .select('type questionnaireId sourceOrderId recommendationBatchId').lean(),
     Message.countDocuments(unreadServiceGroupQuery(req.user._id)),
   ]);
   const questionnairePushes = unreadPushes.filter(item => item.type === 'questionnaire' && item.questionnaireId);
@@ -65,9 +65,10 @@ router.get('/unread-count', auth, async (req, res) => {
   }).select('pushRecordId questionnaire').lean() : [];
   const answeredPushIds = new Set(responses.filter(item => item.pushRecordId).map(item => String(item.pushRecordId)));
   const legacyAnsweredQuestionnaireIds = new Set(responses.filter(item => !item.pushRecordId).map(item => String(item.questionnaire)));
-  const pushCount = unreadPushes.filter(item => item.type !== 'questionnaire'
+  const countedPushes = unreadPushes.filter(item => item.type !== 'questionnaire'
     || (activeQuestionnaireIds.has(String(item.questionnaireId)) && !answeredPushIds.has(String(item._id))
-      && (item.sourceOrderId ? validOrderIds.has(String(item.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))).length;
+      && (item.sourceOrderId ? validOrderIds.has(String(item.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId)))));
+  const pushCount = new Set(countedPushes.map(row => String(row.recommendationBatchId || row._id))).size;
   const pendingQuestionnaireIds = new Set(questionnairePushes.filter(item => activeQuestionnaireIds.has(String(item.questionnaireId)) && !answeredPushIds.has(String(item._id))
     && (item.sourceOrderId ? validOrderIds.has(String(item.sourceOrderId)) : !legacyAnsweredQuestionnaireIds.has(String(item.questionnaireId))))
     .map(item => String(item.questionnaireId)));
@@ -216,7 +217,7 @@ router.patch('/read-batch', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { to, content = '', imageUrl = '', image = '', images = [], audio = null, mimeType = 'image/jpeg', aiAnalysis = '', suppressAI = false } = req.body;
-    if (!content?.trim() && !imageUrl && !image && !images.length && !audio?.data) {
+    if (!content?.trim() && !imageUrl && !image && !images.length && !audio?.data && !req.body.file) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
     const roleConfig = getConversationRole(to);
@@ -239,6 +240,8 @@ router.post('/', auth, async (req, res) => {
     const orderAction = to === 'planner'
       ? await require('../utils/orderPlannerConversation').latestOpenOrderConversationAction(req.user._id, conversationId)
       : undefined;
+    const file = req.body.file ? require('../utils/chatFile').validate(req.body.file) : null;
+    const storedFile = file ? await require('../utils/oss').uploadBuffer(file.buffer, file.mimeType, 'messages/files') : null;
     let storedImageUrl = String(imageUrl || '');
     const storedImageUrls = [];
     if (image) {
@@ -268,7 +271,8 @@ router.post('/', auth, async (req, res) => {
       type:    'user',
       sender:  senderName,
       title:   `用户留言 → ${roleConfig.label}`,
-      content: content.trim() || '[语音消息]',
+      content: content.trim() || (file ? '[文件]' : '[语音消息]'),
+      fileUrl:storedFile?.url || '', fileName:file?.name || '', fileMimeType:file?.mimeType || '', fileSize:file?.buffer.length || 0,
       imageUrl: storedImageUrl,
       imageUrls: storedImageUrls,
       audioUrl, audioDuration, audioMimeType,
@@ -294,7 +298,7 @@ router.post('/', auth, async (req, res) => {
 
     // Original recordings remain a human communication path. Transcription is
     // a separate explicit action and its result is not automatically sent to AI.
-    if (audio?.data) return;
+    if (audio?.data || file) return;
 
     // Human-only applies to every role, including nutritionist; no client supplied
     // AI analysis may create an unreviewed assistant message.
@@ -315,7 +319,7 @@ router.post('/', auth, async (req, res) => {
       userId: req.user._id, recipient: to, content: content.trim() || '用户发来一条语音消息，请温和确认收到并请其在方便时补充文字重点', conversationId,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: '发送失败', error: err.message });
+    res.status(err.status || 500).json({ success: false, message: '发送失败', error: err.message });
   }
 });
 

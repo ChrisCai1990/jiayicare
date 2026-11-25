@@ -14750,6 +14750,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
   const [showGift, setShowGift] = useState(false)
   const [cardNumber, setCardNumber] = useState(user.cardNumber || '')
   const [pointsDelta, setPointsDelta] = useState('')
+  const [rechargeNote, setRechargeNote] = useState('')
   const [rechargeDelta, setRechargeDelta] = useState('')
   const [saving, setSaving] = useState(false)
   const fund = membership.healthFund || {}
@@ -14775,10 +14776,10 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
     try {
       const payload = { cardNumber }
       if (pointsDelta) payload.pointsDelta = parseInt(pointsDelta)
-      if (rechargeDelta) payload.rechargeDelta = parseFloat(rechargeDelta)
+      if (rechargeDelta) Object.assign(payload, {rechargeDelta:parseFloat(rechargeDelta), rechargeNote:rechargeNote.trim()})
       await staffAPI.updatePatientMembership(patientId, payload)
       toast('已更新')
-      setPointsDelta(''); setRechargeDelta('')
+      setPointsDelta(''); setRechargeDelta(''); setRechargeNote('')
       await loadMembership()
       onRefresh()
     } catch (err) { toast(err.message) }
@@ -14856,7 +14857,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
             ))}
           </div>
           <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 12 }}>基金合计 ¥{Number(fund.total ?? membership.healthFundBalance ?? 0).toFixed(2)}。自有、活力可抵扣至0元；健康礼遇金按商品规则比例抵扣。</div>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowGift(true)} style={{ marginBottom: 16 }}>＋ 赠送健康礼遇金</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowGift(true)} style={{ marginBottom: 16 }}>＋ 赠送健康基金</button>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 12 }}>
             {[
               { label: '健康记录积分', value: points.vitality || 0 },
@@ -14890,8 +14891,10 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
                 <input className="form-input" type="number" value={rechargeDelta} onChange={e => setRechargeDelta(e.target.value)} placeholder="如：500 或 -100" />
               </div>
             </div>
+            {rechargeDelta && <label className="form-label">充值余额变动备注<input className="form-input" maxLength={500} value={rechargeNote} onChange={e=>setRechargeNote(e.target.value)} /></label>}
             <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? '保存中...' : '保存更新'}</button>
             <div style={{ color: '#8AA89C', fontSize: 12 }}>充值余额 ¥{Number(membership.rechargeBalance || 0).toFixed(2)}；人工积分调整计入历史积分。</div>
+            {[...(membership.rechargeAdjustments || [])].reverse().map(row=><div key={row._id} style={{fontSize:12}}>{new Date(row.createdAt).toLocaleString('zh-CN')} · {row.operatorName} · {row.amount > 0 ? '+' : ''}{row.amount} 元 · {row.remark || '未填写备注'}</div>)}
           </div>
         </div>
       </div>
@@ -15970,6 +15973,7 @@ function UploadReportModal({ patientId, reports, staffRole, onClose, onSaved, on
 // ── 赠送权益弹窗（供 MarketingPage 导出使用）───────────────────────
 export function GiftModal({ patientId, patientName, onClose, onSaved, initialGiftType = 'service' }) {
   const toast = useToast()
+  const [requestId] = useState(() => globalThis.crypto?.randomUUID?.() || ('grant-' + Date.now() + '-' + Math.random().toString(36).slice(2)))
   const [form, setForm] = useState({
     giftType: initialGiftType, productId: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise',
     validFrom: '', validTo: '', remark: '',
@@ -16031,7 +16035,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved, initialGif
           validTo: form.validTo, remark: form.remark,
         })
       } else {
-        await staffAPI.giftToPatient(patientId, { ...form, serviceCount: Number(form.serviceCount), fundAmount: Number(form.fundAmount) })
+        await staffAPI.giftToPatient(patientId, { ...form, requestId, serviceCount: Number(form.serviceCount), fundAmount: Number(form.fundAmount) })
       }
       onSaved()
     } catch (err) { setError(err.message) }
@@ -16088,7 +16092,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved, initialGif
                 <label className="form-label">金额（元）*</label>
                 <input className="form-input" type="number" min={1} placeholder="如：500" value={form.fundAmount || ''} onChange={set('fundAmount')} />
               </div>
-              <div style={{ fontSize: 12, color: '#4A6558' }}>赠送金额计入健康礼遇金，按商品规则比例抵扣；赠送原因请填在备注中。</div>
+              <label className="form-label">到账账户<select className="form-input" value={form.fundType} onChange={set('fundType')}><option value="enterprise">健康礼遇金（按商品比例抵扣）</option><option value="personal">自有基金（可全额抵扣）</option></select></label>
             </>
           ) : (
             <>

@@ -4,7 +4,17 @@ export async function chooseImageWithPrivacy(options) {
   // 直接调用选图接口，由微信按当前隐私配置处理授权。
   // 不要在这里强制调用 requirePrivacyAuthorize：该前置调用在部分真机上会
   // 先于 chooseImage 失败，使原本可以正常选图的用户被阻断。
-  return Taro.chooseImage(options);
+  if (process.env.TARO_ENV === 'weapp' && typeof wx !== 'undefined' && wx.canIUse?.('chooseMedia')) {
+    try {
+      const picked = await Taro.chooseMedia({...options, mediaType:['image']});
+      return {...picked, tempFilePaths: picked.tempFiles.map(file => file.tempFilePath)};
+    } catch (error) {
+      if (isImagePickerCancelled(error)) throw error;
+    }
+  }
+  const picked = await Taro.chooseImage(options);
+  return {...picked, tempFilePaths: picked.tempFilePaths?.length ? picked.tempFilePaths
+    : (picked.tempFiles || []).map(file => file.path || file.tempFilePath).filter(Boolean)};
 }
 
 export function isImagePickerCancelled(error) {

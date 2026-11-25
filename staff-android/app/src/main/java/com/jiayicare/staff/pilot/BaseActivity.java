@@ -214,7 +214,19 @@ public class BaseActivity extends Activity {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = callback;
                 try {
-                    startActivityForResult(params.createIntent(), FILE_REQUEST);
+                    Intent picker = params.createIntent();
+                    if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                        picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    }
+                    try {
+                        startActivityForResult(picker, FILE_REQUEST);
+                    } catch (android.content.ActivityNotFoundException missingPicker) {
+                        Intent document = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        document.addCategory(Intent.CATEGORY_OPENABLE);
+                        document.setType("*/*");
+                        document.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+                        startActivityForResult(document, FILE_REQUEST);
+                    }
                     return true;
                 } catch (Exception error) {
                     callback.onReceiveValue(null);
@@ -264,7 +276,13 @@ public class BaseActivity extends Activity {
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == FILE_REQUEST && fileCallback != null) {
-            fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            Uri[] selected = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+            if (resultCode == RESULT_OK && data != null && data.getClipData() != null) {
+                android.content.ClipData clip = data.getClipData();
+                selected = new Uri[clip.getItemCount()];
+                for (int index = 0; index < selected.length; index++) selected[index] = clip.getItemAt(index).getUri();
+            }
+            fileCallback.onReceiveValue(selected);
             fileCallback = null;
         }
     }

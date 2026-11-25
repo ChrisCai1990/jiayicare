@@ -248,14 +248,14 @@ export const messagesAPI = {
   markRead: (id) => request(`/messages/${id}/read`, { method: 'PATCH' }),
   markAllRead: () => request('/messages/read-all', { method: 'PATCH' }),
   markBatchRead: (messageIds, pushRecordIds) => request('/messages/read-batch', {
-    method: 'PATCH', body: { messageIds, pushRecordIds },
+    method: 'PATCH', body: JSON.stringify({ messageIds, pushRecordIds }),
   }),
   send: (to, content, extra = {}) => request('/messages', {
     method: 'POST',
     body: JSON.stringify({ to, content, ...extra }),
     // Images are uploaded to private storage before the message is saved.
     // The ordinary 15-second text timeout can abort a photo send first.
-    timeout: extra.images?.length ? 120000 : (extra.audio?.data ? 60000 : 15000),
+    timeout: extra.images?.length || extra.file ? 120000 : (extra.audio?.data ? 60000 : 15000),
   }),
   submitNutritionAnalysis: (content) => request('/messages/nutrition-analysis', { method: 'POST', body: JSON.stringify({ content }) }),
   getThread: (role) => request(`/messages/thread/${role}`),

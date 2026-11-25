@@ -26,3 +26,11 @@ test('historical points conversions display as enterprise-gifted fund', () => {
   ]);
   assert.equal(rows[0].source, 'enterprise');
 });
+
+test('manual personal gift keeps the reason and is displayed once', () => {
+  const createdAt = new Date();
+  const rows = mergeHealthFundLedger([],[],[{amount:20,remark:'同单两瓶赠送',createdAt}]);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].source,'other');
+  assert.equal(rows[0].remark,'同单两瓶赠送');
+});

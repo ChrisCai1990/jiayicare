@@ -24,6 +24,7 @@ const pushRecordSchema = new mongoose.Schema({
   // 产品推送附加信息（单品兼容字段）
   price:     { type: Number, default: null },
   productId: { type: String, default: null },
+  recommendationBatchId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   // 多产品组合推送
   products: [{
     productId: { type: String },

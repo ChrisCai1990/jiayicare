@@ -8,7 +8,7 @@ const types = {
 export function readChatFile(file) {
   const extension = file?.name?.split('.').pop()?.toLowerCase()
   const mimeType = types[extension]
-  if (!mimeType || (file.type && file.type !== mimeType)) return Promise.reject(new Error('仅支持 PDF、Word、Excel、PPT 文件'))
+  if (!mimeType || (file.type && file.type !== 'application/octet-stream' && file.type !== mimeType)) return Promise.reject(new Error('仅支持 PDF、Word、Excel、PPT 文件'))
   if (file.size > 10 * 1024 * 1024) return Promise.reject(new Error('文件不能超过 10 MB'))
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

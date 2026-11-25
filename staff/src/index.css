@@ -792,3 +792,20 @@ textarea.form-control { resize: vertical; }
 .staff-thread-voice-message > button { border: 0; border-radius: 6px; padding: 5px 8px; background: #fff; color: #1e6b50; font-size: 12px; }
 .staff-thread-voice-message p { margin: 6px 0 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .staff-thread-transcript { padding-top: 6px; border-top: 1px solid #ffffff66; }
+
+/* Shared mobile chat controls: voice, input, emoji, attachments. */
+.chat-attachment-panel {display:flex;gap:24px;padding:18px 16px;background:#f7f7f7;border-top:1px solid #e4e4e4;flex-shrink:0;}
+.chat-attachment-panel label {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-width:64px;min-height:64px;color:#1a2b24;cursor:pointer;font-size:12px;}
+.chat-voice-player button {display:flex;align-items:center;gap:10px;min-height:40px;padding:4px 8px;background:none;border:0;color:inherit;font-size:15px;cursor:pointer;}
+.chat-voice-player small {display:block;}
+@media(max-width:800px) {
+ .staff-android-app .staff-thread-mobile-composer > button,.staff-android-app .staff-thread-emoji-control > button {background:transparent;color:#1a2b24;}
+ .staff-android-app .staff-thread-composer-wrap {background:#f7f7f7!important;}
+ .staff-android-app .staff-thread-mobile-composer .staff-thread-record-button {background:#fff;}
+ .staff-android-app .staff-thread-bubble {border-radius:10px!important;box-shadow:none!important;}
+ .staff-android-app .staff-thread-bubble.is-own {background:#1e6b50!important;}
+ .staff-android-app .staff-thread-bubble.is-incoming {background:#fff!important;}
+ .staff-android-app .staff-thread-voice-message > button {background:none;border:0;color:inherit;font-size:12px;padding:4px 8px;}
+}
+
+.chat-attachment-panel input[hidden] {display:none!important;}

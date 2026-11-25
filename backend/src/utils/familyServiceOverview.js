@@ -58,10 +58,10 @@ async function loadOverview(actor, memberId, models) {
       pushRecordId: order.pushRecordId || null, payable: !reason, unavailableReason: reason};
   });
   const purchasedPushOrders = pushedProducts.length ? await Order.find({user: member._id,
-    pushRecordId: {$in: pushedProducts.map(record => record._id)}, status: {$ne: 'cancelled'},
-    tradeStatus: {$nin: ['closed', 'refunded']}}).select('pushRecordId serviceId').lean() : [];
+    ...require('./combinableProductPushes').orderPushFilter(pushedProducts.map(record => record._id)), status: {$ne: 'cancelled'},
+    tradeStatus: {$nin: ['closed', 'refunded']}}).select('pushRecordId pushRecordIds serviceId').lean() : [];
   const pendingPushProducts = new Set(purchasedPushOrders.filter(order => order.pushRecordId)
-    .map(order => `${order.pushRecordId}:${order.serviceId}`));
+    .flatMap(order => [order.pushRecordId, ...(order.pushRecordIds || [])].map(id=>`${id}:${order.serviceId}`)));
   const recommendations = pushedProducts.flatMap(record => {
     const products = record.products?.length ? record.products
       : record.productId ? [{productId: record.productId, name: record.title, price: record.price}] : [];

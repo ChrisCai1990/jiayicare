@@ -115,6 +115,8 @@ const orderSchema = new mongoose.Schema({
   checkoutActionLockUntil: { type: Date, default: null },
   checkoutActionLockToken: { type: String, default: '' },
   fulfillmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Fulfillment', default: null },
+  quantity: { type: Number, default: 1, min: 1 },
+  pushRecordIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PushRecord' }],
   pushRecordId:{ type: mongoose.Schema.Types.ObjectId, ref: 'PushRecord', default: null },
   status: {
     type: String,

@@ -775,7 +775,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
     { path: 'staffId', select: 'name role title' },
     { path: 'assignedTo', select: 'name role' },
     { path: 'sourceHealthPlanId', select: 'title description content type status' },
-    { path: 'sourceOrderId', select: 'serviceName specificationLabel orderNo createdAt status initiationSource paymentStatus paidAmount healthFundAmount scheduledAt note currentStage serviceWorkflowSnapshot' },
+    { path: 'sourceOrderId', select: 'quantity checkoutGroupId serviceId serviceName specificationLabel orderNo createdAt status initiationSource paymentStatus paidAmount healthFundAmount scheduledAt note currentStage serviceWorkflowSnapshot' },
     { path: 'followUpSchemeId', select: 'name executorRole supervisorRole completionStandard workflowStageKey' },
     { path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } },
   ]);
@@ -2283,7 +2283,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .populate('sourceHealthPlanId', 'title description content type status')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt'),
+      .populate('sourceOrderId', 'quantity checkoutGroupId serviceId serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod createdAt orderNo initiationSource currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt'),
     FollowUp.countDocuments(filter),
   ]);
   const annualVisitHandoffs = await require('../utils/annualManagedVisitHandoff').handoffsForTasks(followUps);
@@ -2405,7 +2405,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('sourceHealthPlanId', 'title description content type')
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
-      .populate('sourceOrderId', 'serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt');
+      .populate('sourceOrderId', 'quantity checkoutGroupId serviceId serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt');
 
   // 同日营养方案专业评估与记录预约随访在工作台关联展示，两个任务仍各自留存完成凭据。
   const nutritionRecordTasks = followUps.filter(f => f.sourceType === 'service_record');
@@ -8378,7 +8378,7 @@ router.patch('/products/push-quantity/:id', staffAuth, checkPermission('products
       if (!claim) return res.status(409).json({ success: false, message: '推荐正在下单或调整，请稍后刷新' });
       locked.push(row._id);
     }
-    const existing = await Order.findOne({ user: anchor.patientId, pushRecordId: { $in: locked },
+    const existing = await Order.findOne({ user: anchor.patientId, ...require('../utils/combinableProductPushes').orderPushFilter(locked),
       status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } }).select('_id');
     if (existing) return res.status(409).json({ success: false, message: '已有待支付或已付款订单，请先处理订单，不能修改推荐数量' });
     const keep = new Set([...peers].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
@@ -8421,14 +8421,18 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
     ? servicePerformers.filter(sp => sp && sp.role && sp.staffId)
         .map(sp => ({ productId: sp.productId || null, role: sp.role, staffId: sp.staffId }))
     : [];
-  const records = patientIds.flatMap(pid => Array.from({ length: requestedQuantity }, () => ({
+  const records = patientIds.flatMap(pid => {
+    const recommendationBatchId = products.length === 1 ? new mongoose.Types.ObjectId() : null;
+    return Array.from({ length: requestedQuantity }, () => ({
+    recommendationBatchId,
     staffId: req.staff._id, patientId: pid,
     type: 'product', title, content,
     price: totalPrice,
     productId: products.length === 1 ? products[0]._id.toString() : null,
     products: productItems,
     servicePerformers: cleanPerformers,
-  })));
+    }));
+  });
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
 });
@@ -8889,6 +8893,18 @@ router.post('/patients/:id/gift', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '商城服务与客户所属机构不一致' });
     if (!Number.isInteger(Number(serviceCount)) || Number(serviceCount) < 1 || Number(serviceCount) > 99)
       return res.status(400).json({ success: false, message: '赠送次数须为 1 至 99 的整数' });
+  }
+  if (giftType === 'fund' && req.body.fundType === 'personal') {
+    const requestId = String(req.body.requestId || '');
+    if (!/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) return res.status(400).json({success:false,message:'请重新打开赠送窗口'});
+    const entry = {requestId, amount:giftAmount, remark:String(remark || '医护赠送自有基金').trim().slice(0,500),
+      operatorId:req.staff._id, operatorName:req.staff.name, createdAt:new Date()};
+    const result = await User.updateOne({_id:patient._id, 'personalFundGrants.requestId':{$ne:requestId}},
+      {$inc:{healthFundBalance:giftAmount}, $push:{personalFundGrants:entry}});
+    if (!result.modifiedCount && !await User.exists({_id:patient._id, personalFundGrants:{$elemMatch:{
+      requestId, amount:giftAmount, operatorId:req.staff._id, remark:entry.remark,
+    }}})) return res.status(409).json({success:false,message:'赠送记录已变化，请重新核对'});
+    return res.json({success:true});
   }
   const gift = await GiftRecord.create({
     staffId: req.staff._id, patientId: req.params.id,
@@ -9732,7 +9748,7 @@ router.get('/patients/:id/membership', staffAuth, async (req, res) => {
     if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id)))
       return res.status(403).json({ success: false, message: '无权查看该客户' });
     await require('../utils/pointsHealthFund').convertExistingPoints(req.params.id);
-    const u = await User.findById(req.params.id).select('name phone cardNumber pointsBalance vitalityPointsBalance rewardPointsBalance rechargeBalance healthFundBalance memberType servicePackage serviceExpiry');
+    const u = await User.findById(req.params.id).select('name phone cardNumber pointsBalance vitalityPointsBalance rewardPointsBalance personalFundGrants rechargeAdjustments rechargeBalance healthFundBalance memberType servicePackage serviceExpiry');
     if (!u) return res.status(404).json({ success: false, message: '用户不存在' });
     const { getPersonalFundAvailable, getCorporateFundAvailable, getVitalityFundAvailable } = require('../utils/healthFundPayment');
     const HealthFundTransaction = require('../models/HealthFundTransaction');
@@ -9745,9 +9761,10 @@ router.get('/patients/:id/membership', staffAuth, async (req, res) => {
     ]);
     const total = Number(u.healthFundBalance) || 0;
     const data = u.toObject();
+    delete data.personalFundGrants;
     data.healthFund = {
       total, personal, vitality, corporate,
-      transactions: require('../utils/healthFundLedger').mergeHealthFundLedger(fundRows, giftRows),
+      transactions: require('../utils/healthFundLedger').mergeHealthFundLedger(fundRows, giftRows, u.personalFundGrants),
     };
     data.points = {
       balance: (u.pointsBalance || 0) + (u.vitalityPointsBalance || 0) + (u.rewardPointsBalance || 0),
@@ -9777,9 +9794,13 @@ router.patch('/patients/:id/membership', staffAuth, async (req, res) => {
       }
       inc.pointsBalance = pointsChange;
     }
-    if (rechargeDelta) inc.rechargeBalance = rechargeDelta;
+    const recharge = Number(rechargeDelta || 0);
+    if (!Number.isFinite(recharge) || Math.abs(recharge * 100 - Math.round(recharge * 100)) > 1e-7)
+      return res.status(400).json({success:false, message:'充值余额变动须为有效金额，最多两位小数'});
+    if (recharge) inc.rechargeBalance = recharge;
     const ops = { $set: update };
     if (Object.keys(inc).length) ops.$inc = inc;
+    if (recharge) ops.$push = {rechargeAdjustments:{amount:recharge, remark:String(req.body.rechargeNote || '').trim().slice(0,500), operatorName:req.staff.name, createdAt:new Date()}};
     await User.updateOne({ _id: req.params.id }, ops);
     if (pointsChange > 0) {
       await require('../utils/pointsHealthFund').awardPointsAndConvert({

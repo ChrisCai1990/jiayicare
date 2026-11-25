@@ -1,3 +1,4 @@
+import { readChatFile } from '../../../utils/readChatFile';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
@@ -130,17 +131,7 @@ function groupByParent(items) {
   return Object.entries(map).map(([parent, checks]) => ({ parent, checks }));
 }
 
-function fileToBase64(filePath) {
-  return new Promise((resolve, reject) => {
-    const fs = Taro.getFileSystemManager();
-    fs.readFile({
-      filePath,
-      encoding: 'base64',
-      success: (res) => resolve(res.data),
-      fail: reject,
-    });
-  });
-}
+
 
 export default function SpecialScreeningPage() {
   const { statusBarHeight } = useNavBar();
@@ -198,11 +189,11 @@ export default function SpecialScreeningPage() {
       const fileInfo = chosen.tempFiles?.[0];
       if (!filePath) return;
       setUploading(catItem.id);
-      const base64 = await fileToBase64(filePath);
+      const data = await readChatFile(filePath, fileInfo?.originalFileObj);
       await screeningAPI.upload(dbItem._id, {
         title: `${catItem.parent} · ${catItem.label}`,
-        content: base64,
-        mimeType: 'image/jpeg',
+        content: data.slice(data.indexOf(',')+1),
+        mimeType:data.slice(5,data.indexOf(';')),
         fileSize: fileInfo?.size ? `${(fileInfo.size / 1024).toFixed(0)}KB` : '',
         pages: 1,
       });

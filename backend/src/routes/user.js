@@ -279,7 +279,7 @@ router.get('/health-fund', auth, async (req, res) => {
     const HealthFundTransaction = require('../models/HealthFundTransaction');
     const { getCorporateFundAvailable, getPersonalFundAvailable, getVitalityFundAvailable } = require('../utils/healthFundPayment');
     await require('../utils/pointsHealthFund').convertExistingPoints(req.user._id);
-    const currentUser = await User.findById(req.user._id);
+    const currentUser = await User.findById(req.user._id).select('+personalFundGrants');
     if (!currentUser) return res.status(404).json({ success:false, message:'用户不存在' });
     const [personalAvailable, corporateAvailable, vitalityAvailable, transactions, grants, config] = await Promise.all([
       getPersonalFundAvailable(currentUser), getCorporateFundAvailable(currentUser), getVitalityFundAvailable(currentUser),
@@ -290,7 +290,7 @@ router.get('/health-fund', auth, async (req, res) => {
     const cents = value => Math.round((Number(value) || 0) * 100) / 100;
     const total = cents(currentUser.healthFundBalance);
     const personal = cents(Math.min(personalAvailable, total));
-    const ledger = require('../utils/healthFundLedger').mergeHealthFundLedger(transactions, grants);
+    const ledger = require('../utils/healthFundLedger').mergeHealthFundLedger(transactions, grants, currentUser.personalFundGrants);
     res.json({ success:true, data:{ total, personal, vitality:cents(vitalityAvailable), corporate:cents(Math.min(corporateAvailable,Math.max(0,total-personal-vitalityAvailable))), policy:config?.value||{}, transactions:ledger.map(item => ({ ...item, amount:cents(item.amount), balanceAfter:cents(item.balanceAfter) })) } });
   } catch (err) { res.status(500).json({ success:false, message:'获取健康基金明细失败', error:err.message }); }
 });
@@ -1336,7 +1336,22 @@ router.get('/push-records', auth, async (req, res) => {
       if (row.products?.length) row.products = row.products.map(p=>({ ...p, fundProduct:fundById.get(String(p.productId)) || null }));
       else if (row.productId) row.fundProduct = fundById.get(String(row.productId)) || null;
     }
-    res.json({ success: true, data: records });
+    const batches = new Map();
+    const inbox = records.filter(row => {
+      if (!row.recommendationBatchId) return true;
+      const key = String(row.recommendationBatchId);
+      if (!batches.has(key)) { batches.set(key, row); return true; }
+      return false;
+    });
+    if (batches.size) {
+      const members = await PushRecord.find({ ...inboxFilter, recommendationBatchId: { $in: [...batches.keys()] } }).select('recommendationBatchId readAt').lean();
+      for (const [key, row] of batches) {
+        const rows = members.filter(member => String(member.recommendationBatchId) === key);
+        if (rows.length > 1) row.content = row.title + ' × ' + rows.length + ' 件，合计 ¥' + (row.price * rows.length).toFixed(2);
+        if (rows.some(member => !member.readAt)) row.readAt = null;
+      }
+    }
+    res.json({ success: true, data: inbox });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取推送记录失败', error: err.message });
   }
@@ -1448,6 +1463,14 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     const toPay = pushedProducts.filter(p => selectedIdSet.has(String(p.productId)));
     if (!toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中' });
     if (selectedIdSet.size !== toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中或存在重复，请重新选择' });
+    if (record.recommendationBatchId && toPay.length === 1) {
+      try {
+        const result = await require('../utils/pushGroupCheckout').createCombinedPushCheckout({
+          records:[record], user:req.user, serviceUser, options:req.body,
+        });
+        return res.json(result);
+      } catch (error) { return res.status(error.status || 500).json({success:false,message:error.message}); }
+    }
     if (toPay.length > 1) {
       try {
         const result = await require('../utils/pushGroupCheckout').createPushGroupCheckout({ record, user: req.user, serviceUser, items: toPay, options: req.body });
@@ -1705,10 +1728,9 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
 // PATCH /api/user/push-records/:id/read — 标记推送记录已读
 router.patch('/push-records/:id/read', auth, async (req, res) => {
   try {
-    await PushRecord.findOneAndUpdate(
-      { _id: req.params.id, patientId: req.user._id },
-      { readAt: new Date() }
-    );
+    const row = await PushRecord.findOne({ _id:req.params.id, patientId:req.user._id }).select('recommendationBatchId');
+    if (row) await PushRecord.updateMany({ patientId:req.user._id, readAt:null,
+      ...(row.recommendationBatchId ? {recommendationBatchId:row.recommendationBatchId} : {_id:row._id}) }, {readAt:new Date()});
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });

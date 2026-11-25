@@ -370,7 +370,7 @@ router.post('/order', auth, async (req, res) => {
       : pushedRecommendation?.productId ? [{ productId: pushedRecommendation.productId, price: pushedRecommendation.price }] : [];
     pushedItem = recommended.find(item => String(item.productId) === String(serviceId));
     if (!pushedItem) return res.status(403).json({ success: false, message: '该商品不属于这次医护推荐' });
-    const existing = await Order.findOne({ user: serviceUser._id, pushRecordId, serviceId: String(serviceId),
+    const existing = await Order.findOne({ user: serviceUser._id, ...require('../utils/combinableProductPushes').orderPushFilter([pushRecordId]), serviceId: String(serviceId),
       status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } });
     if (existing) return res.status(409).json({ success: false,
       message: existing.tradeStatus === 'awaiting_payment' ? '这次推荐已有待支付订单，请从家庭成员页代付原订单' : '这次医护推荐已购买，请从订单页查看' });

@@ -1,3 +1,4 @@
+import { groupPurchasedItems } from '../../../shared/groupPurchasedItems.cjs'
 import ExpertConsultationTasksPanel from '../components/ExpertConsultationTasksPanel'
 import { isServiceActionable } from '../utils/workbenchReminder.mjs'
 import CheckupProgressPanel from '../components/CheckupProgressPanel'
@@ -108,7 +109,9 @@ export default function HomePage() {
   const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
   const allOrderRows = plannerOrderRows(pendingOrders, serviceTasks)
   const advisorTasksOnly = staff?.role === 'familyDoctor' && advisorArea === 'todo'
-  const orderRows = advisorTasksOnly ? allOrderRows.filter(row => row.pending || (row.action && isServiceActionable({ task: row.action })) || (row.supervisor && isServiceActionable({ task: row.supervisor }))) : allOrderRows
+  const actionableRows = advisorTasksOnly ? allOrderRows.filter(row => row.pending || (row.action && isServiceActionable({ task: row.action })) || (row.supervisor && isServiceActionable({ task: row.supervisor }))) : allOrderRows
+  const getRowOrder = row => (row.supervisor || row.task || row.pending)?.sourceOrderId
+  const orderRows = groupPurchasedItems(actionableRows, getRowOrder)
   const completedServiceOrders = (ordersResource.data.completedServices || []).filter(item => item.key?.startsWith('order:'))
   const orderHistoryRows = staff?.role === 'healthManager' ? [] : [...new Map(completedOrders
     .filter(item => isCustomerOrder(item.sourceOrderId, item))
@@ -202,7 +205,8 @@ export default function HomePage() {
           <div className="card-body" style={{ padding: '8px 20px' }}>
             {ordersResource.loading && <div role="status">正在加载服务预约…</div>}
             {ordersResource.error && <div role="alert" style={{ color: '#B42318', padding: 12 }}>服务预约未完整加载：{ordersResource.error} <button onClick={ordersResource.refresh}>重试</button></div>}
-            {orderStatusFilter !== 'completed' && visibleOrderRows.map(({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
+            {orderStatusFilter !== 'completed' && visibleOrderRows.map(group => {
+              const renderItem = ({ id, pending: f, supervisor, task: serviceTask, action }, i) => {
               const task = supervisor || serviceTask
               const order = task?.sourceOrderId || f?.sourceOrderId
               const openTarget = task?.workflowKey === 'medical_assist:closure' ? null : action || (supervisor && !/专家约诊/.test(supervisor.theme || '') ? supervisor : null) || (!task ? f : null)
@@ -215,7 +219,7 @@ export default function HomePage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{(task || f)?.patientId?.name || '未知'}</span>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.serviceName || (f && serviceTaskTitle(f)) || (task && serviceTaskTitle(task))}{order && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(order.paidAmount || 0) + Number(order.healthFundAmount || 0)).toFixed(2)}</span>}</div>
+                    <div style={{ fontSize: 13, color: '#1A2B24', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.serviceName || (f && serviceTaskTitle(f)) || (task && serviceTaskTitle(task))}{order?.quantity > 1 && <strong> × {order.quantity} 件</strong>}{order && <span style={{ color: '#D97706', marginLeft: 8 }}>支付 ¥{(Number(order.paidAmount || 0) + Number(order.healthFundAmount || 0)).toFixed(2)}</span>}</div>
                     {(order?.scheduledAt || order?.note || f?.content) && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order?.scheduledAt && `预约时间：${new Date(order.scheduledAt).toLocaleString('zh-CN')} · `}备注：{order?.note || f?.content || '未填写，请联系客户确认时间'}</div>}
                     <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 5 }}>
                       {planningReady ? '顾问建议已提交，待健康规划师确认客户意向并结案' : decisionReferralProgress(order) || (task ? (supervisor?.supervisionProgress?.current?.length
@@ -234,6 +238,13 @@ export default function HomePage() {
                   ? <button type="button" className="btn btn-primary btn-sm" style={{ flexShrink: 0, marginLeft: 12 }} onClick={event => { event.stopPropagation(); nav(`/patients/${supervisor.patientId?._id}?tab=followups`, { state: { openFollowUp: supervisor } }) }}>去确认结案</button>
                   : <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>{task?.workflowKey === 'medical_assist:closure' ? '待确认结案' : action ? '待我办理' : task ? '流程进行中' : `下单 ${new Date(order?.createdAt || f.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`}</span>}
               </div>
+              }
+              if (group.length === 1) return renderItem(group[0], 0)
+              const order = getRowOrder(group[0])
+              return <details key={group[0].id}><summary style={{padding:'12px 0',cursor:'pointer'}}>
+                {group[0].pending?.patientId?.name || (group[0].supervisor || group[0].task)?.patientId?.name} · {order.serviceName} × {group.length} 件
+                · 合计 ¥{group.reduce((sum,row)=>sum+Number(getRowOrder(row).servicePrice || 0),0).toFixed(2)}
+              </summary>{group.map(renderItem)}</details>
             })}
             {orderStatusFilter !== 'completed' && orderRows.length > ORDERS_PER_PAGE && <nav aria-label="用户下单服务进程分页" style={{ paddingBottom: 8 }}>
               <Pagination compact page={currentOrderPage} totalPages={orderPageCount} onChange={setOrderPage} />

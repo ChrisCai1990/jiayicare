@@ -20,6 +20,6 @@ test('same product and specification combine only records without an active orde
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/utils/combinableProductPushes'), 'utf8'), context);
   const result = await context.module.exports.availableSamePushes(records[0], 'patient');
   assert.deepEqual(result.map(row => row._id), ['a']);
-  assert.deepEqual(query.pushRecordId.$in, ['a', 'b']);
+  assert.deepEqual(query.$or[0].pushRecordId.$in, ['a', 'b']);
   assert.equal(query.status.$ne, 'cancelled');
 });
