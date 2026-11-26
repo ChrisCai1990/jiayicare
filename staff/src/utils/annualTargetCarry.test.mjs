@@ -25,7 +25,7 @@ test('血压和体重作为独立监测草稿承接，调整时间和取消选�
   assert.deepEqual(changed.map(row => [row.items, row.measurementPeriod]), [['血压', '晨起']])
 })
 
-test('未发布草稿承接新增筛查事项并保留顾问编辑，营养评估保持参与', () => {
+test('顾问改变管理方向时更新旧目标和重点，营养评估保持参与', () => {
   const modules = { management_targets: { records: [{ issueId: 'management_issue:1', sourceGoal: '持续管理或观察',
     goal: '顾问调整后的目标', focus: '顾问调整后的重点', nutritionRelevant: false }] } }
   const confirmed = [
@@ -35,7 +35,7 @@ test('未发布草稿承接新增筛查事项并保留顾问编辑，营养评�
   const result = carryAnnualTargets(modules, confirmed)
   assert.equal(result.changed, true)
   assert.equal(result.modules.management_targets.records.length, 2)
-  assert.equal(result.modules.management_targets.records[0].goal, '顾问调整后的目标')
+  assert.equal(result.modules.management_targets.records[0].goal, '来源目标')
   assert.equal(result.modules.management_targets.records[0].nutritionRelevant, true)
   assert.equal(result.modules.management_targets.records[1].sourceTitle, '体重异常')
   assert.equal(carryAnnualTargets(result.modules, confirmed).changed, false)

@@ -934,6 +934,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           const medical = merged.medical_treatment || {}
           merged.medical_treatment = { ...medical, enabled: true, records: [...(medical.records || []), ...oneTimeVisits] }
         }
+        if (prev.medical_treatment?.complaintReminderDismissed) merged.medical_treatment = { ...merged.medical_treatment, complaintReminderDismissed: true }
         const personalized = (aiData.templateNodes || [])
           .filter(node => node.defaultRole !== 'nutritionist' && !/营养评估/.test(node.standardPlanName || node.name || ''))
           .map(node => ({
@@ -953,9 +954,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           if (!Array.isArray(merged[key]?.records) || key === 'management_targets') return
           merged[key] = { ...merged[key], records: merged[key].records.map(record => { const issueId = displayIssueId(record, targets) || record.issueId || ''; const target = targets.find((row, index) => targetIssueId(row, index) === issueId); return { ...record, issueId, ...(target ? { goal: target.goal } : {}) } }) }
         })
-        return carryAnnualTargets(merged, confirmedReviewTargets, screeningDraftActions).modules
+        return carryAnnualTargets(removeWithdrawnDraftSources(merged, res.inactiveIssueIds), res.managementTargets || [], res.draftActions || []).modules
       })
       setDirty(true)
+      if (Array.isArray(res.managementTargets)) setConfirmedReviewTargets(res.managementTargets)
+      if (Array.isArray(res.draftActions)) setScreeningDraftActions(res.draftActions)
       const appliedCount = BASIC_STANDARD_MODULE_KEYS.reduce((total, key) => {
         const value = aiData[key]
         return total + (MODULE_DEFS[key]?.multi ? (value?.records?.length || 0) : (value?.enabled ? 1 : 0))
@@ -1281,6 +1284,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     openDetailedAction(item && document.querySelector(item) ? item : section && document.querySelector(section) ? section : '#annual-plan-tools')
   }
   const optionalSections = [['vaccine','疫苗接种'], ['health_consensus','健康认知与共识'], ['monitoring','日常监测'], ['annual_checkup','下一年度体检']]
+  const symptomVisit = action => action.key === 'medical_treatment' && (action.record.oneTimeVisit || action.record.visitOrigin === 'symptom')
+  const symptomActions = integratedActions.filter(symptomVisit)
+  const complaintHidden = moduleData.medical_treatment?.complaintReminderDismissed === true && !symptomActions.length
   const visitOptions = [...new Map(visitRows(moduleData).filter(item => item.date && item.hospital)
     .map(item => [JSON.stringify([item.date, item.hospital, item.row.visitGroupId || '']), item])).values()]
   const regularActions = integratedActions.filter(action => action.key !== 'nutrition_assessment' && !optionalSections.some(([key]) => key === action.key))
@@ -1809,7 +1815,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <AnnualPlanSection section="medical">
               {medicalGroups.map(group => <div key={group.title} className="annual-medical-group">
                 <h4 className="annual-medical-group-heading">{group.title}</h4>
-                {group.keys.includes('medical_treatment') && canEdit && !pushedAt && <details><summary>新增单次就医</summary>
+                {group.keys.includes('medical_treatment') ? <>
+                  <h5>年度管理就医安排</h5>
+                  {regularActions.filter(action => group.keys.includes(action.key) && !symptomVisit(action)).map(renderGroupedAction)}
+                  {!regularActions.some(action => group.keys.includes(action.key) && !symptomVisit(action)) && <p>暂无年度管理就医安排</p>}
+                  {!complaintHidden && <><h5>不适主诉就医安排</h5>
+                    {symptomActions.map(renderGroupedAction)}
+                    {!symptomActions.length && <p>暂无不适主诉就医安排。{canEdit && !pushedAt && <>请核对客户近期是否提出新的不适。 <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleModuleChange('medical_treatment', 'complaintReminderDismissed', true)}>无主诉，移除提醒</button></>}</p>}
+                  </>}
+                  {complaintHidden && canEdit && !pushedAt && <button className="btn btn-secondary btn-sm" onClick={() => handleModuleChange('medical_treatment', 'complaintReminderDismissed', false)}>添加不适主诉就医安排</button>}
+                  {!complaintHidden && canEdit && !pushedAt && <details><summary>新增主诉就医</summary>
                   <form style={{ display: 'grid', gap: 8, padding: '12px 0' }} onSubmit={event => {
                     event.preventDefault()
                     const form = event.currentTarget
@@ -1830,8 +1845,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                     <button type="submit" className="btn btn-secondary btn-sm">加入草稿</button>
                   </form>
                 </details>}
+                </> : <>
                 {regularActions.filter(action => group.keys.includes(action.key)).map(renderGroupedAction)}
                 {!regularActions.some(action => group.keys.includes(action.key)) && <p>待安排</p>}
+                </>}
               </div>)}
               {regularActions.filter(action => annualSectionFor(action.key) === 'medical' && !medicalGroups.some(group => group.keys.includes(action.key))).map(renderGroupedAction)}
             </AnnualPlanSection>

@@ -5,6 +5,8 @@ export function mergeManagementTargetEdits(incoming, existing = []) {
   return incoming.map(row => {
     const old = byIssue.get(row.issueId)
     if (!old) return row
+    const directions = item => [...(item.sourceGoals || (item.sourceGoal ? [item.sourceGoal] : []))].sort().join('|')
+    if (directions(old) && directions(row) && directions(old) !== directions(row)) return row
     const kept = {}
     for (const key of editable) if (Object.hasOwn(old, key)) kept[key] = old[key]
     return { ...row, ...kept, ...(row.sourceGoals?.includes('营养评估') || row.sourceGoal === '营养评估' ? { nutritionRelevant: true } : {}) }
@@ -17,10 +19,16 @@ export function removeWithdrawnDraftSources(modules, withdrawnIssueIds = []) {
   const next = { ...modules }
   for (const [key, data] of Object.entries(modules)) {
     if (!Array.isArray(data?.records)) continue
-    const records = data.records.filter(row => key === 'management_targets'
-      ? !withdrawn.has(row.issueId)
-      : !(row.screeningDraft && row.sourceIds?.some(id => withdrawn.has(id))))
-    if (records.length !== data.records.length) next[key] = { ...data, records }
+    const records = data.records.flatMap(row => {
+      if (key === 'management_targets') return withdrawn.has(row.issueId) ? [] : [row]
+      if (!row.sourceIds?.some(id => withdrawn.has(id))) return [row]
+      const sourceIds = row.sourceIds.filter(id => !withdrawn.has(id))
+      // Rebuild screening-generated multi-source rows from the current evidence.
+      if (row.screeningDraft || !sourceIds.length) return []
+      return [{ ...row, sourceIds }]
+    })
+    if (records.length !== data.records.length || records.some((row, index) => row !== data.records[index])) next[key] = { ...data, records }
+
   }
   return next
 }
@@ -64,7 +72,7 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
     const dateKey = key === 'medical_treatment' ? 'visit_time' : 'time'
     const hydrated = retained.map(row => {
       const source = sourceDrafts.find(record => (record.sourceIds || []).some(id => row.sourceIds?.includes(id)))
-      let nextRow = row
+      let nextRow = key === 'medical_treatment' && source?.visitOrigin === 'symptom' && row.visitOrigin !== 'symptom' ? { ...row, visitOrigin: 'symptom' } : row
       // Earlier review drafts placed the clinical ordering specialty in the exam department.
       if (key === 'abnormal_followup' && source?.reviewGroupVersion === 1 && source.order_dept
         && row.reviewGroupVersion === 1 && !row.order_dept) {

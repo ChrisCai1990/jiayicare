@@ -10276,8 +10276,8 @@ router.get('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     const year = Number(req.query.year);
     if (!Number.isInteger(year) || year < 2020 || year > 2100) return res.status(400).json({ success: false, message: '年度无效' });
     const decisions = await require('../models/AnnualManagementDecision').find({ patientId: req.params.id, year }).lean();
-    const data = require('../utils/annualManagementEvidence').effectiveDecisions(decisions.filter(row => row.status !== 'withdrawn'));
-    res.json({ success: true, data, withdrawnIssueIds: decisions.filter(row => row.status === 'withdrawn').map(row => `management_issue:${row._id}`) });
+    const data = require('../utils/annualManagementEvidence').effectiveDecisions(decisions);
+    res.json({ success: true, data, withdrawnIssueIds: decisions.filter(row => !data.includes(row)).map(row => `management_issue:${row._id}`) });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -10429,6 +10429,18 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     let managementAction;
     try { managementAction = annualPilot ? require('../utils/annualManagementAction').normalizeAction({ ...req.body, directions }, reviewPlan) : {}; }
     catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+    let replaces = null;
+    if (existing && await Decision.exists({ patientId: req.params.id, year: Number(year), supersedes: existing._id }))
+      return res.status(409).json({ success: false, message: '该历史决定已有更新，请从最新决定调整管理方向' });
+    if (req.body.replacesDecisionId) {
+      if (formal || legacy || !mongoose.isValidObjectId(req.body.replacesDecisionId)) return res.status(409).json({ success: false, message: '请在未发布年度方案的具体检查项中更新决定' });
+      replaces = await Decision.findOne({ _id: req.body.replacesDecisionId, patientId: req.params.id, year: Number(year),
+        sourceKey: { $ne: sourceKey }, status: 'active' }).lean();
+      const oldDay = String(replaces?.sourceSnapshot?.checkDate || '').slice(0, 10);
+      const newDay = String(report.checkDate || '').slice(0, 10);
+      if (!replaces || !oldDay || !newDay || oldDay >= newDay || String(replaces.updatedAt?.toISOString()) !== req.body.replacesUpdatedAt)
+        return res.status(409).json({ success: false, message: '旧决定已变化，或当前报告并非较新的检查，请刷新核对' });
+    }
     const update = { reportId: report._id, itemId, title, direction, directions, note, reviewPlan, ...managementAction, status: 'active', withdrawnAt: null, withdrawnBy: null, withdrawalReason: '', sourceSnapshot: {
         reportTitle: report.title || '', checkDate: report.checkDate || '', reportUpdatedAt: report.updatedAt,
         item: ['screening', 'report_item'].includes(source.kind) ? sourceItem : null,
@@ -10437,7 +10449,7 @@ router.put('/patients/:id/annual-management-decisions', staffAuth, async (req, r
     const row = legacy
       ? await Decision.findOneAndUpdate({ _id: legacy._id, sourceKey: legacy.sourceKey }, { $set: { ...update, sourceKey } }, { new: true })
       : await Decision.findOneAndUpdate({ patientId: req.params.id, year: Number(year), sourceKey },
-        { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true });
+        { $set: update, ...(replaces ? { $addToSet: { supersedes: replaces._id } } : {}) }, { upsert: true, new: true, setDefaultsOnInsert: true });
     if (!row) return res.status(409).json({ success: false, message: '管理决定已变化，请刷新后重试' });
     res.json({ success: true, data: row });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -11951,6 +11963,13 @@ async function reviewAnnualDraft(req, res, preview) {
     let nutritionPatient = null;
     if (closedLoop) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, targetYear);
+      const inactive = new Set(management.inactiveIssueIds);
+      if ((plan.moduleData.management_targets?.records || []).some(row => inactive.has(row.issueId)) ||
+          Object.values(plan.moduleData).some(module => module?.records?.some(row => row.sourceIds?.some(id => inactive.has(id))))) {
+        const message = '草稿中仍有已撤销或已替代的来源，请同步最新纳入问题并保存';
+        if (!preview) return res.status(409).json({ success: false, message });
+        problems.push({ key: 'sync', message });
+      }
       if (management.stale.length) {
         if (preview) management.stale.forEach(title => problems.push({ key: 'source', title, message: '管理来源已变化，请重新核对' }));
         else return res.status(409).json({ success: false, message: `管理来源已变化，请先重新核对：${management.stale.join('、')}` });
@@ -15709,6 +15728,7 @@ ${discussedScheduling || '无明确的医院或时间线索'}
 
 【健康顾问已确认的管理目标与干预重点】
 ${confirmedManagementTargets.length ? JSON.stringify(confirmedManagementTargets) : '暂无逐条确认的目标；不得虚构量化目标'}
+同一问题以当前有效的顾问决定为准。旧报告和历史方案仅供追溯，不得用历史方向补齐新决定未选的行动。新决定明确选了多个方向时才同时安排。
 这些已确认目标和干预重点是年度方案的内容边界。除营养评估方向由系统合并为一项年度营养评估外，逐条落实对应行动、复评期限和预期，不得改写目标或自行扩展新问题；年度体检和近五年趋势仅用于核对事实与完善执行细节。标记为营养相关的条目应供营养师后续核实，不要替营养师编造基线或能量处方。
 每项执行安排须带出可供阶段评估核对的目标。若已确认目标明确，以原目标为准；未另有明确目标时按服务类型使用简洁目标：就医为“及时完成就医，明确诊治方案”，完善检查为“完成检查，明确结果与后续处理方向”，定期复查为“按计划完成复查，明确变化与后续管理措施”，疫苗为“核实接种适宜性，按确认的方案完成接种”。不要让顾问重复录入同类目标，也不得编造数值目标。
 
@@ -15889,6 +15909,7 @@ ${(selectedTemplate?.content?.requiredItemFields || ['项目名称','设置依�
     }
 
     res.json({ success: true, data: result, managementTargets: confirmedManagementTargets,
+      draftActions: require('../utils/annualManagementEvidence').draftPlanActions(management.evidence), inactiveIssueIds: management.inactiveIssueIds || [],
       generation: { fingerprint: generation.fingerprint, reused: generation.reused, evidenceCoverage: raw.evidenceCoverage || [], requiresNutritionAssessment: management.evidence.some(item => require('../utils/annualManagementEvidence').directionsOf(item.content).some(value => ['ongoing_management', 'nutrition_assessment'].includes(value))) }, basis: assessmentFocus, continuitySource: preparation.continuity?.source || null, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: require('../utils/annualGenerationContract').annualGenerationError(err.message) });

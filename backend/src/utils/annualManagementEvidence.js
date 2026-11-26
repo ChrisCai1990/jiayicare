@@ -1,6 +1,8 @@
 const directionsOf = value => Array.isArray(value?.directions) && value.directions.length ? value.directions : [value?.direction].filter(Boolean);
 
 function effectiveDecisions(decisions = []) {
+  const superseded = new Set(decisions.flatMap(row => row.supersedes || []).map(String));
+  decisions = decisions.filter(row => row.status !== 'withdrawn' && !superseded.has(String(row._id)));
   const sameIssue = value => String(value || '').replace(/\s+/g, '').trim();
   return decisions.filter(earlier => {
     const reportId = String(earlier.reportId || '');
@@ -106,7 +108,9 @@ async function load(patientId, year, dependencies = {}) {
   const CheckupReview = dependencies.CheckupReview || require('../models/AIHealthCheckupReview');
   const HealthRecord = dependencies.HealthRecord || require('../models/HealthRecord');
   const User = dependencies.User || require('../models/User');
-  const decisions = effectiveDecisions(await Decision.find({ patientId, year, status: { $ne: 'withdrawn' } }).sort({ reviewedAt: 1 }).lean());
+  const history = await Decision.find({ patientId, year }).sort({ reviewedAt: 1 }).lean();
+  const decisions = effectiveDecisions(history);
+  const inactiveIssueIds = history.filter(row => !decisions.includes(row)).map(row => `management_issue:${row._id}`);
   const evidence = [], stale = [], staleDecisionIds = [], staleSourceNotes = [];
   for (const decision of decisions) {
     if (decision.sourceKey === `symptom:${decision.symptomRecordId}` && decision.symptomRecordId) {
@@ -200,7 +204,7 @@ async function load(patientId, year, dependencies = {}) {
       }
     }
   }
-  return { evidence, stale, staleDecisionIds, staleSourceNotes, unresolved };
+  return { evidence, stale, staleDecisionIds, staleSourceNotes, unresolved, inactiveIssueIds };
 }
 
 const DIRECTION_LABELS = {
@@ -273,6 +277,7 @@ function draftPlanActions(evidence = []) {
       ? timing.firstDueDate : '';
     const dateKey = direction === 'medical_treatment' ? 'visit_time' : 'time';
     actions.push({ key: direction, record: {
+      ...(direction === 'medical_treatment' && content.sourceKind === 'symptom' ? { visitOrigin: 'symptom' } : {}),
       sourceIds: [item.id], [fields[direction]]: content.problem || content.reportTitle || '待核对事项',
       ...(direction === 'medical_treatment' ? {} : { reason: content.action || content.advisorNote || content.problem || '' }),
       ...(suggestedDate ? { [dateKey]: suggestedDate,

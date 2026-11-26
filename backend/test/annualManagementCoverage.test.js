@@ -214,11 +214,11 @@ test('已纳入管理的旧备注复查期限在生成依据中恢复为一次�
 });
 
 test('撤销旧版归属后不再阻止年度方案生成', async () => {
-  let selector;
-  const Decision = { find: query => { selector = query; return { sort: () => ({ lean: async () => [] }) }; } };
+  const Decision = { find: () => ({ sort: () => ({ lean: async () => [{ _id: 'old', status: 'withdrawn' }] }) }) };
   const User = { findById: () => ({ select: () => ({ lean: async () => ({ aiHealthSummary: {} }) }) }) };
   const result = await load('patient', 2026, { Decision, User });
-  assert.deepEqual(selector.status, { $ne: 'withdrawn' });
+  assert.deepEqual(result.inactiveIssueIds, ['management_issue:old']);
+  assert.ok(!result.evidence.some(item => item.id === 'management_issue:old'));
   assert.deepEqual(result.stale, []);
   assert.deepEqual(result.staleDecisionIds, []);
 });
@@ -298,4 +298,12 @@ test('已审核 AI 整理的明确待补检查直接进入草稿，重复描述�
   assert.deepEqual(result.unresolved, []);
   assert.equal(result.evidence.length, 4);
   assert.deepEqual(result.evidence.map(row => row.content.problem), ['结肠镜', '胃镜（含食管）', '低剂量胸部CT', '幽门螺杆菌复查']);
+});
+
+test('明确替代后仅采用新决定的方向，撤销新决定也不会恢复旧方向', () => {
+  const old = { _id: 'old', direction: 'ongoing_management' };
+  const current = { _id: 'new', supersedes: ['old'], direction: 'medical_treatment' };
+  const other = { _id: 'other', direction: 'monitoring' };
+  assert.deepEqual(effectiveDecisions([old, other, current]), [other, current]);
+  assert.deepEqual(effectiveDecisions([old, other, { ...current, status: 'withdrawn' }]), [other]);
 });

@@ -41,6 +41,8 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [reviewKind, setReviewKind] = useState('none'), [reviewMonths, setReviewMonths] = useState('3'), [reviewItems, setReviewItems] = useState('')
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
   const [saved, setSaved] = useState(null), [legacy, setLegacy] = useState(null), [adoptLegacy, setAdoptLegacy] = useState(false), [error, setError] = useState('')
+  const [priorDecisions, setPriorDecisions] = useState([])
+  const [replacesId, setReplacesId] = useState('')
   const [withdrawReason, setWithdrawReason] = useState(null)
   const [pilot, setPilot] = useState(false)
   const [planCheck, setPlanCheck] = useState({ loading: false, formal: false, plan: null, error: '' })
@@ -85,6 +87,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     let active = true
     const refresh = () => load(patientId, year).then(result => {
       if (!active) return
+      setPriorDecisions((result.data || []).filter(item => item.reportId && String(item.reportId) !== String(source.reportId)))
       setSaved(findAnnualManagementDecision(result.data || [], source))
       setLegacy(source.kind === 'screening'
         ? (result.data || []).find(item => item.sourceKey === `screening_report:${source.reportId}`) || null
@@ -106,7 +109,9 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     if (pilot && hasDirection('monitoring') && (!monitoringItems.length || monitoringItems.some(item => MONITORING_PERIODS[item.type] && !item.time.trim() || !item.frequency?.trim()))) { setError('请勾选监测项目，为每项选择监测周期，并填写血压、血糖或体重的监测时间'); return }
     setBusy(true); setError('')
     try {
+      const replaces = priorDecisions.find(item => item._id === replacesId)
       const result = await staffAPI.saveAnnualManagementDecision(patientId, { year, source, title: title.trim(), direction, directions, note: note.trim(),
+        ...(replaces ? { replacesDecisionId: replaces._id, replacesUpdatedAt: replaces.updatedAt } : {}),
         ...(pilot ? { goal: goal.trim() || '按选定项目与时间完成日常监测', action: '', directionTimings: Object.fromEntries(directions
           .filter(value => !(reviewKind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(value)))
           .map(value => { if (value === 'monitoring') return [value, { mode: 'pending', items: monitoringItems.map(item => ({ type: item.type, time: item.time.trim(), frequency: item.frequency.trim() })) }]; const timing = timingFor(value); return [value, { mode: timing.mode || 'pending',
@@ -128,6 +133,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           return
         }
       } else toast(pilot ? '已确认管理方向；已发布方案请继续核对是否需要局部补入' : '已纳入管理，生成年度方案时将按此方向带入', 5000)
+      window.dispatchEvent(new Event(`annual-decisions:${patientId}:${year}`))
       setOpen(false)
       onSaved?.()
     } catch (e) { setError(e.message || '保存失败，请重试') }
@@ -155,7 +161,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   }
   return <>
     <button type="button" className={`btn ${saved ? 'btn-primary' : 'btn-secondary'} btn-sm`} title={saved ? `已纳入年度管理：${directionText(savedDirections) || '管理方向待核对'}；点击可查看或调整` : '点击确认是否纳入年度管理'} onClick={event => {
-      event.stopPropagation(); setTitle(saved?.title || suggestedIssue || suggestions[0] || '');
+      event.stopPropagation(); setReplacesId(''); setTitle(saved?.title || suggestedIssue || suggestions[0] || '');
       setDirections(savedDirections); setNote(saved?.note || ''); setGoal(saved?.goal || '')
       const legacyTimingDirection = saved?.reviewPlan?.kind === 'recheck' && savedDirections.includes('medical_treatment')
         ? 'medical_treatment' : savedDirections[0]
@@ -179,6 +185,10 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
         {error && <p role="alert">{error}</p>}
       </div> : <div className="modal-body">
         <div style={{ fontSize: 13, color: '#65776F', marginBottom: 10 }}>来源：{sourceLabel || '已审核专项筛查'}。请选择对应现有方案的管理方向。</div>
+        {reportSource && priorDecisions.length > 0 && <label className="form-label">本次决定是否更新同一问题的旧安排
+          <select className="form-input" value={replacesId} onChange={event => setReplacesId(event.target.value)}>
+            <option value="">独立管理事项</option>{priorDecisions.map(row => <option key={row._id} value={row._id}>替代 {row.sourceSnapshot?.checkDate} · {row.title} · {directionText(row.directions?.length ? row.directions : [row.direction])}</option>)}
+          </select></label>}
         <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
         <div role="group" aria-label="管理方向（可多选）" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>{DIRECTIONS.filter(([value]) => (value !== 'ongoing_management' || savedDirections.includes(value)) && (!symptomSource || ['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(value))).map(([value, label]) => <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 8px', border: `1px solid ${hasDirection(value) ? '#17694D' : '#DDE6E0'}`, borderRadius: 7, cursor: 'pointer', background: hasDirection(value) ? '#F1F8F3' : '#FFF' }}><input type="checkbox" checked={hasDirection(value)} disabled={drafting} onChange={() => toggleDirection(value)} />{label}</label>)}</div>

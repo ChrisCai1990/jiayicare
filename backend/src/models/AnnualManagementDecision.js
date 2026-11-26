@@ -20,6 +20,7 @@ const schema = new mongoose.Schema({
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   reviewedAt: { type: Date, required: true },
   status: { type: String, enum: ['active', 'withdrawn'], default: 'active' },
+  supersedes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AnnualManagementDecision' }],
   withdrawnAt: { type: Date, default: null },
   withdrawnBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   withdrawalReason: { type: String, default: '' },

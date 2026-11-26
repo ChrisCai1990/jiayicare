@@ -19,9 +19,16 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
     const renderItem = item => {
       if (item.visitItems?.length) return <details key={item.id} style={{ padding: '12px 0' }}>
         <summary>{item.schedule} · {item.careTarget?.hospital} · 同次就诊（{item.visitItems.length} 项）</summary>
-        {byVisitDepartment(item.visitItems, entry => entry.examArrangement ? entry.examArrangement.orderDepartment : entry.careTarget?.department).map(group =>
+        {['annual', 'symptom'].map(origin => {
+          const members = item.visitItems.filter(entry => (entry.visitOrigin || 'annual') === origin)
+          if (!members.length) return null
+          return <section key={origin}><h4>{origin === 'symptom' ? '不适主诉就医安排' : '年度管理就医安排'}</h4>
+        {byVisitDepartment(members, entry => entry.examArrangement ? entry.examArrangement.orderDepartment : entry.careTarget?.department).map(group =>
           <section key={group.name}><h4>{group.name} · {group.items.length} 项</h4>{group.items.map(entry =>
             <details key={entry.id}><summary>{entry.reviewItems?.join('、') || entry.title}{entry.careTarget?.expert && !entry.examArrangement ? ` · ${entry.careTarget.expert}` : ''}</summary>{renderItem(entry)}</details>)}</section>)}
+          </section>
+        })}
+
       </details>
       const goal = ['管控', '管理', '评估'].includes(String(item.goal || '').trim())
         ? ({ medical_treatment: '请专科医生评估并明确后续诊治安排', abnormal_followup: '核对复查结果并确定下一步处理', checkup_completion: '完成检查并核对结果' }[item.moduleKey] || '完成本项安排后确认下一步')
@@ -53,8 +60,21 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
         return <AnnualPlanSection key={section} section={section}>
           {section === 'medical' && medicalGroups.map(group => <div key={group.title} className="annual-medical-group">
             <h4 className="annual-medical-group-heading">{group.title}</h4>
-            {items.filter(item => group.keys.includes(item.moduleKey)).map(renderItem)}
-            {!items.some(item => group.keys.includes(item.moduleKey)) && <p>待安排</p>}
+            {group.keys.includes('medical_treatment') ? (() => {
+              const visits = items.filter(item => group.keys.includes(item.moduleKey) || item.visitItems?.length)
+              const standalone = visits.filter(item => !item.visitItems?.length)
+              const hasAnnual = visits.some(item => (item.visitItems || [item]).some(entry => entry.visitOrigin !== 'symptom'))
+              return <>
+                {(!hasAnnual || standalone.some(item => item.visitOrigin !== 'symptom')) && <section><h4>年度管理就医安排</h4>
+                  {hasAnnual ? standalone.filter(item => item.visitOrigin !== 'symptom').map(renderItem) : <p>暂无年度管理就医安排</p>}</section>}
+                {standalone.some(item => item.visitOrigin === 'symptom') && <section><h4>不适主诉就医安排</h4>
+                  {standalone.filter(item => item.visitOrigin === 'symptom').map(renderItem)}</section>}
+                {visits.filter(item => item.visitItems?.length).map(renderItem)}
+              </>
+            })() : <>
+              {items.filter(item => !item.visitItems?.length && group.keys.includes(item.moduleKey)).map(renderItem)}
+              {!items.some(item => (item.visitItems || [item]).some(entry => group.keys.includes(entry.moduleKey))) && <p>待安排</p>}
+            </>}
           </div>)}
           {section === 'medical' && items.filter(item => !medicalGroups.some(group => group.keys.includes(item.moduleKey))).map(renderItem)}
           {section !== 'medical' && items.map(renderItem)}
