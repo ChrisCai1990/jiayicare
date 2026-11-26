@@ -36,13 +36,6 @@ export default function LoginPage() {
     return () => { active = false; };
   }, []);
 
-  const cancelLogin = () => {
-    try { Taro.removeStorageSync('jy_post_login_url'); } catch {}
-    Taro.switchTab({ url: '/pages/home/index' }).catch(() => {
-      Taro.reLaunch({ url: '/pages/home/index' });
-    });
-  };
-
   const waitForAuthCommit = () => new Promise((resolve) => {
     if (typeof Taro.nextTick === 'function') Taro.nextTick(resolve);
     else setTimeout(resolve, 0);
@@ -172,9 +165,6 @@ export default function LoginPage() {
         padding: `${spacing.lg}px`,
       }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 20px' }} />
-        <Button onClick={cancelLogin} style={{ width: '100%', margin: '0 0 16px', height: '46px', lineHeight: '46px', backgroundColor: '#fff', color: colors.primary, border: `1.5px solid ${colors.primary}`, borderRadius: `${radius.md}px`, fontSize: '16px', fontWeight: 700 }}>
-          暂不登录，先浏览
-        </Button>
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>{t('手机号登录')}</Text>
         <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>{t('手机号验证码登录，新用户自动注册')}</Text>
         <View onClick={() => setLanguage(language === 'en-US' ? 'zh-CN' : 'en-US')} style={{ padding: '4px 0 14px' }}><Text style={{ color: colors.primary, fontSize: '13px' }}>🌐 {language === 'en-US' ? '简体中文' : 'English'}</Text></View>
@@ -298,10 +288,6 @@ export default function LoginPage() {
             <Button onClick={handleReviewLogin} disabled={loading || !agreed} loading={loading} style={{ height: '48px', lineHeight: '48px', backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px`, fontSize: '15px', fontWeight: 700 }}>进入审核体验</Button>
           </View>
         )}
-
-        <Text style={{ display: 'block', textAlign: 'center', marginTop: `${spacing.sm}px`, fontSize: '11px', color: colors.textMuted }}>
-          可先浏览公开服务；购买或使用个人健康服务时再登录。
-        </Text>
 
         {loadDeletionReceipt()?.token && <Text style={{ display:'block', textAlign:'center', padding:'12px', color:colors.primary }} onClick={() => Taro.navigateTo({ url:'/pages/account-deletion/receipt/index' })}>查看我的注销进度</Text>}
 

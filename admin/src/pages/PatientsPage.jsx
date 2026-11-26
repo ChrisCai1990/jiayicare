@@ -90,7 +90,9 @@ export default function PatientsPage() {
                 {patients.map(p => (
                   <tr key={p._id} onClick={() => nav(`/patients/${p._id}`)}>
                     <td>
-                      <strong>{p.name || '未填写'}</strong>
+                      {(p.onboardingCompleted || !['用户', '微信用户', ''].includes((p.name || '').trim())) && (
+                        <strong>{p.name || '未填写'}</strong>
+                      )}
                       {!p.onboardingCompleted && (
                         <span className="badge badge-gray" style={{ marginLeft: 6, fontSize: 10 }}>未完善</span>
                       )}

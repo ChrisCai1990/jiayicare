@@ -6,17 +6,14 @@ const vm = require('node:vm');
 const babel = require('@babel/core');
 const read = file => fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
 
-test('login cancel is available without consent or phone and returns to public home', async () => {
-  const actions = [];
-  const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
-    useState: init => [typeof init === 'function' ? init() : init, () => {}], useEffect() {} };
-  const Taro = { useLoad() {}, useShareAppMessage() {}, removeStorageSync: key => actions.push(['remove', key]),
-    switchTab: options => { actions.push(['home', options.url]); return Promise.resolve(); } };
+test('login shows the service statistics and agreement before login', () => {
+  const React = {createElement: (type, props, ...children) => ({type, props, children}), useState: v => [v, () => {}], useEffect: () => {}};
+  const Taro = {useLoad() {}, useShareAppMessage() {}};
   const mocks = {
     react: React, '@tarojs/taro': Taro, '@tarojs/components': { View: 'View', Text: 'Text', Input: 'Input', Button: 'Button' },
     '../../../theme': { colors: {}, spacing: {}, radius: {} }, '../../../services/api': {},
     '../../../context/AuthContext': { useAuth: () => ({ login() {} }) }, '../../../components/Icon': 'Icon',
-    '../../../utils/invitation': {},
+    '../../../utils/invitation': {}, '../../../i18n': {useLanguage: () => ({t: s => s})}, '../../../utils/accountDeletionReceipt': {loadDeletionReceipt: () => null},
   };
   const code = babel.transformSync(read('pages/auth/login/index.jsx'), { configFile: false, babelrc: false,
     presets: [require.resolve('@babel/preset-react')], plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')] }).code;
@@ -26,10 +23,11 @@ test('login cancel is available without consent or phone and returns to public h
   const elements = [];
   function visit(node) { if (!node || typeof node !== 'object') return; elements.push(node); (node.children || []).flat(Infinity).forEach(visit); }
   visit(tree);
-  const cancel = elements.find(node => node.type === 'Button' && node.children.includes('暂不登录，先浏览'));
-  assert.ok(cancel); assert.ok(!cancel.props.disabled);
-  cancel.props.onClick(); await Promise.resolve();
-  assert.deepEqual(actions, [['remove', 'jy_post_login_url'], ['home', '/pages/home/index']]);
+  const labels = elements.flatMap(node => node.children.filter(child => typeof child === 'string').map(child => child.trim()));
+  for (const label of ['10,000+', '服务用户', '300+', '签约医生', '99%', '满意度']) assert.ok(labels.includes(label), label);
+  assert.ok(!labels.includes('暂不登录，先浏览'));
+  assert.ok(labels.indexOf('我已阅读并同意') >= 0);
+  assert.ok(labels.indexOf('立即登录') > labels.indexOf('我已阅读并同意'));
 });
 
 function checkout(result, overrides = {}) {
