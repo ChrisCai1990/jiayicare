@@ -140,10 +140,10 @@ export default function ServiceGroupPage() {
     return () => clearInterval(timer);
   }, [visible, refresh]);
 
-  const openGroup = item => { userScroll.current=false;gesture.current=false;selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft('');setQuote(null);setQuoteMenu(null); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
+  const openGroup = item => Taro.navigateTo({
+    url: '/pages/messages/service-group/index?groupId=' + encodeURIComponent(item.id),
+  }).catch(() => Taro.showToast({title:'服务群暂时无法打开',icon:'none'}));
   const back = () => {
-    setMoreOpen(false);setEmojiOpen(false);setHistoryOpen(false);
-    if (selectedId.current) { refreshing.current = null; selectedId.current = ''; setError(''); setGroup(null); setMessages([]); return; }
     const returnToChat = () => Taro.switchTab({url:'/pages/chat/index'}).catch(()=>Taro.reLaunch({url:'/pages/chat/index'}));
     if ((Taro.getCurrentPages?.() || []).length < 2) return returnToChat();
     return Taro.navigateBack({delta:1}).catch(returnToChat);

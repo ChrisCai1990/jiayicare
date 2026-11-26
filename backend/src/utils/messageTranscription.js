@@ -76,6 +76,7 @@ function createHandler({ Message, storage, asr, reviewServices, isReview, visibl
       publish(saved.conversationId, { type: 'message-update', data });
       return res.json({ success: true, data });
     } catch (error) {
+      if (error.code === 'ASR_SUBSCRIPTION_EXPIRED') return res.status(503).json({ success: false, message: error.message });
       if (error.code === 'AI_DATA_CONSENT_REQUIRED') return res.status(403).json({ success: false, code: error.code, message: error.message });
       const code = /^[A-Z0-9_]{1,50}$/.test(error?.code || '') ? error.code : 'UNEXPECTED';
       console.warn('[voice-transcription-failed]', JSON.stringify({ stage, code }));

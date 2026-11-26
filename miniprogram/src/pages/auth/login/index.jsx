@@ -1,3 +1,4 @@
+import { loadDeletionReceipt } from '../../../utils/accountDeletionReceipt';
 import React, { useEffect, useState } from 'react';
 import { View, Text, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
@@ -152,17 +153,6 @@ export default function LoginPage() {
         <Text style={{ fontSize: '28px', fontWeight: 800, color: '#fff', letterSpacing: '2px', display: 'block' }}>嘉医汇</Text>
         <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)', marginTop: '6px', display: 'block' }}>全生命周期健康管理</Text>
 
-        <View style={{
-          display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: `${radius.md}px`,
-          padding: '12px 0', marginTop: spacing.lg,
-        }}>
-          {[{ num: '10,000+', label: '服务用户' }, { num: '300+', label: '签约医生' }, { num: '99%', label: '满意度' }].map((it, i) => (
-            <View key={i} style={{ flex: 1, textAlign: 'center' }}>
-              <Text style={{ fontSize: '17px', fontWeight: 800, color: '#5EC99B', display: 'block' }}>{it.num}</Text>
-              <Text style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{it.label}</Text>
-            </View>
-          ))}
-        </View>
       </View>
 
       {/* 表单卡片 */}
@@ -245,6 +235,28 @@ export default function LoginPage() {
           </View>
         )}
 
+        <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '48px', gap: '10px', marginTop: `${spacing.md}px` }}>
+          <View style={{ width: '22px', height: '22px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '20px', flexShrink: 0 }}>
+            {agreed && <Text style={{ color: '#fff', fontSize: '13px' }}>✓</Text>}
+          </View>
+          <Text style={{ fontSize: '13px', color: colors.textMuted }}>
+          我已阅读并同意
+          <Text
+            style={{ color: colors.primary }}
+            onClick={e => { e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=terms' }); }}
+          >《用户协议》</Text>
+          及
+          <Text
+            style={{ color: colors.primary }}
+            onClick={e => { e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=privacy' }); }}
+          >《隐私政策》</Text>
+          和
+          <Text
+            style={{ color: colors.primary }}
+            onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}
+          >《健康管理服务说明》</Text>
+          </Text>
+        </View>
         <Button
           style={{
             height: '54px', lineHeight: '54px', borderRadius: `${radius.md}px`,
@@ -271,7 +283,7 @@ export default function LoginPage() {
         {reviewEnabled && (
           <View style={{ marginTop: `${spacing.md}px`, padding: `${spacing.md}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px` }}>
             <Text style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: colors.primary }}>微信审核体验</Text>
-            <Text style={{ display: 'block', margin: '8px 0 12px', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员体验虚构资料；勾选下方协议后可直接进入。</Text>
+            <Text style={{ display: 'block', margin: '8px 0 12px', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员体验虚构资料；勾选协议后可直接进入。</Text>
             <Button onClick={handleReviewLogin} disabled={loading || !agreed} loading={loading} style={{ height: '48px', lineHeight: '48px', backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px`, fontSize: '15px', fontWeight: 700 }}>进入审核体验</Button>
           </View>
         )}
@@ -280,30 +292,9 @@ export default function LoginPage() {
           可先浏览公开服务；购买或使用个人健康服务时再登录。
         </Text>
 
-        <Button style={{ color: colors.primary, backgroundColor: '#fff', marginTop: '12px' }} onClick={() => Taro.navigateTo({ url: '/pages/account-deletion/receipt/index' })}>查询注销进度／回执</Button>
+        {loadDeletionReceipt()?.token && <Text style={{ display:'block', textAlign:'center', padding:'12px', color:colors.primary }} onClick={() => Taro.navigateTo({ url:'/pages/account-deletion/receipt/index' })}>查看我的注销进度</Text>}
 
-        <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>
-          <View style={{ width: '15px', height: '15px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '13px', flexShrink: 0 }}>
-            {agreed && <Text style={{ color: '#fff', fontSize: '11px' }}>✓</Text>}
-          </View>
-          <Text style={{ fontSize: '11px', color: colors.textMuted }}>
-          我已阅读并同意
-          <Text
-            style={{ color: colors.primary }}
-            onClick={() => Taro.navigateTo({ url: '/pages/legal/index?type=terms' })}
-          >《用户协议》</Text>
-          及
-          <Text
-            style={{ color: colors.primary }}
-            onClick={() => Taro.navigateTo({ url: '/pages/legal/index?type=privacy' })}
-          >《隐私政策》</Text>
-          和
-          <Text
-            style={{ color: colors.primary }}
-            onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}
-          >《健康管理服务说明》</Text>
-          </Text>
-        </View>
+
       </View>
     </View>
   );

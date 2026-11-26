@@ -19,6 +19,15 @@ function decodeAudioData(data) {
   return Buffer.from(encoded, 'base64');
 }
 
+function transcriptFromResponse(response) {
+  if (response.status === 20000000) return response.result || '';
+  if (String(response.message).includes('FREE_TRIAL_EXPIRED')) {
+    console.warn('[ASR] FREE_TRIAL_EXPIRED');
+    throw Object.assign(new Error('语音识别服务暂不可用，可继续播放原语音'), { status: 503, code: 'ASR_SUBSCRIPTION_EXPIRED' });
+  }
+  throw Object.assign(new Error('语音识别暂不可用，请稍后重试'), { status: 502 });
+}
+
 function recognizeAudio(audioBuffer, mimeType, token) {
   return new Promise((resolve, reject) => {
     const params = new URLSearchParams({
@@ -46,10 +55,9 @@ function recognizeAudio(audioBuffer, mimeType, token) {
       res.on('end', () => {
         try {
           const parsed = JSON.parse(raw);
-          if (parsed.status === 20000000 && parsed.result?.trim()) return resolve(parsed.result.trim());
-          reject(new Error(`语音识别失败: ${parsed.message || raw.slice(0, 200)} (status=${parsed.status || 'unknown'}, task=${parsed.task_id || 'unknown'})`));
+          resolve(transcriptFromResponse(parsed));
         } catch (error) {
-          reject(new Error(`语音识别响应异常: ${raw.slice(0, 200) || error.message}`));
+          reject(error.status ? error : Object.assign(new Error('语音识别服务响应异常，请稍后重试'), { status: 502 }));
         }
       });
     });
@@ -69,4 +77,4 @@ async function transcribeBase64(data, mimeType) {
   return recognizeAudio(audioBuffer, mimeType, token);
 }
 
-module.exports = { transcribeBase64, asrEnabled, audioFormat, decodeAudioData };
+module.exports = { transcribeBase64, asrEnabled, audioFormat, decodeAudioData, transcriptFromResponse };
