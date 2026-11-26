@@ -336,7 +336,7 @@ export default function PatientDetailPage() {
                 { label: '建档状态', value: user.onboardingCompleted ? '已完成建档' : user.loginCount ? '已登录，待建档' : '待建档' },
                 { label: '首次登录时间', value: data.firstLogin?.at ? fmtExactTime(data.firstLogin.at) : '暂无记录' },
                 { label: '最近登录时间', value: fmtExactTime(user.lastLoginAt || data.recentLogin?.at) },
-                { label: '首次登录手机类型', value: data.firstLogin?.phoneType || '未识别' },
+                { label: '首次登录手机型号', value: user.firstLoginDeviceModel || data.firstLogin?.model || '未获取' },
                 { label: '首次登录地区（IP 估算）', value: data.firstLogin?.region || '未识别' },
                 { label: '首次使用的平台', value: data.firstLogin?.client || '历史未记录' },
                 { label: '首次打开入口', value: data.firstLogin?.entry || (data.firstLogin?.client ? '入口未记录' : '无入口记录') },

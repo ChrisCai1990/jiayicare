@@ -4,7 +4,7 @@ const https = require('https');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { jiayihuiTenantId } = require('../utils/jiayihuiTenant');
-const { loginIP, normalizeOrigin, describeEntry, phoneType } = require('../utils/loginOrigin');
+const { loginIP, normalizeOrigin, describeEntry, phoneModel } = require('../utils/loginOrigin');
 const LoginSession = require('../models/LoginSession');
 const VerificationCode = require('../models/VerificationCode');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
@@ -96,9 +96,9 @@ async function beginLoginSession(req, user, method) {
   await User.updateOne({ _id: user._id }, [{ $set: {
     lastLoginAt: now, lastLoginMethod: method,
     loginCount: { $add: [{ $ifNull: ['$loginCount', 0] }, 1] },
-    firstLoginPhoneType: { $cond: [
+    firstLoginDeviceModel: { $cond: [
       { $and: [{ $eq: [{ $ifNull: ['$loginCount', 0] }, 0] }, { $eq: [{ $ifNull: ['$lastLoginAt', null] }, null] }] },
-      { $literal: phoneType(device, String(req.headers['user-agent'] || '').slice(0, 500), origin?.client) }, '$firstLoginPhoneType',
+      { $literal: phoneModel({ device, userAgent: String(req.headers['user-agent'] || '').slice(0, 500) }) }, '$firstLoginDeviceModel',
     ] },
     firstLoginChannel: { $cond: [
       { $and: [{ $eq: [{ $ifNull: ['$loginCount', 0] }, 0] }, { $eq: [{ $ifNull: ['$lastLoginAt', null] }, null] }] },

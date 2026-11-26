@@ -24,18 +24,11 @@ test('uses the real IP set by the local reverse proxy and ignores client-supplie
   assert.equal(loginIP({ socket: { remoteAddress: '1.1.1.1' }, headers }), '1.1.1.1');
 });
 
-test('classifies the first mobile device across native, mini program and web logins', () => {
-  for (const [device, userAgent, expected] of [
-    [{ loginOrigin: { client: 'android' } }, '', '安卓'],
-    [{ loginOrigin: { client: 'ios' } }, '', 'iOS'],
-    [{ model: 'ADY-AL00' }, '', '安卓'],
-    [{ platform: 'ios' }, '', 'iOS'],
-    [{ system: 'HarmonyOS 5' }, '', '安卓'],
-    [{}, 'Mozilla/5.0 (Linux; Android 13)', '安卓'],
-    [{}, 'Mozilla/5.0 (iPhone; CPU iPhone OS 18)', 'iOS'],
-    [{ loginOrigin: { client: 'weapp' } }, '', ''],
-  ]) {
-    assert.equal(summarizeSession({ device, userAgent }, true).phoneType, expected);
-    assert.equal(summarizeSession({ device, userAgent }, false).phoneType, undefined);
-  }
+test('reports device model with its session time and skips generic or missing values', () => {
+  const at = new Date('2026-11-26T04:48:47Z');
+  assert.equal(summarizeSession({ device: { model: 'iPhone 14' }, loginAt: at }, true).model, 'iPhone 14');
+  assert.equal(summarizeSession({ loginAt: at }, false).at, at);
+  assert.equal(summarizeSession({ userAgent: 'Mozilla/5.0 (Linux; Android 13; VOG-AL10 Build/HUAWEI)' }, true).model, 'VOG-AL10');
+  assert.equal(summarizeSession({ device: { model: 'iPhone' } }, true).model, '');
+  assert.equal(summarizeSession({ device: { model: 'K' } }, true).model, '');
 });

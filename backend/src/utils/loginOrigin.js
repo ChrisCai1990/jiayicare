@@ -60,13 +60,16 @@ function normalizeOrigin(input) {
   return { client: input.client, firstEntry: entry(input.firstEntry), recentEntry: entry(input.recentEntry) };
 }
 
-function phoneType(device = {}, userAgent = '', client = '') {
-  if (client === 'ios') return 'iOS';
-  if (client === 'android') return '安卓';
-  const signals = [device.platform, device.system, device.model, userAgent].filter(v => typeof v === 'string');
-  if (signals.some(v => /iPhone|iPad|iPod|^iOS/i.test(v))) return 'iOS';
-  if (signals.some(v => /android|harmonyos|openharmony/i.test(v))) return '安卓';
-  if (['ADY-AL00', 'BRA-AL00'].includes(device.model)) return '安卓';
+function phoneModel(session) {
+  const reported = session.device?.model;
+  const androidBuild = /Android [^;)]+;[^)]*?;?\s*([^;()]+?)\s+Build\//i.exec(session.userAgent || '');
+  for (const candidate of [reported, androidBuild?.[1]]) {
+    if (typeof candidate !== 'string') continue;
+    const model = candidate.trim();
+    if (!model || model.length > 96 || /^(unknown|undefined|null|iphone|ipad|android|k|pc|windows|mac|linux|web|devtools|未知)$/i.test(model)) continue;
+    if (!/[a-z0-9\u4e00-\u9fff]/i.test(model) || /[;()<>\x00-\x1f]/.test(model)) continue;
+    return model;
+  }
   return '';
 }
 
@@ -75,7 +78,7 @@ function summarizeSession(session, first) {
   const origin = normalizeOrigin(session.device?.loginOrigin) || {};
   let client = Object.hasOwn(clients, origin.client) ? clients[origin.client] : '';
   if (!client && (session.method === 'wechat' || /miniProgram/i.test(session.userAgent || ''))) client = clients.weapp;
-  return { client, phoneType: first ? phoneType(session.device, session.userAgent, origin.client) : undefined, entry: describeEntry(first ? origin.firstEntry : origin.recentEntry), at: session.loginAt,
+  return { client, model: first ? phoneModel(session) : undefined, entry: describeEntry(first ? origin.firstEntry : origin.recentEntry), at: session.loginAt,
     region: first ? regionForIP(session.ip) : '' };
 }
 
@@ -84,4 +87,4 @@ function loginIP(req) {
   const forwarded = req.headers['x-real-ip'];
   return ['127.0.0.1','::1'].includes(peer) && isIP(String(forwarded || '')) ? forwarded : peer;
 }
-module.exports = { regionForIP, describeEntry, summarizeSession, loginIP, normalizeOrigin, phoneType };
+module.exports = { regionForIP, describeEntry, summarizeSession, loginIP, normalizeOrigin, phoneModel };
