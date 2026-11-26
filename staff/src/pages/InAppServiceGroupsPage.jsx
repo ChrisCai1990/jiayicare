@@ -3,6 +3,7 @@ import GroupVoiceInput from '../components/GroupVoiceInput';
 import { readGroupChatAttachment } from '../utils/groupChatAttachment';
 import GroupVoiceMessage from '../components/GroupVoiceMessage';
 import ServiceGroupHistory from '../components/ServiceGroupHistory';
+import { useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { API_ORIGIN, inAppServiceGroupAPI as api, staffAPI } from '../api';
 import { messageTimeSeparator } from '../utils/messageTime.js';
@@ -33,7 +34,10 @@ export default function InAppServiceGroupsPage() {
   const [category, setCategory] = useState('');
   const categoryRef = useRef('');
   categoryRef.current = category;
-  const linkedGroup=useRef(new URLSearchParams(window.location.search).get('groupId')||'');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const linkedId = new URLSearchParams(location.search).get('groupId') || '';
+  const cachedGroup = useRef(null);
   const [groupSearch,setGroupSearch]=useState('');
   const [groupQuery,setGroupQuery]=useState('');
   const queryRef=useRef('');queryRef.current=groupQuery;
@@ -166,8 +170,34 @@ export default function InAppServiceGroupsPage() {
     document.addEventListener('visibilitychange', pulse);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', pulse); };
   }, [selected?.id, selected?.supervised, selected?.status]);
-  useEffect(()=>{const id=linkedGroup.current;if(!id)return;linkedGroup.current='';let active=true;api.list(1,'','active','',id).then(result=>{if(active&&result.data?.[0])open(result.data[0]);else if(active)setError('服务群已归档或您已不在服务范围内');}).catch(e=>active&&setError(e.message));return()=>{active=false;};},[]);
-  const open = group => { followLatest.current = true; currentId.current = group.id; setSelected(group); setMessages([]); setOlder(false); setDraft('');setPendingFile(null);setQuote(null);setQuoteMenu(null); setMentionIds([]); setMentionAnchor(''); setShowMentions(false); setError(''); loadMessages(group.id); };
+  const closeGroup = () => {
+    if (!linkedId) return;
+    if (location.state?.fromGroupList) { navigate(-1); return; }
+    const params = new URLSearchParams(location.search);
+    params.delete('groupId');
+    navigate({pathname:location.pathname, search:params.toString()}, {replace:true});
+  };
+  const open = group => {
+    cachedGroup.current = group;
+    const params = new URLSearchParams(location.search);
+    params.set('groupId', group.id);
+    navigate({pathname:location.pathname, search:params.toString()}, {state:{fromGroupList:true}});
+  };
+  useEffect(() => {
+    let active = true;
+    currentId.current = linkedId;
+    setSelected(null);
+    setPendingFile(null);
+    if (!linkedId) return;
+    if (String(cachedGroup.current?.id) === linkedId) showGroup(cachedGroup.current);
+    else api.list(1,'','active','',linkedId).then(result => {
+      if (!active) return;
+      if (result.data?.[0]) showGroup(result.data[0]);
+      else setError('服务群已归档或您已不在服务范围内');
+    }).catch(error => { if (active) setError(error.message); });
+    return () => { active = false; };
+  }, [linkedId]);
+  const showGroup = group => { followLatest.current = true; currentId.current = group.id; setSelected(group); setMessages([]); setOlder(false); setDraft('');setPendingFile(null);setQuote(null);setQuoteMenu(null); setMentionIds([]); setMentionAnchor(''); setShowMentions(false); setError(''); loadMessages(group.id); };
   const findPatient = async () => {
     if (!search.trim()) return setPatients([]);
     try { const res = await staffAPI.getPatients({ search: search.trim(), limit: 10 });
@@ -220,7 +250,7 @@ export default function InAppServiceGroupsPage() {
   useEffect(()=>{loadTasks();const timer=setInterval(()=>{if(document.visibilityState==='visible')loadTasks();},30000);return()=>clearInterval(timer);},[]);
   const confirmTask = async () => {
     if(!confirmation || busy)return;setBusy(true);setError('');
-    try {await api.confirm({...confirmation,checked,note});setConfirmation(null);setSelected(null);currentId.current='';await Promise.all([refresh(),loadTasks()]);window.dispatchEvent(new Event('notif-refresh'));}
+    try {await api.confirm({...confirmation,checked,note});setConfirmation(null);closeGroup();await Promise.all([refresh(),loadTasks()]);window.dispatchEvent(new Event('notif-refresh'));}
     catch(e){setError(e.message || '确认失败，请刷新后重试');}finally{setBusy(false);}
   };
   const mentionCandidates = selected ? [...selected.staff, {...selected.customer,role:'客户'}, {...selected.assistant,role:'ai'}].filter(p=>p.id) : [];
@@ -245,14 +275,14 @@ export default function InAppServiceGroupsPage() {
       {error&&<p role="alert">{error}</p>}
       <button disabled={busy || (confirmation.action==='archive'&&(!checked||!note.trim()))} onClick={confirmTask}>确认执行</button><button onClick={()=>setConfirmation(null)}>暂不处理</button>
     </section>}
-    <div className="sg-filters sg-status-filters"><button aria-pressed={!archive} onClick={()=>{setArchive(false);setSelected(null);currentId.current='';}}>服务中</button><button aria-pressed={archive} onClick={()=>{setArchive(true);setSelected(null);currentId.current='';}}>已归档</button></div>
-    <form className="sg-search-row" role="search" onSubmit={event=>{event.preventDefault();setGroupQuery(groupSearch.trim());setSelected(null);currentId.current='';}}>
+    <div className="sg-filters sg-status-filters"><button aria-pressed={!archive} onClick={()=>{setArchive(false);closeGroup();}}>服务中</button><button aria-pressed={archive} onClick={()=>{setArchive(true);closeGroup();}}>已归档</button></div>
+    <form className="sg-search-row" role="search" onSubmit={event=>{event.preventDefault();setGroupQuery(groupSearch.trim());closeGroup();}}>
       <input aria-label="搜索服务群" maxLength={80} value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="搜索客户姓名或群名称" />
       <button type="submit">搜索群</button>
       {(groupSearch || groupQuery) && <button type="button" onClick={()=>{setGroupSearch('');setGroupQuery('');}}>清除</button>}
     </form>
     <nav className="sg-filters sg-category-filters" aria-label="服务类型">
-      {[['','全部'],...categories.map(([key,label]) => [key,label]),['legacy','原服务群']].map(([key,label]) => <button key={key} aria-pressed={category === key} onClick={() => { setCategory(key); setSelected(null); currentId.current = ''; setConfiguration(null); }}>{label}</button>)}
+      {[['','全部'],...categories.map(([key,label]) => [key,label]),['legacy','原服务群']].map(([key,label]) => <button key={key} aria-pressed={category === key} onClick={() => { setCategory(key); closeGroup(); setConfiguration(null); }}>{label}</button>)}
     </nav>
     <p className="sg-permission-note">所属健康顾问统筹查看客户全部服务群；其他岗位仅查看自己参与的服务群，团队负责人可只读监管本团队成员参与的群。健管专员负责建群，未入群人员不能回复。</p>
     {canConfigure && <details className="sg-manual"><summary>手动配置服务群</summary>
@@ -314,7 +344,7 @@ export default function InAppServiceGroupsPage() {
         {selected ? <>
           {historyOpen && <ServiceGroupHistory key={selected.id} group={selected} initialMessageId={historyAnchor} onClose={()=>{setHistoryOpen(false);setHistoryAnchor(null);}}/>}
           <div className="sg-chat-header">
-            <button type="button" className="sg-back-to-list" onClick={() => { setSelected(null); setPendingFile(null); currentId.current = ''; }} aria-label="返回服务群列表">‹ 返回群列表</button>
+            <button type="button" className="sg-back-to-list" onClick={closeGroup} aria-label="返回服务群列表">‹ 返回群列表</button>
             <div className="sg-chat-heading"><h2>{selected.name || `${selected.patientName}的服务群`}</h2>
               {selected.assistant && <div className="sg-assistant-status">
                 <img alt="小嘉" src={API_ORIGIN + selected.assistant.avatar} />
