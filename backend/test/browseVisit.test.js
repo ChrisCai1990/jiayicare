@@ -4,11 +4,11 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../src/routes/auth.js'), 'utf8');
-function fixture() {
+function fixture(path = '/browse-visit') {
   let handler, write;
   const guard = () => {};
   const router = { get() {}, post(route, ...args) {
-    if (route === '/browse-visit') { assert.equal(args[0], guard); handler = args[1]; }
+    if (route === path) { assert.equal(args[0], guard); handler = args[1]; }
   }};
   const mocks = {
     express: { Router: () => router }, '../middleware/auth': guard,
@@ -34,4 +34,15 @@ test('health pages store the category only, unknown pages are rejected', async (
   const { write } = await fixture()(payload);
   assert.equal(write.update.$push.recentBrowseVisits.$each[0].title, '健康报告');
   assert.equal((await fixture()({ ...payload, page: 'private' })).status, 400);
+});
+
+test('duration checkpoints can only advance an existing visit belonging to the signed-in member', async () => {
+  const { write } = await fixture('/browse-duration')({ eventId: 'test-event', seconds: 35, userId: 'other' });
+  assert.equal(write.query._id, 'member');
+  assert.equal(write.query.tenantId, 'tenant');
+  assert.equal(write.query['recentBrowseVisits.eventId'], 'test-event');
+  assert.equal(write.update.$max['recentBrowseVisits.$.durationSeconds'], 35);
+  for (const seconds of [-1, 1.5, '20', null]) {
+    assert.equal((await fixture('/browse-duration')({ eventId: 'test-event', seconds })).status, 400);
+  }
 });

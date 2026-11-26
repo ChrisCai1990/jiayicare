@@ -426,6 +426,18 @@ router.post('/browse-visit', requireUser, async (req, res) => {
   res.json({ success: true });
 });
 
+router.post('/browse-duration', requireUser, async (req, res) => {
+  const { eventId, seconds } = req.body || {};
+  if (typeof eventId !== 'string' || !/^[a-z0-9-]{6,48}$/.test(eventId) ||
+      !Number.isSafeInteger(seconds) || seconds < 0 || seconds > 2147483647) {
+    return res.status(400).json({ success: false, message: '浏览时长无效' });
+  }
+  await User.updateOne({
+    _id: req.user._id, tenantId: req.user.tenantId, isDeleted: { $ne: true }, 'recentBrowseVisits.eventId': eventId,
+  }, { $max: { 'recentBrowseVisits.$.durationSeconds': seconds } });
+  res.json({ success: true });
+});
+
 router.post('/session/activity', requireUser, async (req, res) => {
   try {
     const sessionId = req.authSessionId;

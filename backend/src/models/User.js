@@ -45,7 +45,7 @@ const userSchema = new mongoose.Schema({
   lastLoginAt: { type: Date, default: null },
   firstLoginDeviceModel: { type: String, select: false },
   recentBrowseVisits: { type: [new mongoose.Schema({
-    eventId: String, title: String, client: String, at: Date,
+    eventId: String, title: String, client: String, at: Date, durationSeconds: Number,
   }, { _id: false })], default: undefined, select: false },
   firstLoginChannel: { type: String, default: '' },
   lastLoginMethod: { type: String, enum: ['phone_wechat', 'phone', 'wechat', 'review', ''], default: '' },
