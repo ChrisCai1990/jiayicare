@@ -1,3 +1,4 @@
+import reviewExclusions from '../../../shared/annualReviewExclusion.cjs'
 export function mergeManagementTargetEdits(incoming, existing = []) {
   const byIssue = new Map(existing.filter(row => row.issueId).map(row => [row.issueId, row]))
   const editable = ['goal', 'focus', 'goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'nutritionRelevant', 'rehabRelevant']
@@ -56,9 +57,10 @@ export function carryAnnualTargets(modules = {}, confirmed = [], draftActions = 
   for (const key of ['medical_treatment', 'checkup_completion', 'abnormal_followup', 'vaccine']) {
     if (modules[key]?.enabled === false) continue
     const sourceDrafts = draftActions.filter(action => action.key === key).map(action => action.record)
+      .filter(record => key !== 'abnormal_followup' || !reviewExclusions.isExcluded(modules[key], record))
     const activeDraftIds = new Set(sourceDrafts.flatMap(record => record?.sourceIds || []).map(String))
     const oldRows = modules[key]?.records || []
-    const retained = oldRows.filter(row => !row.screeningDraft || (row.sourceIds || []).some(id => activeDraftIds.has(String(id))))
+    const retained = oldRows.filter(row => key !== 'abnormal_followup' || !reviewExclusions.isExcluded(modules[key], row)).filter(row => !row.screeningDraft || (row.sourceIds || []).some(id => activeDraftIds.has(String(id))))
     const dateKey = key === 'medical_treatment' ? 'visit_time' : 'time'
     const hydrated = retained.map(row => {
       const source = sourceDrafts.find(record => (record.sourceIds || []).some(id => row.sourceIds?.includes(id)))

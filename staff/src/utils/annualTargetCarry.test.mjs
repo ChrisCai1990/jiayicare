@@ -129,3 +129,16 @@ test('专项筛查再次改期会更新旧草稿，保留顾问独立调整的�
   next.medical_treatment.records[0].visit_time = '2027-01-08'
   assert.equal(carryAnnualTargets(next, confirmed, draft('2027-01-12')).modules.medical_treatment.records[0].visit_time, '2027-01-08')
 })
+
+test('主动删除复查后再次同步保留同来源就诊，新日期仍可带入', async () => {
+  const { reviewKey } = await import('../../../shared/annualReviewExclusion.cjs')
+  const review = { sourceIds: ['source'], reviewItems: ['放大胃镜'], time: '2026-12-19' }
+  const modules = { abnormal_followup: { records: [], excludedReviewKeys: [reviewKey(review)] } }
+  const targets = [{ issueId: 'source' }]
+  const actions = [{ key: 'abnormal_followup', record: review }, { key: 'medical_treatment', record: { sourceIds: ['source'], department: '消化内科' } }]
+  const synced = carryAnnualTargets(modules, targets, actions).modules
+  assert.equal(synced.abnormal_followup.records.length, 0)
+  assert.equal(synced.medical_treatment.records.length, 1)
+  actions[0].record = { ...review, time: '2027-01-10' }
+  assert.equal(carryAnnualTargets(synced, targets, actions).modules.abnormal_followup.records.length, 1)
+})

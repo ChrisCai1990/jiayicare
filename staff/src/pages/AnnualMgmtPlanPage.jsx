@@ -33,6 +33,7 @@ import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
 import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit, changeSharedVisitProvider, syncSharedVisitProviders } from '../utils/annualVisitScheduling.mjs'
+import reviewExclusions from '../../../shared/annualReviewExclusion.cjs'
 import { removeWithdrawnDraftSources, mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
 const GOAL_VITALS = { weight:['体重','kg'], bloodSugar:['血糖','mmol/L'], heartRate:['心率','次/分'], systolic:['收缩压','mmHg'], diastolic:['舒张压','mmHg'] }
@@ -925,7 +926,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               for (const field of ['hospital', 'institution', 'department', 'expert', 'order_dept', 'order_expert']) if (old[field]) next[field] = old[field]
               return next
             }
-            merged[key] = Array.isArray(val.records) ? { ...val, records: val.records.map(retain) } : retain(val)
+            merged[key] = Array.isArray(val.records) ? { ...val, ...(key === 'abnormal_followup' && prev[key]?.excludedReviewKeys ? { excludedReviewKeys: prev[key].excludedReviewKeys } : {}), records: val.records.map(retain) } : retain(val)
           }
         })
         const personalized = (aiData.templateNodes || [])
@@ -1183,7 +1184,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           handleVisitScheduleChange({ ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? { ...row, serviceMode: 'shared', serviceType: '', managedServiceType: '', visitGroupId: '' } : row) } })
         }} onSelectVisitLeader={selectVisitLeader} onFollowVisit={(field, enabled) => handleVisitScheduleChange(changeSharedVisitProvider(moduleData, action.key, action.index, field, enabled))}
         onChange={record => { const { __displayTitle, ...saved } = record; const next = { ...moduleData, [action.key]: { ...moduleData[action.key], records: moduleData[action.key].records.map((row, index) => index === action.index ? saved : row) } }; const dateKey = VISIT_DATE_FIELDS[action.key]; handleVisitScheduleChange(syncSharedVisitProviders(dateKey && saved[dateKey] !== action.record[dateKey] ? changeVisitDate(next, action.key, action.index, saved[dateKey]) : next)) }}
-        onDelete={() => handleModuleChange(action.key, 'records', moduleData[action.key].records.filter((_, index) => index !== action.index))} />
+        onDelete={() => {
+          setModuleData(previous => {
+            const module = previous[action.key]
+            const records = module.records.filter((_, index) => index !== action.index)
+            const row = module.records[action.index]
+            const source = action.key === 'abnormal_followup' && screeningDraftActions.find(item =>
+              item.key === action.key && row.sourceIds?.some(id => item.record.sourceIds?.includes(id)))
+            const key = source && reviewExclusions.reviewKey(source.record)
+            return { ...previous, [action.key]: { ...module, records,
+              ...(key ? { excludedReviewKeys: [...new Set([...(module.excludedReviewKeys || []), key])] } : {}) } }
+          })
+          setDirty(true)
+        }} />
         : <ModulePanel moduleKey={action.key} def={def} data={moduleData[action.key]} onChange={handleModuleChange} showPlanSummary executionReviewChanges={changes} />}
       </fieldset>
       {action.key === 'health_consensus' && <label style={{ display: 'block', margin: '8px 0 12px', fontSize: 12, color: '#62776A' }}>关联管理问题

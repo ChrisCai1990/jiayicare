@@ -290,7 +290,11 @@ function draftPlanActions(evidence = []) {
 }
 
 function* planCoverageIssues(moduleData = {}, evidence = []) {
-  const reviewSources = evidence.filter(source => source.content?.reviewPlan?.kind === 'recheck');
+  const { isExcluded } = require('../../../shared/annualReviewExclusion.cjs');
+  const excludedIds = new Set(require('./annualReviewPlan').reviewGroups(evidence)
+    .filter(group => isExcluded(moduleData.abnormal_followup, { sourceIds: group.sourceIds, reviewItems: group.items, time: group.dueDate }))
+    .flatMap(group => group.sourceIds));
+  const reviewSources = evidence.filter(source => source.content?.reviewPlan?.kind === 'recheck' && !excludedIds.has(source.id));
   const rows = moduleData.abnormal_followup?.enabled === false ? [] : moduleData.abnormal_followup?.records || [];
   for (const source of reviewSources) {
     const linked = rows.filter(row => row.sourceIds?.includes(source.id));
@@ -321,6 +325,7 @@ function* planCoverageIssues(moduleData = {}, evidence = []) {
       continue;
     }
     const isReview = source.content.reviewPlan?.kind === 'recheck' && direction === 'abnormal_followup';
+    if (isReview && excludedIds.has(source.id)) continue;
     const key = direction === 'ongoing_management' ? 'personalized_followups' : direction;
     const module = moduleData[key];
     const rows = module?.enabled === false ? [] : Array.isArray(module?.records) ? module.records : module ? [module] : [];

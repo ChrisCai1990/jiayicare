@@ -205,3 +205,13 @@ export function nearDateCandidates(data) {
     (!item.row.visitMergeConfirmed || !other.row.visitMergeConfirmed) &&
     Math.abs(Date.parse(other.date) - Date.parse(item.date)) <= 14 * 86400000))
 }
+
+export function byVisitDepartment(items, departmentFor) {
+  const groups = new Map()
+  for (const item of items) {
+    const name = String(departmentFor(item) || '').trim() || '就诊科室待确认'
+    if (!groups.has(name)) groups.set(name, [])
+    groups.get(name).push(item)
+  }
+  return Array.from(groups, ([name, items]) => ({ name, items }))
+}

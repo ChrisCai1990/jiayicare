@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import AnnualPlanSection, { annualSectionFor, medicalGroups } from './AnnualPlanSection'
+import { byVisitDepartment } from '../utils/annualVisitScheduling.mjs'
 import { staffAPI } from '../api'
 
 export default function AnnualPlanPreview({ patientId, planId, version, staffList = [], assignedNutritionist }) {
@@ -18,7 +19,8 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
     const renderItem = item => {
       if (item.visitItems?.length) return <details key={item.id} style={{ padding: '12px 0' }}>
         <summary>{item.title} · {item.schedule} · {item.careTarget?.hospital}</summary>
-        {item.visitItems.map(renderItem)}
+        {byVisitDepartment(item.visitItems, entry => entry.examArrangement ? entry.examArrangement.orderDepartment : entry.careTarget?.department).map(group =>
+          <section key={group.name}><h4>{group.name} · {group.items.length} 项</h4>{group.items.map(renderItem)}</section>)}
       </details>
       const goal = ['管控', '管理', '评估'].includes(String(item.goal || '').trim())
         ? ({ medical_treatment: '请专科医生评估并明确后续诊治安排', abnormal_followup: '核对复查结果并确定下一步处理', checkup_completion: '完成检查并核对结果' }[item.moduleKey] || '完成本项安排后确认下一步')
