@@ -215,3 +215,20 @@ export function byVisitDepartment(items, departmentFor) {
   }
   return Array.from(groups, ([name, items]) => ({ name, items }))
 }
+
+export function addOneTimeVisit(data, reason, department, chosenKey) {
+  const title = String(reason || '').trim()
+  if (!title) throw new Error('请填写本次就医原因')
+  const rows = visitRows(data)
+  const chosen = rows.find(item => item.key === chosenKey)
+  if (chosenKey && (!chosen || !chosen.date || !chosen.hospital)) throw new Error('原就医安排已变化，请重新选择')
+  const confirmedGroup = chosen?.row.visitMergeConfirmed && chosen.row.visitGroupId &&
+    rows.filter(item => item.row.visitGroupId === chosen.row.visitGroupId).every(item => item.row.visitMergeConfirmed)
+  const assisted = confirmedGroup && rows.some(item => item.row.visitGroupId === chosen.row.visitGroupId && ['single','managed'].includes(item.row.serviceMode))
+  const module = data.medical_treatment || {}
+  const record = { oneTimeVisit: true, items: title, reason: title, department: String(department || '').trim(),
+    serviceMode: assisted ? 'shared' : 'reminder', appointmentSchedulingVersion: 1,
+    ...(chosen ? { hospital: chosen.row.hospital, visit_time: chosen.date } : {}),
+    ...(confirmedGroup ? { visitGroupId: chosen.row.visitGroupId, visitMergeConfirmed: true, visitResultFollowUp: true, followVisitOrdering: false } : {}) }
+  return { ...data, medical_treatment: { ...module, enabled: true, records: [...(module.records || []), record] } }
+}

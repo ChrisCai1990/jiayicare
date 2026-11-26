@@ -32,7 +32,7 @@ import { annualItemLayout } from '../utils/annualItemLayout.mjs'
 import { calendarDate } from '../utils/calendarDate'
 import { supplementalAssessmentNote } from '../utils/annualAssessmentNote.mjs'
 import { targetIssueId, linkedIssueId, displayIssueId, actionTitle, actionTargetIds, groupTargetsBySharedActions } from '../utils/annualIssueLink.mjs'
-import { VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit, changeSharedVisitProvider, syncSharedVisitProviders } from '../utils/annualVisitScheduling.mjs'
+import { addOneTimeVisit, visitRows, VISIT_DATE_FIELDS, changeVisitDate, matchingVisitLeaders, assignSharedVisit, changeSharedVisitProvider, syncSharedVisitProviders } from '../utils/annualVisitScheduling.mjs'
 import reviewExclusions from '../../../shared/annualReviewExclusion.cjs'
 import { removeWithdrawnDraftSources, mergeManagementTargetEdits, carryAnnualTargets } from '../utils/annualTargetCarry.mjs'
 
@@ -785,11 +785,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       setStaleManagementSources(res.stale || [])
       setStaleLegacyDecisions((decisionsRes.data || []).filter(row =>
         (res.staleDecisionIds || []).includes(String(row._id)) && row.sourceKey === `screening_report:${row.reportId}`))
-      if (!res.data?.length) return toast('专项筛查及AI健康信息整理中暂无已纳入管理的问题')
+      if (!res.data?.length && !decisionsRes.withdrawnIssueIds?.length) return toast('专项筛查及AI健康信息整理中暂无已纳入管理的问题')
       setConfirmedReviewTargets(res.data)
       setNutritionEvidence(res.nutritionEvidence || {})
       setScreeningDraftActions(res.draftActions || [])
-      setModuleData(prev => carryAnnualTargets(prev, res.data, res.draftActions || []).modules)
+      setModuleData(prev => carryAnnualTargets(removeWithdrawnDraftSources(prev, decisionsRes.withdrawnIssueIds), res.data, res.draftActions || []).modules)
       setDirty(true)
       toast(`已带入 ${res.data.length} 条目标，请核对并保存草稿`)
     } catch (error) { toast(error.message || '读取管理方向失败') }
@@ -929,6 +929,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             merged[key] = Array.isArray(val.records) ? { ...val, ...(key === 'abnormal_followup' && prev[key]?.excludedReviewKeys ? { excludedReviewKeys: prev[key].excludedReviewKeys } : {}), records: val.records.map(retain) } : retain(val)
           }
         })
+        const oneTimeVisits = (prev.medical_treatment?.records || []).filter(row => row.oneTimeVisit)
+        if (oneTimeVisits.length && allowedKeys.includes('medical_treatment')) {
+          const medical = merged.medical_treatment || {}
+          merged.medical_treatment = { ...medical, enabled: true, records: [...(medical.records || []), ...oneTimeVisits] }
+        }
         const personalized = (aiData.templateNodes || [])
           .filter(node => node.defaultRole !== 'nutritionist' && !/营养评估/.test(node.standardPlanName || node.name || ''))
           .map(node => ({
@@ -1276,6 +1281,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     openDetailedAction(item && document.querySelector(item) ? item : section && document.querySelector(section) ? section : '#annual-plan-tools')
   }
   const optionalSections = [['vaccine','疫苗接种'], ['health_consensus','健康认知与共识'], ['monitoring','日常监测'], ['annual_checkup','下一年度体检']]
+  const visitOptions = [...new Map(visitRows(moduleData).filter(item => item.date && item.hospital)
+    .map(item => [JSON.stringify([item.date, item.hospital, item.row.visitGroupId || '']), item])).values()]
   const regularActions = integratedActions.filter(action => action.key !== 'nutrition_assessment' && !optionalSections.some(([key]) => key === action.key))
   const dentalAction = regularActions.find(action => action.key === 'medical_treatment' &&
     /牙结石|洁牙|洗牙/.test([action.title, action.record.reason, action.record.items, ...managementTargets.filter(t => action.record.sourceIds?.includes(t.issueId)).map(t => t.sourceTitle)].join(' ')))
@@ -1802,6 +1809,27 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <AnnualPlanSection section="medical">
               {medicalGroups.map(group => <div key={group.title} className="annual-medical-group">
                 <h4 className="annual-medical-group-heading">{group.title}</h4>
+                {group.keys.includes('medical_treatment') && canEdit && !pushedAt && <details><summary>新增单次就医</summary>
+                  <form style={{ display: 'grid', gap: 8, padding: '12px 0' }} onSubmit={event => {
+                    event.preventDefault()
+                    const form = event.currentTarget
+                    const fields = new FormData(form)
+                    try {
+                      const next = addOneTimeVisit(moduleData, fields.get('reason'), fields.get('department'), fields.get('trip'))
+                      handleVisitScheduleChange(next)
+                      form.reset()
+                      form.closest('details').open = false
+                      openDetailedAction(`#annual-operation-medical_treatment-${next.medical_treatment.records.length - 1}`)
+                    } catch (error) { toast(error.message) }
+                  }}>
+                    <label>本次就医原因 <input className="form-input" name="reason" required maxLength={500} /></label>
+                    <label>就诊科室 <input className="form-input" name="department" placeholder="可稍后确认" /></label>
+                    <label>就医安排 <select className="form-input" name="trip"><option value="">单独安排日期和医院</option>
+                      {visitOptions.map(item => <option key={item.key} value={item.key}>{item.date} · {item.row.hospital}{item.row.visitGroupId ? ' · 同次就诊' : ' · '+item.title}</option>)}
+                    </select></label>
+                    <button type="submit" className="btn btn-secondary btn-sm">加入草稿</button>
+                  </form>
+                </details>}
                 {regularActions.filter(action => group.keys.includes(action.key)).map(renderGroupedAction)}
                 {!regularActions.some(action => group.keys.includes(action.key)) && <p>待安排</p>}
               </div>)}

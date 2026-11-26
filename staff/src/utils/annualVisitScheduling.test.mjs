@@ -103,3 +103,18 @@ test('同日同院三个科室整体建议合并，派发一条协助任务并�
   assert.deepEqual(entries.map(item => item.department), departments)
   assert.deepEqual(entries.map(item => item.requestedService), ['proxy_booking','escort_visit','escort_visit'])
 })
+
+test('单次就医加入已确认行程保留独立科室和原因，仍只派一次服务', async () => {
+  const { addOneTimeVisit } = await import('./annualVisitScheduling.mjs')
+  const { buildAnnualPlanServiceTasks } = await import('../../../backend/src/utils/annualPlanServiceTasks.js')
+  const data = { medical_treatment: { records: [{ department: '消化内科', visit_time: '2026-12-10', hospital: '医院', visitGroupId: '同次', visitMergeConfirmed: true, serviceMode: 'single', serviceType: 'proxy_booking' }] } }
+  const next = addOneTimeVisit(data, '近期手麻', '', 'medical_treatment:0')
+  const rows = next.medical_treatment.records
+  assert.equal(rows[1].department, '')
+  assert.equal(rows[1].reason, '近期手麻')
+  assert.equal(rows[1].visitGroupId, '同次')
+  assert.equal(buildAnnualPlanServiceTasks({ moduleData: next })[0].formData.serviceRequest.itemSnapshot.visitItems.length, 2)
+  assert.equal(buildAnnualPlanServiceTasks({ moduleData: next }).length, 1)
+  assert.throws(() => addOneTimeVisit(data, ' ', '', ''), /原因/)
+  assert.equal(addOneTimeVisit(data, '独立就诊', '', '').medical_treatment.records[1].visitGroupId, undefined)
+})
