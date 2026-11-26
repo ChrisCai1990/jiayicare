@@ -342,6 +342,16 @@ router.get('/my-partner-promotion', auth, async (req, res) => {
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
+  let releaseCheckout;
+  try {
+    return await submitServiceOrder(req, res, async record => {
+      releaseCheckout = await require('../utils/pushCheckoutLock').claimPushCheckout(record);
+      return Boolean(releaseCheckout);
+    });
+  } finally { if (releaseCheckout) await releaseCheckout(); }
+});
+
+async function submitServiceOrder(req, res, claimRecommendation) {
   const appPayment = req.body.paymentScene === 'app';
   const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, useEnterpriseSharedFund, couponId, shareToken = '', partnerCode = '', desiredServiceDate, serviceRequirements, bundleSelections = [], beneficiaryUserId, pushRecordId } = req.body;
   if (useEnterpriseSharedFund && Number(useHealthFund) > 0) return res.status(400).json({ success: false, message: '企业共享基金与个人健康基金请择一使用' });
@@ -370,6 +380,7 @@ router.post('/order', auth, async (req, res) => {
       : pushedRecommendation?.productId ? [{ productId: pushedRecommendation.productId, price: pushedRecommendation.price }] : [];
     pushedItem = recommended.find(item => String(item.productId) === String(serviceId));
     if (!pushedItem) return res.status(403).json({ success: false, message: '该商品不属于这次医护推荐' });
+    if (!await claimRecommendation(pushedRecommendation)) return res.status(409).json({ success: false, message: '推荐已撤回或正在处理，请刷新后重试' });
     const existing = await Order.findOne({ user: serviceUser._id, ...require('../utils/combinableProductPushes').orderPushFilter([pushRecordId]), serviceId: String(serviceId),
       status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } });
     if (existing) return res.status(409).json({ success: false,
@@ -929,6 +940,6 @@ router.post('/order', auth, async (req, res) => {
       paymentStatus: order.paymentStatus,
     },
   });
-});
+}
 
 module.exports = router;

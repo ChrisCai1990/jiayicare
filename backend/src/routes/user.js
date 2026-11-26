@@ -1431,6 +1431,7 @@ router.post('/push-records/:id/shared-fund-quote', auth, async (req, res) => {
 
 // useHealthFund: 抵扣的健康基金金额（作用于勾选产品合计）；couponId: 使用的优惠券；paymentMethod: 支付方式
 router.post('/push-records/:id/pay', auth, async (req, res) => {
+  let releaseCheckout;
   try {
     const beneficiaryUserId = String(req.body.beneficiaryUserId || '');
     const serviceUser = beneficiaryUserId && beneficiaryUserId !== String(req.user._id)
@@ -1481,6 +1482,8 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       } catch (error) { return res.status(error.status || 500).json({ success: false, message: error.message || '合并下单失败' }); }
     }
 
+    releaseCheckout = await require('../utils/pushCheckoutLock').claimPushCheckout(record);
+    if (!releaseCheckout) return res.status(409).json({ success: false, message: '推荐已撤回或正在处理，请刷新后重试' });
     const totalPrice = toPay.reduce((s, p) => s + (p.price || 0), 0);
 
     // ── 健康基金 + 优惠券抵扣（作用于勾选产品合计，按价格占比分摊到各订单）──
@@ -1725,7 +1728,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: '下单失败', error: err.message });
-  }
+  } finally { if (releaseCheckout) await releaseCheckout(); }
 });
 
 // PATCH /api/user/push-records/:id/read — 标记推送记录已读

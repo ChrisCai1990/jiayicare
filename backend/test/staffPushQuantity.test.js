@@ -10,6 +10,8 @@ function routeHarness(withOrder = false) {
   let handler, response, code = 200;
   const PushRecord = {
     findOne: async () => records[0],
+    find: async query => records.filter(row => row.recommendationBatchId === query.recommendationBatchId && row.patientId === query.patientId && row.staffId === query.staffId),
+    updateMany: async (query, update) => records.filter(row => query._id.$in.includes(row._id)).forEach(row => Object.assign(row, update.$set)),
     findOneAndUpdate: async query => records.find(row => row._id === query._id),
     updateOne: async (query, update) => {
       const row = records.find(item => item._id === query._id);
@@ -20,8 +22,8 @@ function routeHarness(withOrder = false) {
     router: { patch: (_path, _auth, _permission, callback) => { handler = callback; } },
     staffAuth: () => {}, checkPermission: () => () => {}, PushRecord,
     Order: { findOne: () => ({ select: async () => withOrder ? { _id: 'order' } : null }) },
-    mongoose: { Types: { ObjectId: class { toString() { return 'lock'; } } } },
-    require: name => { assert.equal(name, '../utils/combinableProductPushes'); return { samePushes: async () => records }; },
+    mongoose: { isValidObjectId: () => true, Types: { ObjectId: class { toString() { return 'lock'; } } } },
+    require: name => { assert.equal(name, '../utils/combinableProductPushes'); return { orderPushFilter: () => ({}), samePushes: async () => records }; },
     Number, String, Date, Set,
   };
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -47,4 +49,26 @@ test('staff cannot change quantity after an order is open', async () => {
   const result = await h.run(2);
   assert.equal(result.code, 409);
   assert.equal(h.records.filter(row => !row.withdrawnAt).length, 4);
+});
+
+test('recall targets only the selected historical recommendation', async () => {
+  const h = routeHarness();
+  assert.equal((await h.run(0)).code, 200);
+  assert.equal(h.records[0].withdrawnBy, 'staff');
+  assert.equal(h.records.filter(row => row.recalledAt).length, 1);
+});
+
+test('recall targets the original patient and batch, and survives later quantity changes', async () => {
+  const h = routeHarness();
+  h.records[0].recommendationBatchId = h.records[1].recommendationBatchId = 'batch';
+  assert.equal((await h.run(0)).code, 200);
+  assert.equal(h.records.filter(row => row.withdrawnAt).length, 2);
+  await h.run(2);
+  assert.ok(h.records[0].withdrawnAt && h.records[1].withdrawnAt);
+});
+
+test('recall preserves a push with an active order', async () => {
+  const h = routeHarness(true);
+  assert.equal((await h.run(0)).code, 409);
+  assert.equal(h.records.filter(row => row.withdrawnAt).length, 0);
 });

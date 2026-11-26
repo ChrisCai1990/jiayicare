@@ -14,13 +14,14 @@ function groupedPushRecords(records) {
   const groups = new Map()
   for (const record of records) {
     const item = record.products?.length === 1 ? record.products[0] : null
-    const key = item && new Date(record.createdAt).getTime() >= Date.now() - 30 * 86400000
+    const key = record.recommendationBatchId || (item && new Date(record.createdAt).getTime() >= Date.now() - 30 * 86400000
       ? [record.patientId?._id || record.patientId, record.staffId?._id || record.staffId,
         item.productId, item.specificationLabel || '', Math.round(Number(item.price) * 100)].join('|')
-      : String(record._id)
-    if (!groups.has(key)) groups.set(key, { record, count: 0, maximum: 0 })
+      : String(record._id))
+    if (!groups.has(key)) groups.set(key, { record, count: 0, maximum: 0, records: [] })
     const group = groups.get(key)
-    group.maximum += 1
+    group.records.push(record)
+    if (!record.recalledAt) group.maximum += 1
     if (!record.withdrawnAt) group.count += 1
   }
   return [...groups.values()]
@@ -100,6 +101,19 @@ export default function ProductPushPage() {
   const selectedItems = products.filter(p => selected.includes(p.id))
   const totalPrice = selectedItems.reduce((sum, p) => sum + (selectedPrices[p.id] ?? p.price ?? 0), 0) * (selectedItems.length === 1 ? quantity : 1)
   const displayPushRecords = groupedPushRecords(pushRecords)
+  const [recalling, setRecalling] = useState(false)
+  const recallPush = async record => {
+    if (!window.confirm(`撤回发给${record.patientId?.name || '该会员'}的「${record.title}」？撤回后，会员将无法通过这次推送下单。`)) return
+    setRecalling(true)
+    try {
+      await staffAPI.updateProductPushQuantity(record._id, 0)
+      setPushRecords(rows => rows.map(row => (row._id === record._id ||
+        (record.recommendationBatchId && row.recommendationBatchId === record.recommendationBatchId))
+        ? { ...row, withdrawnAt: new Date(), recalledAt: new Date() } : row))
+      toast('已撤回推送')
+    } catch (error) { toast(error.message || '撤回失败，请重试') }
+    finally { setRecalling(false) }
+  }
   const changePushQuantity = async group => {
     const entered = window.prompt(`本组共推送 ${group.maximum} 件，当前可购买 ${group.count} 件。请输入新的可购买数量（1-${Math.min(group.maximum, 10)}）：`, String(group.count))
     if (entered === null) return
@@ -109,7 +123,7 @@ export default function ProductPushPage() {
       return
     }
     try {
-      await staffAPI.updateProductPushQuantity(group.record._id, next)
+      await staffAPI.updateProductPushQuantity(group.records.find(row => !row.recalledAt)._id, next)
       await reload()
       toast(`推荐数量已调整为 ${next} 件`)
     } catch (error) { toast(error.message || '调整失败，请刷新后重试') }
@@ -319,15 +333,22 @@ export default function ProductPushPage() {
                   <div key={r._id} style={{ padding: '12px 16px', borderBottom: i < displayPushRecords.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
                     <div style={{ fontWeight: 500, fontSize: 13, marginBottom: 2 }}>{r.title}</div>
                     <div style={{ fontSize: 12, color: '#8AA89C' }}>
-                      {r.patientId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
+                      {r.patientId?.name} · {new Date(r.createdAt).toLocaleString('zh-CN')}
                     </div>
                     {group.maximum > 1 && <div style={{ fontSize: 12, marginTop: 4 }}>
                       可购买 {group.count}/{group.maximum} 件
                       <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => changePushQuantity(group)}>调整数量</button>
                     </div>}
-                    {r.readAt
-                      ? <span style={{ fontSize: 11, color: '#22A06B' }}>✓ 已读</span>
-                      : <span style={{ fontSize: 11, color: '#D97706' }}>未读</span>}
+                    {(r.recommendationBatchId ? [r] : group.records).map(row => (
+                      <div key={row._id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12 }}>
+                        {!r.recommendationBatchId && group.records.length > 1 && new Date(row.createdAt).toLocaleString('zh-CN')}
+                        {row.recalledAt ? '已撤回' : <>
+                          <span>{row.readAt ? '已读' : '未读'}</span>
+                          <button type="button" className="btn btn-secondary btn-sm" disabled={recalling}
+                            onClick={() => recallPush(row)}>撤回推送</button>
+                        </>}
+                      </div>
+                    ))}
                   </div>
                 ) })}
               </div>

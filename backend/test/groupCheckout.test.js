@@ -28,6 +28,8 @@ function harness(config = {}) {
       reserve: async args => events.push(['sharedReserve', String(args.orderId), args.amount]),
       release: async order => events.push(['sharedRelease', String(order._id)]),
     },
+    './combinableProductPushes': require('../src/utils/combinableProductPushes'),
+    './productFundRule': require('../src/utils/productFundRule'),
     './checkoutAmounts': require('../src/utils/checkoutAmounts'),
     './productBusinessAllocations': require('../src/utils/productBusinessAllocations'),
     './productPerformanceSnapshot': require('../src/utils/productPerformanceSnapshot'),
@@ -116,7 +118,7 @@ test('coupon and fund are allocated per item; cash sums to the single gateway ch
 });
 
 test('disabled product rejects corporate funds but accepts its share of personal funds', async () => {
-  const h = harness({ personal: 1, corporate: 100, products: { b: { healthFundDeduction: { mode: 'disabled' } } } });
+  const h = harness({ personal: 1, corporate: 100, products: { a: { healthFundDeduction: { mode: 'percentage', value: 100 } }, b: { healthFundDeduction: { mode: 'disabled' } } } });
   const q = await h.quoteGroup(h.user, h.items, h.products, { useHealthFund: 68 });
   assert.equal(q.allocations[1].corporate, 0);
   assert.equal(q.allocations[1].personal, 0.04);

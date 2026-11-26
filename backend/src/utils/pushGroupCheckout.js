@@ -83,7 +83,7 @@ async function quoteGroup(user, items, products, { couponId, useHealthFund, useE
 // validated/reserved; exactly one gateway payment owns immutable allocations.
 async function createPushGroupCheckout({ record, user, serviceUser = user, items, options }) {
   const token = new mongoose.Types.ObjectId().toString();
-  const lock = await PushRecord.findOneAndUpdate({ _id: record._id, patientId: serviceUser._id,
+  const lock = await PushRecord.findOneAndUpdate({ _id: record._id, patientId: serviceUser._id, withdrawnAt: null,
     $or: [{ checkoutLockUntil: null }, { checkoutLockUntil: { $lt: new Date() } }],
   }, { $set: { checkoutLockToken: token, checkoutLockUntil: new Date(Date.now() + 120000) } }, { new: true });
   if (!lock) throw checkoutError('正在创建订单，请勿重复点击');
@@ -97,7 +97,7 @@ async function createCombinedPushCheckout({ records, user, serviceUser = user, o
   const locked = [];
   try {
     for (const record of [...records].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
-      const claim = await PushRecord.findOneAndUpdate({ _id: record._id, patientId: serviceUser._id,
+      const claim = await PushRecord.findOneAndUpdate({ _id: record._id, patientId: serviceUser._id, withdrawnAt: null,
         $or: [{ checkoutLockUntil: null }, { checkoutLockUntil: { $lt: new Date() } }] },
       { $set: { checkoutLockToken: token, checkoutLockUntil: new Date(Date.now() + 120000) } }, { new: true });
       if (!claim) throw checkoutError('推荐商品正在创建订单，请稍后刷新');

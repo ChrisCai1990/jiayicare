@@ -8359,20 +8359,28 @@ router.get('/product-categories', staffAuth, checkPermission('products', 'view')
 
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
 router.patch('/products/push-quantity/:id', staffAuth, checkPermission('products', 'send'), async (req, res) => {
+  const recall = req.body.quantity === 0;
   const quantity = Number(req.body.quantity);
-  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10)
+  if (!recall && (!Number.isInteger(quantity) || quantity < 1 || quantity > 10))
     return res.status(400).json({ success: false, message: '数量须为 1 至 10 件' });
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: '推送记录无效' });
   const anchor = await PushRecord.findOne({ _id: req.params.id, type: 'product', staffId: req.staff._id });
   if (!anchor) return res.status(404).json({ success: false, message: '找不到本人推送的商品' });
-  const peers = (await require('../utils/combinableProductPushes').samePushes(anchor, anchor.patientId))
-    .filter(row => String(row.staffId) === String(req.staff._id));
+  let peers;
+  if (recall) {
+    peers = anchor.recommendationBatchId ? await PushRecord.find({ recommendationBatchId: anchor.recommendationBatchId,
+      tenantId: anchor.tenantId || null, patientId: anchor.patientId, type: 'product', staffId: req.staff._id }) : [anchor];
+  } else {
+    peers = (await require('../utils/combinableProductPushes').samePushes(anchor, anchor.patientId))
+      .filter(row => !row.recalledAt && String(row.staffId) === String(req.staff._id));
+  }
   if (!peers.length || quantity > peers.length || peers.length > 10)
     return res.status(409).json({ success: false, message: '本组推荐数量已变化，请刷新后重试' });
   const token = new mongoose.Types.ObjectId().toString();
   const locked = [];
   try {
     for (const row of [...peers].sort((a, b) => String(a._id).localeCompare(String(b._id)))) {
-      const claim = await PushRecord.findOneAndUpdate({ _id: row._id, staffId: req.staff._id,
+      const claim = await PushRecord.findOneAndUpdate({ _id: row._id, staffId: req.staff._id, ...(recall ? {} : { recalledAt: null }),
         $or: [{ checkoutLockUntil: null }, { checkoutLockUntil: { $lt: new Date() } }] },
       { $set: { checkoutLockToken: token, checkoutLockUntil: new Date(Date.now() + 120000) } }, { new: true });
       if (!claim) return res.status(409).json({ success: false, message: '推荐正在下单或调整，请稍后刷新' });
@@ -8380,7 +8388,13 @@ router.patch('/products/push-quantity/:id', staffAuth, checkPermission('products
     }
     const existing = await Order.findOne({ user: anchor.patientId, ...require('../utils/combinableProductPushes').orderPushFilter(locked),
       status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } }).select('_id');
-    if (existing) return res.status(409).json({ success: false, message: '已有待支付或已付款订单，请先处理订单，不能修改推荐数量' });
+    if (existing) return res.status(409).json({ success: false, message: '该推送已有待支付或已付款订单，无法撤回或调整数量' });
+    if (recall) {
+      const now = new Date();
+      await PushRecord.updateMany({ _id: { $in: locked }, checkoutLockToken: token, recalledAt: null },
+        { $set: { withdrawnAt: now, recalledAt: now, withdrawnBy: req.staff._id } });
+      return res.json({ success: true, data: { quantity: 0, maximum: peers.length } });
+    }
     const keep = new Set([...peers].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
       .slice(0, quantity).map(row => String(row._id)));
     for (const row of peers) await PushRecord.updateOne({ _id: row._id, checkoutLockToken: token },
