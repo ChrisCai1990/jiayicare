@@ -7537,9 +7537,10 @@ router.get('/push-records', staffAuth, async (req, res) => {
   const skip = (page - 1) * limit;
   const [records, total] = await Promise.all([
     PushRecord.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit)
-      .populate('patientId', 'name phone'),
+      .populate('patientId', 'name phone').lean(),
     PushRecord.countDocuments(filter),
   ]);
+  await require('../utils/productPushOrderStatus').attachProductOrderStates(records);
   res.json({ success: true, data: { records, total } });
 });
 

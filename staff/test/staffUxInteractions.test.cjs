@@ -202,3 +202,14 @@ test('product history opens on sent records and moves a recalled push to history
     assert.match(view.container.textContent, /共 2 件/)
   } finally { window.confirm = previous; await view.close() }
 })
+
+test('purchased pushes are summarized separately from read pushes and excluded from available units', () => {
+  const { groupedPushRecords, statusSummary, canRecall } = load('pages/ProductPushPage.jsx', {
+    '../api': {}, '../App': {}, '../components/PatientPicker': {}, '../components/ScheduleBookingDialog': () => null,
+  }, '\nexport { groupedPushRecords, statusSummary, canRecall };')
+  const item = { products: [{ productId: 'p', price: 10 }], createdAt: new Date(), patientId: 'patient', staffId: 'staff' }
+  const [group] = groupedPushRecords([{ ...item, _id: 'b', readAt: new Date(), orderState: 'paid' }, { ...item, _id: 'a', readAt: new Date() }])
+  assert.equal(group.count, 1)
+  assert.equal(statusSummary(group.records), '已购买 1 件 · 已读 1 件')
+  assert.equal(canRecall(group.record), false)
+})

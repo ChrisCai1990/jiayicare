@@ -10,6 +10,20 @@ const CAT_COLOR = { '检测套餐':'#0077B6', '专家咨询':'#1E6B50', '上门�
 const CAT_PALETTE = ['#0077B6', '#1E6B50', '#22A06B', '#8e44ad', '#D97706', '#DC3545', '#0EA5E9', '#EA580C']
 const catColor = (name) => CAT_COLOR[name] || CAT_PALETTE[[...(name || '')].reduce((s, c) => s + c.charCodeAt(0), 0) % CAT_PALETTE.length]
 
+const orderLabels = { paid: '已购买', pending: '待支付', refunding: '退款处理中', partialRefund: '部分退款', refunded: '已退款' }
+const hasLiveOrder = row => Boolean(row.orderState && row.orderState !== 'refunded')
+const canRecall = row => !hasLiveOrder(row) || row.orderState === 'refunding'
+const pushLabel = row => row.recalledAt ? '已撤回' : orderLabels[row.orderState] || (row.withdrawnAt ? '已调减' : row.readAt ? '已读' : '未读')
+
+function statusSummary(rows) {
+  const counts = new Map()
+  for (const row of rows) {
+    const label = pushLabel(row)
+    counts.set(label, (counts.get(label) || 0) + 1)
+  }
+  return [...counts].map(([label, count]) => rows.length === 1 ? label : `${label} ${count} 件`).join(' · ')
+}
+
 function groupedPushRecords(records) {
   const groups = new Map()
   for (const record of records) {
@@ -22,7 +36,7 @@ function groupedPushRecords(records) {
     const group = groups.get(key)
     group.records.push(record)
     if (!record.recalledAt) group.maximum += 1
-    if (!record.withdrawnAt) group.count += 1
+    if (!record.withdrawnAt && !hasLiveOrder(record)) group.count += 1
   }
   return [...groups.values()]
 }
@@ -346,7 +360,7 @@ export default function ProductPushPage() {
                     </div>
                     {group.maximum > 1 && <div style={{ fontSize: 12, marginTop: 4 }}>
                       可购买 {group.count}/{group.maximum} 件
-                      <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => changePushQuantity(group)}>调整数量</button>
+                      {!group.records.some(hasLiveOrder) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => changePushQuantity(group)}>调整数量</button>}
                     </div>}
                     {isRecalled ? (
                       <div style={{ fontSize: 12, color: '#64766d', marginTop: 4 }}>
@@ -354,17 +368,17 @@ export default function ProductPushPage() {
                       </div>
                     ) : !r.recommendationBatchId && group.records.length > 1 ? (
                       <details style={{ fontSize: 12, marginTop: 6 }}>
-                        <summary style={{ cursor: 'pointer' }}>查看 {group.records.length} 条推送明细</summary>
+                        <summary style={{ cursor: 'pointer' }}>{statusSummary(group.records)} · 查看明细</summary>
                         {group.records.map(row => <div key={row._id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 6 }}>
                           <span>{new Date(row.createdAt).toLocaleString('zh-CN')}</span>
-                          <span>{row.withdrawnAt ? '已调减' : row.readAt ? '已读' : '未读'}</span>
-                          <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(row)}>撤回推送</button>
+                          <span>{pushLabel(row)}</span>
+                          {canRecall(row) && <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(row)}>撤回推送</button>}
                         </div>)}
                       </details>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12 }}>
-                        <span>{group.records.some(row => row.readAt) ? '已读' : '未读'}</span>
-                        <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(r)}>撤回推送</button>
+                        <span>{statusSummary(group.records)}</span>
+                        {group.records.every(canRecall) && <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(r)}>撤回推送</button>}
                       </div>
                     )}
                   </div>
