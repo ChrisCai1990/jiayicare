@@ -1,3 +1,4 @@
+import useGroupReadAloud from '../../../hooks/useGroupReadAloud';
 import Icon from '../../../components/Icon';
 import GroupVoiceInput from '../../../components/GroupVoiceInput';
 import GroupVoiceMessage from '../../../components/GroupVoiceMessage';
@@ -19,6 +20,7 @@ const stamp = value => value ? new Date(value).toLocaleString('zh-CN', {
 
 const MessageScroll=process.env.TARO_ENV==='h5'?View:ScrollView;
 export default function ServiceGroupPage() {
+  const readAloud = useGroupReadAloud();
   const [historyOpen,setHistoryOpen]=useState(false);
   const [quote,setQuote]=useState(null),[quoteMenu,setQuoteMenu]=useState(null),[historyAnchor,setHistoryAnchor]=useState(null);
   const [hasNewMessage,setHasNewMessage]=useState(false);
@@ -218,6 +220,11 @@ export default function ServiceGroupPage() {
             {message.fileUrl && message.fileMimeType?.startsWith('image/') ? <Image src={message.fileUrl} mode='widthFix' onClick={()=>openChatFile(message,group.id)} style={{width:'220px',maxWidth:'100%',borderRadius:'6px'}}/> : message.fileUrl && <Text onClick={() => openChatFile(message, group.id)} style={{display:'block',padding:'6px 0',color:colors.primary,fontWeight:700,wordBreak:'break-all'}}>{message.fileMimeType?.startsWith('image/') ? '🖼 查看图片' : `📎 ${message.fileName||'查看文件'}`}</Text>}
             <Text style={{ display: 'block', marginTop: '4px', color: message.senderType==='customer'?'#fff':colors.textPrimary, fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{message.audioUrl || (message.fileUrl && ['[文件]','[图片]'].includes(message.content))?'':message.content}</Text>
             {message.quote&&<Text onClick={()=>{if(message.quote.id){setHistoryAnchor(message.quote.id);setHistoryOpen(true);}}} style={{display:'block',padding:'8px',background:'#eef1ef',fontSize:'12px',color:colors.textMuted}}>{message.quote.senderName?message.quote.senderName+'：':''}{message.quote.content}</Text>}
+            {message.senderType !== 'customer' && !message.audioUrl && !message.material && !message.fileUrl && message.content?.trim() && (
+              <View style={{padding:'7px 0'}} onClick={() => readAloud.toggle(message.id, message.content)}>
+                <Text style={{fontSize:'12px', color:colors.textMuted}}>{readAloud.label(message.id)}</Text>
+              </View>
+            )}
             {message.audioUrl&&<GroupVoiceMessage message={message} groupId={group.id} color={message.senderType==='customer'?'#fff':colors.textPrimary}/>}
             {message.material && <View style={{marginTop:'8px'}}>
               <Text style={{display:'block',fontSize:'12px',color:colors.textMuted}}>{message.material.status}</Text>
