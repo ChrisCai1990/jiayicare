@@ -13,6 +13,8 @@ const PlatformAgreement = require('../models/PlatformAgreement');
 const { renderAgreement } = require('../utils/platformAgreementText');
 const { STANDARD_PLAN, PLAN_KEY, validatePlan, getStandardPlan, tenantTerms, seatUsage, canAddSeat, estimatedMonthlySeatFee } = require('../utils/saasPlan');
 const User = require('../models/User');
+const LoginSession = require('../models/LoginSession');
+const { summarizeSession } = require('../utils/loginOrigin');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
 const Message = require('../models/Message');
@@ -388,7 +390,13 @@ router.get('/patients', adminAuth, async (req, res) => {
     ];
   }
   if (hasService === 'true')  filter.servicePackage = { $ne: '' };
-  if (hasService === 'false') filter.$or = [{ servicePackage: '' }, { servicePackage: { $exists: false } }];
+  if (hasService === 'false') filter.servicePackage = { $in: ['', null] };
+  if (req.query.stage === 'active') filter.onboardingCompleted = true;
+  if (req.query.stage === 'pending') filter.onboardingCompleted = { $ne: true };
+  if (req.query.channel === 'invite') filter.invitedBy = { $ne: null };
+  if (['微信搜索', '扫码或识别二维码', '好友分享', '群聊分享'].includes(req.query.channel)) {
+    filter.firstLoginChannel = { $regex: '^' + req.query.channel + '(?: · |$)' };
+  }
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const [patients, total] = await Promise.all([
@@ -396,7 +404,7 @@ router.get('/patients', adminAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .select('name phone age gender healthScore servicePackage serviceExpiry onboardingCompleted createdAt isDeleted deletedAt deleteReason'),
+      .select('name phone age gender healthScore servicePackage serviceExpiry onboardingCompleted loginCount firstLoginChannel source invitedBy lastLoginAt createdAt isDeleted deletedAt deleteReason'),
     User.countDocuments(filter),
   ]);
 
@@ -523,13 +531,17 @@ router.post('/patients/:id/health-records/import', adminAuth, async (req, res) =
 // ── GET /api/admin/patients/:id ───────────────────────────────────
 router.get('/patients/:id', adminAuth, async (req, res) => {
   const userId = req.params.id;
-  const [user, invitedUsers, records, tasks, messages, orders] = await Promise.all([
+  const [user, invitedUsers, records, tasks, messages, orders, firstSession, recentSession, lastQuestionnaire, lastUserMessage] = await Promise.all([
     User.findById(userId).select('-password').populate('invitedBy', 'name phone'),
     User.find({ invitedBy: userId, isDeleted: { $ne: true } }).select('name phone invitedAt').sort({ invitedAt: -1 }).lean(),
     HealthRecord.find({ user: userId }).sort({ recordedAt: -1 }).limit(20),
     Task.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
     Message.find({ user: userId }).sort({ createdAt: -1 }).limit(30),
     Order.find({ user: userId }).sort({ createdAt: -1 }).limit(10),
+    LoginSession.findOne({ user: userId }).sort({ loginAt: 1, _id: 1 }).select('method loginAt device.loginOrigin device.model userAgent ip').lean(),
+    LoginSession.findOne({ user: userId }).sort({ loginAt: -1, _id: -1 }).select('method loginAt device.loginOrigin device.model userAgent').lean(),
+    QuestionnaireResponse.findOne({ user: userId, proxyEntry: null, $or: [{ submittedBy: null }, { submittedBy: userId }] }).sort({ submittedAt: -1 }).select('submittedAt').lean(),
+    Message.findOne({ user: userId, type: 'user' }).sort({ createdAt: -1 }).select('createdAt').lean(),
   ]);
   if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
@@ -539,7 +551,7 @@ router.get('/patients/:id', adminAuth, async (req, res) => {
     latestVitals[type] = records.find(r => r.type === type) || null;
   }
 
-  res.json({ success: true, data: { user, invitedUsers, latestVitals, records, tasks, messages, orders } });
+  res.json({ success: true, data: { user, invitedUsers, latestVitals, records, tasks, messages, orders, firstLogin: summarizeSession(firstSession, true), recentLogin: summarizeSession(recentSession, false), questionnaireAt: lastQuestionnaire?.submittedAt, userMessageAt: lastUserMessage?.createdAt } });
 });
 
 async function getPatientDeleteImpact(userId) {

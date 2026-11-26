@@ -1,3 +1,4 @@
+import schedule from '../../../shared/followUpDue.cjs'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import { getToken } from '../api'
 import React, { useEffect, useState } from 'react'
@@ -103,7 +104,8 @@ export default function FollowUpsPanel() {
           {timeGroup === 'all' && !searchName.trim() ? '暂无待随访任务' : '当前筛选暂无任务'}
         </div>}
         {pageItems.map((f, i) => {
-          const overdue = isOverdue(f.date)
+          const due = schedule.dueDate(f)
+          const overdue = due && isOverdue(due)
           return (
             <div
               key={f._id}
@@ -148,7 +150,7 @@ export default function FollowUpsPanel() {
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                <span style={{ fontSize: 11, color: overdue ? '#DC3545' : '#8AA89C' }}>{formatDate(f.date)}</span>
+                <span style={{ fontSize: 11, color: overdue ? '#DC3545' : '#8AA89C' }}>{schedule.scheduledContact(f) ? '下次跟进　' : ''}{formatDate(due)}</span>
                 <span style={{ fontSize: 14, color: '#C0B8AE' }}>›</span>
               </div>
             </div>

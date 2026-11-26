@@ -2371,7 +2371,9 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     if (dateTo) { const end = new Date(dateTo); end.setDate(end.getDate() + 1); filter[rangeField].$lt = end; }
   }
 
-  let workbenchSummary;
+  let workbenchSummary, pageIds, workbenchTotal;
+  const requestedLimit = Math.max(1, Math.trunc(Number(limit)) || 20);
+  const pageSize = req.query.workbench === 'human' ? Math.min(200, requestedLimit) : requestedLimit;
   if (req.query.workbench === 'human') {
     const { humanFollowUpQuery, timeBuckets } = require('../utils/humanFollowUpQuery');
     filter.status = { $in: ['planned', 'in_progress', 'missed'] };
@@ -2383,21 +2385,33 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     }
     const buckets = timeBuckets(req.query.dayStart);
     const actionable = { 'serviceTracking.status': { $ne: 'waiting' } };
-    const counts = await Promise.all(Object.entries(buckets).map(async ([key, range]) =>
-      [key, await FollowUp.countDocuments({ $and: [filter, actionable, range] })]));
-    const waiting = await FollowUp.countDocuments({ $and: [filter, { 'serviceTracking.status': 'waiting' }] });
-    workbenchSummary = { counts: Object.fromEntries(counts), waiting };
-    filter.$and.push(req.query.workbenchTime === 'waiting' ? { 'serviceTracking.status': 'waiting' } : actionable);
-    filter.$and.push(buckets[req.query.workbenchTime] || {});
+    const base = [
+      { $match: FollowUp.find(filter).cast(FollowUp) },
+      { $project: { serviceTracking: 1, date: require('../../../shared/followUpDue.cjs').workbenchDueExpression() } },
+    ];
+    const waitingFilter = { 'serviceTracking.status': 'waiting' };
+    const ranges = Object.fromEntries(Object.entries(buckets).map(([key, range]) => [key, { ...actionable, ...range }]));
+    ranges.waiting = waitingFilter;
+    const [summary] = await FollowUp.aggregate([...base, { $facet: Object.fromEntries(
+      Object.entries(ranges).map(([key, range]) => [key, [{ $match: range }, { $count: 'n' }]])
+    ) }]);
+    const counts = Object.fromEntries(Object.keys(buckets).map(key => [key, summary[key][0]?.n || 0]));
+    workbenchSummary = { counts, waiting: summary.waiting[0]?.n || 0 };
+    const selected = Object.hasOwn(ranges, req.query.workbenchTime) ? req.query.workbenchTime : 'all';
+    workbenchTotal = selected === 'waiting' ? workbenchSummary.waiting : counts[selected];
+    const ids = await FollowUp.aggregate([...base, { $match: ranges[selected] }, { $sort: { date: 1, _id: 1 } },
+      { $skip: (clampPage(workbenchTotal) - 1) * pageSize }, { $limit: pageSize }, { $project: { _id: 1 } }]);
+    pageIds = ids.map(row => row._id);
   }
-  const requestedLimit = Math.max(1, Math.trunc(Number(limit)) || 20);
-  const pageSize = req.query.workbench === 'human' ? Math.min(200, requestedLimit) : requestedLimit;
-  const total = await FollowUp.countDocuments(filter);
-  const currentPage = Math.max(1, Math.min(Math.trunc(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))));
-  const followUps = await FollowUp.find(filter)
+  function clampPage(total) {
+    return Math.max(1, Math.min(Math.trunc(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))));
+  }
+  const total = workbenchTotal ?? await FollowUp.countDocuments(filter);
+  const currentPage = clampPage(total);
+  const query = pageIds ? FollowUp.find({ $and: [filter, { _id: { $in: pageIds } }] }) : FollowUp.find(filter)
       .sort(status === 'completed' ? { completedAt: -1, _id: -1 } : { date: 1, _id: 1 })
-      .skip((currentPage - 1) * pageSize)
-      .limit(pageSize)
+      .skip((currentPage - 1) * pageSize).limit(pageSize);
+  const followUps = await query
       .populate('patientId', 'name phone gender age chronicDiseases')
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role')
@@ -2406,6 +2420,11 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .populate('followUpSchemeId', 'name executorRole supervisorRole completionStandard workflowStageKey')
       .populate({ path: 'dependsOnTaskId', select: 'theme serviceChecklist formData executedContent status completedAt assignedTo', populate: { path: 'assignedTo', select: 'name role' } })
       .populate('sourceOrderId', 'quantity checkoutGroupId serviceId serviceName specificationLabel servicePrice paidAmount healthFundAmount note desiredServiceDate serviceRequirements scheduledAt status tradeStatus refundStatus paymentStatus paymentMethod initiationSource createdAt orderNo currentStage serviceWorkflowSnapshot supplementFulfillment medicalProxyPlan medicalReminderIntake handledBy fulfillmentType fulfillmentStatus updatedAt');
+
+  if (pageIds) {
+    const position = new Map(pageIds.map((id, i) => [String(id), i]));
+    followUps.sort((a, b) => position.get(String(a._id)) - position.get(String(b._id)));
+  }
 
   // 同日营养方案专业评估与记录预约随访在工作台关联展示，两个任务仍各自留存完成凭据。
   const nutritionRecordTasks = followUps.filter(f => f.sourceType === 'service_record');
