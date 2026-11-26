@@ -22,7 +22,8 @@ function buildAnnualPlanServiceTasks(plan, patient = {}) {
     const executionDate = validDate(date) || new Date(plan.pushedAt || plan.confirmedAt || Date.now());
     const identityDate = validDate(sourceDate(plan, moduleKey, index, FIELDS[moduleKey], date)) || executionDate;
     const label = labelOf(record, fallback);
-    const visitItems = ['single', 'managed'].includes(mode) && record.visitGroupId ? sharedVisitItems(moduleData, record.visitGroupId) : [];
+    const visitItems = (['single', 'managed'].includes(mode) || (supervisionOnly && record.visitMergeConfirmed)) && record.visitGroupId ? sharedVisitItems(moduleData, record.visitGroupId) : [];
+    if (supervisionOnly && visitItems.length > 1 && (visitItems[0].moduleKey !== moduleKey || visitItems[0].recordIndex !== index)) return;
     const itemSnapshot = visitItems.length > 1 ? {
       ...record, visitItems, items: visitItems.map(item => item.title).join('；'),
       reason: visitItems.map(item => `${item.title}：${item.reason}`).filter(line => !line.endsWith('：')).join('\n'),

@@ -152,11 +152,15 @@ async function buildAnnualPlanFollowUps(plan) {
       // A shared item belongs to the leader's single visit; it must not create
       // another manager follow-up or store the unsupported deliveryMode=shared.
       if (rec.visitGroupId && rec.visitResultFollowUp) {
-        const name = rec.items || rec.name || rec.reason || mod.theme;
+        const group = sharedVisitItems(moduleData, rec.visitGroupId);
+        const confirmed = group.length > 1 && group.every(entry => moduleData[entry.moduleKey].records[entry.recordIndex].visitMergeConfirmed);
+        if (!confirmed || (group[0].moduleKey === mod.key && group[0].recordIndex === i)) {
+        const name = confirmed ? group.map(item => item.title).join('、') : rec.items || rec.name || rec.reason || mod.theme;
         const count = created.length;
-        push(rec[mod.dateField], `结果回顾 · ${name}`, [rec.reason, rec.goal, rec.completionStandard].filter(Boolean).join('；') || `核对${name}执行结果`,
-          rec.followUpStaff || patient?.assignedHealthManager, `visit-result:${mod.key}:${i}:${rec[mod.dateField]}`, { sourceIds: rec.sourceIds });
+        push(rec[mod.dateField], `结果回顾 · ${name}`, (confirmed ? group.map(item => [item.title, item.reason, item.goal, item.completionStandard].filter(Boolean).join('：')).join('；') : [rec.reason, rec.goal, rec.completionStandard].filter(Boolean).join('；')) || `核对${name}执行结果`,
+          rec.followUpStaff || patient?.assignedHealthManager, `visit-result:${mod.key}:${i}:${rec[mod.dateField]}`, { sourceIds: confirmed ? [...new Set(group.flatMap(item => moduleData[item.moduleKey].records[item.recordIndex].sourceIds || []))] : rec.sourceIds });
         if (created.length > count) created.at(-1).clientVisible = false;
+        }
       }
       if (rec.serviceMode === 'shared') return;
       const fallbackLabels = {

@@ -53,6 +53,7 @@ function validateVisitGroups(data = {}) {
     if (rows.length < 2) continue;
     const unresolved = rows.some((row, index) => rows.slice(index + 1).some(other =>
       (!row.visitGroupId || row.visitGroupId !== other.visitGroupId)
+      && !(row.visitMergeConfirmed && other.visitMergeConfirmed && row.visitGroupId && other.visitGroupId)
       && !text(row.scheduleSeparationReason) && !text(other.scheduleSeparationReason)));
     if (unresolved) {
       const [date, hospital] = JSON.parse(key);
@@ -67,7 +68,7 @@ function sharedVisitItems(data, id) {
     const examExpert = text(row.expert || (row.expertSnapshots || []).map(item => item.name).join('、'));
     const orderExpert = text(row.order_expert || (row.orderExpertSnapshots || []).map(item => item.name).join('、'));
     return {
-    moduleKey, recordIndex: index, title,
+    moduleKey, recordIndex: index, title: row.reviewItems?.join('、') || title,
     department: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1
       ? row.order_dept || row.department : row.department || row.order_dept),
     expert: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1

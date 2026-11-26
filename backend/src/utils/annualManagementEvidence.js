@@ -289,19 +289,23 @@ function draftPlanActions(evidence = []) {
   return actions;
 }
 
-function validatePlanCoverage(moduleData = {}, evidence = []) {
+function* planCoverageIssues(moduleData = {}, evidence = []) {
   const reviewSources = evidence.filter(source => source.content?.reviewPlan?.kind === 'recheck');
   const rows = moduleData.abnormal_followup?.enabled === false ? [] : moduleData.abnormal_followup?.records || [];
   for (const source of reviewSources) {
     const linked = rows.filter(row => row.sourceIds?.includes(source.id));
     const label = source.content.reviewPlan.items.join('、');
-    if (linked.length !== 1) return `请核对定期复查“${label}”：${linked.length ? '同一来源重复列入方案' : '草稿缺少对应来源的复查安排'}`;
+    if (linked.length !== 1) {
+      yield { key: linked.length ? 'abnormal_followup' : 'sync', index: rows.indexOf(linked[0]),
+        title: label, message: `请核对定期复查“${label}”：${linked.length ? '同一来源重复列入方案' : '草稿缺少对应来源的复查安排'}` };
+      continue;
+    }
     const row = linked[0];
     const expected = new Set(reviewSources.filter(other => row.sourceIds.includes(other.id))
       .flatMap(other => other.content.reviewPlan.items));
     if (row.items !== `复查${expected.size}项检查` || row.reviewItems?.length !== expected.size
       || ![...expected].every(item => row.reviewItems.includes(item))) {
-      return `请核对定期复查的项目与来源，本次安排应包含：${[...expected].join('、')}`;
+      yield { key: 'abnormal_followup', index: rows.indexOf(row), message: `请核对定期复查的项目与来源，本次安排应包含：${[...expected].join('、')}` };
     }
   }
   for (const source of evidence) {
@@ -313,7 +317,7 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
       const goals = moduleData.management_targets?.records || [];
       if (moduleData.nutrition_assessment?.enabled === false || !moduleData.nutrition_assessment
         || !goals.some(row => row.issueId === source.id && row.nutritionRelevant === true))
-        return `“${source.content.problem}”尚未进入营养评估与对应管理目标，请核对方案`;
+        yield { key: 'nutrition_assessment', message: `“${source.content.problem}”尚未进入营养评估与对应管理目标，请核对方案` };
       continue;
     }
     const isReview = source.content.reviewPlan?.kind === 'recheck' && direction === 'abnormal_followup';
@@ -325,17 +329,20 @@ function validatePlanCoverage(moduleData = {}, evidence = []) {
       if (!source.content.directionTimings.monitoring.items.every(item => rows.some(row => row.sourceIds?.includes(source.id)
         && row.metricType === item.type && row.items === labels[item.type] && row.measurementPeriod === item.time
         && (!item.frequency || !!row.frequency))))
-        return `“${source.content.problem}”的日常监测项目或时间尚未进入方案，请重新带入`;
+        yield { key: 'monitoring', message: `“${source.content.problem}”的日常监测项目或时间尚未进入方案，请重新带入` };
       continue;
     }
     if (!rows.some(row => Array.isArray(row.sourceIds) && row.sourceIds.includes(source.id)
       && (isReview ? source.content.reviewPlan.items.every(item => row.reviewItems?.includes(item))
         : direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {
-      return `“${source.content.problem}”尚未按顾问选定的管理方向进入方案，请重新生成或补齐对应事项`;
+      yield { key: 'sync', message: `“${source.content.problem}”尚未按顾问选定的管理方向进入方案，请重新生成或补齐对应事项` };
     }
     }
   }
-  return '';
 }
 
-module.exports = { load, managementTargets, draftPlanActions, generationActionEvidence, validatePlanCoverage, effectiveDecisions, reportSourceItems, directionsOf };
+function validatePlanCoverage(moduleData, evidence) {
+  return planCoverageIssues(moduleData, evidence).next().value?.message || '';
+}
+
+module.exports = { load, managementTargets, draftPlanActions, generationActionEvidence, planCoverageIssues, validatePlanCoverage, effectiveDecisions, reportSourceItems, directionsOf };

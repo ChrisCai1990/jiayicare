@@ -32,3 +32,19 @@ test('自动合并仅提醒时生成一次客户提醒，每个项目单独保�
   assert.equal(tasks.filter(row => row.clientVisible !== false).length, 1);
   assert.equal(tasks.filter(row => row.clientVisible === false && row.theme.startsWith('结果回顾')).length, 2);
 });
+
+test('顾问确认同次就诊后，两项检查共用预约提醒与内部结果回顾，预览保留两项明细', async t => {
+  t.mock.method(User, 'findById', () => ({ select: () => ({ lean: async () => ({ assignedHealthManager: '000000000000000000000001' }) }) }));
+  t.mock.method(Admin, 'find', () => ({ select: () => ({ lean: async () => [] }) }));
+  const base = { time: '2027-01-04', hospital: '医院', order_dept: '心内科', serviceMode: 'reminder',
+    visitGroupId: '同院同日', visitResultFollowUp: true, visitMergeConfirmed: true, appointmentSchedulingVersion: 1 };
+  const moduleData = { abnormal_followup: { records: ['心脏超声','脂蛋白磷脂酶A2'].map(name => ({ ...base, items: '复查1项检查', reviewItems: [name] })) } };
+  const tasks = await buildAnnualPlanFollowUps({ _id: '000000000000000000000003', patientId: '000000000000000000000004', confirmedAt: new Date(), moduleData });
+  assert.equal(tasks.filter(row => row.clientVisible !== false).length, 1);
+  const results = tasks.filter(row => row.theme.startsWith('结果回顾'));
+  assert.equal(results.length, 1);
+  assert.match(results[0].content, /心脏超声.*脂蛋白磷脂酶A2/s);
+  const view = require('../src/utils/annualPlanPresentation').buildAnnualPlanDisplayItems(moduleData);
+  assert.equal(view.length, 1);
+  assert.equal(view[0].visitItems.length, 2);
+});

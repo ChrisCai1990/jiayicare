@@ -22,7 +22,7 @@ const conciseTitle = action => {
   return title.length > 72 ? `${title.slice(0, 72)}…` : title
 }
 
-export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionTask, nutritionTaskLoading, canDispatchNutrition, onNutrition, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, monitoringRecords = [], latestCheckupDate = '', onEditItem }) {
+export default function AnnualPlanTrackView({ actions, renderAction, goalForAction, nutritionEnabled, nutritionScreeningIssues = [], nutritionAdvisorTargets = [], nutritionExecutionDate, nutritionExecutorName, nutritionTask, nutritionTaskLoading, canEditNutrition, onNutrition, nutritionAdvisorEditor, onConsensus, canAddConsensus, consensusEditor, monitoringRecords = [], latestCheckupDate = '', onEditItem }) {
   const itemsFor = keys => actions.filter(action => keys.includes(action.key))
   const renderGroup = ([title, keys]) => {
     const items = itemsFor(keys).filter(action => action.key !== 'nutrition_assessment')
@@ -42,7 +42,7 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
         <div style={{ color: '#52675D' }}>下一步：营养师核对饮食、生活方式和相关指标，制定具体干预方案。</div>
         <div style={{ color: '#52675D' }}>计划日期：{nutritionExecutionDate || '待确定'} · 执行营养师：{nutritionExecutorName || '待匹配'}</div>
         <div style={{ color: '#52675D' }}>任务状态：{nutritionTaskLoading ? '核对中' : nutritionTask ? nutritionTask.status === 'completed' ? '已完成' : '已派发给营养师' : '尚未派发'}</div>
-        {onNutrition && (nutritionTask || canDispatchNutrition) && <button type="button" className="btn btn-secondary btn-sm" onClick={onNutrition} disabled={nutritionTaskLoading}>{nutritionTask ? '查看营养师任务' : '派发营养师任务'}</button>}
+        {onNutrition && (nutritionTask || canEditNutrition) && <button type="button" className="btn btn-secondary btn-sm" onClick={onNutrition} disabled={nutritionTaskLoading}>{nutritionTask ? '查看营养师任务' : '编辑营养安排'}</button>}
         {nutritionAdvisorEditor}
       </details>}
       {items.map(action => <details key={`${action.key}:${action.index}`} style={{ marginTop: 9, border: '1px solid #E1EAE4', borderRadius: 10, padding: '11px 13px', background: '#FBFDFC' }}>

@@ -44,8 +44,18 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
       <div style={{ fontSize: 12, color: '#62776A', marginBottom: 5 }}>排期段 {groupIndex + 1} · {group.length} 项{group.length > 1 ? '（相邻日期不代表必须同次就诊）' : ''}</div>
       {group.map(item => <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(180px,1fr) minmax(165px,auto)', gap: 9, alignItems: 'center', padding: '7px 0' }}>
         {editable ? <input type="checkbox" aria-label={`选择${item.title}`} checked={selected.includes(item.key)} onChange={event => setSelected(previous => event.target.checked ? [...previous, item.key] : previous.filter(key => key !== item.key))} /> : <span />}
-        <div><strong style={{ fontSize: 13 }}>{item.title}</strong><div style={{ fontSize: 12, color: '#62776A' }}>{item.row.hospital || '医院待确认'}{item.row.department ? ` · ${item.row.department}` : ''}{item.row.visitGroupId ? ` · 已归类：${item.row.visitGroupId}` : ''}</div></div>
-        {nearbyOnly && editable && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange(changeVisitSeparationReason(data, item.moduleKey, item.index, '顾问已确认按原日期分开安排'))}>保持分开</button>}
+        <div><strong style={{ fontSize: 13 }}>{item.title}</strong><div style={{ fontSize: 12, color: '#62776A' }}>{item.row.hospital || '医院待确认'}{item.row.order_dept ? ` · 开单科室：${item.row.order_dept}` : item.row.department ? ` · ${item.row.department}` : ''}{item.row.visitGroupId ? ` · 已归类：${item.row.visitGroupId}` : ''}</div></div>
+        {nearbyOnly && editable && <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+          const reason = window.prompt('请填写分开安排的原因')
+          if (!reason?.trim()) return
+          const next = changeVisitSeparationReason(data, item.moduleKey, item.index, reason.trim())
+          const record = next[item.moduleKey].records[item.index]
+          record.visitGroupId = ''
+          record.visitMergeConfirmed = false
+          record.visitResultFollowUp = false
+          if (record.serviceMode === 'shared') record.serviceMode = 'reminder'
+          onChange(next)
+        }}>保持分开</button>}
         {editable ? <DateInput value={item.date} onChange={value => onChange(changeVisitDate(data, item.moduleKey, item.index, value))} label={`${item.title}建议日期`} style={inputStyle} /> : <span style={{ fontSize: 13 }}>{item.date || '日期待确认'}</span>}
         {(group.length > 1 || item.row.scheduleSeparationReason) && <details style={{ gridColumn: '2 / -1', fontSize: 12, color: '#62776A' }}><summary style={{ cursor: 'pointer' }}>分开安排的原因或待核实条件{item.row.scheduleSeparationReason ? ' · 已填写' : ''}</summary>{editable ? <textarea value={item.row.scheduleSeparationReason || ''} onChange={event => onChange(changeVisitSeparationReason(data, item.moduleKey, item.index, event.target.value))} rows={2} placeholder="如医嘱时限、准备要求、先后顺序；核实可同次就诊后清空" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginTop: 5 }} /> : <div style={{ marginTop: 5 }}>{item.row.scheduleSeparationReason || '暂无说明'}</div>}</details>}
       </div>)}
@@ -59,7 +69,7 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
         {serviceMode === 'single' && <label style={{ fontSize: 12 }}>单项服务内容<br /><select value={serviceType} onChange={event => setServiceType(event.target.value)} style={inputStyle}><option value="">请选择</option>{serviceTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
         <button type="button" className="btn btn-primary btn-sm" onClick={apply}>确认归类</button>
       </div>
-      <div style={{ marginTop: 7, fontSize: 12, color: '#62776A' }}>将统一所选事项的日期；仅提醒时各事项保留提醒，不生成就医协助服务。选择单项或一站式时由主事项承接服务，其他事项随同办理。保存草稿后，推送前仍需通过服务校验。</div>
+      <div style={{ marginTop: 7, fontSize: 12, color: '#62776A' }}>将统一所选事项的日期；仅提醒时按同次就诊生成一条提醒，不生成就医协助服务。选择单项或一站式时由主事项承接服务，其他事项随同办理。保存草稿后，推送前仍需通过服务校验。</div>
     </div>}
   </details>
 }
