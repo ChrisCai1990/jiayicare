@@ -8386,9 +8386,20 @@ router.patch('/products/push-quantity/:id', staffAuth, checkPermission('products
       if (!claim) return res.status(409).json({ success: false, message: '推荐正在下单或调整，请稍后刷新' });
       locked.push(row._id);
     }
-    const existing = await Order.findOne({ user: anchor.patientId, ...require('../utils/combinableProductPushes').orderPushFilter(locked),
-      status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } }).select('_id');
-    if (existing) return res.status(409).json({ success: false, message: '该推送已有待支付或已付款订单，无法撤回或调整数量' });
+    const orderFilter = { user: anchor.patientId, ...require('../utils/combinableProductPushes').orderPushFilter(locked),
+      status: { $ne: 'cancelled' }, tradeStatus: { $nin: ['closed', 'refunded'] } };
+    if (recall) {
+      const processing = await Order.find({ ...orderFilter, refundStatus: 'processing' }).select('_id refundStatus');
+      await Promise.all(processing.map(order => require('../utils/reconcileRefund').reconcileRefund(order, 'staff_push_recall')));
+    }
+    const existing = await Order.findOne(orderFilter).select('refundStatus');
+    if (existing) {
+      const message = ['requested', 'processing'].includes(existing.refundStatus)
+        ? '该笔退款尚未确认完成，请稍后重试'
+        : existing.refundStatus === 'partially_refunded' ? '该订单仅部分退款，无法撤回或调整数量'
+          : '该推送已有待支付或已付款订单，无法撤回或调整数量';
+      return res.status(409).json({ success: false, message });
+    }
     if (recall) {
       const now = new Date();
       await PushRecord.updateMany({ _id: { $in: locked }, checkoutLockToken: token, recalledAt: null },

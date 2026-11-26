@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function routeHarness(withOrder = false) {
+function routeHarness(withOrder = false, refundOutcome = '') {
   const now = new Date();
   const records = Array.from({ length: 4 }, (_, index) => ({ _id: `push-${index + 1}`, staffId: 'staff',
     patientId: 'patient', type: 'product', createdAt: new Date(now.getTime() + index), withdrawnAt: null }));
@@ -21,9 +21,9 @@ function routeHarness(withOrder = false) {
   const context = {
     router: { patch: (_path, _auth, _permission, callback) => { handler = callback; } },
     staffAuth: () => {}, checkPermission: () => () => {}, PushRecord,
-    Order: { findOne: () => ({ select: async () => withOrder ? { _id: 'order' } : null }) },
+    Order: { find: () => ({ select: async () => refundOutcome ? [{ _id: 'order', refundStatus: 'processing' }] : [] }), findOne: () => ({ select: async () => withOrder ? { _id: 'order' } : null }) },
     mongoose: { isValidObjectId: () => true, Types: { ObjectId: class { toString() { return 'lock'; } } } },
-    require: name => { assert.equal(name, '../utils/combinableProductPushes'); return { orderPushFilter: () => ({}), samePushes: async () => records }; },
+    require: name => { if (name === '../utils/reconcileRefund') return { reconcileRefund: async () => { withOrder = refundOutcome !== 'full'; } }; assert.equal(name, '../utils/combinableProductPushes'); return { orderPushFilter: () => ({}), samePushes: async () => records }; },
     Number, String, Date, Set,
   };
   const source = fs.readFileSync(require.resolve('../src/routes/staff'), 'utf8');
@@ -71,4 +71,12 @@ test('recall preserves a push with an active order', async () => {
   const h = routeHarness(true);
   assert.equal((await h.run(0)).code, 409);
   assert.equal(h.records.filter(row => row.withdrawnAt).length, 0);
+});
+
+test('recall rechecks the linked order after reconciling its refund', async () => {
+  for (const outcome of ['full', 'partial', 'processing']) {
+    const h = routeHarness(true, outcome);
+    assert.equal((await h.run(0)).code, outcome === 'full' ? 200 : 409);
+    assert.equal(Boolean(h.records[0].recalledAt), outcome === 'full');
+  }
 });

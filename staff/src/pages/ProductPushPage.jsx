@@ -100,7 +100,9 @@ export default function ProductPushPage() {
 
   const selectedItems = products.filter(p => selected.includes(p.id))
   const totalPrice = selectedItems.reduce((sum, p) => sum + (selectedPrices[p.id] ?? p.price ?? 0), 0) * (selectedItems.length === 1 ? quantity : 1)
-  const displayPushRecords = groupedPushRecords(pushRecords)
+  const [historyView, setHistoryView] = useState('sent')
+  const isRecalled = historyView === 'recalled'
+  const displayPushRecords = groupedPushRecords(pushRecords.filter(row => Boolean(row.recalledAt) === isRecalled))
   const [recalling, setRecalling] = useState(false)
   const recallPush = async record => {
     if (!window.confirm(`撤回发给${record.patientId?.name || '该会员'}的「${record.title}」？撤回后，会员将无法通过这次推送下单。`)) return
@@ -325,8 +327,15 @@ export default function ProductPushPage() {
           {/* 推送记录 */}
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>🕐 最近推送记录</div>
+            <div role="group" aria-label="推送记录状态" style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              {[['sent', '已推送'], ['recalled', '已撤回']].map(([value, label]) => (
+                <button key={value} type="button" aria-pressed={historyView === value}
+                  className={`btn btn-sm ${historyView === value ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setHistoryView(value)}>{label}</button>
+              ))}
+            </div>
             {displayPushRecords.length === 0 ? (
-              <div className="card" style={{ padding: 24, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无推送记录</div>
+              <div className="card" style={{ padding: 24, textAlign: 'center', color: '#aaa', fontSize: 14 }}>{isRecalled ? '暂无已撤回记录' : '暂无已推送记录'}</div>
             ) : (
               <div className="card">
                 {displayPushRecords.map((group, i) => { const r = group.record; return (
@@ -339,16 +348,25 @@ export default function ProductPushPage() {
                       可购买 {group.count}/{group.maximum} 件
                       <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => changePushQuantity(group)}>调整数量</button>
                     </div>}
-                    {(r.recommendationBatchId ? [r] : group.records).map(row => (
-                      <div key={row._id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12 }}>
-                        {!r.recommendationBatchId && group.records.length > 1 && new Date(row.createdAt).toLocaleString('zh-CN')}
-                        {row.recalledAt ? '已撤回' : <>
-                          <span>{row.readAt ? '已读' : '未读'}</span>
-                          <button type="button" className="btn btn-secondary btn-sm" disabled={recalling}
-                            onClick={() => recallPush(row)}>撤回推送</button>
-                        </>}
+                    {isRecalled ? (
+                      <div style={{ fontSize: 12, color: '#64766d', marginTop: 4 }}>
+                        {group.records.length > 1 ? `共 ${group.records.length} 件 · 最近撤回` : '撤回于'} {new Date(Math.max(...group.records.map(row => new Date(row.recalledAt).getTime()))).toLocaleString('zh-CN')}
                       </div>
-                    ))}
+                    ) : !r.recommendationBatchId && group.records.length > 1 ? (
+                      <details style={{ fontSize: 12, marginTop: 6 }}>
+                        <summary style={{ cursor: 'pointer' }}>查看 {group.records.length} 条推送明细</summary>
+                        {group.records.map(row => <div key={row._id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                          <span>{new Date(row.createdAt).toLocaleString('zh-CN')}</span>
+                          <span>{row.withdrawnAt ? '已调减' : row.readAt ? '已读' : '未读'}</span>
+                          <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(row)}>撤回推送</button>
+                        </div>)}
+                      </details>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12 }}>
+                        <span>{group.records.some(row => row.readAt) ? '已读' : '未读'}</span>
+                        <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(r)}>撤回推送</button>
+                      </div>
+                    )}
                   </div>
                 ) })}
               </div>

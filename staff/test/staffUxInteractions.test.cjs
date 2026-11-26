@@ -22,7 +22,7 @@ function load(relative, mocks, suffix = '') {
   vm.runInNewContext(code, {
     module, exports: module.exports,
     require: name => name in mocks ? mocks[name] : name.startsWith('.') ? load(path.relative(path.resolve(__dirname, '../src'), path.resolve(path.dirname(filename), name + (path.extname(name) ? '' : '.js'))), mocks) : require(name),
-    window, document, console, setTimeout, clearTimeout, setInterval, clearInterval, Event: window.Event,
+    window, document, console, crypto: require('node:crypto').webcrypto, URLSearchParams, setTimeout, clearTimeout, setInterval, clearInterval, Event: window.Event,
   }, { filename })
   return module.exports
 }
@@ -113,7 +113,7 @@ for (const [file, component, prop, method] of [
   let saved = 0
   const api = { getPatients: async () => ({ data: { total: 1, patients: [{ _id: 'fixture', name: '虚构会员' }] } }), [method]: async () => { throw Error('模拟推送失败') } }
   const picker = load('components/PatientPicker.jsx', { '../api': { staffAPI: api } })
-  const mocks = { '../api': { staffAPI: api }, '../App': { useToast: () => () => {} }, '../components/PatientPicker': picker }
+  const mocks = { '../components/ScheduleBookingDialog': () => null, '../api': { staffAPI: api }, '../App': { useToast: () => () => {} }, '../components/PatientPicker': picker }
   const Component = load(`pages/${file}`, mocks, `\nexport { ${component} };`)[component]
   const view = await mount(React.createElement(Component, { [prop]: { _id: 'test', title: '测试模板' }, patients: [], selectedItems: [], totalPrice: 0, onClose() {}, onSaved() { saved++ } }))
   try {
@@ -144,7 +144,7 @@ test('upload report ignores plan items from a previously selected member', async
   }
   const picker = load('components/PatientPicker.jsx', { '../api': { staffAPI: api } })
   const Component = load('pages/ReportsPage.jsx', {
-    '../api': { staffAPI: api }, '../App': { useToast: () => () => {}, usePermission: () => () => true },
+    '../api': { staffAPI: api }, '../App': { useToast: () => () => {}, useStaff: () => ({ staff: {} }), usePermission: () => () => true },
     '../components/PatientPicker': picker, '../components/Pagination': () => null,
     '../components/ReportReviewQuality': { useReportReviewActivity: () => ({ current() {} }) },
   }, '\nexport { UploadModal };').UploadModal
@@ -161,7 +161,7 @@ test('report list ignores the slow response from the previous filter', async () 
   let finishOld
   const api = { getReports: ({ status }) => status ? Promise.resolve({ data: { total: 1, reports: [{ _id: 'new', title: '当前筛选报告', audit_status: 'audited', user: { name: '虚构会员' } }] } }) : new Promise(resolve => { finishOld = resolve }) }
   const Component = load('pages/ReportsPage.jsx', {
-    '../api': { staffAPI: api }, '../App': { useToast: () => () => {}, usePermission: () => () => true },
+    '../api': { staffAPI: api }, '../App': { useToast: () => () => {}, useStaff: () => ({ staff: {} }), usePermission: () => () => true },
     '../components/PatientPicker': () => null, '../components/Pagination': () => null,
     '../components/ReportReviewQuality': { useReportReviewActivity: () => ({ current() {} }) },
   }).default
@@ -172,4 +172,33 @@ test('report list ignores the slow response from the previous filter', async () 
     assert.match(view.container.textContent, /当前筛选报告/)
     assert.match(view.container.textContent, /共 1 份报告/)
   } finally { await view.close() }
+})
+
+test('product history opens on sent records and moves a recalled push to history', async () => {
+  const now = new Date().toISOString()
+  const base = { createdAt: now, staffId: 'staff', patientId: { _id: 'patient', name: '测试会员' }, products: [{ productId: 'p', price: 10 }] }
+  const records = [{ ...base, _id: 'sent', title: '当前推荐' }, { ...base, _id: 'old', title: '历史推荐', recalledAt: now, withdrawnAt: now }]
+  const api = {
+    getProducts: async () => ({ data: { products: [] } }),
+    getPushRecords: async () => ({ data: { records } }),
+    getProductCategories: async () => ({ data: { categories: [] } }),
+    updateProductPushQuantity: async (id, value) => { assert.equal(id, 'sent'); assert.equal(value, 0) },
+  }
+  const Page = load('pages/ProductPushPage.jsx', { '../api': { staffAPI: api }, '../App': { useToast: () => () => {} },
+    '../components/PatientPicker': {}, '../components/ScheduleBookingDialog': () => null }).default
+  const previous = window.confirm
+  window.confirm = () => true
+  const view = await mount(React.createElement(MemoryRouter, null, React.createElement(Page)))
+  try {
+    assert.match(view.container.textContent, /当前推荐/)
+    assert.doesNotMatch(view.container.textContent, /历史推荐/)
+    await click(view.container, '已撤回')
+    assert.match(view.container.textContent, /历史推荐/)
+    assert.doesNotMatch(view.container.textContent, /当前推荐|撤回推送/)
+    await click(view.container, '已推送')
+    await click(view.container, '撤回推送')
+    assert.match(view.container.textContent, /暂无已推送记录/)
+    await click(view.container, '已撤回')
+    assert.match(view.container.textContent, /共 2 件/)
+  } finally { window.confirm = previous; await view.close() }
 })

@@ -6,7 +6,7 @@ const { refundOrderPoints } = require('../utils/orderPoints');
 const Payment = require('../models/Payment');
 const Refund = require('../models/Refund');
 const wechatPay = require('../utils/wechatPay');
-const { confirmRefund } = require('../utils/orderSettlement');
+const { reconcileRefund } = require('../utils/reconcileRefund');
 const router = express.Router();
 const { pendingServiceConfirmationQuery, needsCustomerServiceConfirmation } = require('../utils/orderServiceConfirmation');
 const { resolveOrderBeneficiary } = require('../utils/orderBeneficiary');
@@ -14,31 +14,6 @@ const { canClaimFamilyPayment } = require('../utils/familyProxyPayment');
 
 const visibleOrderQuery = userId => ({ $or: [{ user: userId }, { payerUser: userId }] });
 const payerOrderQuery = userId => ({ $or: [{ payerUser: userId }, { user: userId, payerUser: null }] });
-
-async function reconcileRefund(order) {
-  if (!['requested', 'processing'].includes(order.refundStatus)) return;
-  const refund = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing'] } }).sort({ createdAt: -1 });
-  if (!refund || refund.status === 'requested') return;
-  try {
-    const remote = await wechatPay.queryRefund(refund.outRefundNo);
-    refund.refundId = remote.refund_id || refund.refundId;
-    if (remote.status === 'SUCCESS') {
-      await confirmRefund(refund, { source: 'orders_list_query', refundStatus: remote.status });
-    } else if (['ABNORMAL', 'CLOSED'].includes(remote.status)) {
-      refund.status = remote.status === 'CLOSED' ? 'closed' : 'failed';
-      refund.failureMessage = remote.user_received_account || remote.status;
-      await refund.save();
-      const failedOrder = await Order.findById(refund.order);
-      if (failedOrder) {
-        require('../utils/orderWorkItem').restoreOrderAfterRefundFailure(failedOrder);
-        await failedOrder.save();
-        await require('../utils/orderWorkItem').reconcileInactiveOrderWorkItems(failedOrder.user);
-      }
-    }
-  } catch (err) {
-    console.error('[orders-refund-query]', err.message);
-  }
-}
 
 // 获取当前用户的订单列表
 router.get('/', auth, async (req, res) => {
@@ -48,7 +23,7 @@ router.get('/', auth, async (req, res) => {
       .populate('fulfillmentId')
       .sort({ createdAt: -1 })
       .limit(50);
-    await Promise.all(orders.filter(order => order.refundStatus === 'processing').map(reconcileRefund));
+    await Promise.all(orders.filter(order => order.refundStatus === 'processing').map(order => reconcileRefund(order)));
     if (orders.some(order => order.refundStatus === 'processing')) {
       orders = await Order.find(visibleOrderQuery(req.user._id))
         .populate('paymentId')
