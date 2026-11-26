@@ -96,10 +96,23 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
     }
     records.forEach((record, index) => { if (record && Object.keys(record).length && !(moduleKey === 'personalized_followups' && internalDaily(record))) items.push(normalizeItem(moduleKey, record, index)); });
   });
-  return items;
+  const grouped = new Map();
+  for (const [groupId, entries] of require('./annualVisitGroups').visitGroups(moduleData)) {
+    if (entries.length < 2 || !entries.every(entry => entry.row.visitMergeConfirmed)) continue;
+    const ids = new Set(entries.map(entry => `${entry.moduleKey}:${entry.index}`));
+    const members = items.filter(item => ids.has(item.id));
+    if (members.length < 2) continue;
+    const lead = members.find(item => ['single', 'managed'].includes(item.service?.mode)) || members[0];
+    const names = members.map(item => item.reviewItems?.join('、') || item.title);
+    const combined = { ...lead, id: `visit:${groupId}`, title: `同次就诊 · ${names.join('、')}`, visitItems: members,
+      customerAction: members.map((item, i) => [names[i], item.examArrangement?.orderDepartment,
+        item.examArrangement?.examDepartment, item.customerAction].filter(Boolean).join(' · ')).join('\n') };
+    members.forEach((item, index) => grouped.set(item.id, index === 0 ? combined : null));
+  }
+  return items.map(item => grouped.has(item.id) ? grouped.get(item.id) : item).filter(Boolean);
 }
 
-const internalFields = new Set(['clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
+const internalFields = new Set(['clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'visitMergeConfirmed', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);

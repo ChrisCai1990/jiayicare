@@ -622,6 +622,7 @@ export const staffAPI = {
   confirmSupplyArrangement: (planId, data) => req(`/staff/supply-plans/${planId}/arrangement`, { method: 'PATCH', body: JSON.stringify(data) }),
   updateSupplyFulfillment: (planId, data) => req(`/staff/supply-plans/${planId}/fulfillment`, { method: 'PATCH', body: JSON.stringify(data) }),
   confirmSupplyReceipt: (planId, data) => req(`/staff/supply-plans/${planId}/receipt`, { method: 'PATCH', body: JSON.stringify(data) }),
+  checkAnnualDraft: (patientId, year, planId) => req(`/staff/patients/${patientId}/annual-plan/preflight?year=${year}`, { method: 'PATCH', body: JSON.stringify({ planId }) }),
   pushAnnualPlan:       (patientId, year, planType, planId) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH', body: JSON.stringify({ planId }) }),
   releaseAnnualInternalTasks: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan/internal-task-release`, { method: 'PATCH', body: JSON.stringify(data) }),
   // 订单管理

@@ -11843,7 +11843,10 @@ router.patch('/supply-plans/:id/confirm', staffAuth, async (req, res) => {
 });
 
 // ── PATCH /api/staff/patients/:id/annual-plan/push ────────────────
-router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
+router.patch('/patients/:id/annual-plan/push', staffAuth, (req, res) => reviewAnnualDraft(req, res, false));
+router.patch('/patients/:id/annual-plan/preflight', staffAuth, (req, res) => reviewAnnualDraft(req, res, true));
+
+async function reviewAnnualDraft(req, res, preview) {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
     return res.status(403).json({ success: false, message: '仅健康顾问可审核并推送年度管理方案' });
   }
@@ -11862,6 +11865,16 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     }
     const plan = await AnnualPlan.findOne(query).sort({ updatedAt: -1, _id: -1 });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    const problems = [];
+    function blocking(status, message) {
+      if (preview) {
+        problems.push({ message });
+        return false;
+      }
+      res.status(status).json({ success: false, message });
+      return true;
+    }
+    if (preview && plan.pushedAt) return res.json({ success: true, issues: [] });
     if (plan.confirmedAt) return res.status(409).json({ success: false, message: '客户已确认本年度方案，新检查结果请走单项随访' });
     if (plan.pushedAt) {
       if (!plan.followUpReleasedAt || plan.distributionSyncedAt) return res.status(409).json({ success: false, message: '方案已推送；如需局部修改，请使用方案修订入口' });
@@ -11881,7 +11894,10 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       return res.json({ success: true, data: plan, dispatch, retried: true });
     }
     const recentCheckup = await require('../utils/annualReviewEligibility').checkForAnnualPlan(req.params.id, plan.year);
-    if (!recentCheckup.allowed) return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: recentCheckup.message });
+    if (!recentCheckup.allowed) {
+        if (preview) problems.push({ key: 'preparation', message: recentCheckup.message });
+        else return res.status(409).json({ success: false, code: 'COMPLETE_CHECKUP_REQUIRED', message: recentCheckup.message });
+      }
     const hasLegacyNutritionAssessment = (plan.moduleData?.personalized_followups?.records || []).some(row =>
       require('../../../shared/annualNutrition.cjs').isRow(row) || /营养评估/.test(row.standardPlanName || ''));
     if (!plan.moduleData?.nutrition_assessment && !hasLegacyNutritionAssessment) {
@@ -11893,8 +11909,11 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     const preparation = await require('../utils/annualPlanPreparation').loadAnnualPlanPreparationChecklist(req.params.id, targetYear);
     // A plan published before the current preparation rules keeps its original
     // approval basis when it is resent. New drafts still require the checklist.
-    if (!plan.pushedAt && !preparation?.checklist?.ready) return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
-    if (preparation.continuity?.mode === 'renewal' && !require('../utils/annualPlanContinuity').matchesContinuitySource(plan.continuitySource, preparation.continuity.source)) return res.status(409).json({ success: false, message: '上一年度方案来源已变化，请重新核对并保存下一年度草稿' });
+    if (!plan.pushedAt && !preparation?.checklist?.ready) {
+        if (preview) problems.push({ key: 'preparation', message: '年度方案准备清单尚未完成' });
+        else return res.status(409).json({ success: false, message: '年度方案准备清单尚未完成', data: preparation?.checklist || null });
+      }
+    if (preparation.continuity?.mode === 'renewal' && !require('../utils/annualPlanContinuity').matchesContinuitySource(plan.continuitySource, preparation.continuity.source)) if (blocking(409, '上一年度方案来源已变化，请重新核对并保存下一年度草稿')) return;
     const otherFormal = await AnnualPlan.findOne({
       patientId: req.params.id,
       year: targetYear,
@@ -11915,57 +11934,79 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
     }
     plan.moduleData = normalized;
     plan.markModified('moduleData');
+    if (require('../utils/annualFlowPilot').enabledForPlan(plan)) {
+      for (const [groupId, entries] of require('../utils/annualVisitGroups').visitGroups(plan.moduleData)) {
+        if (entries.length < 2 || entries.every(entry => entry.row.visitMergeConfirmed)) continue;
+        const message = `请确认是否合并“${groupId}”：${entries.map(({row, title}) => row.reviewItems?.join('、') || title).join('、')}`;
+        if (!preview) return res.status(409).json({ success: false, message });
+        problems.push({ key: 'visits', message });
+      }
+    }
     const issue = require('../utils/annualPlanPublishValidation').validate(plan.moduleData);
-    if (issue) return res.status(400).json({ success:false, message:issue });
+    if (preview) problems.push(...require('../utils/annualDraftIssues').draftIssues(plan.moduleData));
+    else if (issue) return res.status(400).json({ success:false, message:issue });
     const monitoring = plan.moduleData?.monitoring;
     if (monitoring?.enabled !== false && monitoring?.records?.length && !['yes', 'no'].includes(monitoring.clientAppUsage))
-      return res.status(400).json({ success: false, message: '请确认客户是否使用 App／小程序，再推送方案' });
+      if (blocking(400, '请确认客户是否使用 App／小程序，再推送方案')) return;
     let nutritionPatient = null;
     if (closedLoop) {
       const management = await require('../utils/annualManagementEvidence').load(req.params.id, targetYear);
-      if (management.stale.length) return res.status(409).json({ success: false, message: `管理来源已变化，请先重新核对：${management.stale.join('、')}` });
-      if (management.unresolved.length) return res.status(409).json({ success: false, message: `已审核AI健康信息整理还有待完善检查未由顾问逐项处理：${management.unresolved.join('、')}` });
-      const omission = require('../utils/annualManagementEvidence').validatePlanCoverage(plan.moduleData, management.evidence);
-      if (omission) return res.status(409).json({ success: false, message: omission });
+      if (management.stale.length) {
+        if (preview) management.stale.forEach(title => problems.push({ key: 'source', title, message: '管理来源已变化，请重新核对' }));
+        else return res.status(409).json({ success: false, message: `管理来源已变化，请先重新核对：${management.stale.join('、')}` });
+      }
+      if (management.unresolved.length) {
+        if (preview) management.unresolved.forEach(title => problems.push({ key: 'ai', title, message: '这项检查待顾问核对' }));
+        else return res.status(409).json({ success: false, message: `已审核AI健康信息整理还有待完善检查未由顾问逐项处理：${management.unresolved.join('、')}` });
+      }
+      const coverage = require('../utils/annualManagementEvidence').planCoverageIssues(plan.moduleData, management.evidence);
+      for (const issue of coverage) {
+        if (!preview) return res.status(409).json({ success: false, message: issue.message });
+        if (!problems.some(existing => existing.message === issue.message && existing.index === issue.index)) problems.push(issue);
+      }
       const patient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedHealthManager assignedNutritionist assignedFamilyDoctor').lean();
       if (!patient || patient.isDeleted || String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '无权发布该会员的年度方案' });
       nutritionPatient = patient;
-      if (!patient.assignedHealthManager) return res.status(409).json({ success: false, message: '请先为客户分配责任健管专员，再推送并生成随访计划' });
+      if (!patient.assignedHealthManager) {
+        if (preview) problems.push({ key: 'team', message: '请先分配责任健管专员' });
+        else return res.status(409).json({ success: false, message: '请先为客户分配责任健管专员，再推送并生成随访计划' });
+      }
       if (plan.moduleData?.nutrition_assessment?.enabled !== false) {
         if (require('../utils/annualFlowPilot').enabledForPlan(plan) && !plan.pushedAt && !/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData?.nutrition_assessment?.executionDate || ''))
-          return res.status(409).json({ success: false, message: '请先在营养干预中确定计划日期，再推送方案' });
-        if (!patient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再推送并派发方案' });
+          if (blocking(409, '请先在营养干预中确定计划日期，再推送方案')) return;
+        if (!patient.assignedNutritionist) if (blocking(409, '请先为客户分配责任营养师，再推送并派发方案')) return;
         const nutritionist = await Admin.findById(patient.assignedNutritionist).select('_id role staffStatus tenantId').lean();
-        if (!nutritionist || nutritionist.role !== 'nutritionist' || nutritionist.staffStatus === 'inactive'
-          || String(nutritionist.tenantId || '') !== String(patient.tenantId || '')) return res.status(409).json({ success: false, message: '责任营养师不可用，请先核对分配' });
+        if (patient.assignedNutritionist && (!nutritionist || nutritionist.role !== 'nutritionist' || nutritionist.staffStatus === 'inactive'
+          || String(nutritionist.tenantId || '') !== String(patient.tenantId || ''))) if (blocking(409, '责任营养师不可用，请先核对分配')) return;
       }
       try { plan.moduleData = require('../utils/annualItemManagement').normalizeAnnualItems(plan.moduleData || {}, patient?.assignedHealthManager, patient); }
-      catch (error) { return res.status(400).json({success:false,message:error.message}); }
+      catch (error) { if (blocking(400, error.message)) return; }
     }
     // 新版年度方案的营养交接不依赖旧闭环灰度开关；推送时必须有实际负责人。
     if (!nutritionPatient && require('../utils/annualFlowPilot').enabledForPlan(plan)
       && plan.moduleData?.nutrition_assessment?.enabled !== false) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(plan.moduleData.nutrition_assessment?.executionDate || ''))
-        return res.status(409).json({ success: false, message: '请先在营养干预中确定计划日期，再推送方案' });
+        if (blocking(409, '请先在营养干预中确定计划日期，再推送方案')) return;
       nutritionPatient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist').lean();
       if (!nutritionPatient || nutritionPatient.isDeleted || String(nutritionPatient.tenantId || '') !== String(req.staff.tenantId || ''))
         return res.status(403).json({ success: false, message: '无权发布该会员的年度方案' });
-      if (!nutritionPatient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师，再推送方案' });
+      if (!nutritionPatient.assignedNutritionist) if (blocking(409, '请先为客户分配责任营养师，再推送方案')) return;
       const nutritionist = await Admin.findOne({ _id: nutritionPatient.assignedNutritionist, role: 'nutritionist',
         tenantId: nutritionPatient.tenantId, staffStatus: { $ne: 'inactive' } }).select('_id').lean();
-      if (!nutritionist) return res.status(409).json({ success: false, message: '责任营养师不可用，请先核对分配' });
+      if (nutritionPatient.assignedNutritionist && !nutritionist) if (blocking(409, '责任营养师不可用，请先核对分配')) return;
     }
     let manualPatient = null, manualManager = null;
     if (monitoring?.enabled !== false && monitoring?.records?.length && monitoring.clientAppUsage === 'no') {
       try { require('../utils/manualAnnualMonitoring').manualMonitoringItems(plan.moduleData); }
-      catch (error) { return res.status(error.statusCode || 400).json({ success: false, message: error.message }); }
+      catch (error) { if (blocking(error.statusCode || 400, error.message)) return; }
       if (!require('../utils/manualAnnualMonitoringTasks').firstFollowUpDate(monitoring.firstManualFollowUpDate))
-        return res.status(400).json({ success: false, message: '请确认人工监测首次随访日期，再推送方案' });
+        if (blocking(400, '请确认人工监测首次随访日期，再推送方案')) return;
       manualPatient = nutritionPatient || await User.findById(req.params.id).select('_id tenantId assignedHealthManager').lean();
       manualManager = manualPatient?.assignedHealthManager && await Admin.findOne({ _id: manualPatient.assignedHealthManager,
         role: 'healthManager', tenantId: manualPatient.tenantId, staffStatus: { $in: ['active', null] } }).select('_id name').lean();
-      if (!manualManager) return res.status(409).json({ success: false, message: '请先分配可用的责任健管专员，再推送方案' });
+      if (!manualManager) if (blocking(409, '请先分配可用的责任健管专员，再推送方案')) return;
     }
+    if (preview) return res.json({ success: true, issues: problems });
     const wasReturned = Boolean(plan.returnedAt);
     plan.reviewStatus = 'approved';
     plan.reviewedBy = req.staff._id;
@@ -12012,7 +12053,7 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
-});
+}
 
 // One named plan: advisor can start internal work after a documented conversation.
 // Customer confirmation remains null; customer-facing kickoff and reminders wait.
