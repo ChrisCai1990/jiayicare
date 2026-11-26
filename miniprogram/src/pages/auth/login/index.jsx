@@ -153,6 +153,17 @@ export default function LoginPage() {
         <Text style={{ fontSize: '28px', fontWeight: 800, color: '#fff', letterSpacing: '2px', display: 'block' }}>嘉医汇</Text>
         <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)', marginTop: '6px', display: 'block' }}>全生命周期健康管理</Text>
 
+        <View style={{
+          display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: `${radius.md}px`,
+          padding: '12px 0', marginTop: spacing.lg,
+        }}>
+          {[{ num: '10,000+', label: '服务用户' }, { num: '300+', label: '签约医生' }, { num: '99%', label: '满意度' }].map((it, i) => (
+            <View key={i} style={{ flex: 1, textAlign: 'center' }}>
+              <Text style={{ fontSize: '17px', fontWeight: 800, color: '#5EC99B', display: 'block' }}>{it.num}</Text>
+              <Text style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)' }}>{it.label}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
       {/* 表单卡片 */}
