@@ -22,7 +22,7 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
         {['annual', 'symptom'].map(origin => {
           const members = item.visitItems.filter(entry => (entry.visitOrigin || 'annual') === origin)
           if (!members.length) return null
-          return <section key={origin}><h4>{origin === 'symptom' ? '不适主诉就医安排' : '年度管理就医安排'}</h4>
+          return <section key={origin}><h4 className="annual-visit-subheading">{origin === 'symptom' ? '不适主诉就医安排' : '年度管理就医安排'}</h4>
         {byVisitDepartment(members, entry => entry.examArrangement ? entry.examArrangement.orderDepartment : entry.careTarget?.department).map(group =>
           <section key={group.name}><h4>{group.name} · {group.items.length} 项</h4>{group.items.map(entry =>
             <details key={entry.id}><summary>{entry.reviewItems?.join('、') || entry.title}{entry.careTarget?.expert && !entry.examArrangement ? ` · ${entry.careTarget.expert}` : ''}</summary>{renderItem(entry)}</details>)}</section>)}
@@ -65,9 +65,9 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
               const standalone = visits.filter(item => !item.visitItems?.length)
               const hasAnnual = visits.some(item => (item.visitItems || [item]).some(entry => entry.visitOrigin !== 'symptom'))
               return <>
-                {(!hasAnnual || standalone.some(item => item.visitOrigin !== 'symptom')) && <section><h4>年度管理就医安排</h4>
+                {(!hasAnnual || standalone.some(item => item.visitOrigin !== 'symptom')) && <section><h4 className="annual-visit-subheading">年度管理就医安排</h4>
                   {hasAnnual ? standalone.filter(item => item.visitOrigin !== 'symptom').map(renderItem) : <p>暂无年度管理就医安排</p>}</section>}
-                {standalone.some(item => item.visitOrigin === 'symptom') && <section><h4>不适主诉就医安排</h4>
+                {standalone.some(item => item.visitOrigin === 'symptom') && <section><h4 className="annual-visit-subheading">不适主诉就医安排</h4>
                   {standalone.filter(item => item.visitOrigin === 'symptom').map(renderItem)}</section>}
                 {visits.filter(item => item.visitItems?.length).map(renderItem)}
               </>

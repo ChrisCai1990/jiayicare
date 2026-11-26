@@ -1816,10 +1816,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               {medicalGroups.map(group => <div key={group.title} className="annual-medical-group">
                 <h4 className="annual-medical-group-heading">{group.title}</h4>
                 {group.keys.includes('medical_treatment') ? <>
-                  <h5>年度管理就医安排</h5>
+                  <h5 className="annual-visit-subheading">年度管理就医安排</h5>
                   {regularActions.filter(action => group.keys.includes(action.key) && !symptomVisit(action)).map(renderGroupedAction)}
                   {!regularActions.some(action => group.keys.includes(action.key) && !symptomVisit(action)) && <p>暂无年度管理就医安排</p>}
-                  {!complaintHidden && <><h5>不适主诉就医安排</h5>
+                  {!complaintHidden && <><h5 className="annual-visit-subheading">不适主诉就医安排</h5>
                     {symptomActions.map(renderGroupedAction)}
                     {!symptomActions.length && <p>暂无不适主诉就医安排。{canEdit && !pushedAt && <>请核对客户近期是否提出新的不适。 <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleModuleChange('medical_treatment', 'complaintReminderDismissed', true)}>无主诉，移除提醒</button></>}</p>}
                   </>}

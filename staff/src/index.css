@@ -599,6 +599,16 @@ textarea.form-control { resize: vertical; }
 .annual-track-number { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; color: #fff; background: var(--track-accent); font-size: 13px; font-weight: 800; letter-spacing: .03em; }
 .annual-medical-group { margin-top: 16px; padding: 14px 16px 8px; border: 1px solid #D4E4EC; border-radius: 12px; background: #F8FBFD; }
 .annual-medical-group-heading { margin: 0 0 12px; padding: 0 0 10px; border-bottom: 2px solid #BDD6E4; color: #215B7D; font-size: 17px; font-weight: 750; }
+.annual-medical-group .annual-visit-subheading {
+  margin: 18px 0 10px;
+  padding-inline-start: 10px;
+  border-inline-start: 4px solid #4382a1;
+  color: #194d69;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .annual-nutrition-advisor-summary { display: grid; gap: 6px; margin: 8px 0; }
 .annual-nutrition-group-title { display: block; color: #315B45; margin: 10px 0 5px; }
 .annual-nutrition-summary-row { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(130px, 1fr) minmax(130px, 1fr); gap: 10px; padding: 8px 10px; border-bottom: 1px solid #E1EAE4; }
