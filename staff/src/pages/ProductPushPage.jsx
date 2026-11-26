@@ -24,6 +24,18 @@ function statusSummary(rows) {
   return [...counts].map(([label, count]) => rows.length === 1 ? label : `${label} ${count} 件`).join(' · ')
 }
 
+function productCategoryGroups(nodes, products) {
+  const byId = new Map(nodes.map(node => [String(node._id), node]))
+  const groups = nodes.filter(node => !byId.has(String(node.parent))).map(node => ({
+    id: String(node._id), name: node.name,
+    children: nodes.filter(child => String(child.parent) === String(node._id)).map(child => child.name),
+  }))
+  const known = new Set(nodes.map(node => node.name))
+  const other = [...new Set(products.map(product => product.category).filter(name => name && !known.has(name)))]
+  if (other.length) groups.push({ id: 'unmapped', name: '其他分类', children: other })
+  return groups
+}
+
 function groupedPushRecords(records) {
   const groups = new Map()
   for (const record of records) {
@@ -51,9 +63,10 @@ export default function ProductPushPage() {
   const [products, setProducts] = useState([])
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
-  const [catFilter, setCatFilter] = useState('全部')
+  const [parentId, setParentId] = useState('')
+  const [childCategory, setChildCategory] = useState('')
   const [productSearch, setProductSearch] = useState('')
-  const [categories, setCategories] = useState(['全部'])
+  const [categoryNodes, setCategoryNodes] = useState([])
   const [selected, setSelected] = useState([])   // 已选产品 id 数组
   const [selectedPrices, setSelectedPrices] = useState({})  // { productId: price }
   const [quantity, setQuantity] = useState(1)
@@ -75,7 +88,7 @@ export default function ProductPushPage() {
       setPatients(initialPatient?._id && !loadedPatients.some(patient => String(patient._id) === String(initialPatient._id))
         ? [initialPatient, ...loadedPatients] : loadedPatients)
       setPushRecords(pr.data.records)
-      setCategories(['全部', ...(cat.data?.categories || [])])
+      setCategoryNodes(cat.data?.categoryNodes || [])
       if (requestedMedicalProxy) {
         const proxy = (p.data.products || []).find(product => /医疗代诊/.test(product.name || ''))
         if (proxy) {
@@ -93,7 +106,10 @@ export default function ProductPushPage() {
     setPushRecords(pr.data.records)
   }
 
-  const categoryProducts = (catFilter === '全部' ? products : products.filter(p => p.category === catFilter))
+  const categoryGroups = productCategoryGroups(categoryNodes, products)
+  const parentGroup = categoryGroups.find(group => group.id === parentId)
+  const categoryProducts = products.filter(product => childCategory ? product.category === childCategory
+    : !parentGroup || product.category === parentGroup.name || parentGroup.children.includes(product.category))
     .filter(p => `${p.name} ${p.subtitle || ''} ${p.category || ''}`.toLowerCase().includes(productSearch.trim().toLowerCase()))
   const filtered = requestedMedicalServices ? categoryProducts.filter(p => /medical_assist|medical_proxy/.test(p.serviceWorkflow?.key || '') || /就医|代诊|代办|陪诊|陪同|约诊|复诊|挂号/.test(p.name || '')) : categoryProducts
 
@@ -114,9 +130,17 @@ export default function ProductPushPage() {
 
   const selectedItems = products.filter(p => selected.includes(p.id))
   const totalPrice = selectedItems.reduce((sum, p) => sum + (selectedPrices[p.id] ?? p.price ?? 0), 0) * (selectedItems.length === 1 ? quantity : 1)
-  const [historyView, setHistoryView] = useState('sent')
-  const isRecalled = historyView === 'recalled'
-  const displayPushRecords = groupedPushRecords(pushRecords.filter(row => Boolean(row.recalledAt) === isRecalled))
+  const [historyView, setHistoryView] = useState('已推送')
+  const isRecalled = historyView === '已撤回'
+  const availableLabels = new Set(pushRecords.map(pushLabel))
+  const historyViews = ['已推送', '已购买', '已读', '未读', '已撤回',
+    ...['待支付', '退款处理中', '部分退款', '已退款', '已调减'].filter(label => availableLabels.has(label) || historyView === label)]
+  const displayPushRecords = groupedPushRecords(pushRecords.filter(row => historyView === '已推送' ? !row.recalledAt : pushLabel(row) === historyView))
+  function canRecallGroup(group) {
+    const batch = group.record.recommendationBatchId
+    const members = batch ? pushRecords.filter(row => row.recommendationBatchId === batch) : group.records
+    return members.every(canRecall) && members.length === group.records.length
+  }
   const [recalling, setRecalling] = useState(false)
   const recallPush = async record => {
     if (!window.confirm(`撤回发给${record.patientId?.name || '该会员'}的「${record.title}」？撤回后，会员将无法通过这次推送下单。`)) return
@@ -163,14 +187,24 @@ export default function ProductPushPage() {
 
       {/* 分类筛选 */}
       <input className="form-input" aria-label="搜索服务产品" placeholder="搜索服务或产品名称" value={productSearch} onChange={event => setProductSearch(event.target.value)} style={{ width: '100%', maxWidth: 420, marginBottom: 12 }} />
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {categories.map(c => (
-          <button key={c}
-            className={catFilter === c ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
-            onClick={() => setCatFilter(c)}
-          >{c}</button>
+      <div role="group" aria-label="产品大类" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+        <strong style={{ fontSize: 13 }}>大类</strong>
+        {[{ id: '', name: '全部' }, ...categoryGroups].map(group => (
+          <button key={group.id} type="button" aria-pressed={parentId === group.id}
+            className={parentId === group.id ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+            onClick={() => { setParentId(group.id); setChildCategory('') }}>{group.name}</button>
         ))}
       </div>
+      {!!parentGroup?.children.length && (
+        <div role="group" aria-label="产品子类目" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+          <strong style={{ fontSize: 13 }}>子类目</strong>
+          {['', ...parentGroup.children].map(name => (
+            <button key={name} type="button" aria-pressed={childCategory === name}
+              className={childCategory === name ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+              onClick={() => setChildCategory(name)}>{name || '全部子类'}</button>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, alignItems: 'start' }}>
         {/* 产品列表（可多选） */}
@@ -341,15 +375,15 @@ export default function ProductPushPage() {
           {/* 推送记录 */}
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>🕐 最近推送记录</div>
-            <div role="group" aria-label="推送记录状态" style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              {[['sent', '已推送'], ['recalled', '已撤回']].map(([value, label]) => (
+            <div role="group" aria-label="推送记录状态" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+              {historyViews.map(value => (
                 <button key={value} type="button" aria-pressed={historyView === value}
                   className={`btn btn-sm ${historyView === value ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setHistoryView(value)}>{label}</button>
+                  onClick={() => setHistoryView(value)}>{value}</button>
               ))}
             </div>
             {displayPushRecords.length === 0 ? (
-              <div className="card" style={{ padding: 24, textAlign: 'center', color: '#aaa', fontSize: 14 }}>{isRecalled ? '暂无已撤回记录' : '暂无已推送记录'}</div>
+              <div className="card" style={{ padding: 24, textAlign: 'center', color: '#aaa', fontSize: 14 }}>{`暂无${historyView}记录`}</div>
             ) : (
               <div className="card">
                 {displayPushRecords.map((group, i) => { const r = group.record; return (
@@ -358,7 +392,7 @@ export default function ProductPushPage() {
                     <div style={{ fontSize: 12, color: '#8AA89C' }}>
                       {r.patientId?.name} · {new Date(r.createdAt).toLocaleString('zh-CN')}
                     </div>
-                    {group.maximum > 1 && <div style={{ fontSize: 12, marginTop: 4 }}>
+                    {historyView === '已推送' && group.maximum > 1 && <div style={{ fontSize: 12, marginTop: 4 }}>
                       可购买 {group.count}/{group.maximum} 件
                       {!group.records.some(hasLiveOrder) && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => changePushQuantity(group)}>调整数量</button>}
                     </div>}
@@ -378,7 +412,7 @@ export default function ProductPushPage() {
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 12 }}>
                         <span>{statusSummary(group.records)}</span>
-                        {group.records.every(canRecall) && <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(r)}>撤回推送</button>}
+                        {canRecallGroup(group) && <button type="button" className="btn btn-secondary btn-sm" disabled={recalling} onClick={() => recallPush(r)}>撤回推送</button>}
                       </div>
                     )}
                   </div>

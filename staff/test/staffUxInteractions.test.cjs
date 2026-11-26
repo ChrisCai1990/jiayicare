@@ -192,6 +192,13 @@ test('product history opens on sent records and moves a recalled push to history
   try {
     assert.match(view.container.textContent, /当前推荐/)
     assert.doesNotMatch(view.container.textContent, /历史推荐/)
+    const filters = view.container.querySelector('[aria-label="推送记录状态"]')
+    await click(filters, '已购买')
+    assert.match(view.container.textContent, /暂无已购买记录/)
+    await click(filters, '已读')
+    assert.match(view.container.textContent, /暂无已读记录/)
+    await click(filters, '未读')
+    assert.match(view.container.textContent, /当前推荐/)
     await click(view.container, '已撤回')
     assert.match(view.container.textContent, /历史推荐/)
     assert.doesNotMatch(view.container.textContent, /当前推荐|撤回推送/)
@@ -212,4 +219,33 @@ test('purchased pushes are summarized separately from read pushes and excluded f
   assert.equal(group.count, 1)
   assert.equal(statusSummary(group.records), '已购买 1 件 · 已读 1 件')
   assert.equal(canRecall(group.record), false)
+})
+
+test('product filters show only the selected parent’s children and keep selected items', async () => {
+  const categoryNodes = [{ _id: 'a', name: '健康管理' }, { _id: 'a1', name: '营养补充', parent: 'a' },
+    { _id: 'b', name: '检测评估' }, { _id: 'b1', name: '基因检测', parent: 'b' }]
+  const products = [{ id: '1', name: '维生素样品', category: '营养补充', price: 1 },
+    { id: '2', name: '测序样品', category: '基因检测', price: 2 },
+    { id: '3', name: '直属服务', category: '健康管理', price: 3 }]
+  const api = { getProducts: async () => ({ data: { products } }), getProductCategories: async () => ({ data: { categoryNodes } }),
+    getPushRecords: async () => ({ data: { records: [] } }) }
+  const Page = load('pages/ProductPushPage.jsx', { '../api': { staffAPI: api }, '../App': { useToast: () => () => {} },
+    '../components/PatientPicker': {}, '../components/ScheduleBookingDialog': () => null }).default
+  const view = await mount(React.createElement(MemoryRouter, null, React.createElement(Page)))
+  try {
+    const childGroup = () => view.container.querySelector('[aria-label="产品子类目"]')
+    assert.equal(childGroup(), null)
+    await click(view.container, '健康管理')
+    assert.match(view.container.textContent, /直属服务/)
+    assert.doesNotMatch(childGroup().textContent, /基因检测/)
+    await click(childGroup(), '营养补充')
+    assert.doesNotMatch(view.container.textContent, /直属服务|测序样品/)
+    const item = [...view.container.querySelectorAll('span')].find(el => el.textContent === '维生素样品')
+    await act(async () => item.click())
+    await click(view.container, '检测评估')
+    assert.match(childGroup().textContent, /基因检测/)
+    assert.match(view.container.textContent, /测序样品/)
+    assert.match(view.container.textContent, /维生素样品/)
+    assert.equal(childGroup().querySelector('[aria-pressed="true"]').textContent, '全部子类')
+  } finally { await view.close() }
 })

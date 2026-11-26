@@ -8354,8 +8354,8 @@ router.post('/patients/:id/fund-orders', staffAuth, checkPermission('products', 
 // GET /api/staff/product-categories — 商城产品分类（与管理后台同源，读 ProductCategory 集合）
 router.get('/product-categories', staffAuth, checkPermission('products', 'view'), async (req, res) => {
   const ProductCategory = require('../models/ProductCategory');
-  const cats = await ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).select('name');
-  res.json({ success: true, data: { categories: cats.map(c => c.name) } });
+  const cats = await ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).select('name parent').lean();
+  res.json({ success: true, data: { categories: cats.map(c => c.name), categoryNodes: cats } });
 });
 
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
