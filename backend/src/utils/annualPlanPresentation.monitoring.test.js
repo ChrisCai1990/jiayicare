@@ -26,3 +26,11 @@ test('下一年度体检在成品方案保留顾问核对的关注项目', () =>
   assert.equal(row.schedule, '2027-10-08');
   assert.match(row.customerAction, /项目甲、项目乙/);
 });
+
+test('年度体检重点届时再定时只展示重点，不生成客户待办文案', () => {
+  const [row] = buildAnnualPlanDisplayItems(customerModuleData({
+    annual_checkup: { enabled: true, focus: '届时再定' },
+  }));
+  assert.equal(row.focus, '届时再定');
+  assert.equal(row.customerAction, '');
+});

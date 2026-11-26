@@ -19,7 +19,8 @@ function normalizeItem(moduleKey, record, index) {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: MODULE_NAME[moduleKey],
     schedule: record.date || '',
     focus: record.focus || '',
-    customerAction: record.focus ? `在下一年度体检中重点关注：${String(record.focus).split(/\r?\n/).map(row => row.trim()).filter(Boolean).join('、')}` : '',
+    customerAction: record.focus && !/^届时再定[。.]?$/.test(String(record.focus).trim())
+      ? `在下一年度体检中重点关注：${String(record.focus).split(/\r?\n/).map(row => row.trim()).filter(Boolean).join('、')}` : '',
     careTarget: { hospital: record.institution || '', department: '', expert: '' },
     service: { mode: record.serviceMode || 'reminder', modeLabel: ({ reminder: '仅提醒', single: '方案定制＋机构安排', managed: '体检一站式服务' })[record.serviceMode || 'reminder'],
       type: record.serviceType || '', typeLabel: SERVICE_TYPE[record.serviceType] || '' },
