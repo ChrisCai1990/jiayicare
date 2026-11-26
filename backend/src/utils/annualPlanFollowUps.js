@@ -195,7 +195,7 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.order_dept && `开单科室：${rec.order_dept}`,
         rec.orderExpertSnapshots?.length && `开单候选专家：${rec.orderExpertSnapshots.map(item => item.name).join('、')}`,
         rec.order_expert && rec.order_expert !== '无' && `开单专家：${rec.order_expert}`,
-        visitItems.length > 1 && `同次就诊事项：${visitItems.map(item => item.title).join('；')}`,
+        visitItems.length > 1 && `同次就诊事项：${visitItems.map(item => [item.title, item.orderDepartment && `开单科室：${item.orderDepartment}`, item.examDepartment && `${item.moduleKey === 'medical_treatment' ? '就诊' : '检查'}科室：${item.examDepartment}`].filter(Boolean).join(' · ')).join('；')}`,
         ...visitItems.filter(item => item.moduleKey !== mod.key || item.recordIndex !== i).map(item =>
           `${item.title}：${[item.department && `科室${item.department}`, item.expert && `专家${item.expert}`, item.reason && `原因${item.reason}`].filter(Boolean).join('；')}`),
         rec.standardContent && `标准执行内容：${rec.standardContent}`,

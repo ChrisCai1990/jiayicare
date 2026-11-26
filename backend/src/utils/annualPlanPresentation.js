@@ -106,7 +106,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
     const names = members.map(item => item.reviewItems?.join('、') || item.title);
     const combined = { ...lead, id: `visit:${groupId}`, title: `同次就诊 · ${names.join('、')}`, visitItems: members,
       customerAction: members.map((item, i) => [names[i], item.examArrangement?.orderDepartment,
-        item.examArrangement?.examDepartment, item.customerAction].filter(Boolean).join(' · ')).join('\n') };
+        item.examArrangement?.examDepartment || item.careTarget?.department, item.customerAction].filter(Boolean).join(' · ')).join('\n') };
     members.forEach((item, index) => grouped.set(item.id, index === 0 ? combined : null));
   }
   return items.map(item => grouped.has(item.id) ? grouped.get(item.id) : item).filter(Boolean);

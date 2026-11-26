@@ -3,12 +3,12 @@ const assert = require('node:assert/strict');
 const { validate } = require('../src/utils/annualPlanPublishValidation');
 const { sharedVisitItems } = require('../src/utils/annualVisitGroups');
 
-test('同院同日的就医和完善检查发布前须合并或说明分开原因', () => {
+test('同院同日的就医和完善检查发布前须合为一条协助任务', () => {
   const medical = { items: '心内科就医', visit_time: '2026-11-27', hospital: '邵逸夫医院', serviceMode: 'single', serviceType: 'proxy_booking' };
   const exam = { items: '脂蛋白磷脂酶A2', time: '2026-11-27', hospital: '邵逸夫医院', serviceMode: 'single', serviceType: 'escort_exam' };
   const data = { medical_treatment: { records: [medical] }, checkup_completion: { records: [exam] } };
   assert.match(validate(data, '2026-11-25'), /归为同次就诊/);
-  assert.equal(validate({ ...data, checkup_completion: { records: [{ ...exam, scheduleSeparationReason: '检查须先另行安排' }] } }, '2026-11-25'), '');
+  assert.match(validate({ ...data, checkup_completion: { records: [{ ...exam, scheduleSeparationReason: '检查须先另行安排' }] } }, '2026-11-25'), /归为同次就诊/);
   assert.equal(validate({ medical_treatment: { records: [{ ...medical, visitGroupId: '同次' }] }, checkup_completion: { records: [{ ...exam, serviceMode: 'shared', serviceType: '', visitGroupId: '同次' }] } }, '2026-11-25'), '');
 });
 

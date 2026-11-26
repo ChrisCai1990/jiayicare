@@ -111,7 +111,7 @@ export function changeSharedVisitProvider(data, moduleKey, index, field, enabled
   return syncSharedVisitProviders(next)
 }
 
-export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, serviceType = '', trackResults = false, confirmed = true }) {
+export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, serviceType = '', trackResults = false, confirmed = true, assistedTrip = false }) {
   const rows = visitRows(data)
   const selected = rows.filter(row => keys.includes(row.key))
   if (selected.length < 2) throw new Error('请至少选择两项确属同一次就诊的事项')
@@ -121,7 +121,7 @@ export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, servi
   if (serviceMode === 'single' && !serviceType) throw new Error('请选择单项服务内容')
   if ((serviceMode !== 'reminder' && selected.some(row => !row.hospital))
     || new Set(selected.map(row => row.hospital)).size !== 1) throw new Error('同次就诊需在同一医院；请先核实并填写医院')
-  if (selected.some(row => String(row.row.scheduleSeparationReason || '').trim())) throw new Error('所选事项仍有分开安排的原因或待核实条件；请核实后清除该说明再归类')
+  if (!assistedTrip && selected.some(row => String(row.row.scheduleSeparationReason || '').trim())) throw new Error('所选事项仍有分开安排的原因或待核实条件；请核实后清除该说明再归类')
   const selectedKeys = new Set(selected.map(row => row.key))
   if (selected.some(row => row.row.visitGroupId && rows.some(other => other.row.visitGroupId === row.row.visitGroupId && !selectedKeys.has(other.key)))) throw new Error('已有同次就诊的事项请整组选择后再调整')
   const existingIds = new Set(rows.filter(row => !selectedKeys.has(row.key)).map(row => row.row.visitGroupId).filter(Boolean))
@@ -133,7 +133,9 @@ export function groupVisitRows(data, keys, { date, leaderKey, serviceMode, servi
     if (!next[row.moduleKey] || next[row.moduleKey] === data[row.moduleKey]) next[row.moduleKey] = { ...data[row.moduleKey], records: [...data[row.moduleKey].records] }
     const leader = row.key === leaderKey
     next[row.moduleKey].records[row.index] = {
-      ...row.row, [row.dateKey]: date, visitGroupId: groupId, visitMergeConfirmed: confirmed, appointmentSchedulingVersion: 1, ...(trackResults ? { visitResultFollowUp: true } : {}),
+      ...row.row, ...(assistedTrip ? { followVisitOrdering: false,
+        requestedVisitService: row.row.requestedVisitService || row.row.serviceType || row.row.managedServiceType || '' } : {}),
+      [row.dateKey]: date, visitGroupId: groupId, visitMergeConfirmed: confirmed, appointmentSchedulingVersion: 1, ...(trackResults ? { visitResultFollowUp: true } : {}),
       serviceMode: serviceMode === 'reminder' ? 'reminder' : leader ? serviceMode : 'shared',
       serviceType: leader && serviceMode === 'single' ? serviceType : '',
       managedServiceType: leader && serviceMode === 'managed' ? 'outpatient' : '',
@@ -180,6 +182,21 @@ export function autoGroupAnnualVisits(data) {
     next = groupVisitRows(next, items.map(item => item.key), { date: leader.date, leaderKey: leader.key, serviceMode: mode, serviceType: leader.row.serviceType, trackResults: true, confirmed: false })
   }
   return syncSharedVisitProviders(next)
+}
+
+// Each visit is a trip to one hospital. Departments remain properties of its items.
+export function suggestedAssistedVisits(data) {
+  const groups = new Map()
+  for (const item of visitRows(data)) {
+    if (!item.hospital || /待定|待确认|待核|或|就近/.test(item.hospital) || item.row.datePending ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) continue
+    const key = JSON.stringify([item.date, item.hospital])
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(item)
+  }
+  return [...groups.values()].filter(group => group.length > 1 &&
+    group.some(item => ['single', 'managed', 'shared'].includes(item.row.serviceMode)) &&
+    !group.every(item => item.row.visitMergeConfirmed && item.row.visitGroupId && item.row.visitGroupId === group[0].row.visitGroupId))
 }
 
 export function nearDateCandidates(data) {

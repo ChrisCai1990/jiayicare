@@ -51,6 +51,11 @@ function validateVisitGroups(data = {}) {
   }
   for (const [key, rows] of byDateAndHospital) {
     if (rows.length < 2) continue;
+    const assisted = rows.some(row => ['single', 'managed', 'shared'].includes(row.serviceMode));
+    if (assisted && rows.some(row => !row.visitGroupId || row.visitGroupId !== rows[0].visitGroupId)) {
+      const [date, hospital] = JSON.parse(key);
+      return `${date} ${hospital}：请归为同次就诊，生成一条就医协助任务，各项目保留各自科室`;
+    }
     const unresolved = rows.some((row, index) => rows.slice(index + 1).some(other =>
       (!row.visitGroupId || row.visitGroupId !== other.visitGroupId)
       && !(row.visitMergeConfirmed && other.visitMergeConfirmed && row.visitGroupId && other.visitGroupId)
@@ -68,7 +73,7 @@ function sharedVisitItems(data, id) {
     const examExpert = text(row.expert || (row.expertSnapshots || []).map(item => item.name).join('、'));
     const orderExpert = text(row.order_expert || (row.orderExpertSnapshots || []).map(item => item.name).join('、'));
     return {
-    moduleKey, recordIndex: index, title: row.reviewItems?.join('、') || title,
+    moduleKey, recordIndex: index, requestedService: row.requestedVisitService || row.serviceType || row.managedServiceType || '', title: row.reviewItems?.join('、') || title,
     department: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1
       ? row.order_dept || row.department : row.department || row.order_dept),
     expert: text(moduleKey === 'abnormal_followup' && row.reviewGroupVersion === 1

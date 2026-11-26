@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { autoGroupAnnualVisits, nearDateCandidates, groupVisitRows, matchingVisitLeaders, assignSharedVisit, changeSharedVisitProvider } from './annualVisitScheduling.mjs'
+import { suggestedAssistedVisits, autoGroupAnnualVisits, nearDateCandidates, groupVisitRows, matchingVisitLeaders, assignSharedVisit, changeSharedVisitProvider } from './annualVisitScheduling.mjs'
 
 test('合并就诊选择仅提醒时各事项保持提醒且统一日期', () => {
   const data = { abnormal_followup: { records: [{ items: '肺结节', time: '2026-12-03', serviceMode: 'single', serviceType: 'proxy_booking' },
@@ -82,4 +82,24 @@ test('完善检查可沿用主就医医院及开单科室专家，检查科室�
   assert.equal(exam.department, '检验科')
   const changed = { ...grouped, medical_treatment: { records: [{ ...grouped.medical_treatment.records[0], expert: '专家乙' }] } }
   assert.equal(autoGroupAnnualVisits(changed).checkup_completion.records[0].order_expert, '专家乙')
+})
+
+test('同日同院三个科室整体建议合并，派发一条协助任务并保留科室明细', async () => {
+  const departments = ['心内科', '肾内科', '消化内科']
+  const data = { medical_treatment: { records: departments.map((department, i) => ({
+    department, visit_time: '2026-12-10', hospital: '邵逸夫医院', items: department + '就诊',
+    serviceMode: 'single', serviceType: i === 0 ? 'proxy_booking' : 'escort_visit',
+  })) } }
+  const [trip] = suggestedAssistedVisits(data)
+  assert.equal(trip.length, 3)
+  const next = groupVisitRows(data, trip.map(row => row.key), {
+    leaderKey: trip[0].key, date: trip[0].date, serviceMode: 'single', serviceType: 'proxy_booking', assistedTrip: true, trackResults: true,
+  })
+  assert.equal(suggestedAssistedVisits(next).length, 0)
+  const { buildAnnualPlanServiceTasks } = await import('../../../backend/src/utils/annualPlanServiceTasks.js')
+  const tasks = buildAnnualPlanServiceTasks({ moduleData: next }, { assignedHealthPlanner: 'planner' })
+  assert.equal(tasks.length, 1)
+  const entries = tasks[0].formData.serviceRequest.itemSnapshot.visitItems
+  assert.deepEqual(entries.map(item => item.department), departments)
+  assert.deepEqual(entries.map(item => item.requestedService), ['proxy_booking','escort_visit','escort_visit'])
 })
