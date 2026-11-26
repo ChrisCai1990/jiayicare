@@ -194,11 +194,11 @@ export default function LoginPage() {
           <View style={{ marginTop: `${spacing.md}px`, padding: `${spacing.md}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px` }}>
             <Text style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: colors.primary }}>微信审核专用入口</Text>
             <Text style={{ display: 'block', margin: '8px 0 12px', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员体验虚构资料；勾选协议后可直接进入。</Text>
-            {agreementField}
             <Button onClick={handleReviewLogin} disabled={loading || !agreed} loading={loading} style={{ height: '48px', lineHeight: '48px', backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px`, fontSize: '15px', fontWeight: 700 }}>进入审核体验</Button>
           </View>
         )}
 
+        {reviewEnabled && agreementField}
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>{t('手机号登录')}</Text>
         <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>{t('手机号验证码登录，新用户自动注册')}</Text>
         <View onClick={() => setLanguage(language === 'en-US' ? 'zh-CN' : 'en-US')} style={{ padding: '4px 0 14px' }}><Text style={{ color: colors.primary, fontSize: '13px' }}>🌐 {language === 'en-US' ? '简体中文' : 'English'}</Text></View>

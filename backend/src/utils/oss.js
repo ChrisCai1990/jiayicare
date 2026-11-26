@@ -134,6 +134,13 @@ function signStoredUrl(url, key, expires = 600) {
   try { return getSignedUrl(resolvedKey, expires); } catch { return url || ''; }
 }
 
+// 群消息每两秒刷新。让同一对象在五分钟内得到相同的签名和图片地址。
+// 有效期仍最多十分钟，切换到下一批签名时，之前的地址仍有五分钟可用。
+function signGroupMediaUrl(url, key) {
+  const seconds = Math.floor(Date.now() / 1000);
+  return signStoredUrl(url, key, 600 - seconds % 300);
+}
+
 // 供服务端受控预览使用。浏览器不直接读取私有 OSS 对象，避免对象的下载策略影响内嵌预览。
 async function getObjectStream(key, headers = {}) {
   if (!key) throw new Error('文件对象不存在');
@@ -175,4 +182,4 @@ function urlToKey(url) {
   } catch { return null; }
 }
 
-module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, copyStoredFile, copyMessageImageToReport, getClient, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, signGroupMediaUrl, getObjectStream, copyStoredFile, copyMessageImageToReport, getClient, urlToKey, convertHeicBase64IfNeeded };

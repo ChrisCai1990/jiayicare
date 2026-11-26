@@ -95,15 +95,15 @@ async function serializeMessages(group,rows) {
     if (!row.materialReportId) return undefined;
     const report=reportMap.get(String(row.materialReportId));
     return { id:row.materialReportId, title:report?.title || '医疗资料', status:materials.statusOf(report),
-      mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signStoredUrl(url,report.ossKeys?.[i] || '')) };
+      mimeType:report?.mimeType, files:(report?.fileUrls || []).map((url,i)=>require('../utils/oss').signGroupMediaUrl(url,report.ossKeys?.[i] || '')) };
   };
   const quoted=await Message.find({_id:{$in:rows.map(row=>row.quotedMessageId).filter(Boolean)},groupId:group._id,tenantId:group.tenantId,recalled:{$ne:true}}).select('senderName content audioUrl fileUrl fileMimeType materialReportId').lean();
   const quoteMap=new Map(quoted.map(q=>[String(q._id),{id:q._id,senderName:q.senderName,content:q.audioUrl?'[语音消息]':q.fileUrl?(q.fileMimeType?.startsWith('image/')?'[图片]':'[文件]'):q.materialReportId?'[医疗资料]':q.content.slice(0,180)}]));
   return rows.map(row => ({ id: row._id, senderId:row.senderId, quote:row.quotedMessageId?(quoteMap.get(String(row.quotedMessageId))||{unavailable:true,content:'原消息已不可用'}):null, senderType: row.senderType,
     senderAvatar: row.senderType === 'ai' ? assistant.identity.avatar : row.senderType === 'customer' ? customer?.avatar || '' : personMap.get(String(row.senderId))?.avatar || '',
     senderRole: row.senderType === 'ai' ? 'ai' : row.senderType === 'customer' ? 'customer' : personMap.get(String(row.senderId))?.role || '',
-    audioUrl:row.audioUrl?require('../utils/oss').signStoredUrl(row.audioUrl):'',audioDuration:row.audioDuration||0,audioTranscript:row.audioTranscript||'',
-    fileUrl:row.fileUrl?require('../utils/oss').signStoredUrl(row.fileUrl):'',fileName:row.fileName||'',fileMimeType:row.fileMimeType||'',fileSize:row.fileSize||0,
+    audioUrl:row.audioUrl?require('../utils/oss').signGroupMediaUrl(row.audioUrl):'',audioDuration:row.audioDuration||0,audioTranscript:row.audioTranscript||'',
+    fileUrl:row.fileUrl?require('../utils/oss').signGroupMediaUrl(row.fileUrl):'',fileName:row.fileName||'',fileMimeType:row.fileMimeType||'',fileSize:row.fileSize||0,
     material: materialOf(row), mentions: row.mentions || [], senderName: row.senderName, content: row.content, createdAt: row.createdAt }));
 }
 async function send(group, senderType, sender, content, rawMentions = [], audioFields = {}, quotedMessageId = null) {

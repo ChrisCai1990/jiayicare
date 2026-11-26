@@ -37,8 +37,8 @@ for (const reviewEnabled of [false, true]) test('login layout with review enable
   assert.equal(labels.filter(label => label === '我已阅读并同意').length, 1);
   assert.equal(labels.includes('进入审核体验'), reviewEnabled);
   if (reviewEnabled) {
-    assert.ok(labels.indexOf('我已阅读并同意') < labels.indexOf('进入审核体验'));
-    assert.ok(labels.indexOf('进入审核体验') < labels.indexOf('手机号登录'));
+    assert.ok(labels.indexOf('进入审核体验') < labels.indexOf('我已阅读并同意'));
+    assert.ok(labels.indexOf('我已阅读并同意') < labels.indexOf('手机号登录'));
   }
   assert.ok(labels.indexOf('立即登录') > labels.indexOf('我已阅读并同意'));
 });
