@@ -1045,7 +1045,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }
 
   const handlePush = async () => {
-    if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
+    if (dirty || metricSelectionDirty) { toast('有未保存的更改，请先暂存草稿'); return }
+    if (blockedByCheck) { openDetailedAction('#annual-push-check'); return }
+    if (preparationBlocked) { toast('请先完成方案准备清单'); openDetailedAction('#annual-plan-preparation'); return }
     if (!planType) { toast('请先选择方案类型并保存'); return }
     if (!window.confirm('确认已完成专业审核并推送给客户？推送后将生成正式执行任务。')) return
     setPushing(true)
@@ -1455,11 +1457,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               </button>}
               {(!pushedAt || Boolean(plansByType[planType]?.followUpReleasedAt && !plansByType[planType]?.distributionSyncedAt)) && !confirmedAt && <button
                 onClick={handlePush}
-                disabled={blockedByCheck || pushing || dirty || metricSelectionDirty || !planType || preparationBlocked}
+                disabled={pushing || saving}
                 title={preparationBlocked ? '请先完成首次方案准备清单' : ''}
                 style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType || preparationBlocked) ? 0.5 : 1 }}
               >
-                {pushing ? '同步中...' : pushedAt ? '重试任务分发' : '推送并分发'}
+                {pushing ? '同步中...' : pushedAt ? '重试任务分发' : checked?.issues.length ? `推送前待处理（${checked.issues.length}）` : '推送并分发'}
               </button>}
             </>
           )}
@@ -1476,15 +1478,31 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       </div>
 
-      {annualPilot && planType && !pushedAt && <AnnualVisitScheduleReview data={moduleData} editable={canEdit} nearbyOnly onChange={handleVisitScheduleChange} onError={toast} />}
-      {checkNeeded && <section aria-label="推送前核对" aria-live="polite" style={{ marginBottom: 20, padding: 14, background: '#fff', borderRadius: 10 }}>
+      {checkNeeded && <section id="annual-push-check" aria-label="推送前核对" aria-live="polite" style={{ marginBottom: 20, padding: 14, background: '#fff', borderRadius: 10 }}>
         <strong>{!checked ? '正在核对已保存的草稿…' : checked.error ? '推送前核对未完成' : checked.issues.length ? `推送前还有 ${checked.issues.length} 项待处理` : '推送前核对通过，可以推送并分发'}</strong>
         {checked?.error && <span>　{checked.error}</span>}
         {checked?.issues.map((issue, index) => <div key={index} style={{ marginTop: 8 }}>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => locateDraftIssue(issue)}>去处理</button>　{issue.title && !issue.message.includes(issue.title) ? `${issue.title} · ` : ''}{issue.message}
+          {issue.key === 'daily' ? <form onSubmit={event => {
+          event.preventDefault()
+          const date = event.currentTarget.elements.followDate.value
+          setModuleData(previous => {
+            const module = previous.personalized_followups || {}
+            const records = [...(module.records || [])]
+            const index = records.findIndex(row => /^【?日常跟进(?:与动态调整)?】?$/.test(row.standardPlanName || row.items || '') && row.executionDate === date)
+            const row = records[index] || { standardPlanName: '日常跟进与动态调整', executionDate: date }
+            const updated = { ...row, sourceIds: [...new Set([...(row.sourceIds || []), issue.sourceId])],
+              personalization: [row.personalization, issue.title].filter(Boolean).join('；') }
+            if (index < 0) records.push(updated)
+            else records[index] = updated
+            return { ...previous, personalized_followups: { ...module, enabled: true, records } }
+          })
+          setDirty(true)
+          toast('已加入日常跟进，请暂存草稿后推送')
+        }}><label>首次跟进日期 <DateField name="followDate" type="date" required /></label> <button type="submit" className="btn btn-secondary btn-sm">加入日常跟进</button></form> : <button type="button" className="btn btn-secondary btn-sm" onClick={() => locateDraftIssue(issue)}>去处理</button>}　{issue.title && !issue.message.includes(issue.title) ? `${issue.title} · ` : ''}{issue.message}
         </div>)}
         {checked && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setCheckAttempt(value => value + 1)}>重新核对</button>}
       </section>}
+      {annualPilot && planType && !pushedAt && <AnnualVisitScheduleReview data={moduleData} editable={canEdit} nearbyOnly onChange={handleVisitScheduleChange} onError={toast} />}
       {patientMode && planType && canEdit && <div id="annual-screening-sync" style={{ margin: '-12px 0 20px', padding: '12px 14px', border: '1px solid #C7DCCF', borderRadius: 10, background: '#F4FAF6', fontSize: 13, color: '#365E4C' }}>
         {!pushedAt ? <><strong>核对已纳入的问题</strong><span style={{ marginLeft: 8 }}>已确认的专项筛查与已审核 AI 整理中的明确待补检查可同步到草稿；推送前请核对方案安排。</span>
           <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={reloadManagementTargets}>同步最新纳入问题</button></>

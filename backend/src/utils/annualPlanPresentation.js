@@ -10,6 +10,10 @@ const { isInternalNutritionMetric } = require('../../../shared/annualNutritionAd
 const first = (...values) => values.find(value => value !== undefined && value !== null && String(value).trim()) || '';
 const internalDaily = record => /^【?日常跟进(?:与动态调整)?】?$/.test(String(record?.standardPlanName || record?.items || '').trim());
 
+function expertNames(snapshots, entered) {
+  return [...new Set([...(Array.isArray(snapshots) ? snapshots.map(person => person?.name) : []), entered].filter(Boolean))];
+}
+
 function normalizeItem(moduleKey, record, index) {
   if (moduleKey === 'annual_checkup') return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey], title: MODULE_NAME[moduleKey],
@@ -35,6 +39,8 @@ function normalizeItem(moduleKey, record, index) {
     measurementPeriod: record.measurementPeriod || record.time || '', frequency: record.frequency || '',
     precautions: record.precautions || '',
   };
+  const examExperts = expertNames(record.expertSnapshots, record.expert);
+  const orderExperts = expertNames(record.orderExpertSnapshots, record.order_expert);
   const rawTitle = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
   const title = moduleKey === 'medical_treatment' && /^(需要安排就医|安排就医)$/.test(rawTitle) && record.department
     ? `前往${record.department}就诊` : rawTitle;
@@ -60,11 +66,11 @@ function normalizeItem(moduleKey, record, index) {
       department: moduleKey === 'abnormal_followup' && record.reviewGroupVersion === 1
         ? record.order_dept || record.department || '' : record.department || record.order_dept || '',
       expert: moduleKey === 'abnormal_followup' && record.reviewGroupVersion === 1
-        ? record.order_expert || record.expert || '' : record.expert || record.order_expert || '' },
+        ? orderExperts.join('、') || examExperts.join('、') : examExperts.join('、') || orderExperts.join('、') },
     ...(['checkup_completion', 'abnormal_followup', 'functional_medicine'].includes(moduleKey) ? {
       examArrangement: { orderDepartment: record.order_dept, examDepartment: record.department,
-        orderExperts: [...(record.orderExpertSnapshots || []).map(person => person.name), record.order_expert].filter(Boolean),
-        examExperts: [...(record.expertSnapshots || []).map(person => person.name), record.expert].filter(Boolean) },
+        orderExperts,
+        examExperts },
     } : {}),
     customerAction: record.customerAction || ({ medical_treatment: '按约定时间就诊，完成后将医生意见交给健康顾问',
       abnormal_followup: '按计划完成复查，并将结果交给健康顾问',
@@ -106,13 +112,13 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
     const names = members.map(item => item.reviewItems?.join('、') || item.title);
     const combined = { ...lead, id: `visit:${groupId}`, title: `同次就诊 · ${names.join('、')}`, visitItems: members,
       customerAction: members.map((item, i) => [names[i], item.examArrangement?.orderDepartment,
-        item.examArrangement?.examDepartment || item.careTarget?.department, item.customerAction].filter(Boolean).join(' · ')).join('\n') };
+        item.examArrangement?.examDepartment || item.careTarget?.department, item.examArrangement ? [...item.examArrangement.orderExperts, ...item.examArrangement.examExperts].join('、') : item.careTarget?.expert, item.customerAction].filter(Boolean).join(' · ')).join('\n') };
     members.forEach((item, index) => grouped.set(item.id, index === 0 ? combined : null));
   }
   return items.map(item => grouped.has(item.id) ? grouped.get(item.id) : item).filter(Boolean);
 }
 
-const internalFields = new Set(['excludedReviewKeys', 'clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'visitMergeConfirmed', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
+const internalFields = new Set(['excludedReviewKeys', 'clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);

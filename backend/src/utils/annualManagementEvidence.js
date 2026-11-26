@@ -340,6 +340,10 @@ function* planCoverageIssues(moduleData = {}, evidence = []) {
     if (!rows.some(row => Array.isArray(row.sourceIds) && row.sourceIds.includes(source.id)
       && (isReview ? source.content.reviewPlan.items.every(item => row.reviewItems?.includes(item))
         : direction !== 'ongoing_management' || require('./annualPlanPresentation').internalDaily(row)))) {
+      if (direction === 'ongoing_management') {
+        yield { key: 'daily', sourceId: source.id, title: source.content.problem, message: `“${source.content.problem}”已纳入持续管理，请安排日常跟进日期` };
+        continue;
+      }
       yield { key: 'sync', message: `“${source.content.problem}”尚未按顾问选定的管理方向进入方案，请重新生成或补齐对应事项` };
     }
     }

@@ -44,7 +44,19 @@ test('顾问确认同次就诊后，两项检查共用预约提醒与内部结�
   const results = tasks.filter(row => row.theme.startsWith('结果回顾'));
   assert.equal(results.length, 1);
   assert.match(results[0].content, /心脏超声.*脂蛋白磷脂酶A2/s);
-  const view = require('../src/utils/annualPlanPresentation').buildAnnualPlanDisplayItems(moduleData);
+  const { buildAnnualPlanDisplayItems, customerModuleData } = require('../src/utils/annualPlanPresentation');
+  const view = buildAnnualPlanDisplayItems(customerModuleData(moduleData));
   assert.equal(view.length, 1);
   assert.equal(view[0].visitItems.length, 2);
+});
+
+test('就诊专家从已选资源库和手填记录带到客户预览，开单专家和检查专家分别显示', () => {
+  const { buildAnnualPlanDisplayItems, customerModuleData } = require('../src/utils/annualPlanPresentation');
+  const data = { medical_treatment: { records: [{ department: '消化内科', expertSnapshots: [{name:'甲'}, {name:'乙'}], expert:'甲' }] },
+    abnormal_followup: { records: [{ orderExpertSnapshots: [{name:'丙'}], expertSnapshots: [{name:'丁'}] }] } };
+  const view = buildAnnualPlanDisplayItems(customerModuleData(data));
+  assert.equal(view.find(x => x.moduleKey === 'medical_treatment').careTarget.expert, '甲、乙');
+  const exam = view.find(x => x.moduleKey === 'abnormal_followup').examArrangement;
+  assert.deepEqual(exam.orderExperts, ['丙']);
+  assert.deepEqual(exam.examExperts, ['丁']);
 });
