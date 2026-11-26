@@ -78,7 +78,7 @@ function summarizeSession(session, first) {
   const origin = normalizeOrigin(session.device?.loginOrigin) || {};
   let client = Object.hasOwn(clients, origin.client) ? clients[origin.client] : '';
   if (!client && (session.method === 'wechat' || /miniProgram/i.test(session.userAgent || ''))) client = clients.weapp;
-  return { client, model: phoneModel(session), entry: describeEntry(first ? origin.firstEntry : origin.recentEntry), at: session.loginAt,
+  return { client, model: first ? phoneModel(session) : undefined, entry: describeEntry(first ? origin.firstEntry : origin.recentEntry), at: session.loginAt,
     region: first ? regionForIP(session.ip) : '' };
 }
 
@@ -87,4 +87,4 @@ function loginIP(req) {
   const forwarded = req.headers['x-real-ip'];
   return ['127.0.0.1','::1'].includes(peer) && isIP(String(forwarded || '')) ? forwarded : peer;
 }
-module.exports = { regionForIP, describeEntry, summarizeSession, loginIP, normalizeOrigin };
+module.exports = { regionForIP, describeEntry, summarizeSession, loginIP, normalizeOrigin, phoneModel };

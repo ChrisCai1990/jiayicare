@@ -404,7 +404,7 @@ router.get('/patients', adminAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .select('name phone age gender healthScore servicePackage serviceExpiry onboardingCompleted loginCount firstLoginChannel source invitedBy lastLoginAt createdAt isDeleted deletedAt deleteReason'),
+      .select('name phone age gender healthScore servicePackage serviceExpiry onboardingCompleted loginCount firstLoginChannel source invitedBy lastLoginAt createdAt isDeleted deletedAt deleteReason recentBrowseVisits').slice('recentBrowseVisits', 1),
     User.countDocuments(filter),
   ]);
 
@@ -532,14 +532,14 @@ router.post('/patients/:id/health-records/import', adminAuth, async (req, res) =
 router.get('/patients/:id', adminAuth, async (req, res) => {
   const userId = req.params.id;
   const [user, invitedUsers, records, tasks, messages, orders, firstSession, recentSession, lastQuestionnaire, lastUserMessage] = await Promise.all([
-    User.findById(userId).select('-password').populate('invitedBy', 'name phone'),
+    User.findById(userId).select('-password +recentBrowseVisits +firstLoginDeviceModel').populate('invitedBy', 'name phone'),
     User.find({ invitedBy: userId, isDeleted: { $ne: true } }).select('name phone invitedAt').sort({ invitedAt: -1 }).lean(),
     HealthRecord.find({ user: userId }).sort({ recordedAt: -1 }).limit(20),
     Task.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
     Message.find({ user: userId }).sort({ createdAt: -1 }).limit(30),
     Order.find({ user: userId }).sort({ createdAt: -1 }).limit(10),
     LoginSession.findOne({ user: userId }).sort({ loginAt: 1, _id: 1 }).select('method loginAt device.loginOrigin device.model userAgent ip').lean(),
-    LoginSession.findOne({ user: userId }).sort({ loginAt: -1, _id: -1 }).select('method loginAt device.loginOrigin device.model userAgent').lean(),
+    LoginSession.findOne({ user: userId }).sort({ loginAt: -1, _id: -1 }).select('method loginAt device.loginOrigin userAgent').lean(),
     QuestionnaireResponse.findOne({ user: userId, proxyEntry: null, $or: [{ submittedBy: null }, { submittedBy: userId }] }).sort({ submittedAt: -1 }).select('submittedAt').lean(),
     Message.findOne({ user: userId, type: 'user' }).sort({ createdAt: -1 }).select('createdAt').lean(),
   ]);
