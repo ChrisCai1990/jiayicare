@@ -55,6 +55,24 @@ test('workbench reliability: isolated Mongo and authenticated HTTP', { skip: pro
     const missing = await call(doctor, base + '&assigneeName=' + encodeURIComponent('不存在.*'));
     assert.equal(missing.body.data.total, 0, 'search characters are literal');
   });
+  await t.test('续期中的随访按过程记录移出逾期并计入新日期分组', async () => {
+    const due = new Date('2026-10-21T03:06:00Z');
+    const record = await FollowUp.create(follow({ status: 'in_progress', theme: '续期配药',
+      nextFollowUpDate: new Date('2026-09-28'), progressRecords: [
+        { requestId: 'with-date', content: '已约定下次联系', nextContactAt: due },
+        { requestId: 'keep-date', content: '保留原安排' },
+      ] }));
+    try {
+      const month = await call(doctor, base + '&workbenchTime=month');
+      assert.equal(month.status, 200);
+      assert.equal(month.body.data.workbenchSummary.counts.overdue, 214);
+      assert.equal(month.body.data.workbenchSummary.counts.month, 1);
+      assert.deepEqual(month.body.data.followUps.map(row => row._id), [String(record._id)]);
+      const overdue = await call(doctor, base + '&workbenchTime=overdue&page=43');
+      assert.equal(overdue.body.data.total, 214);
+      assert.ok(overdue.body.data.followUps.every(row => row._id !== String(record._id)));
+    } finally { await FollowUp.deleteOne({ _id: record._id }); }
+  });
   await t.test('all order pages include future/ongoing reservations, no 20/100 ceiling', async () => {
     const orders = await Order.insertMany(Array.from({ length: 125 }, (_, i) => ({ user: patient._id, serviceId: 'test', serviceName: '合成服务' + i, paymentStatus: 'paid', tradeStatus: 'paid', status: 'pending' })));
     await FollowUp.insertMany(orders.map((o, i) => follow({ assignedTo: planner._id, sourceType: 'order', sourceOrderId: o._id, status: i % 2 ? 'in_progress' : 'planned', remindAt: new Date('2030-01-01') })));
