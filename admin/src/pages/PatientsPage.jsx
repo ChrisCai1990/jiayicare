@@ -19,13 +19,15 @@ export default function PatientsPage() {
   const [page, setPage] = useState(1)
   const [q, setQ] = useState('')
   const [hasService, setHasService] = useState('')
+  const [stage, setStage] = useState('')
+  const [channel, setChannel] = useState('')
   const [deleted, setDeleted] = useState('active')
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async (p = page) => {
     setLoading(true)
     try {
-      const params = { page: p, limit: PAGE_SIZE }
+      const params = { page: p, limit: PAGE_SIZE, stage, channel }
       if (q.trim()) params.q = q.trim()
       if (hasService) params.hasService = hasService
       params.deleted = deleted
@@ -34,9 +36,9 @@ export default function PatientsPage() {
       setTotal(res.total)
     } catch {}
     finally { setLoading(false) }
-  }, [q, hasService, deleted, page])
+  }, [q, hasService, stage, channel, deleted, page])
 
-  useEffect(() => { load(1); setPage(1) }, [q, hasService, deleted])
+  useEffect(() => { load(1); setPage(1) }, [q, hasService, stage, channel, deleted])
   useEffect(() => { load(page) }, [page])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -64,6 +66,13 @@ export default function PatientsPage() {
             <option value="true">已开通服务</option>
             <option value="false">未开通服务</option>
           </select>
+          <select aria-label="建档状态" className="filter-select" value={stage} onChange={e => setStage(e.target.value)}>
+            <option value="">全部建档状态</option><option value="active">已建档</option><option value="pending">待建档</option>
+          </select>
+          <select aria-label="首次来源" className="filter-select" value={channel} onChange={e => setChannel(e.target.value)}>
+            <option value="">全部来源</option><option value="invite">有邀请关系</option>
+            {['微信搜索','扫码或识别二维码','好友分享','群聊分享'].map(value => <option key={value}>{value}</option>)}
+          </select>
           {admin?.role === 'superadmin' && <select className="filter-select" value={deleted} onChange={e => setDeleted(e.target.value)}>
             <option value="active">正常会员</option><option value="only">会员回收站</option>
           </select>}
@@ -77,7 +86,7 @@ export default function PatientsPage() {
               <thead>
                 <tr>
                   <th>姓名</th>
-                  <th>手机号</th>
+                  <th>手机号</th><th>建档状态 / 来源</th>
                   <th>年龄 / 性别</th>
                   <th>服务包</th>
                   <th>到期日期</th>
@@ -90,14 +99,10 @@ export default function PatientsPage() {
                 {patients.map(p => (
                   <tr key={p._id} onClick={() => nav(`/patients/${p._id}`)}>
                     <td>
-                      {(p.onboardingCompleted || !['用户', '微信用户', ''].includes((p.name || '').trim())) && (
-                        <strong>{p.name || '未填写'}</strong>
-                      )}
-                      {!p.onboardingCompleted && (
-                        <span className="badge badge-gray" style={{ marginLeft: 6, fontSize: 10 }}>未完善</span>
-                      )}
+                      <strong>{p.name || '未填写'}</strong>
                     </td>
                     <td style={{ color: 'var(--text-secondary)' }}>{p.phone}</td>
+                    <td>{p.onboardingCompleted ? '已建档' : p.loginCount ? '已登录，待建档' : '待建档'}<br />{p.firstLoginChannel || p.source || (p.invitedBy ? '有邀请关系' : '来源未知')}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>
                       {[p.age && `${p.age}岁`, p.gender !== '未知' && p.gender].filter(Boolean).join(' / ') || '--'}
                     </td>
@@ -120,7 +125,7 @@ export default function PatientsPage() {
                   </tr>
                 ))}
                 {patients.length === 0 && (
-                  <tr><td colSpan={8}>
+                  <tr><td colSpan={9}>
                     <div className="empty-state">
                       <div className="empty-state-icon">🔍</div>
                       <div className="empty-state-text">未找到符合条件的会员</div>

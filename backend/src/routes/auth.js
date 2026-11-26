@@ -4,6 +4,7 @@ const https = require('https');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { jiayihuiTenantId } = require('../utils/jiayihuiTenant');
+const { loginIP, normalizeOrigin, describeEntry } = require('../utils/loginOrigin');
 const LoginSession = require('../models/LoginSession');
 const VerificationCode = require('../models/VerificationCode');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
@@ -84,15 +85,20 @@ async function beginLoginSession(req, user, method) {
   const sessionId = crypto.randomUUID();
   const now = new Date();
   const device = req.body?.deviceInfo && typeof req.body.deviceInfo === 'object' ? req.body.deviceInfo : {};
+  const origin = normalizeOrigin(req.body?.loginOrigin);
   await LoginSession.create({
     user: user._id, sessionId, method, loginAt: now, lastActivityAt: now,
-    ip: String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim(),
-    userAgent: String(req.headers['user-agent'] || '').slice(0, 500), device,
+    ip: loginIP(req),
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 500), device: { ...device, loginOrigin: origin },
   });
-  await User.updateOne({ _id: user._id }, {
-    $set: { lastLoginAt: now, lastLoginMethod: method },
-    $inc: { loginCount: 1 },
-  });
+  await User.updateOne({ _id: user._id }, [{ $set: {
+    lastLoginAt: now, lastLoginMethod: method,
+    loginCount: { $add: [{ $ifNull: ['$loginCount', 0] }, 1] },
+    firstLoginChannel: { $cond: [
+      { $and: [{ $eq: [{ $ifNull: ['$loginCount', 0] }, 0] }, { $eq: [{ $ifNull: ['$lastLoginAt', null] }, null] }] },
+      describeEntry(origin?.firstEntry), '$firstLoginChannel',
+    ] },
+  } }]);
   return sessionId;
 }
 

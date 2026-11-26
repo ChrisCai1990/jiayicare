@@ -333,6 +333,17 @@ export default function PatientDetailPage() {
             <div className="card-title"><span>🔐</span> 登录与邀请记录</div>
             <div className="info-grid">
               {[
+                { label: '建档状态', value: user.onboardingCompleted ? '已完成建档' : user.loginCount ? '已登录，待建档' : '待建档' },
+                { label: '首次登录地区（IP 估算）', value: data.firstLogin?.region || '未识别' },
+                { label: '首次登录客户端', value: data.firstLogin?.client || '历史未记录' },
+                { label: '首次进入方式', value: data.firstLogin?.entry || '来源未知' },
+                { label: '最近登录客户端', value: data.recentLogin?.client || '历史未记录' },
+                { label: '最近登录入口', value: data.recentLogin?.entry || '来源未知' },
+                { label: '注册渠道', value: user.source || (user.invitedBy ? '邀请注册' : '来源未知') },
+                { label: '最近业务记录', value: [
+                  [data.questionnaireAt, '提交本人问卷'], [data.userMessageAt, '客户留言'],
+                  [orders?.[0]?.createdAt, orders?.[0]?.serviceName || '服务订单'],
+                ].filter(([at]) => at).sort(([a], [b]) => new Date(b) - new Date(a)).map(([at, label]) => label + ' · ' + fmtExactTime(at))[0] || '暂无问卷、留言或订单记录' },
                 { label: '登录手机号', value: user.phone || '--' },
                 { label: '微信小程序身份', value: user.wechatMpOpenid ? '已绑定' : '未绑定' },
                 { label: '最近登录方式', value: LOGIN_METHOD[user.lastLoginMethod] || '--' },
