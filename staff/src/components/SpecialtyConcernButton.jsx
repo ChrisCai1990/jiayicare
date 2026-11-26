@@ -40,7 +40,6 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [monitoringItems, setMonitoringItems] = useState([])
   const [reviewKind, setReviewKind] = useState('none'), [reviewMonths, setReviewMonths] = useState('3'), [reviewItems, setReviewItems] = useState('')
   const [reviewAnchorDate, setReviewAnchorDate] = useState('')
-  const [reviewDepartment, setReviewDepartment] = useState('')
   const [saved, setSaved] = useState(null), [legacy, setLegacy] = useState(null), [adoptLegacy, setAdoptLegacy] = useState(false), [error, setError] = useState('')
   const [withdrawReason, setWithdrawReason] = useState(null)
   const [pilot, setPilot] = useState(false)
@@ -116,7 +115,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
             ...(supportsInterval(value) && timing.mode !== 'pending' && timing.dateBasis === 'interval'
               ? { dateBasis: 'interval', anchorDate: timing.anchorDate || '', intervalMonths: Number(timing.intervalMonths) } : {}),
           }] })) } : {}),
-        reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems, department: reviewDepartment },
+        reviewPlan: { kind: reviewKind, intervalMonths: Number(reviewMonths), anchorDate: reviewAnchorDate, items: reviewItems },
         ...(adoptLegacy && legacy?._id ? { legacyDecisionId: legacy._id } : {}) })
       setSaved(result.data); if (adoptLegacy) setLegacy(null)
       if (planCheck.plan && !pilot) {
@@ -170,7 +169,6 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
       setReviewMonths(String(saved?.reviewPlan?.intervalMonths || 3))
       setReviewItems((saved?.reviewPlan?.items || []).join('、'))
       setReviewAnchorDate(saved?.reviewPlan?.anchorDate || new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10))
-      setReviewDepartment(saved?.reviewPlan?.department || '')
     }}>{saved ? `✓ 已纳入管理 · ${directionText(savedDirections) || '待核对'}` : '＋ 纳入管理'}</button>
     {open && <div className="modal-overlay" onClick={event => event.stopPropagation()}><div className="modal" style={{ maxWidth: 520 }}>
       <div className="modal-header"><div className="modal-title">纳入年度管理</div><button className="modal-close" onClick={() => setOpen(false)}>×</button></div>
@@ -204,9 +202,6 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <div>建议复查日期：{Number(reviewMonths) >= 1 && Number(reviewMonths) <= 24 && annualAppointment.addMonths(reviewAnchorDate, Number(reviewMonths)) || '填写间隔与起算日期后自动计算'}</div>
           <label className="form-label" style={{ marginTop: 8 }}>需复查项目（用顿号或换行分隔）</label>
           <textarea className="form-input" rows={2} value={reviewItems} onChange={e => setReviewItems(e.target.value)} placeholder="逐项填写具体检查名称，由顾问确认" />
-          <label className="form-label" style={{ marginTop: 8 }}>先就诊的专科</label>
-          <input className="form-input" maxLength={100} value={reviewDepartment} onChange={e => setReviewDepartment(e.target.value)} placeholder="例如：消化内科；不同专科请分别归属" />
-          <div style={{ fontSize: 12, color: '#65776F' }}>同一月份、同一专科的项目归为一次就诊复查；先由专科医生评估并开单，再完成检查及结果回顾。</div>
         </div>}</>}
         {pilot && hasDirection('monitoring') && <div style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
           <strong>日常监测 · 每项选择周期；血压、血糖、体重选择监测时间</strong>

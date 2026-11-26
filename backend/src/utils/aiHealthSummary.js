@@ -703,16 +703,36 @@ function reconcileGynecologicUltrasoundCoverage(sections, coverageResults = []) 
 }
 
 function reconcileCompletedExamMissing(sections, reports = [], year, catalogIndex = []) {
-  const { checkupMeaning, currentYearExam } = require('./aiHealthCheckupItems');
+  const { checkupMeaning, currentYearExam, explicitFollowup } = require('./aiHealthCheckupItems');
   const audited = reports.filter(report => report.audit_status === 'audited' && !report.archiveOnly);
   for (const key of ['checkup_completeness', 'tumor_risk']) {
     const missing = sections?.[key]?.missing;
     if (!Array.isArray(missing)) continue;
     sections[key].missing = missing.filter(text => {
       const meaning = checkupMeaning(text, catalogIndex);
-      return !meaning || !currentYearExam(audited, year, meaning.key, catalogIndex);
+      return explicitFollowup(text) || !meaning || !currentYearExam(audited, year, meaning.key, catalogIndex);
     });
   }
+  // Replace only a specific missing-test claim, preserving other requests in the same sentence.
+  const chestDone = currentYearExam(audited, year, 'chest_ct');
+  const hpDone = currentYearExam(audited, year, 'h_pylori');
+  function reconcileText(value) {
+    if (typeof value !== 'string') return value;
+    return value.split(/([，,；;。])/).map(part => {
+      if (explicitFollowup(part)) return part;
+      const gap = '(?:尚未完成|尚未|未见|未做|未行|未完成|未查|缺少|缺乏|建议补做|需要补做|优先补做|需补做|待补做|需完善|建议完善|待完善)';
+      const replace = (text, exam, label) => text.replace(new RegExp(gap + '\\s*' + exam + '(?:检查|检测|记录)?|' + exam + '(?:检查|检测)?\\s*' + gap, 'gi'), label);
+      if (chestDone) part = replace(part, '(?:(?:胸部|肺部)?低剂量(?:胸部|肺部|螺旋)*CT|LDCT|胸部CT|肺部CT)', '本年度已有胸部CT记录');
+      if (hpDone) part = replace(part, '(?:幽门螺(?:旋)?杆菌|HP(?![A-Z])|尿素呼气试验)', '本年度已有幽门螺杆菌检测记录');
+      return part;
+    }).join('');
+  }
+  const tumor = sections?.tumor_risk;
+  for (const [obj, key] of [[sections?.checkup_completeness, 'suggestion'], [tumor, 'summary'],
+    [tumor?.overview, 'headline'], ...(tumor?.cancers || []).map(row => [row, 'nextAction'])]) {
+    if (obj && typeof obj[key] === 'string') obj[key] = reconcileText(obj[key]);
+  }
+
 }
 
 function normalizeTrendSections(sections, user, reports = [], referenceYear = new Date().getFullYear()) {

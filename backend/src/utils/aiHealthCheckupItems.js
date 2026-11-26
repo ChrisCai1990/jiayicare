@@ -1,3 +1,4 @@
+const { examName, examRecords } = require('./completedScreeningExam');
 const crypto = require('node:crypto');
 
 function hash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
@@ -10,32 +11,27 @@ function catalogExam(text, catalogIndex = []) {
   return matches.length === 1 ? matches[0].node : null;
 }
 function currentYearExam(reports = [], year, key, catalogIndex = []) {
-  if (!['chest_ct', 'h_pylori'].includes(key) && !key.startsWith('catalog:')) return false;
+  if (['chest_ct', 'h_pylori'].includes(key)) return examRecords(reports, key).some(record => record.year === Number(year));
+  if (!key.startsWith('catalog:')) return false;
   return reports.some(report => {
     if (report.audit_status && report.audit_status !== 'audited' || report.archiveOnly) return false;
     const date = report.checkDate || report.date;
     const reportYear = date instanceof Date ? date.getUTCFullYear() : Number(String(date || '').slice(0, 4));
     if (reportYear !== Number(year)) return false;
     return (report.reportItems || []).some(item => {
-      const name = [item.name, item.orderName, item.screeningKey, item.screeningParent].filter(Boolean).join(' ');
-      if (key.startsWith('catalog:')) {
-        const expected = key.slice('catalog:'.length);
-        const confirmed = [item.screeningKey, ...(item.screeningKeys || [])].filter(Boolean);
-        if (confirmed.includes(expected)) return true;
-        return catalogExam(item.name || item.orderName || '', catalogIndex)?.id === expected;
-      }
-      return key === 'chest_ct'
-        ? /(?:胸|肺).{0,12}(?:CT|低剂量螺旋)|(?:CT|低剂量螺旋).{0,12}(?:胸|肺)/i.test(name) && !/胸片|X光/i.test(name)
-        : /(?:碳|C)\s*[-－]?\s*(?:13|14)\s*(?:C)?|(?:13|14)\s*C\s*呼气|幽门螺[杆旋]杆?菌|尿素呼气|HP呼气/i.test(name);
+      const expected = key.slice('catalog:'.length);
+      const confirmed = [item.screeningKey, ...(item.screeningKeys || [])].filter(Boolean);
+      if (confirmed.includes(expected)) return true;
+      return catalogExam(item.name || item.orderName || '', catalogIndex)?.id === expected;
     });
   });
 }
 const EXAM_NAMES = [
   ['colonoscopy', '结肠镜', /结肠镜|肠镜/],
   ['gastroscopy', '胃镜（含食管）', /胃镜/],
-  ['chest_ct', '低剂量胸部CT', /低剂量胸部\s*CT|LDCT|胸部\s*CT/],
+  ['chest_ct', '胸部CT', { test: value => examName('chest_ct', value) || /低剂量(?:螺旋)?CT/i.test(value) }],
   ['liver_ultrasound', '肝脏超声', /肝脏超声|肝脏B超/],
-  ['h_pylori', '幽门螺杆菌复查', /幽门螺杆菌|HP复查/i],
+  ['h_pylori', '幽门螺杆菌复查', { test: value => examName('h_pylori', value) }],
 ];
 function checkupMeaning(text, catalogIndex = []) {
   const value = String(text || '').trim();
@@ -46,8 +42,11 @@ function checkupMeaning(text, catalogIndex = []) {
   const disposition = /确认是否已完成|补传|核对资料/.test(value) ? 'request_records'
     : names.length > 1 ? '' : 'needs_exam';
   return { key: names.length === 1 ? names[0][0] : catalog ? `catalog:${catalog.id}` : value.replace(/\s+/g, ''),
-    title: names.length === 1 ? names[0][1] : catalog?.label || value.slice(0, 80),
+    title: names.length === 1 ? (names[0][0] === 'chest_ct' && /低剂量|LDCT/i.test(value) ? '低剂量胸部CT' : names[0][1]) : catalog?.label || value.slice(0, 80),
     autoDisposition: names.length || catalog ? disposition : '' };
+}
+function explicitFollowup(text) {
+  return /(?:医嘱|遵医嘱|医生要求|原报告建议|根除治疗后|治疗后|术后|结节随访|结节复查|[0-9一二三四六十]+个?月后.{0,8}复查)/.test(text);
 }
 function approvedDoctorSections(summary, year) {
   const byYear = summary?.byYear || {};
@@ -93,7 +92,7 @@ function approvedItems(summary, year, reports = [], catalogIndex = []) {
   const seenMeaning = new Set();
   const items = rawItems.flatMap(item => {
     const meaning = checkupMeaning(item.text, catalogIndex);
-    if (!meaning || seenMeaning.has(meaning.key) || currentYearExam(reports, year, meaning.key, catalogIndex)) return [];
+    if (!meaning || seenMeaning.has(meaning.key) || (!explicitFollowup(item.text) && currentYearExam(reports, year, meaning.key, catalogIndex))) return [];
     // A narrative mentioning several tests is context, not a separate examination.
     if (!meaning.autoDisposition && EXAM_NAMES.filter(([, , pattern]) => pattern.test(item.text)).some(([key]) => seenMeaning.has(key))) return [];
     seenMeaning.add(meaning.key);
@@ -102,4 +101,4 @@ function approvedItems(summary, year, reports = [], catalogIndex = []) {
   return { approved: true, items, version };
 }
 
-module.exports = { approvedItems, approvedDoctorSections, checkupMeaning, currentYearExam, catalogExam };
+module.exports = { approvedItems, approvedDoctorSections, checkupMeaning, currentYearExam, catalogExam, explicitFollowup };

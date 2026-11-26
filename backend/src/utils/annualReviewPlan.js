@@ -20,10 +20,8 @@ function reviewPlanFromInput(value) {
   if (!validDay(anchorDate)) throw Object.assign(new Error('请选择复查间隔的起算日期'), { statusCode: 400 });
   if (!items.length || items.length > 20 || items.some(item => item.length > 80))
     throw Object.assign(new Error('请逐项填写需要复查的检查项目'), { statusCode: 400 });
-  const department = String(value.department || '').trim();
-  if (!department || department.length > 100)
-    throw Object.assign(new Error('请填写本次复查先就诊的专科；不同专科请分别归属管理问题'), { statusCode: 400 });
-  return { kind: 'recheck', intervalMonths, anchorDate, items, department };
+  return { kind: 'recheck', intervalMonths, anchorDate, items };
+
 }
 
 function legacyReviewNote(note) {

@@ -24,7 +24,7 @@ test('复查间隔按自然月计算，新录入仍须明确项目和起算日�
   assert.equal(legacyReviewNote('3个月复查'), true);
   assert.throws(() => reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: '' }), /逐项填写/);
   assert.throws(() => reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, items: '肝超声' }), /起算日期/);
-  assert.throws(() => reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: '肝超声' }), /专科/);
+  assert.deepEqual(reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: '肝超声' }).items, ['肝超声']);
   assert.deepEqual(reviewPlanFromInput({ kind: 'recheck', intervalMonths: 3, anchorDate: '2026-10-26', items: '肝超声、ALT、肝超声', department: '消化内科' }).items, ['肝超声', 'ALT']);
 });
 
@@ -56,7 +56,7 @@ test('同月多问题归为一条复查，来源、日期和全部项目进入�
   assert.equal(result.abnormal_followup[0].department, undefined);
   assert.equal(result.abnormal_followup[0].serviceMode, 'single');
   assert.equal(result.abnormal_followup[0].serviceType, 'proxy_booking');
-  assert.match(result.abnormal_followup[0].customerAction, /先到消化内科就诊.*医生评估并开具/);
+  assert.match(result.abnormal_followup[0].customerAction, /到年度方案安排的科室就诊.*医生评估并开具/);
   const serviceTasks = buildAnnualPlanServiceTasks({ confirmedAt: new Date(), moduleData: {
     abnormal_followup: { records: result.abnormal_followup }, medical_treatment: { records: result.medical_treatment },
   } }, { assignedHealthPlanner: 'planner-1' });
@@ -69,7 +69,7 @@ test('同月多问题归为一条复查，来源、日期和全部项目进入�
   assert.equal(validatePlanCoverage({ abnormal_followup: { records: result.abnormal_followup } }, evidence), '');
   const split = result.abnormal_followup.map(row => ({ ...row, sourceIds: row.sourceIds.slice(0, 4), reviewItems: row.reviewItems.slice(0, 4) }));
   split.push({ ...result.abnormal_followup[0], sourceIds: result.abnormal_followup[0].sourceIds.slice(4), reviewItems: result.abnormal_followup[0].reviewItems.slice(4) });
-  assert.match(validatePlanCoverage({ abnormal_followup: { records: split } }, evidence), /一次完整就诊安排/);
+  assert.match(validatePlanCoverage({ abnormal_followup: { records: split } }, evidence), /项目与来源/);
   assert.throws(() => normalizeConfirmedManagement({ ...raw, medical_treatment: [{ standardPlanId: 'visit', sourceIds: [evidence[0].id, 'other'] }] }, evidence, catalog), /混入同一事项/);
 });
 
@@ -97,11 +97,11 @@ test('同月不同专科分别就诊，未记录专科的旧决定不被擅自�
 });
 
 test('旧草稿已完整合并同月复查时可推送，遗漏一项仍须拦截', () => {
-  const evidence = Array.from({ length: 8 }, (_, index) => source(index, `项目${index + 1}`, 3, '2026-10-26', ''));
+  const evidence = Array.from({ length: 8 }, (_, index) => source(index, `项目${index + 1}`, 3, '2026-10-26', index % 2 ? '神经内科或全科' : ''));
   const result = normalizeConfirmedManagement(empty(evidence), evidence, catalog);
-  const merged = { ...result.abnormal_followup[0], items: '复查8项检查',
+  const merged = { ...result.abnormal_followup[0], order_dept: '心内科', items: '复查8项检查',
     reviewItems: evidence.map(item => item.content.reviewPlan.items[0]),
     sourceIds: evidence.map(item => item.id) };
   assert.equal(validatePlanCoverage({ abnormal_followup: { records: [merged] } }, evidence), '');
-  assert.match(validatePlanCoverage({ abnormal_followup: { records: [{ ...merged, reviewItems: merged.reviewItems.slice(1) }] } }, evidence), /一次完整就诊安排/);
+  assert.match(validatePlanCoverage({ abnormal_followup: { records: [{ ...merged, reviewItems: merged.reviewItems.slice(1) }] } }, evidence), /项目与来源/);
 });

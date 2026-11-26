@@ -137,7 +137,7 @@ export default function CurrentScreeningChecklist({ patientId, year, reports = [
       <label>事项名称<input className="form-input" value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} /></label>
       <label>资料依据<textarea className="form-input" rows={2} value={form.reason} onChange={event => setForm({ ...form, reason: event.target.value })} /></label>
       <label>处理建议<textarea className="form-input" rows={3} value={form.advice} onChange={event => setForm({ ...form, advice: event.target.value })} /></label>
-      {editing.reviewPlan?.kind === 'recheck' ? <div>按已确认复查计划：{editing.reviewPlan.intervalMonths} 个月后，{editing.reviewPlan.department || '专科待补'}；项目：{editing.reviewPlan.items?.join('、') || '待补'}。同次复查项目会归为一条就诊安排。</div>
+      {editing.reviewPlan?.kind === 'recheck' ? <div>按已确认复查计划：{editing.reviewPlan.intervalMonths} 个月后，项目：{editing.reviewPlan.items?.join('、') || '待补'}。医院、科室和同次就诊项目在年度方案中安排。</div>
         : <label>执行日期（待确认可留空）<input className="form-input" type="date" value={form.date} onChange={event => setForm({ ...form, date: event.target.value })} /></label>}
       {form.date && <label>日期依据<input className="form-input" value={form.timingReason} onChange={event => setForm({ ...form, timingReason: event.target.value })} /></label>}
       <label>修订原因<input className="form-input" value={form.changeReason} onChange={event => setForm({ ...form, changeReason: event.target.value })} /></label>

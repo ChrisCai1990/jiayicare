@@ -40,3 +40,26 @@ test('子宫附件超声规则证据纠正AI生成的缺失结论和补做建议
   assert.match(sections.checkup_completeness.covered.at(-1), /子宫附件/);
   assert.doesNotMatch(sections.checkup_completeness.suggestion, /经阴道/);
 });
+
+test('同年度报告标题、分字段CT与呼气试验别名在整理和年度方案中一致', () => {
+  const { currentYearExam, approvedItems } = require('../src/utils/aiHealthCheckupItems');
+  const { assessCancerCoverage } = require('../src/utils/cancerScreeningCoverage');
+  const reports = [{ audit_status: 'audited', checkDate: '2026-05-01', title: '胸部ＣＴ平扫' },
+    { audit_status: 'audited', checkDate: '2026-05-02', reportItems: [{ orderName: '¹³C尿素呼气试验', value: '阴性' }] }];
+  const summary = { sections: { checkup_completeness: { missing: ['肺部低剂量螺旋CT', '幽门螺旋杆菌检测'] } }, approvedAt: '2026-06-01' };
+  assert.deepEqual(approvedItems(summary, 2026, reports).items, []);
+  const sections = { checkup_completeness: { missing: [...summary.sections.checkup_completeness.missing, '医嘱治疗后复查幽门螺杆菌'],
+    suggestion: '建议补做低剂量胸部CT，仍需完善胃镜。' }, tumor_risk: { summary: '幽门螺旋杆菌检测未做。' } };
+  reconcileCompletedExamMissing(sections, reports, 2026);
+  assert.deepEqual(sections.checkup_completeness.missing, ['医嘱治疗后复查幽门螺杆菌']);
+  assert.match(sections.checkup_completeness.suggestion, /本年度已.*仍需完善胃镜/);
+  assert.doesNotMatch(sections.tumor_risk.summary, /未做/);
+  const cover = assessCancerCoverage({gender:'男'}, reports, 2026);
+  assert.equal(cover.find(row => row.label === '肺癌').status, 'ok');
+  assert.ok(cover.find(row => row.label === '胃癌').notes.some(note => note.includes('本年度已完成检测')));
+  const items = list => [{ checkDate: '2026-05-03', reportItems: list }];
+  assert.ok(currentYearExam(items([{ bodyPart: '双肺', modality: 'CT' }]), 2026, 'chest_ct'));
+  assert.ok(currentYearExam(items([{ name: '呼气试验', value: 'DOB 2.0 阴性' }]), 2026, 'h_pylori'));
+  assert.equal(currentYearExam(items([{ name: '氢呼气试验', value: '阴性' }]), 2026, 'h_pylori'), false);
+  assert.equal(currentYearExam(items([{ name: '胸部X光' }, {name:'腹部CT'}]), 2026, 'chest_ct'), false);
+});

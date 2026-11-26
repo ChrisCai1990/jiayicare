@@ -10188,7 +10188,7 @@ router.get('/patients/:id/ai-checkup-reviews', staffAuth, async (req, res) => {
     const user = await User.findById(req.params.id).select('aiHealthSummary').lean();
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const reports = await MedicalReport.find({ user: req.params.id, audit_status: 'audited', archiveOnly: { $ne: true } })
-      .select('checkDate date reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean();
+      .select('checkDate date reportYear title screeningL2 reportItems.examDate reportItems.bodyPart reportItems.modality reportItems.value reportItems.conclusion reportItems.diagnosis reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean();
     const catalogIndex = await require('../utils/screeningMatch').buildAdminIndex();
     const source = require('../utils/aiHealthCheckupItems').approvedItems(user.aiHealthSummary, year, reports, catalogIndex);
     const Review = require('../models/AIHealthCheckupReview');
@@ -10207,7 +10207,7 @@ router.put('/patients/:id/ai-checkup-reviews', staffAuth, async (req, res) => {
     const user = await User.findById(req.params.id).select('aiHealthSummary').lean();
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const reports = await MedicalReport.find({ user: req.params.id, audit_status: 'audited', archiveOnly: { $ne: true } })
-      .select('checkDate date reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean();
+      .select('checkDate date reportYear title screeningL2 reportItems.examDate reportItems.bodyPart reportItems.modality reportItems.value reportItems.conclusion reportItems.diagnosis reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean();
     const catalogIndex = await require('../utils/screeningMatch').buildAdminIndex();
     const source = require('../utils/aiHealthCheckupItems').approvedItems(user.aiHealthSummary, year, reports, catalogIndex);
     if (!source.approved) return res.status(409).json({ success: false, message: '请先审核体检资料覆盖板块' });
@@ -11247,7 +11247,7 @@ router.post('/patients/:id/annual-plan/:planId/append-screening-action', staffAu
     } else {
       const review = await require('../models/AIHealthCheckupReview').findOne({ _id: sourceObjectId, patientId: req.params.id, year: plan.year, disposition: 'needs_exam' }).lean();
       const reports = await MedicalReport.find({ user: req.params.id, audit_status: 'audited', archiveOnly: { $ne: true } })
-        .select('checkDate date reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean();
+        .select('checkDate date reportYear title screeningL2 reportItems.examDate reportItems.bodyPart reportItems.modality reportItems.value reportItems.conclusion reportItems.diagnosis reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean();
       const catalogIndex = await require('../utils/screeningMatch').buildAdminIndex();
       const approved = require('../utils/aiHealthCheckupItems').approvedItems(patient.aiHealthSummary, plan.year, reports, catalogIndex);
       if (!review || !approved.approved || review.sourceVersion !== approved.version || !approved.items.some(item => item.sourceKey === review.sourceKey && item.text === review.itemText))

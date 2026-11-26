@@ -39,7 +39,7 @@ function findDoneRecords(reports, matchNames) {
 // HP 专用：判断是否"连续3年阴性可停"。返回 { done, lastDate, canStop, needCheck, reason }
 // 阴性判断：reportItem.status==='normal' 或 value/结论含"阴性/(-)/negative"
 function evalHp(reports, matchNames, targetYear) {
-  const records = findDoneRecords(reports, matchNames);
+  const records = require('./completedScreeningExam').examRecords(reports, 'h_pylori');
   if (!records.length) {
     return { done: false, needCheck: true, reason: '未见幽门螺杆菌检测记录，建议检测（碳13/14呼气试验）' };
   }
@@ -62,6 +62,9 @@ function evalHp(reports, matchNames, targetYear) {
              reason: `近3年（${recent3.slice().reverse().join('/')}）HP均为阴性，可暂停年度检测` };
   }
   const lastNeg = isNeg(lastRec);
+  const lastPositive = lastRec.items.some(item => /阳性|positive|（\+）|\(\+\)/i.test([item.value, item.diagnosis, item.conclusion].join(' ')));
+  if (!lastNeg && !lastPositive) return { done: true, lastDate: lastRec.date, canStop: false,
+    needCheck: Number(targetYear) !== lastRec.year, reason: '已有幽门螺杆菌检测记录，结果请核对原报告' };
   return {
     done: true, lastDate: lastRec.date, canStop: false,
     needCheck: !lastNeg || (Number(targetYear) !== Number(lastRec.year) && years.length < 3),
@@ -73,7 +76,7 @@ function evalHp(reports, matchNames, targetYear) {
 
 // 判断单个检查项是否"做过"（近N年内，默认看全部历史但优先报告最近一次）
 function isProjDone(reports, proj) {
-  const recs = findDoneRecords(reports, proj.matchNames);
+  const recs = proj.key === 'chest_ct' ? require('./completedScreeningExam').examRecords(reports, proj.key) : findDoneRecords(reports, proj.matchNames);
   return recs.length ? { done: true, lastDate: recs[0].date } : { done: false };
 }
 

@@ -166,7 +166,7 @@ async function load(patientId, year, dependencies = {}) {
   const patient = await User.findById(patientId).select('aiHealthSummary').lean();
   const screeningReports = dependencies.screeningReports || (dependencies.Decision || dependencies.User || dependencies.Report ? [] : Report.find
     ? await Report.find({ user: patientId, audit_status: 'audited', archiveOnly: { $ne: true } })
-      .select('checkDate date reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean() : []);
+      .select('checkDate date reportYear title screeningL2 reportItems.examDate reportItems.bodyPart reportItems.modality reportItems.value reportItems.conclusion reportItems.diagnosis reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent').lean() : []);
   const catalogIndex = dependencies.catalogIndex || (dependencies.Decision || dependencies.User || dependencies.Report
     ? [] : await require('./screeningMatch').buildAdminIndex());
   const approved = require('./aiHealthCheckupItems').approvedItems(patient?.aiHealthSummary, year, screeningReports, catalogIndex);
@@ -290,26 +290,18 @@ function draftPlanActions(evidence = []) {
 }
 
 function validatePlanCoverage(moduleData = {}, evidence = []) {
-  const reviewGroups = require('./annualReviewPlan').reviewGroups(evidence);
-  for (const group of reviewGroups) {
-    const rows = moduleData.abnormal_followup?.records || [];
-    const linked = rows.filter(row => row.sourceIds?.some(id => group.sourceIds.includes(id)));
+  const reviewSources = evidence.filter(source => source.content?.reviewPlan?.kind === 'recheck');
+  const rows = moduleData.abnormal_followup?.enabled === false ? [] : moduleData.abnormal_followup?.records || [];
+  for (const source of reviewSources) {
+    const linked = rows.filter(row => row.sourceIds?.includes(source.id));
+    const label = source.content.reviewPlan.items.join('、');
+    if (linked.length !== 1) return `请核对定期复查“${label}”：${linked.length ? '同一来源重复列入方案' : '草稿缺少对应来源的复查安排'}`;
     const row = linked[0];
-    // Earlier plans grouped all same-month review sources before a specialist
-    // was recorded. Keep a complete existing group valid; do not force the
-    // advisor to delete and regenerate it merely because newer decisions split.
-    const combined = row ? reviewGroups.filter(other => other.sourceIds.some(id => row.sourceIds?.includes(id))) : [];
-    const legacyCombined = combined.length > 1 && combined.every(other => !other.department
-      && other.intervalMonths === group.intervalMonths && other.dueDate.slice(0, 7) === group.dueDate.slice(0, 7));
-    const expectedIds = legacyCombined ? [...new Set(combined.flatMap(other => other.sourceIds))] : group.sourceIds;
-    const expectedItems = legacyCombined ? [...new Set(combined.flatMap(other => other.items))] : group.items;
-    if (linked.length !== 1 || !expectedIds.every(id => row.sourceIds.includes(id))
-      || row.items !== `复查${expectedItems.length}项检查`
-      || row.reviewItems?.length !== expectedItems.length
-      || !expectedItems.every(item => row.reviewItems.includes(item))
-      || (group.department && row.order_dept !== group.department
-        && !(row.reviewGroupVersion === 1 && !row.order_dept && row.department === group.department))) {
-      return `约${group.intervalMonths}个月后${group.department || '待确认专科'}的复查没有归为一次完整就诊安排，请核对项目与来源`;
+    const expected = new Set(reviewSources.filter(other => row.sourceIds.includes(other.id))
+      .flatMap(other => other.content.reviewPlan.items));
+    if (row.items !== `复查${expected.size}项检查` || row.reviewItems?.length !== expected.size
+      || ![...expected].every(item => row.reviewItems.includes(item))) {
+      return `请核对定期复查的项目与来源，本次安排应包含：${[...expected].join('、')}`;
     }
   }
   for (const source of evidence) {
