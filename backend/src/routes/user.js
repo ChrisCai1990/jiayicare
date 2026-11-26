@@ -310,7 +310,10 @@ router.put('/me', auth, async (req, res) => {
     const recordArchiveChange = (path, label, from, to) => {
       if (!sameValue(from, to)) archiveChanges.push({ path, label, from, to });
     };
-    if (name !== undefined)           updateData.name = name;
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ success: false, message: '请填写您的真实姓名' });
+      updateData.name = name.trim();
+    }
     if (age !== undefined)            updateData.age = age;
     if (gender !== undefined)         updateData.gender = gender;
     if (height !== undefined)         updateData.height = height;
@@ -434,7 +437,7 @@ router.put('/me', auth, async (req, res) => {
 router.post('/onboarding', auth, async (req, res) => {
   try {
     const { name, idNumber, idType, contactPhone, verificationCode, residence, healthMonitoringConsent, entrySource } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
+    if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ success: false, message: '请填写您的真实姓名' });
     if (!idNumber || !idNumber.trim()) return res.status(400).json({ success: false, message: `请填写${idType === 'passport' ? '护照号' : '身份证号'}` });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
     const normalizedContactPhone = contactPhone.trim();
@@ -536,7 +539,7 @@ router.post('/onboarding', auth, async (req, res) => {
         ? current.referralCode
         : '';
       if (transferredReferralCode) setData.referralCode = transferredReferralCode;
-      if (!idOwner.name || idOwner.name === '微信用户') setData.name = name.trim();
+      if (!idOwner.name || idOwner.name === '微信用户' || (!idOwner.onboardingCompleted && idOwner.name === '用户')) setData.name = name.trim();
       if (updateData.patientCategory === 'child') setData.patientCategory = 'child';
       if (verifiedEntrySource && !String(idOwner.source || '').trim()) setData.source = verifiedEntrySource;
 

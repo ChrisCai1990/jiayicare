@@ -133,6 +133,31 @@ export default function LoginPage() {
   const canSend = phone.length === 11 && countdown === 0;
   const canLogin = phone.length === 11 && code.length === 6;
 
+  const agreementField = (
+    <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '48px', gap: '10px', marginTop: `${spacing.md}px` }}>
+          <View style={{ width: '22px', height: '22px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '20px', flexShrink: 0 }}>
+            {agreed && <Text style={{ color: '#fff', fontSize: '13px' }}>✓</Text>}
+          </View>
+          <Text style={{ fontSize: '13px', color: colors.textMuted }}>
+          我已阅读并同意
+          <Text
+            style={{ color: colors.primary }}
+            onClick={e => { e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=terms' }); }}
+          >《用户协议》</Text>
+          及
+          <Text
+            style={{ color: colors.primary }}
+            onClick={e => { e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=privacy' }); }}
+          >《隐私政策》</Text>
+          和
+          <Text
+            style={{ color: colors.primary }}
+            onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}
+          >《健康管理服务说明》</Text>
+          </Text>
+        </View>
+  );
+
   return (
     <View style={{ minHeight: '100vh', backgroundColor: '#1A2B24', display: 'flex', flexDirection: 'column' }}>
       {/* Hero */}
@@ -165,6 +190,15 @@ export default function LoginPage() {
         padding: `${spacing.lg}px`,
       }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 20px' }} />
+        {reviewEnabled && (
+          <View style={{ marginTop: `${spacing.md}px`, padding: `${spacing.md}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px` }}>
+            <Text style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: colors.primary }}>微信审核专用入口</Text>
+            <Text style={{ display: 'block', margin: '8px 0 12px', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员体验虚构资料；勾选协议后可直接进入。</Text>
+            {agreementField}
+            <Button onClick={handleReviewLogin} disabled={loading || !agreed} loading={loading} style={{ height: '48px', lineHeight: '48px', backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px`, fontSize: '15px', fontWeight: 700 }}>进入审核体验</Button>
+          </View>
+        )}
+
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>{t('手机号登录')}</Text>
         <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>{t('手机号验证码登录，新用户自动注册')}</Text>
         <View onClick={() => setLanguage(language === 'en-US' ? 'zh-CN' : 'en-US')} style={{ padding: '4px 0 14px' }}><Text style={{ color: colors.primary, fontSize: '13px' }}>🌐 {language === 'en-US' ? '简体中文' : 'English'}</Text></View>
@@ -236,28 +270,7 @@ export default function LoginPage() {
           </View>
         )}
 
-        <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '48px', gap: '10px', marginTop: `${spacing.md}px` }}>
-          <View style={{ width: '22px', height: '22px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '20px', flexShrink: 0 }}>
-            {agreed && <Text style={{ color: '#fff', fontSize: '13px' }}>✓</Text>}
-          </View>
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>
-          我已阅读并同意
-          <Text
-            style={{ color: colors.primary }}
-            onClick={e => { e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=terms' }); }}
-          >《用户协议》</Text>
-          及
-          <Text
-            style={{ color: colors.primary }}
-            onClick={e => { e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=privacy' }); }}
-          >《隐私政策》</Text>
-          和
-          <Text
-            style={{ color: colors.primary }}
-            onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}
-          >《健康管理服务说明》</Text>
-          </Text>
-        </View>
+        {!reviewEnabled && agreementField}
         <Button
           style={{
             height: '54px', lineHeight: '54px', borderRadius: `${radius.md}px`,
@@ -281,13 +294,7 @@ export default function LoginPage() {
           手机号快捷登录
         </Button>
 
-        {reviewEnabled && (
-          <View style={{ marginTop: `${spacing.md}px`, padding: `${spacing.md}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px` }}>
-            <Text style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: colors.primary }}>微信审核体验</Text>
-            <Text style={{ display: 'block', margin: '8px 0 12px', fontSize: '12px', color: colors.textMuted }}>仅供微信审核人员体验虚构资料；勾选协议后可直接进入。</Text>
-            <Button onClick={handleReviewLogin} disabled={loading || !agreed} loading={loading} style={{ height: '48px', lineHeight: '48px', backgroundColor: colors.primary, color: '#fff', borderRadius: `${radius.sm}px`, fontSize: '15px', fontWeight: 700 }}>进入审核体验</Button>
-          </View>
-        )}
+
 
         {loadDeletionReceipt()?.token && <Text style={{ display:'block', textAlign:'center', padding:'12px', color:colors.primary }} onClick={() => Taro.navigateTo({ url:'/pages/account-deletion/receipt/index' })}>查看我的注销进度</Text>}
 

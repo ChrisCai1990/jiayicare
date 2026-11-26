@@ -183,7 +183,7 @@ function SectionLabel({ children }) {
 export default function EditProfilePage() {
   const { statusBarHeight } = useNavBar();
   const { user, updateUser } = useAuth();
-  const [name, setName] = useState(user?.name || '');
+  const [name, setName] = useState(!user?.onboardingCompleted && ['用户', '微信用户'].includes(user?.name) ? '' : (user?.name || ''));
   const [gender, setGender] = useState(user?.gender || '未知');
   const [age, setAge] = useState(user?.age ? String(user.age) : '');
   const [height, setHeight] = useState(user?.height ? String(user.height) : '');
@@ -214,7 +214,7 @@ export default function EditProfilePage() {
   const [error, setError] = useState('');
 
   const save = async () => {
-    if (!name.trim()) { setError('请输入姓名'); return; }
+    if (!name.trim()) { setError('请填写您的真实姓名'); return; }
     setError('');
     setSaving(true);
     try {
@@ -280,7 +280,7 @@ export default function EditProfilePage() {
       <AvatarUpload />
       <SectionLabel>基本信息</SectionLabel>
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px` }}>
-        <Field label="姓名" value={name} onInput={setName} placeholder="请输入姓名" />
+        <Field label="姓名（必填）" value={name} onInput={setName} placeholder="请填写您的真实姓名" />
         <View style={{ marginBottom: `${spacing.md}px` }}>
           <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>性别</Text>
           <ChipRow options={GENDER_OPTIONS} value={gender} onChange={setGender} />

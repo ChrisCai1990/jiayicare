@@ -6,12 +6,17 @@ const vm = require('node:vm');
 const babel = require('@babel/core');
 const read = file => fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
 
-test('login shows the service statistics and agreement before login', () => {
-  const React = {createElement: (type, props, ...children) => ({type, props, children}), useState: v => [v, () => {}], useEffect: () => {}};
+for (const reviewEnabled of [false, true]) test('login layout with review enabled = ' + reviewEnabled, async () => {
+  let index = 0;
+  const state = [];
+  const React = {createElement: (type, props, ...children) => ({type, props, children}), useState: initial => {
+    const key = index++;
+    return [state[key] ?? initial, value => { state[key] = value; }];
+  }, useEffect: effect => effect()};
   const Taro = {useLoad() {}, useShareAppMessage() {}};
   const mocks = {
     react: React, '@tarojs/taro': Taro, '@tarojs/components': { View: 'View', Text: 'Text', Input: 'Input', Button: 'Button' },
-    '../../../theme': { colors: {}, spacing: {}, radius: {} }, '../../../services/api': {},
+    '../../../theme': { colors: {}, spacing: {}, radius: {} }, '../../../services/api': {authAPI:{reviewStatus:async()=>({data:{enabled:reviewEnabled}})}},
     '../../../context/AuthContext': { useAuth: () => ({ login() {} }) }, '../../../components/Icon': 'Icon',
     '../../../utils/invitation': {}, '../../../i18n': {useLanguage: () => ({t: s => s})}, '../../../utils/accountDeletionReceipt': {loadDeletionReceipt: () => null},
   };
@@ -19,6 +24,9 @@ test('login shows the service statistics and agreement before login', () => {
     presets: [require.resolve('@babel/preset-react')], plugins: [require.resolve('@babel/plugin-transform-modules-commonjs')] }).code;
   const ctx = { exports: {}, require: name => mocks[name] };
   vm.runInNewContext(code, ctx);
+  ctx.exports.default();
+  await Promise.resolve();
+  index = 0;
   const tree = ctx.exports.default();
   const elements = [];
   function visit(node) { if (!node || typeof node !== 'object') return; elements.push(node); (node.children || []).flat(Infinity).forEach(visit); }
@@ -26,7 +34,12 @@ test('login shows the service statistics and agreement before login', () => {
   const labels = elements.flatMap(node => node.children.filter(child => typeof child === 'string').map(child => child.trim()));
   for (const label of ['10,000+', '服务用户', '300+', '签约医生', '99%', '满意度']) assert.ok(labels.includes(label), label);
   assert.ok(!labels.includes('暂不登录，先浏览'));
-  assert.ok(labels.indexOf('我已阅读并同意') >= 0);
+  assert.equal(labels.filter(label => label === '我已阅读并同意').length, 1);
+  assert.equal(labels.includes('进入审核体验'), reviewEnabled);
+  if (reviewEnabled) {
+    assert.ok(labels.indexOf('我已阅读并同意') < labels.indexOf('进入审核体验'));
+    assert.ok(labels.indexOf('进入审核体验') < labels.indexOf('手机号登录'));
+  }
   assert.ok(labels.indexOf('立即登录') > labels.indexOf('我已阅读并同意'));
 });
 

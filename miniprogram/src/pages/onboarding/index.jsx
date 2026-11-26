@@ -13,7 +13,7 @@ import { entrySourceLabel, savedEntrySource } from '../../utils/entrySource';
 export default function OnboardingPage() {
   const { statusBarHeight } = useNavBar();
   const { user, login, updateUser } = useAuth();
-  const [name, setName] = useState(user?.name === '微信用户' ? '' : (user?.name || ''));
+  const [name, setName] = useState(['用户', '微信用户'].includes(user?.name) ? '' : (user?.name || ''));
   const [idType, setIdType] = useState(user?.idType === 'passport' ? 'passport' : 'idCard');
   const [idNumber, setIdNumber] = useState(user?.idNumber || '');
   const [contactPhone, setContactPhone] = useState(user?.phone || user?.contactPhone || '');
@@ -38,7 +38,7 @@ export default function OnboardingPage() {
 
   const submit = async () => {
     setErrorMsg('');
-    if (!name.trim()) { setErrorMsg('请填写姓名'); return; }
+    if (!name.trim()) { setErrorMsg('请填写您的真实姓名'); return; }
     if (!idNumber.trim()) { setErrorMsg(`请填写${idType === 'passport' ? '护照号' : '身份证号'}`); return; }
     if (!contactPhone.trim()) { setErrorMsg('请填写联系电话'); return; }
     if (!residence[0]?.trim() || !residence[1]?.trim()) { setErrorMsg('请选择省份并填写城市'); return; }
@@ -85,9 +85,9 @@ export default function OnboardingPage() {
 
       <View style={{ flex: 1, padding: `${spacing.lg}px` }}>
         <View style={{ marginBottom: `${spacing.lg}px` }}>
-          <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, marginBottom: `${spacing.sm}px`, display: 'block' }}>姓名</Text>
+          <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, marginBottom: `${spacing.sm}px`, display: 'block' }}>姓名（必填）</Text>
           <View style={{ backgroundColor: colors.surface, borderRadius: `${radius.sm}px`, border: `1.5px solid ${colors.border}`, padding: '8px 12px' }}>
-            <Input style={{ fontSize: '15px' }} placeholder="请输入您的姓名" value={name} onInput={(e) => setName(e.detail.value)} />
+            <Input style={{ fontSize: '15px' }} placeholder="请填写您的真实姓名" value={name} onInput={(e) => setName(e.detail.value)} />
           </View>
         </View>
 
