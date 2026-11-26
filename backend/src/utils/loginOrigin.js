@@ -60,12 +60,25 @@ function normalizeOrigin(input) {
   return { client: input.client, firstEntry: entry(input.firstEntry), recentEntry: entry(input.recentEntry) };
 }
 
+function phoneModel(session) {
+  const reported = session.device?.model;
+  const androidBuild = /Android [^;)]+;[^)]*?;?\s*([^;()]+?)\s+Build\//i.exec(session.userAgent || '');
+  for (const candidate of [reported, androidBuild?.[1]]) {
+    if (typeof candidate !== 'string') continue;
+    const model = candidate.trim();
+    if (!model || model.length > 96 || /^(unknown|undefined|null|iphone|ipad|android|k|pc|windows|mac|linux|web|devtools|未知)$/i.test(model)) continue;
+    if (!/[a-z0-9\u4e00-\u9fff]/i.test(model) || /[;()<>\x00-\x1f]/.test(model)) continue;
+    return model;
+  }
+  return '';
+}
+
 function summarizeSession(session, first) {
   if (!session) return {};
   const origin = normalizeOrigin(session.device?.loginOrigin) || {};
   let client = Object.hasOwn(clients, origin.client) ? clients[origin.client] : '';
   if (!client && (session.method === 'wechat' || /miniProgram/i.test(session.userAgent || ''))) client = clients.weapp;
-  return { client, entry: describeEntry(first ? origin.firstEntry : origin.recentEntry), at: session.loginAt,
+  return { client, model: phoneModel(session), entry: describeEntry(first ? origin.firstEntry : origin.recentEntry), at: session.loginAt,
     region: first ? regionForIP(session.ip) : '' };
 }
 

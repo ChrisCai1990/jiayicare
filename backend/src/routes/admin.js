@@ -538,8 +538,8 @@ router.get('/patients/:id', adminAuth, async (req, res) => {
     Task.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
     Message.find({ user: userId }).sort({ createdAt: -1 }).limit(30),
     Order.find({ user: userId }).sort({ createdAt: -1 }).limit(10),
-    LoginSession.findOne({ user: userId }).sort({ loginAt: 1, _id: 1 }).select('method loginAt device.loginOrigin userAgent ip').lean(),
-    LoginSession.findOne({ user: userId }).sort({ loginAt: -1, _id: -1 }).select('method loginAt device.loginOrigin userAgent').lean(),
+    LoginSession.findOne({ user: userId }).sort({ loginAt: 1, _id: 1 }).select('method loginAt device.loginOrigin device.model userAgent ip').lean(),
+    LoginSession.findOne({ user: userId }).sort({ loginAt: -1, _id: -1 }).select('method loginAt device.loginOrigin device.model userAgent').lean(),
     QuestionnaireResponse.findOne({ user: userId, proxyEntry: null, $or: [{ submittedBy: null }, { submittedBy: userId }] }).sort({ submittedAt: -1 }).select('submittedAt').lean(),
     Message.findOne({ user: userId, type: 'user' }).sort({ createdAt: -1 }).select('createdAt').lean(),
   ]);

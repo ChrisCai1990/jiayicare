@@ -23,3 +23,12 @@ test('uses the real IP set by the local reverse proxy and ignores client-supplie
   assert.equal(loginIP({ socket: { remoteAddress: '::ffff:127.0.0.1' }, headers }), '120.24.78.68');
   assert.equal(loginIP({ socket: { remoteAddress: '1.1.1.1' }, headers }), '1.1.1.1');
 });
+
+test('reports device model with its session time and skips generic or missing values', () => {
+  const at = new Date('2026-11-26T04:48:47Z');
+  assert.equal(summarizeSession({ device: { model: 'iPhone 14' }, loginAt: at }, true).model, 'iPhone 14');
+  assert.equal(summarizeSession({ loginAt: at }, false).at, at);
+  assert.equal(summarizeSession({ userAgent: 'Mozilla/5.0 (Linux; Android 13; VOG-AL10 Build/HUAWEI)' }, false).model, 'VOG-AL10');
+  assert.equal(summarizeSession({ device: { model: 'iPhone' } }, true).model, '');
+  assert.equal(summarizeSession({ device: { model: 'K' } }, true).model, '');
+});
