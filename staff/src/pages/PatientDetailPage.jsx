@@ -14774,6 +14774,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
   const save = async () => {
     setSaving(true)
     try {
+      if (rechargeNote.trim() && !Number(rechargeDelta)) { toast('请填写本次充值余额变动金额'); return }
       const payload = { cardNumber }
       if (pointsDelta) payload.pointsDelta = parseInt(pointsDelta)
       if (rechargeDelta) Object.assign(payload, {rechargeDelta:parseFloat(rechargeDelta), rechargeNote:rechargeNote.trim()})
@@ -14891,7 +14892,7 @@ function MembershipPanel({ user, patientId, onRefresh, benefits, benefitsError, 
                 <input className="form-input" type="number" value={rechargeDelta} onChange={e => setRechargeDelta(e.target.value)} placeholder="如：500 或 -100" />
               </div>
             </div>
-            {rechargeDelta && <label className="form-label">充值余额变动备注<input className="form-input" maxLength={500} value={rechargeNote} onChange={e=>setRechargeNote(e.target.value)} /></label>}
+            <label className="form-label">充值余额变动备注<input placeholder="例如：购买两瓶赠送健康基金，存入自有基金可抵扣" className="form-input" maxLength={500} value={rechargeNote} onChange={e=>setRechargeNote(e.target.value)} /></label>
             <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? '保存中...' : '保存更新'}</button>
             <div style={{ color: '#8AA89C', fontSize: 12 }}>充值余额 ¥{Number(membership.rechargeBalance || 0).toFixed(2)}；人工积分调整计入历史积分。</div>
             {[...(membership.rechargeAdjustments || [])].reverse().map(row=><div key={row._id} style={{fontSize:12}}>{new Date(row.createdAt).toLocaleString('zh-CN')} · {row.operatorName} · {row.amount > 0 ? '+' : ''}{row.amount} 元 · {row.remark || '未填写备注'}</div>)}

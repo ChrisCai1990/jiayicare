@@ -18,7 +18,7 @@ export async function chooseImageWithPrivacy(options) {
 }
 
 export function isImagePickerCancelled(error) {
-  return /cancel/i.test(error?.errMsg || error?.message || '');
+  return /(?:^|[:\s])cancel(?:led|ed)?(?:$|[\s,.])/i.test(error?.errMsg || error?.message || '');
 }
 
 export function isPrivacyDeclarationMissing(error) {

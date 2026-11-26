@@ -1,6 +1,7 @@
 // 自动生成：Lucide SVG源码内嵌为JS字符串常量（stroke=currentColor原样保留，Icon组件运行时替换颜色）
 // 不走webpack资源加载，避免跟Taro内置图片处理规则冲突
 export default {
+  "image": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><path d="m21 15-5-5L5 21"/></svg>',
   "arrow-down": "<svg class=\"lucide lucide-arrow-down\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 5v14\" /> <path d=\"m19 12-7 7-7-7\" /> </svg>",
   "arrow-right": "<svg class=\"lucide lucide-arrow-right\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M5 12h14\" /> <path d=\"m12 5 7 7-7 7\" /> </svg>",
   "arrow-up": "<svg class=\"lucide lucide-arrow-up\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m5 12 7-7 7 7\" /> <path d=\"M12 19V5\" /> </svg>",

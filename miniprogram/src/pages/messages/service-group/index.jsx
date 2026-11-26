@@ -96,21 +96,22 @@ export default function ServiceGroupPage() {
     pane.addEventListener('wheel',intent,{passive:true});pane.addEventListener('touchstart',start,{passive:true});pane.addEventListener('touchend',end,{passive:true});pane.addEventListener('touchcancel',end,{passive:true});pane.addEventListener('scroll',scroll,{passive:true});
     return()=>{pane.removeEventListener('wheel',intent);pane.removeEventListener('touchstart',start);pane.removeEventListener('touchend',end);pane.removeEventListener('touchcancel',end);pane.removeEventListener('scroll',scroll);};
   },[loading,group?.id]);
-  const refreshing = useRef(false);
+  const refreshing = useRef(null);
   const refresh = useCallback(async () => {
-    if (refreshing.current) return;
-    refreshing.current = true;
+    const requestedId = selectedId.current;
+    if (refreshing.current?.id === requestedId) return;
+    const request = { id: requestedId };
+    refreshing.current = request;
     try {
-      const requestedId = selectedId.current;
       const response = await api.list();
-      if (requestedId !== selectedId.current) return;
+      if (refreshing.current !== request || requestedId !== selectedId.current) return;
       const available = response.data || [];
       setGroups(available);
       const activeId = selectedId.current;
       const current = available.find(item => String(item.id) === String(activeId)) || null;
       setGroup(current);
       const result = current ? await api.messages(current.id) : { data: [] };
-      if (activeId !== selectedId.current) return;
+      if (refreshing.current !== request || activeId !== selectedId.current) return;
       const rows = result.data || [];
       setMessages(prev=>[...new Map([...(rows.length?prev.filter(m=>+new Date(m.createdAt)<+new Date(rows[0].createdAt)):[]),...rows].map(m=>[String(m.id),m])).values()].sort((a,b)=>+new Date(a.createdAt)-+new Date(b.createdAt)||String(a.id).localeCompare(String(b.id))));
       if(!opened.current)setOlder(!!result.hasMore);
@@ -126,8 +127,8 @@ export default function ServiceGroupPage() {
         lastMessage.current = latest; refreshUnreadBadge();
       }
       setError('');
-    } catch (e) { setError(e.message || '服务群读取失败'); }
-    finally { refreshing.current = false; setLoading(false); }
+    } catch (e) { if (refreshing.current === request) setError(e.message || '服务群读取失败'); }
+    finally { if (refreshing.current === request) { refreshing.current = null; setLoading(false); } }
   }, []);
 
   useDidShow(() => {userScroll.current=false;gesture.current=false;followLatest.current=true;opened.current=false;setVisible(true);if(lastMessage.current)setScrollRequest({target:'group-msg-'+lastMessage.current,bottom:true});refresh();});
@@ -142,8 +143,10 @@ export default function ServiceGroupPage() {
   const openGroup = item => { userScroll.current=false;gesture.current=false;selectedId.current = String(item.id); opened.current = false; lastMessage.current = ''; followLatest.current = true; setUnreadAnchor(''); setScrollRequest(null); setMessages([]); setDraft('');setQuote(null);setQuoteMenu(null); setMentionIds([]); setShowMentions(false); setGroup(item); refresh(); };
   const back = () => {
     setMoreOpen(false);setEmojiOpen(false);setHistoryOpen(false);
-    if (selectedId.current) { selectedId.current = ''; setGroup(null); setMessages([]); return; }
-    Taro.navigateBack({delta:1}).catch(()=>Taro.switchTab({url:'/pages/chat/index'}).catch(()=>Taro.reLaunch({url:'/pages/chat/index'})));
+    if (selectedId.current) { refreshing.current = null; selectedId.current = ''; setError(''); setGroup(null); setMessages([]); return; }
+    const returnToChat = () => Taro.switchTab({url:'/pages/chat/index'}).catch(()=>Taro.reLaunch({url:'/pages/chat/index'}));
+    if ((Taro.getCurrentPages?.() || []).length < 2) return returnToChat();
+    return Taro.navigateBack({delta:1}).catch(returnToChat);
   };
   const loadEarlier = async () => {
     if(earlierLock.current||!older)return;
@@ -232,10 +235,10 @@ export default function ServiceGroupPage() {
 
         {showMentions&&<ScrollView scrollY style={{flexShrink:0,height:Math.min(160,mentionCandidates.length*44+16)+'px',maxHeight:'160px',background:'#fff',padding:'8px',boxSizing:'border-box'}}>{mentionCandidates.map(p=><View key={p.id} onClick={()=>{setMentionIds(ids=>[...new Set([...ids,String(p.id)])]);setDraft(text=>{const at=mentionPosition.current;return at!=null&&text[at]==='@'?text.slice(0,at)+'@'+p.name+' '+text.slice(at+1):text+'@'+p.name+' ';});setShowMentions(false);}} style={{padding:'10px',color:colors.primary}}>@{p.name}{' · '+(p.kind==='ai'?'AI健康管家':mentionRoles[p.role]||'服务人员')}</View>)}</ScrollView>}
         <View style={{ flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: '8px', padding: '10px', backgroundColor: '#F7F7F7' }}>
-          <Text aria-label={voiceMode?'切换到键盘':'切换到语音'} onClick={()=>{setVoiceMode(v=>!v);setShowMentions(false);setEmojiOpen(false);setMoreOpen(false);}} style={{padding:'8px',fontSize:'24px',lineHeight:'28px',color:colors.primary,flexShrink:0}}><Icon name={voiceMode?'keyboard':'audio-lines'} size={28}/></Text>
+          <View aria-label={voiceMode?'切换到键盘':'切换到语音'} onClick={()=>{setVoiceMode(v=>!v);setShowMentions(false);setEmojiOpen(false);setMoreOpen(false);}} style={{padding:'8px',fontSize:'24px',lineHeight:'28px',color:colors.primary,flexShrink:0}}><Icon name={voiceMode?'keyboard':'audio-lines'} size={28}/></View>
           {voiceMode?<GroupVoiceInput key={group.id} groupId={group.id} quotedMessageId={quote?.id} onSent={()=>{setQuote(null);followLatest.current=true;refresh();}} onText={text=>{setDraft(old=>old+text);setVoiceMode(false);}}/>:<Textarea value={draft} showConfirmBar={false} confirmType='send' onConfirm={send} onFocus={()=>setEmojiOpen(false)} onClick={()=>setEmojiOpen(false)} onInput={editDraft} maxlength={2000} autoHeight
             placeholder="给服务团队发消息" style={{ flex: 1, minHeight: '38px', maxHeight: '100px', padding: '8px', border: `1px solid ${colors.border}`, borderRadius: `${radius.xs}px` }} />}
-          <Text onClick={event=>{event.stopPropagation();if(!emojiOpen){if(process.env.TARO_ENV==='h5')document.activeElement?.blur?.();else Taro.hideKeyboard().catch(()=>{});}setEmojiOpen(v=>!v);setVoiceMode(false);setShowMentions(false);setMoreOpen(false);}} style={{padding:'8px',fontSize:'22px',flexShrink:0}}><Icon name='smile' size={28}/></Text>
+          <View onClick={event=>{event.stopPropagation();if(!emojiOpen){if(process.env.TARO_ENV==='h5')document.activeElement?.blur?.();else Taro.hideKeyboard().catch(()=>{});}setEmojiOpen(v=>!v);setVoiceMode(false);setShowMentions(false);setMoreOpen(false);}} style={{padding:'8px',fontSize:'22px',flexShrink:0}}><Icon name='smile' size={28}/></View>
           {!voiceMode&&draft.trim()?<View onClick={send} style={{ padding: '10px 14px', backgroundColor: busy || !draft.trim() ? colors.textMuted : colors.primary, borderRadius: `${radius.xs}px` }}>
             <Text style={{ color: '#fff' }}>发送</Text>
           </View>:<View onClick={event=>{event.stopPropagation();setMoreOpen(v=>!v);setEmojiOpen(false);}} style={{width:'40px',height:'40px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name='circle-plus' size={28}/></View>}

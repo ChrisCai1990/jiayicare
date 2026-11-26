@@ -59,7 +59,7 @@ export default function GroupMaterialUpload({ groupId, onSent, expanded=false, p
       }
       setBusy(true);
       setPhase('已选 '+data.files.length+' 份资料，正在确认处理方式…');
-      await ensureAiDataConsent('health',{cancelText:'仅保存原件'});
+      await ensureAiDataConsent('health',{cancelText:'保存原件'});
       setPhase('正在上传 '+data.files.length+' 份资料…');
       const response=await inAppServiceGroupAPI.uploadMaterial(groupId,data);
       if(!response?.success||!response?.data?.reportId)throw new Error('提交结果未确认，请点“重试提交医疗资料”核对');
