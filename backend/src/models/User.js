@@ -43,6 +43,7 @@ const userSchema = new mongoose.Schema({
   healthMonitoringConsentAt: { type: Date, default: null }, // 旧版主动开启时间，保留历史记录
   healthMonitoringPreference: { type: String, enum: ['enabled', 'disabled'] }, // 默认开启；明确关闭后持久保留
   lastLoginAt: { type: Date, default: null },
+  firstLoginPhoneType: { type: String, select: false },
   firstLoginDeviceModel: { type: String, select: false },
   recentBrowseVisits: { type: [new mongoose.Schema({
     eventId: String, title: String, client: String, at: Date,

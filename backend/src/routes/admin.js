@@ -14,7 +14,7 @@ const { renderAgreement } = require('../utils/platformAgreementText');
 const { STANDARD_PLAN, PLAN_KEY, validatePlan, getStandardPlan, tenantTerms, seatUsage, canAddSeat, estimatedMonthlySeatFee } = require('../utils/saasPlan');
 const User = require('../models/User');
 const LoginSession = require('../models/LoginSession');
-const { summarizeSession } = require('../utils/loginOrigin');
+const { summarizeSession, phoneType } = require('../utils/loginOrigin');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
 const Message = require('../models/Message');
@@ -532,13 +532,13 @@ router.post('/patients/:id/health-records/import', adminAuth, async (req, res) =
 router.get('/patients/:id', adminAuth, async (req, res) => {
   const userId = req.params.id;
   const [user, invitedUsers, records, tasks, messages, orders, firstSession, recentSession, lastQuestionnaire, lastUserMessage] = await Promise.all([
-    User.findById(userId).select('-password +recentBrowseVisits +firstLoginDeviceModel').populate('invitedBy', 'name phone'),
+    User.findById(userId).select('-password +recentBrowseVisits +firstLoginDeviceModel +firstLoginPhoneType').populate('invitedBy', 'name phone'),
     User.find({ invitedBy: userId, isDeleted: { $ne: true } }).select('name phone invitedAt').sort({ invitedAt: -1 }).lean(),
     HealthRecord.find({ user: userId }).sort({ recordedAt: -1 }).limit(20),
     Task.find({ user: userId }).sort({ createdAt: -1 }).limit(20),
     Message.find({ user: userId }).sort({ createdAt: -1 }).limit(30),
     Order.find({ user: userId }).sort({ createdAt: -1 }).limit(10),
-    LoginSession.findOne({ user: userId }).sort({ loginAt: 1, _id: 1 }).select('method loginAt device.loginOrigin device.model userAgent ip').lean(),
+    LoginSession.findOne({ user: userId }).sort({ loginAt: 1, _id: 1 }).select('method loginAt device.loginOrigin device.model device.system device.platform userAgent ip').lean(),
     LoginSession.findOne({ user: userId }).sort({ loginAt: -1, _id: -1 }).select('method loginAt device.loginOrigin userAgent').lean(),
     QuestionnaireResponse.findOne({ user: userId, proxyEntry: null, $or: [{ submittedBy: null }, { submittedBy: userId }] }).sort({ submittedAt: -1 }).select('submittedAt').lean(),
     Message.findOne({ user: userId, type: 'user' }).sort({ createdAt: -1 }).select('createdAt').lean(),
@@ -551,7 +551,9 @@ router.get('/patients/:id', adminAuth, async (req, res) => {
     latestVitals[type] = records.find(r => r.type === type) || null;
   }
 
-  res.json({ success: true, data: { user, invitedUsers, latestVitals, records, tasks, messages, orders, firstLogin: summarizeSession(firstSession, true), recentLogin: summarizeSession(recentSession, false), questionnaireAt: lastQuestionnaire?.submittedAt, userMessageAt: lastUserMessage?.createdAt } });
+  const firstLogin = summarizeSession(firstSession, true);
+  firstLogin.phoneType = user.firstLoginPhoneType || firstLogin.phoneType || phoneType({ model: user.firstLoginDeviceModel });
+  res.json({ success: true, data: { user, invitedUsers, latestVitals, records, tasks, messages, orders, firstLogin, recentLogin: summarizeSession(recentSession, false), questionnaireAt: lastQuestionnaire?.submittedAt, userMessageAt: lastUserMessage?.createdAt } });
 });
 
 async function getPatientDeleteImpact(userId) {
