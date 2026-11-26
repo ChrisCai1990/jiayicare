@@ -54,7 +54,7 @@ const displayItemNotes = item => [
   item.problem && `当前问题：${item.problem}`, item.evidence && `设置依据：${item.evidence}`,
   item.goal && `本次目标：${item.goal}`, item.reviewItems?.length && `复查项目：${item.reviewItems.join('、')}`,
   item.interventionPlan && `具体安排：${item.interventionPlan}`,
-  item.completionStandard && `完成后：${item.completionStandard}`, item.schedule && `安排时间：${item.schedule}`,
+  item.schedule && `安排时间：${item.schedule}`,
   item.frequency && `执行频率：${item.frequency}`,
   item.careTarget?.hospital && `建议机构：${item.careTarget.hospital}`,
   item.careTarget?.department && `建议科室：${item.careTarget.department}`,

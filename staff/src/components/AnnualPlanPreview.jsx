@@ -40,7 +40,7 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
         ['服务方式', [item.service?.modeLabel, item.service?.typeLabel].filter(Boolean).join(' · ')],
         ['希望达到', goal], ['本次重点', item.interventionFocus || item.focus],
         ['具体安排', item.interventionPlan], ['复查项目', item.reviewItems?.join('、')],
-        ['您需要做', item.customerAction], ['注意事项', item.precautions], ['完成后', item.completionStandard],
+        ['您需要做', item.customerAction], ['注意事项', item.precautions],
         ...(item.examArrangement ? [['开单科室', item.examArrangement.orderDepartment], ['开单专家', item.examArrangement.orderExperts.join('、')], ['检查科室', item.examArrangement.examDepartment], ['检查专家', item.examArrangement.examExperts.join('、')]] : []),
       ].filter(([, value]) => value && value !== item.title)
       return <section key={item.id} style={{ padding: '16px 0', borderTop: '1px solid #E1EAE4' }}>

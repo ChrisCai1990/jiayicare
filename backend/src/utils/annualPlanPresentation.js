@@ -59,7 +59,6 @@ function normalizeItem(moduleKey, record, index) {
     problem: first(record.reason, record.current, record.finding),
     evidence: first(record.basisSummary, record.matchReason, record.sourceRule),
     goal,
-    completionStandard: record.completionStandard || '',
     interventionPlan: first(record.personalizedAdvice, record.personalization, record.standardContent, record.plan),
     reviewItems: Array.isArray(record.reviewItems) ? record.reviewItems : [],
     schedule, frequency: record.frequency || '',
@@ -119,7 +118,7 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
   return items.map(item => grouped.has(item.id) ? grouped.get(item.id) : item).filter(Boolean);
 }
 
-const internalFields = new Set(['complaintReminderDismissed', 'excludedReviewKeys', 'clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
+const internalFields = new Set(['completionStandard', 'complaintReminderDismissed', 'excludedReviewKeys', 'clientAppUsage', 'firstManualFollowUpDate', 'metricType', 'screeningDraft', 'sourceIds', 'advisorExcluded', 'visitResultFollowUp', 'logisticsSourceReportId', 'metricsManuallyAdjusted', 'advisorTargetsManuallyAdjusted', 'executorId', 'sourceIssueId', 'sourceStatus', 'internalOnly', 'notes', 'timingReason', 'timingBaseDate', 'timingIntervalMonths', 'timingSourceId', 'dateSelectionReason', 'scheduleSeparationReason', 'futureRepeatReason', 'futureRepeatSourceId', 'sourceReviewId', 'sourceTitle', 'sourceConfirmedAt', 'sourceIndex', 'sourceGoal', 'sourceGoals', 'sourceFocus', 'nutritionRelevant', 'rehabRelevant', 'actionTiming', 'directionTimings', 'screeningSuggestedDate', 'effectiveAt', 'goalMetric', 'symptomTerm', 'lifestyleType', 'basisSummary', 'matchReason', 'sourceRule', 'reason', 'current', 'finding', 'personalizedAdvice']);
 // Legacy clients render raw moduleData, so hiding fields only in displayItems is insufficient.
 function customerModuleData(value) {
   if (Array.isArray(value)) return value.filter(item => !internalDaily(item)).map(customerModuleData);
