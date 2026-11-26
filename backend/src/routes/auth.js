@@ -4,7 +4,7 @@ const https = require('https');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { jiayihuiTenantId } = require('../utils/jiayihuiTenant');
-const { loginIP, normalizeOrigin, describeEntry } = require('../utils/loginOrigin');
+const { loginIP, normalizeOrigin, describeEntry, phoneModel } = require('../utils/loginOrigin');
 const LoginSession = require('../models/LoginSession');
 const VerificationCode = require('../models/VerificationCode');
 const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
@@ -89,11 +89,17 @@ async function beginLoginSession(req, user, method) {
   await LoginSession.create({
     user: user._id, sessionId, method, loginAt: now, lastActivityAt: now,
     ip: loginIP(req),
-    userAgent: String(req.headers['user-agent'] || '').slice(0, 500), device: { ...device, loginOrigin: origin },
+    userAgent: /miniProgram/i.test(String(req.headers['user-agent'] || '')) ? 'miniProgram' : '',
+    device: { loginOrigin: origin },
+
   });
   await User.updateOne({ _id: user._id }, [{ $set: {
     lastLoginAt: now, lastLoginMethod: method,
     loginCount: { $add: [{ $ifNull: ['$loginCount', 0] }, 1] },
+    firstLoginDeviceModel: { $cond: [
+      { $and: [{ $eq: [{ $ifNull: ['$loginCount', 0] }, 0] }, { $eq: [{ $ifNull: ['$lastLoginAt', null] }, null] }] },
+      { $literal: phoneModel({ device, userAgent: String(req.headers['user-agent'] || '').slice(0, 500) }) }, '$firstLoginDeviceModel',
+    ] },
     firstLoginChannel: { $cond: [
       { $and: [{ $eq: [{ $ifNull: ['$loginCount', 0] }, 0] }, { $eq: [{ $ifNull: ['$lastLoginAt', null] }, null] }] },
       describeEntry(origin?.firstEntry), '$firstLoginChannel',
@@ -397,6 +403,29 @@ router.post('/one-click/login', async (req, res) => {
 });
 
 // 小程序前后台切换与心跳，用于计算实际活跃时长；单次最多计入120秒，避免异常退出后虚增。
+const browsePages = Object.freeze({ home: '首页', mall: '服务商城', product: '商品或服务详情', checkout: '确认订单页',
+  booking: '预约入口', invite: '邀请好友', promotion: '我的推广', reports: '健康报告' });
+const browseClients = Object.freeze({ weapp: '微信小程序', ios: 'iOS App', android: 'Android App', app: 'App', h5: 'H5 网页' });
+
+router.post('/browse-visit', requireUser, async (req, res) => {
+  const { page, client, productId, eventId } = req.body || {};
+  if (typeof page !== 'string' || !Object.hasOwn(browsePages, page) ||
+      typeof client !== 'string' || !Object.hasOwn(browseClients, client) ||
+      typeof eventId !== 'string' || !/^[a-z0-9-]{6,48}$/.test(eventId)) {
+    return res.status(400).json({ success: false, message: '浏览记录参数无效' });
+  }
+  let title = browsePages[page];
+  if (['product','checkout','booking'].includes(page) && typeof productId === 'string' && /^[a-f0-9]{24}$/i.test(productId)) {
+    const product = await require('../models/Product').findOne({ _id: productId, status: 'on', paymentChannel: { $ne: 'offline' } }).select('name').lean();
+    if (product?.name) title += ' · ' + product.name;
+  }
+  await User.updateOne({ _id: req.user._id, tenantId: req.user.tenantId, isDeleted: { $ne: true },
+    'recentBrowseVisits.eventId': { $ne: eventId } }, { $push: { recentBrowseVisits: {
+      $each: [{ eventId, title, client: browseClients[client], at: new Date() }], $position: 0, $slice: 50,
+    } } });
+  res.json({ success: true });
+});
+
 router.post('/session/activity', requireUser, async (req, res) => {
   try {
     const sessionId = req.authSessionId;

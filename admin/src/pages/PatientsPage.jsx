@@ -90,7 +90,7 @@ export default function PatientsPage() {
                   <th>年龄 / 性别</th>
                   <th>服务包</th>
                   <th>到期日期</th>
-                  <th>健康评分</th>
+                  <th>最近浏览</th><th>健康评分</th>
                   <th>注册时间</th>
                   <th>操作</th>
                 </tr>
@@ -114,6 +114,7 @@ export default function PatientsPage() {
                     <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                       {p.serviceExpiry || '--'}
                     </td>
+                    <td>{p.recentBrowseVisits?.[0] ? <>{p.recentBrowseVisits[0].title}<br />{new Date(p.recentBrowseVisits[0].at).toLocaleString('zh-CN')}</> : '暂无记录'}</td>
                     <td><ScoreBadge score={p.healthScore} /></td>
                     <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                       {new Date(p.createdAt).toLocaleDateString('zh-CN')}
@@ -125,7 +126,7 @@ export default function PatientsPage() {
                   </tr>
                 ))}
                 {patients.length === 0 && (
-                  <tr><td colSpan={9}>
+                  <tr><td colSpan={10}>
                     <div className="empty-state">
                       <div className="empty-state-icon">🔍</div>
                       <div className="empty-state-text">未找到符合条件的会员</div>
