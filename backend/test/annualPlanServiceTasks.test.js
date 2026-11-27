@@ -85,7 +85,7 @@ test('一站式主服务汇总同院同日不同科室事项，不增加服务�
   assert.equal(rows[0].formData.serviceRequest.itemSnapshot.visitItems.length, 2);
 });
 
-test('新版年度服务任务保留来源方案版本，旧版任务不补写版本', async t => {
+test('新旧方案后续生成的年度服务任务都使用新版', async t => {
   const User = require('../src/models/User');
   const FollowUp = require('../src/models/FollowUp');
   const release = require('../src/utils/annualInternalTaskException');
@@ -101,5 +101,5 @@ test('新版年度服务任务保留来源方案版本，旧版任务不补写�
   await syncAnnualPlanServiceTasks({ ...base, flowVersion: 1 });
   assert.equal(tasks.length, 2);
   assert.equal(tasks[0].formData.annualFlowVersion, 2);
-  assert.equal(tasks[1].formData.annualFlowVersion, undefined);
+  assert.equal(tasks[1].formData.annualFlowVersion, 2);
 });

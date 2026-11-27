@@ -61,12 +61,12 @@ test('已有确认方案保留原件；新报告先解读，之后进入目标�
   assert.equal(execution.planId, 'plan1');
 });
 
-test('按方案分流后，旧方案继续执行，新方案缺目标时返回目标步骤', t => {
+test('旧方案和新方案缺目标时均返回目标步骤', t => {
   t.mock.method(reviewPolicy, 'restored', () => false);
   const plan = { _id: 'legacy', patientId: 'p1', year: 2026, confirmedAt: now, pushedAt: now,
     moduleData: { management_targets: { records: [] } } };
   const flow = project(patient, 2026, [plan], [{ ...report, advisorInterpretationConfirmedAt: now }], now);
-  assert.equal(flow.step, 'execution');
+  assert.equal(flow.step, 'goals');
   assert.equal(project(patient, 2026, [{ ...plan, flowVersion: 2 }], [{ ...report, advisorInterpretationConfirmedAt: now }], now).step, 'goals');
 });
 

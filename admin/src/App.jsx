@@ -1,6 +1,6 @@
 import HealthDataImportPage from './pages/HealthDataImportPage'
 import React, { useState, useEffect, createContext, useContext } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { getToken, clearToken } from './api'
 import LoginPage from './pages/LoginPage'
 import HrApp from './pages/hr/HrApp'
@@ -152,6 +152,17 @@ function InstitutionSetupPage() {
   return <div className="page"><div className="page-header"><div><h1 className="page-title">{admin?.tenantName} · 机构配置</h1><p className="page-subtitle">当前没有本机构客户。先维护企业信息、部门、岗位和员工。</p></div></div><div className="card" style={{ padding: 28 }}><p>客户与医护业务将在跨机构数据隔离验收后开放。</p><div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>{[['企业信息', '/settings/company'], ['部门管理', '/settings/departments'], ['岗位权限', '/settings/roles'], ['员工账号', '/settings/employees'], ['本机构套餐', '/saas-plan']].map(([label, path]) => <a key={path} className="btn btn-secondary" href={path}>{label}</a>)}</div></div></div>
 }
 
+function PatientAnnualPlanEntry() {
+  const { id } = useParams()
+  const { search } = useLocation()
+  const host = new URL(window.location.origin)
+  if (import.meta.env.VITE_STAFF_ORIGIN) host.href = import.meta.env.VITE_STAFF_ORIGIN
+  else if (host.hostname.includes('admin')) host.hostname = host.hostname.replace('admin', 'staff')
+  else if (import.meta.env.DEV) host.port = '5174'
+  const target = new URL('/patients/' + encodeURIComponent(id) + '/annual-health' + search, host)
+  return <section><h2>客户年度管理方案</h2><a className="btn btn-primary" href={target.href}>打开医护端年度方案</a></section>
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -185,7 +196,7 @@ export default function App() {
               <Route path="health-data-import" element={<HealthDataImportPage />} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
-              <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
+              <Route path="patients/:id/annual-plan" element={<PatientAnnualPlanEntry />} />
               <Route path="annual-plan/template/:templateId" element={<AnnualPlanPage templateMode />} />
               <Route path="orders" element={<OrdersPage />} />
               <Route path="commissions" element={<CommissionsPage />} />

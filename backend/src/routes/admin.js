@@ -3418,20 +3418,8 @@ router.get('/patients/:id/annual-plan', adminAuth, async (req, res) => {
   }
 });
 
-router.put('/patients/:id/annual-plan', adminAuth, async (req, res) => {
-  try {
-    const { planType, moduleData, notes, year } = req.body;
-    const targetYear = year || new Date().getFullYear();
-    const plan = await AnnualPlan.findOneAndUpdate(
-      { patientId: req.params.id, year: targetYear },
-      { $set: { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.admin._id },
-        $setOnInsert: { flowVersion: require('../utils/annualFlowPilot').enabledForNewPlan(req.params.id) ? 2 : 1 } },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    res.json({ success: true, data: plan });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+router.put('/patients/:id/annual-plan', adminAuth, (_req, res) => {
+  res.status(410).json({ success: false, message: '请从医护端年度管理方案保存草稿，已发布的方案请使用局部修订。' });
 });
 
 // ── 年度方案模板（无需绑定会员） ────────────────────────────────────────

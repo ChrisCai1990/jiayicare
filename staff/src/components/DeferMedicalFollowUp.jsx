@@ -20,7 +20,7 @@ export default function DeferMedicalFollowUp({ task, onSaved }) {
     if (patientId) managementReviewAPI.get(patientId).then(result => { if (active) setPilot(result.restored === true || task?.formData?.annualFlowVersion === 2) }).catch(() => {})
     return () => { active = false }
   }, [patientId, task?.formData?.annualFlowVersion])
-  if (!pilot || !canDeferMedicalFollowUp(task)) return null
+  if ((!task?.sourceAnnualPlanId && !pilot) || !canDeferMedicalFollowUp(task)) return null
   const save = async () => {
     if (reason.trim().length < 5 || !nextDate) { setError('请填写本轮未做的实际情况与下次跟进日期'); return }
     setSaving(true); setError('')
