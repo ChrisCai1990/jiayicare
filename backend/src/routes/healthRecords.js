@@ -392,6 +392,9 @@ router.put('/:id', auth, async (req, res) => {
     if (note !== undefined) record.note = note;
     if (recordedAt) record.recordedAt = new Date(recordedAt);
     record.status = calcStatus(record.type, value, extra !== undefined ? extra : record.extra);
+    record.managerVerifiedAt = null;
+    record.managerVerifiedBy = null;
+    record.managerVerificationNote = '';
     record.aiAlertStatus = (record.type === 'bloodPressure' && record.status === 'danger') ? 'pending' : null;
 
     await record.save();

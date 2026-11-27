@@ -57,19 +57,26 @@ test('同一来源幂等；结案后只有来源变化才重开；来源纠正�
       if (update.$push?.history) row.history.push(update.$push.history);
     },
   };
-  const Patient = { findById: () => ({ select: () => ({ lean: async () => ({ tenantId: 'tenant', assignedFamilyDoctor: 'doctor' }) }) }) };
+  const Patient = { findById: () => ({ select: () => ({ lean: async () => ({ tenantId: 'tenant', assignedFamilyDoctor: 'doctor', assignedHealthManager: 'manager' }) }) }) };
   const args = { patientId: 'patient', sourceType: 'health_record', sourceId: 'source', candidate: { ruleCode: 'test', level: 'review', title: '待核对', summary: '合成测试', evidence: { value: 'A' } } };
   const dependencies = { Event, Patient, enabledForPatient: () => true };
   await syncRiskEvent(args, dependencies);
   await syncRiskEvent(args, dependencies);
   assert.equal(creates, 1);
+  assert.equal(row.assignedTo, 'manager');
+  row.managerVerifiedAt = new Date();
+  row.assignedTo = 'doctor';
+  await syncRiskEvent(args, dependencies);
   assert.equal(row.assignedTo, 'doctor');
+  assert.ok(row.managerVerifiedAt);
   assert.equal(row.history.length, 1);
   row.status = 'closed';
   await syncRiskEvent(args, dependencies);
   assert.equal(row.status, 'closed');
   await syncRiskEvent({ ...args, candidate: { ...args.candidate, evidence: { value: 'B' } } }, dependencies);
   assert.equal(row.status, 'pending');
+  assert.equal(row.assignedTo, 'manager');
+  assert.equal(row.managerVerifiedAt, null);
   assert.equal(row.history.at(-1).action, 'reopened_after_source_change');
   await syncRiskEvent({ ...args, candidate: null }, dependencies);
   assert.equal(row.status, 'superseded');

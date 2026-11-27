@@ -78,17 +78,24 @@ async function syncRiskEvent({ patientId, tenantId, sourceType, sourceId, candid
   }
   const sourceFingerprint = createHash('sha256').update(JSON.stringify(candidate.evidence)).digest('hex');
   if (existing?.status === 'closed' && (!existing.sourceFingerprint || existing.sourceFingerprint === sourceFingerprint)) return existing;
-  const patient = await Patient.findById(patientId).select('tenantId assignedFamilyDoctor').lean();
+  const patient = await Patient.findById(patientId).select('tenantId assignedFamilyDoctor assignedHealthManager').lean();
   if (!patient) return null;
   const now = new Date();
   const update = {
     patientId, sourceType, sourceId,
     ruleCode: candidate.ruleCode, ruleVersion: RULE_VERSION, level: candidate.level,
     title: candidate.title, summary: candidate.summary, evidence: candidate.evidence, sourceFingerprint,
-    assignedTo: patient.assignedFamilyDoctor || null,
+    assignedTo: (sourceType === 'medical_report' ? patient.assignedFamilyDoctor : patient.assignedHealthManager) || null,
   };
   if (existing) {
     const reopening = existing.status === 'superseded' || existing.status === 'closed';
+    if (sourceType !== 'medical_report') {
+      if (reopening || existing.sourceFingerprint !== sourceFingerprint) {
+        Object.assign(update, { managerVerifiedAt: null, managerVerifiedBy: null, managerVerificationNote: '' });
+      } else {
+        delete update.assignedTo;
+      }
+    }
     if (reopening) Object.assign(update, { status: 'pending', detectedAt: now, dueAt: new Date(now.getTime() + DAY), disposition: '', decisionNote: '', decidedAt: null, decidedBy: null, decidedByName: '' });
     await Event.updateOne({ _id: existing._id }, { $set: update,
       ...(reopening ? { $push: { history: { at: now, action: 'reopened_after_source_change', ruleVersion: RULE_VERSION } } } : {}) });

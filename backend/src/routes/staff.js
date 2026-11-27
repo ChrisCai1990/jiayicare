@@ -13314,6 +13314,41 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
 
 // ── 健康顾问处理血压异常升级（AI自动跟进试点）──
 // PATCH /api/staff/health-records/:id/resolve-alert
+router.patch('/monitoring-alerts/:kind/:id/verify', staffAuth, async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ message: '仅所属健管专员可核实' });
+    const note = String(req.body?.note || '').trim();
+    if (!note || note.length > 1000) return res.status(400).json({ message: '请填写核实说明（最多1000字）' });
+    const legacy = req.params.kind === 'record';
+    if (!legacy && req.params.kind !== 'event') return res.sendStatus(404);
+    const Model = legacy ? HealthRecord : require('../models/HealthRiskEvent');
+    const filter = { _id: req.params.id, managerVerifiedAt: null, ...(legacy
+      ? { type: 'bloodPressure', aiAlertStatus: 'pending' }
+      : { sourceType: { $in: ['health_record', 'monitoring_trend'] }, status: 'pending' }) };
+    const row = await Model.findOne(filter).lean();
+    if (!row) return res.status(409).json({ message: '待办状态已变化，请刷新' });
+    const revision = legacy ? row.updatedAt?.toISOString() : row.sourceFingerprint;
+    if (String(revision || '') !== req.body.revision) return res.status(409).json({ message: '监测资料已变化，请刷新并重新核实' });
+    const patientId = legacy ? row.user : row.patientId;
+    if (!legacy && !require('../utils/healthRiskRollout').enabledForPatient(patientId)) return res.sendStatus(404);
+    const patient = await User.findById(patientId).select('assignedHealthManager assignedFamilyDoctor');
+    if (!patient || (req.staff.role !== 'superadmin' && String(patient.assignedHealthManager) !== String(req.staff._id))) return res.sendStatus(403);
+    if (!patient.assignedFamilyDoctor) return res.status(409).json({ message: '请先分配健康顾问，再转交核实结果' });
+    const now = new Date();
+    const update = { $set: { managerVerifiedAt: now, managerVerifiedBy: req.staff._id, managerVerificationNote: note } };
+    if (!legacy) {
+      filter.sourceFingerprint = row.sourceFingerprint || { $in: [null, ''] };
+      update.$set.assignedTo = patient.assignedFamilyDoctor;
+      update.$push = { history: { action: 'manager_verified', note, at: now, staffId: req.staff._id } };
+    } else {
+      filter.updatedAt = row.updatedAt;
+    }
+    const result = await Model.updateOne(filter, update);
+    if (!result.modifiedCount) return res.status(409).json({ message: '待办已更新，请刷新' });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ message: error.message }); }
+});
+
 router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可处理该待办' });
@@ -13326,7 +13361,7 @@ router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) =>
     const patient = await User.findById(source.user).select('assignedFamilyDoctor');
     if (!patient || (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))) return res.status(403).json({ success: false, message: '该客户不属于您的健康顾问服务范围' });
     const record = await HealthRecord.findOneAndUpdate(
-      { _id: req.params.id, aiAlertStatus: 'pending' },
+      { _id: req.params.id, aiAlertStatus: 'pending', managerVerifiedAt: { $ne: null } },
       { $set: { aiAlertStatus: disposition === 'needs_information' ? 'pending' : 'resolved', alertDisposition: disposition, alertDecisionNote: note,
         alertDecidedBy: req.staff._id, alertDecidedByName: req.staff.name || '', alertDecidedAt: new Date() } },
       { new: true }
@@ -13362,7 +13397,7 @@ router.patch('/health-risk-events/:id/resolve', staffAuth, async (req, res) => {
     if (!patient || (req.staff.role !== 'superadmin' && String(patient.assignedFamilyDoctor || '') !== String(req.staff._id))) return res.status(403).json({ success: false, message: '该客户不属于您的健康顾问服务范围' });
     const now = new Date();
     const stillPending = disposition === 'needs_information';
-    const updated = await HealthRiskEvent.findOneAndUpdate({ _id: event._id, status: 'pending' }, {
+    const updated = await HealthRiskEvent.findOneAndUpdate({ _id: event._id, status: 'pending', $or: [{ sourceType: 'medical_report' }, { managerVerifiedAt: { $ne: null } }] }, {
       $set: { status: stillPending ? 'pending' : 'closed', disposition, decisionNote: note, decidedBy: req.staff._id, decidedByName: req.staff.name || '', decidedAt: now },
       $push: { history: { at: now, action: stillPending ? 'information_requested' : 'closed', disposition, note, staffId: req.staff._id, staffName: req.staff.name || '' } },
     }, { new: true });
@@ -13649,6 +13684,9 @@ router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (re
       record.recordedAt = d;
     }
     record.status = calcHealthRecordStatus(record.type, value, extra !== undefined ? extra : record.extra);
+    record.managerVerifiedAt = null;
+    record.managerVerifiedBy = null;
+    record.managerVerificationNote = '';
     record.aiAlertStatus = (record.type === 'bloodPressure' && record.status === 'danger') ? 'pending' : null;
     record.editedBy = {
       staffId: req.staff._id,
@@ -17005,6 +17043,7 @@ const TODO_REVIEW_ROLE = {
   nutrition_plan_review:'nutritionist',
   medical_assist_plan_review: 'healthPlanner',
   followup_review:      'familyDoctor',
+  monitoring_verify:    'healthManager',
   bp_alert_review:      'familyDoctor',
   symptom_review:       'familyDoctor',
   symptom_verify:       'healthManager',
@@ -17807,7 +17846,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 健康顾问：统一风险事件（记录健康数据及已审核报告）──
     const eventRecordIds = new Set();
-    if (can('risk_review')) {
+    if (can('risk_review') || can('monitoring_verify')) {
       const HealthRiskEvent = require('../models/HealthRiskEvent');
       const { patientFilter, enabledForPatient } = require('../utils/healthRiskRollout');
       const eventFilter = { status: 'pending', ...patientFilter('patientId'), ...(myPatientIds ? { patientId: { $in: myPatientIds.filter(id => enabledForPatient(id)) } } : {}) };
@@ -17815,10 +17854,12 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       events.forEach(event => {
         if (event.sourceType === 'health_record') eventRecordIds.add(String(event.sourceId));
         if (!event.patientId?._id) return;
+        const verify = event.sourceType !== 'medical_report' && !event.managerVerifiedAt;
+        if (!can(verify ? 'monitoring_verify' : 'risk_review')) return;
         todos.push({
-          id: `risk_event_${event._id}`, type: 'risk_event_review', priority: event.level === 'priority' ? 1 : 2,
-          label: event.title, patientName: event.patientId.name || '未知', patientId: String(event.patientId._id),
-          summary: event.summary, createdAt: event.detectedAt,
+          id: `risk_event_${event._id}`, type: verify ? 'monitoring_verify' : 'risk_event_review', verificationKind: 'event', sourceKey: String(event._id), revision: event.sourceFingerprint || '', priority: event.level === 'priority' ? 1 : 2,
+          label: verify ? '监测异常待专员核实' : event.title, patientName: event.patientId.name || '未知', patientId: String(event.patientId._id),
+          summary: [event.summary, event.managerVerificationNote].filter(Boolean).join(' · '), createdAt: event.detectedAt,
           overdue: !!event.dueAt && now > new Date(event.dueAt),
           link: event.sourceType === 'medical_report'
             ? `/patients/${event.patientId._id}?tab=reports&reportId=${event.sourceId}`
@@ -17828,18 +17869,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
 
     // ── 旧血压待办兼容：已有记录尚未形成统一事件时继续可处理──
-    if (can('bp_alert_review')) {
+    if (can('bp_alert_review') || can('monitoring_verify')) {
       const bpFilter = { type: 'bloodPressure', aiAlertStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const alertRecords = await HealthRecord.find(bpFilter)
         .populate('user', 'name').sort({ recordedAt: -1 }).lean();
       alertRecords.forEach(r => {
-        if (eventRecordIds.has(String(r._id))) return;
+        const verify = !r.managerVerifiedAt;
+        if (eventRecordIds.has(String(r._id)) || !can(verify ? 'monitoring_verify' : 'bp_alert_review')) return;
         const createdAt = r.recordedAt || r.createdAt;
         const sys = r.extra?.sys || String(r.value).split('/')[0];
         todos.push({
-          id: 'bp_alert_' + r._id, type: 'bp_alert_review', label: '血压监测异常·待处理', priority: 1,
+          id: 'bp_alert_' + r._id, type: verify ? 'monitoring_verify' : 'bp_alert_review', verificationKind: 'record', sourceKey: String(r._id), revision: r.updatedAt?.toISOString() || '', label: verify ? '血压监测异常·待专员核实' : '血压监测异常·待顾问处理', priority: 1,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `AI监测发现收缩压 ${sys} mmHg（危险级），会员已自主记录健康数据，请医生核实处理`,
+          summary: `AI监测发现收缩压 ${sys} mmHg（危险级），会员已自主记录健康数据，专员核实：${r.managerVerificationNote || '待核实'}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=records`,
         });
