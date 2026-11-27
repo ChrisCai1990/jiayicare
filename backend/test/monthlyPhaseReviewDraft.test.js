@@ -25,8 +25,8 @@ test('月度四板块仅列已归类的筛查数据，医疗记录条数不冒�
   const draft = await buildMonthlyPhaseReviewDraft({ _id: 'synthetic' }, { start: new Date('2026-09-30T16:00:00Z'), end: new Date('2026-10-31T15:59:59Z') });
   assert.match(draft.content, /一、阶段变化/);
   assert.match(draft.content, /三、问题分析/);
-  assert.match(draft.content, /检查甲 5.1 单位；检查乙 6.2 单位/);
-  assert.match(draft.content, /首次或复查属性/);
+  assert.match(draft.content, /1份已审核报告/);
+  assert.doesNotMatch(draft.content, /检查甲 5.1/);
   assert.doesNotMatch(draft.content, /就医服务记录：2条/);
   assert.doesNotMatch(draft.content, /就医频繁的原因是/);
 });

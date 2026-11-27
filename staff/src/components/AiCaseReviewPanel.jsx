@@ -440,6 +440,16 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       toast('阶段性评估草稿已生成，等待对应岗位审核')
     } catch (err) { toast(err.message, 'error') } finally { setBusy(false) }
   }
+  const previewMonthlyDraft = async item => {
+    if (assessmentEdits[item._id] && assessmentEdits[item._id] !== item.content && !window.confirm('用新草稿替换当前尚未提交的编辑？')) return
+    setBusy(true)
+    try {
+      const { data } = await staffAPI.reviewPhaseAssessment(patientId,item._id,{action:'preview_four_sections',revision:item.__v})
+      setAssessmentEdits(previous=>({...previous,[item._id]:data.content}))
+      setActiveAssessmentSections(previous=>({...previous,[item._id]:2}))
+      toast('新草稿已准备，可核对问题和行动后提交')
+    } catch (err) { toast(err.message,'error') } finally { setBusy(false) }
+  }
   const reviewAssessment = async (assessment, action) => {
     const promptText = action === 'approve' ? '审核备注（可选）：' : action === 'escalate' ? '请说明需要健康顾问综合复核的问题：' : action === 'regenerate' ? '请填写需要AI修正的内容：' : '请填写退回原因：'
     const reviewNote = action === 'retry_archive' ? '' : window.prompt(promptText, '')
@@ -509,8 +519,9 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             {item.templateSnapshot?.contentRevision === 'four-dimensions-v2' && status !== 'finalized' && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>本稿已按四板块新口径重新整理，待当前审核岗位核对。此前岗位已确认意见保留为原稿意见。</div>}
             {item.notice && <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#FFF7E7', color: '#8A5700', fontSize: 12 }}>{item.notice}</div>}
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
-            <div style={{ fontSize: 12, color: '#52685D', marginTop: 5 }}>{item.templateSnapshot?.source === 'local_manual' ? '本底稿在系统内汇总已有健康记录、服务随访、就医服务记录及已审核报告名称和项目；营养师与健康顾问需查看原始资料，填写分析与结论。' : 'AI草稿仅参考当前可用的健康记录、随访及部分已审核报告项目；未覆盖全部就医和检查资料。'}健康顾问请核对本月所有需要跟进的问题、就医次数及原因。</div>
-            {onNavigate && <div style={{ display: 'flex', gap: 8, marginTop: 8 }}><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('reports')}>核对原始报告与复查指标</button><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('serviceRecords')}>核对就医与服务记录</button></div>}
+            {stageSections[0].lines.some(line=>line.startsWith('本期年度管理目标：')) && <p><strong>本期目标</strong>　{stageSections[0].lines.find(line=>line.startsWith('本期年度管理目标：')).split('本期年度管理目标：')[1]}</p>}
+            {canTeamEdit && /^\d{4}-\d{2}$/.test(item.periodKey) && <button type="button" disabled={busy} className="btn btn-secondary btn-sm" onClick={()=>previewMonthlyDraft(item)}>AI 整理本月评估草稿</button>}
+            {onNavigate && <details style={{ marginTop: 8 }}><summary>查阅原始依据</summary><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('reports')}>检查报告</button> <button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('serviceRecords')}>就医与服务记录</button></details>}
             {['finalized', 'approved'].includes(status) && onNavigate && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => onNavigate('serviceRecords')}>查看服务档案中的评估记录</button>}
             {status === 'archive_pending' && <div style={{ marginTop: 9, color: '#92400E', fontSize: 13 }}>审核结果已保存，无需重复审核。{canRetryArchive && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => reviewAssessment(item, 'retry_archive')}>重试归档</button>}</div>}
             {!!item.teamRoles?.length && <div style={{ marginTop: 12, padding: 12, background: '#F4F8F5', borderRadius: 9 }}>
@@ -531,7 +542,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             </div>
             {!expanded && activeSection && <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: activeSection.background, borderLeft: `4px solid ${activeSection.color}` }}>
               <div style={{ fontWeight: 800, color: activeSection.color, marginBottom: 7 }}>{activeSection.title}</div>
-              {activeSection.lines.length ? activeSection.lines.map((line, index) => <React.Fragment key={index}>{line.startsWith('健康数据记录习惯：') && <h4>行为习惯变化</h4>}{line.startsWith('日常监测数据：') && <h4>健康指标变化</h4>}<AssessmentLine line={line} color={activeSection.color} /></React.Fragment>) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
+              {activeSection.lines.length ? activeSection.lines.filter(line=>!line.startsWith('本期年度管理目标：')).map((line, index) => <React.Fragment key={index}>{line.startsWith('健康数据记录习惯：') && <h4>行为习惯变化</h4>}{line.startsWith('日常监测数据：') && <h4>健康指标变化</h4>}<AssessmentLine line={line} color={activeSection.color} /></React.Fragment>) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
             </div>}
             <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => { if (!expanded && !Number.isInteger(activeSectionIndex)) setActiveAssessmentSections(values => ({ ...values, [item._id]: 0 })); setExpandedAssessments(values => ({ ...values, [item._id]: !expanded })) }}>{expanded ? '收起正文' : (canNutritionReview || canDoctorReview || canTeamEdit ? '查看并修改四个板块' : '查看原文')}</button>
             {expanded && <>
