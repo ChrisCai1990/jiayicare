@@ -1311,6 +1311,16 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!button || button.disabled) { toast('请先展开要修改的事项，填写后再保存本项'); return }
     button.click()
   }
+  const saveVisitReview = async review => {
+    const plan = plansByType[planType]
+    try {
+      const {data} = await staffAPI.reviseAnnualPlan(id, {planId:plan._id,baseUpdatedAt:plan.updatedAt,action:'reviewVisits',reason:'顾问核对同次就诊安排',review})
+      setPlansByType(prev => ({...prev,[planType]:data}))
+      setModuleData(data.moduleData)
+      setRemotePlanChanged(false)
+      toast('就诊安排已暂存，请核对后发布本次修订')
+    } catch (error) { toast(error.message) }
+  }
   const publishRevision = async () => {
     const current = plansByType[planType]
     if (!current?.hasUnpublishedRevision || publishingRevision) return
@@ -1323,7 +1333,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       setModuleData(saved.moduleData || {})
       setRemotePlanChanged(false)
       toast(response.message || '本次修订已发布')
-    } catch (error) { toast(error.message || '发布失败，请刷新后重试') }
+    } catch (error) {
+      if (/同次就诊|同日复查|就诊日期须一致|就诊医院须一致/.test(error.message || '')) {
+        const panel = document.getElementById('annual-visit-schedule-review')
+        if (panel) { panel.open = true; panel.scrollIntoView({block:'center'}) }
+      }
+      toast(error.message || '发布失败，请刷新后重试')
+    }
     finally { setPublishingRevision(false) }
   }
 
@@ -1492,7 +1508,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {saving ? '保存中...' : '暂存草稿'}
           </button>}
           {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary btn-sm" onClick={saveCurrentPublishedItem}>暂存当前项</button>}
-          {annualPilot && pushedAt && canEdit && plansByType[planType]?.hasUnpublishedRevision && <button type="button" className="btn btn-secondary btn-sm" disabled={publishingRevision} onClick={publishRevision}>{publishingRevision ? '发布中…' : '发布本次修订'}</button>}
+          {pushedAt && canEdit && plansByType[planType]?.hasUnpublishedRevision && <button type="button" className="btn btn-secondary btn-sm" disabled={publishingRevision} onClick={publishRevision}>{publishingRevision ? '发布中…' : '发布本次修订'}</button>}
         </div>
       </div>
 
@@ -1520,6 +1536,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>)}
         {checked && <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} onClick={() => setCheckAttempt(value => value + 1)}>重新核对</button>}
       </section>}
+      {patientMode && pushedAt && canEdit && <AnnualVisitScheduleReview data={moduleData} editable onRevision={saveVisitReview} onError={toast} />}
       {annualPilot && planType && !pushedAt && <AnnualVisitScheduleReview data={moduleData} editable={canEdit} nearbyOnly onChange={handleVisitScheduleChange} onError={toast} />}
       {patientMode && planType && canEdit && <div id="annual-screening-sync" style={{ margin: '-12px 0 20px', padding: '12px 14px', border: '1px solid #C7DCCF', borderRadius: 10, background: '#F4FAF6', fontSize: 13, color: '#365E4C' }}>
         {!pushedAt ? <><strong>核对已纳入的问题</strong><span style={{ marginLeft: 8 }}>已确认的专项筛查与已审核 AI 整理中的明确待补检查可同步到草稿；推送前请核对方案安排。</span>
@@ -1894,7 +1911,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       <div className="annual-plan-footer">
         {canEdit && !pushedAt && planType && <button type="button" className="btn btn-primary" disabled={saving} onClick={() => handleSave()}>{saving ? '保存中…' : '保存方案草稿'}</button>}
         {annualPilot && pushedAt && canEdit && <button type="button" className="btn btn-primary" onClick={saveCurrentPublishedItem}>暂存当前项</button>}
-        {annualPilot && pushedAt && canEdit && plansByType[planType]?.hasUnpublishedRevision && <button type="button" className="btn btn-secondary" disabled={publishingRevision} onClick={publishRevision}>{publishingRevision ? '发布中…' : '发布本次修订'}</button>}
+        {pushedAt && canEdit && plansByType[planType]?.hasUnpublishedRevision && <button type="button" className="btn btn-secondary" disabled={publishingRevision} onClick={publishRevision}>{publishingRevision ? '发布中…' : '发布本次修订'}</button>}
         <button className="btn btn-secondary" onClick={goBack}>返回方案列表</button>
       </div>
       {annualPilot && planType && <AnnualPlanPreview patientId={id} planId={currentPlanId} version={plansByType[planType]?.updatedAt} staffList={staffList} assignedNutritionist={patient?.assignedNutritionist} />}

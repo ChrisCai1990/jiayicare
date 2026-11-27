@@ -79,6 +79,11 @@ function validateVisitGroups(data = {}) {
   return '';
 }
 
+function unconfirmedVisitGroups(data) {
+  return [...visitGroups(data)].filter(([, entries]) => entries.length > 1 && entries.some(e => !e.row.visitMergeConfirmed))
+    .map(([id, entries]) => '请确认是否合并同次就诊“' + id + '”：' + entries.map(e => e.row.reviewItems?.join('、') || e.title).join('、'));
+}
+
 function sharedVisitItems(data, id) {
   return (visitGroups(data).get(text(id)) || []).map(({ moduleKey, index, row, title }) => {
     const examExpert = text(row.expert || (row.expertSnapshots || []).map(item => item.name).join('、'));
@@ -99,4 +104,4 @@ function sharedVisitItems(data, id) {
   });
 }
 
-module.exports = { MODULE_DATES, visitGroups, validateVisitGroups, sharedVisitItems, hospitalIdentity };
+module.exports = { MODULE_DATES, visitGroups, unconfirmedVisitGroups, validateVisitGroups, sharedVisitItems, hospitalIdentity };

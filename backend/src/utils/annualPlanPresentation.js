@@ -44,7 +44,7 @@ function normalizeItem(moduleKey, record, index) {
   const orderExperts = expertNames(record.orderExpertSnapshots, record.order_expert);
   const rawTitle = first(record.items, record.name, record.standardPlanName, record.purpose, record.focus, MODULE_NAME[moduleKey]);
   const title = moduleKey === 'medical_treatment' && /^(需要安排就医|安排就医)$/.test(rawTitle) && record.department
-    ? `前往${record.department}就诊` : rawTitle;
+    ? `前往${record.department}就诊` : moduleKey === 'medical_treatment' && /^(需要安排就医|安排就医)$/.test(rawTitle) && record.visitTopic ? record.visitTopic + '就诊' : rawTitle;
   const schedule = first(record.visit_time, record.plan_time, record.executionDate, record.date, record.time);
   const rawGoal = moduleKey === 'nutrition_assessment'
     ? (record.nutritionComparisonMetrics?.filter(name => !isInternalNutritionMetric(name)).length ? `前后对比：${record.nutritionComparisonMetrics.filter(name => !isInternalNutritionMetric(name)).join('、')}` : '核实膳食与体成分情况')
@@ -57,7 +57,7 @@ function normalizeItem(moduleKey, record, index) {
   return {
     id: `${moduleKey}:${index}`, moduleKey, category: MODULE_NAME[moduleKey] || moduleKey, title,
     ...(moduleKey === 'medical_treatment' ? { visitOrigin: record.oneTimeVisit || record.visitOrigin === 'symptom' ? 'symptom' : 'annual' } : {}),
-    problem: first(record.reason, record.current, record.finding),
+    problem: first(record.visitTopic, record.reason, record.current, record.finding),
     evidence: first(record.basisSummary, record.matchReason, record.sourceRule),
     goal,
     interventionPlan: first(record.personalizedAdvice, record.personalization, record.standardContent, record.plan),
@@ -128,6 +128,15 @@ function customerModuleData(value) {
     .filter(([key]) => !internalFields.has(key) && key !== 'nutrition_assessment' && key !== 'personalized_followups' && (key !== 'health_consensus' || value[key]?.shareWithCustomer === true))
     .map(([key, child]) => [key, key === 'management_targets'
       ? { ...customerModuleData(child), records: (child?.records || []).filter(row => !isInternalNutritionMetric(`${row.goal || ''} ${row.focus || ''}`)).map(customerModuleData) }
+      : key === 'medical_treatment' && Array.isArray(child?.records)
+      ? { ...customerModuleData(child), records: child.records.filter(r => !internalDaily(r)).map(row => {
+          const safe = customerModuleData(row);
+          const targets = value.management_targets?.enabled === false ? [] : value.management_targets?.records || [];
+          const topics = targets.filter(t => t.issueId && (row.sourceIds || []).includes(t.issueId) && t.sourceTitle
+            && !isInternalNutritionMetric(t.goal + ' ' + t.focus)
+            && [t.goal,t.focus].some(s => typeof s === 'string' && s.includes(t.sourceTitle))).map(t => t.sourceTitle);
+          return topics.length ? { ...safe, visitTopic:[...new Set(topics)].join('、') } : safe;
+        }) }
       : key === 'annual_checkup'
       ? { enabled: child?.enabled !== false, date: child?.date || '', institution: child?.institution || '',
           focus: /内部|来源[:：]|missing:/i.test(String(child?.focus || '')) ? '' : child?.focus || '',

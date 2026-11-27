@@ -78,6 +78,10 @@ module.exports=({getVisiblePlanPatientIds})=>{
       if(req.body.action==='publish') {
         const draft=plan.revisionDraft;
         if(!draft?.moduleData || !draft.changes?.length) return res.status(409).json({success:false,message:'没有待发布的修订，请先暂存事项'});
+        const schedule = require('../utils/annualPlanDates').normalize(draft.moduleData);
+        const { unconfirmedVisitGroups, validateVisitGroups } = require('../utils/annualVisitGroups');
+        const scheduleIssue = validateVisitGroups(schedule) || unconfirmedVisitGroups(schedule)[0];
+        if (scheduleIssue) return res.status(409).json({success:false,message:scheduleIssue});
         const executionReview=require('../utils/annualExecutionReview').markForReview(plan,draft.changes);
         const revision={id:draft.id,status:'applied',kind:'published_revision',createdAt:new Date(),createdBy:req.staff._id,
           source:{kind:'advisor_revision',reason:'顾问确认发布本次修订'},baseUpdatedAt:plan.updatedAt,
@@ -101,7 +105,35 @@ module.exports=({getVisiblePlanPatientIds})=>{
       const checkupEdit=req.body.item?.key==='annual_checkup';
       const removeItem=req.body.item?.operation==='remove';
       let item,moduleData,changes;
-      if(checkupEdit) {
+      if (req.body.action === 'reviewVisits') {
+        const scheduling = await import('../../../shared/annualVisitScheduling.mjs');
+        const data = require('../utils/annualPlanDates').normalize(plan.moduleData);
+        const rows = scheduling.visitRows(data);
+        const op = req.body.review || {};
+        if (op.kind === 'group') {
+          if (!Array.isArray(op.keys) || !op.keys.every(k => rows.some(row => row.key === k))
+            || (op.serviceMode === 'single' && !Object.hasOwn(require('../../../shared/annualDispatch.cjs').labels, op.serviceType))) throw new Error('请选择有效的就诊事项和服务');
+          moduleData = scheduling.groupVisitRows(data, op.keys, { date: op.date, leaderKey: op.leaderKey, serviceMode: op.serviceMode, serviceType: op.serviceType, trackResults:true });
+        } else {
+          const row = rows.find(r => r.key === op.key);
+          if (!row) throw new Error('就诊事项已变化，请刷新核对');
+          if (op.kind === 'separate' && typeof op.reason === 'string' && op.reason.length <= 500)
+            moduleData = scheduling.changeVisitSeparationReason(data,row.moduleKey,row.index,op.reason.trim());
+          else if (op.kind === 'date' && op.date && require('../utils/annualPlanDates').canonicalDay(op.date) === op.date)
+            moduleData = scheduling.changeVisitDate(data,row.moduleKey,row.index,op.date);
+          else throw new Error('请核对就诊日期或分开安排原因（500字以内）');
+        }
+        const reviewed = moduleData;
+        moduleData = {...plan.moduleData};
+        changes = rows.flatMap(({moduleKey:key,index,row:before}) => {
+          const after = reviewed[key].records[index];
+          if (JSON.stringify(before) === JSON.stringify(after)) return [];
+          if (moduleData[key] === plan.moduleData[key]) moduleData[key] = {...moduleData[key],records:[...moduleData[key].records]};
+          moduleData[key].records[index] = after;
+          return [{key,index,before:plan.moduleData[key].records[index],after}];
+        });
+        if (!changes.length) throw new Error('本次就诊安排没有变化');
+      } else if(checkupEdit) {
         if(!pilot) return res.status(404).json({success:false,message:'当前方案未进入新版年度管理'});
         const before=plan.moduleData?.annual_checkup;
         if(!before || before.enabled===false) return res.status(400).json({success:false,message:'年度体检不在当前方案中'});

@@ -1,6 +1,6 @@
 const { createHash } = require('crypto');
 const labels = { medical_treatment: '医疗问题解决', specialist_collab: '多学科会诊', checkup_completion: '体检完善', abnormal_followup: '异常复查', vaccine: '疫苗接种', nutrition_assessment: '标准营养评估', personalized_followups: '个性化方案', annual_checkup: '年度体检' };
-const fields = ['items', 'name', 'purpose', 'department', 'standardPlanId', 'standardContent', 'standardSchedule', 'sourceCycles', 'defaultRole', 'personalizedAdvice', 'personalization', 'time', 'visit_time', 'plan_time', 'executionDate', 'timeWindow', 'timingStatus', 'date', 'institution', 'focus', 'hospital', 'campus', 'expert', 'followUpStaff', 'bookingRequired', 'serviceMode', 'serviceType', 'managedServiceType'];
+const fields = ['items', 'name', 'purpose', 'department', 'standardPlanId', 'standardContent', 'standardSchedule', 'sourceCycles', 'defaultRole', 'personalizedAdvice', 'personalization', 'time', 'visit_time', 'plan_time', 'executionDate', 'timeWindow', 'timingStatus', 'date', 'institution', 'focus', 'hospital', 'campus', 'expert', 'followUpStaff', 'bookingRequired', 'serviceMode', 'serviceType', 'managedServiceType', 'visitGroupId', 'visitMergeConfirmed', 'visitResultFollowUp'];
 function comparable(row) {
   if (!row) return null;
   return Object.fromEntries(fields.map(key => [key, row[key] ?? null]));

@@ -69,6 +69,16 @@ test('顾问逐项暂存不改客户方案，确认发布后只通知一次', as
   assert.equal(update.changes.$set.revisionDraft.moduleData.abnormal_followup.records[0].campus, '朝晖院区');
   assert.equal(update.changes.$set.revisionDraft.moduleData.abnormal_followup.records[0].followUpStaff, managerId);
   assert.equal(notifications.length, 0);
+  const records = plan.revisionDraft.moduleData.abnormal_followup.records;
+  records.push(...['检查甲','检查乙'].map(items => ({items,time:'2027-05-03',serviceMode:'reminder'})));
+  const blocked = await call({action:'publish',item:undefined});
+  assert.equal(blocked.status,409);
+  assert.match(blocked.message,/同日复查/);
+  assert.equal(notifications.length,0);
+  assert.equal(plan.moduleData.abnormal_followup.records.length,1);
+  const review = await call({action:'reviewVisits',item:undefined,review:{kind:'group',keys:['abnormal_followup:1','abnormal_followup:2'],leaderKey:'abnormal_followup:1',date:'2027-05-03',serviceMode:'reminder'}});
+  assert.equal(review.status,200,JSON.stringify(review));
+  assert.ok(plan.revisionDraft.moduleData.abnormal_followup.records[1].visitMergeConfirmed);
   const published = await call({ action: 'publish', item: undefined });
   assert.equal(published.status, 200, JSON.stringify(published));
   assert.equal(plan.revisionDraft, undefined);

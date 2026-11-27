@@ -7,7 +7,7 @@ const serviceTypes = [
   ['escort_exam', '陪检'], ['consult_coordination', '会诊协调'],
 ]
 
-export default function AnnualVisitScheduleReview({ data, editable, onChange, onError, nearbyOnly = false }) {
+export default function AnnualVisitScheduleReview({ data, editable, onChange, onError, nearbyOnly = false, onRevision }) {
   const trips = useMemo(() => nearbyOnly ? suggestedAssistedVisits(data) : [], [data, nearbyOnly])
   const [tripKey, setTripKey] = useState('')
   const trip = trips.find(items => items[0].key === tripKey) || trips[0]
@@ -38,6 +38,10 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
   const apply = () => {
     try {
       if (trip && !['single', 'managed'].includes(serviceMode)) throw new Error('请选择本次就医协助的服务方式')
+      if (onRevision) {
+        onRevision({kind:'group',keys:selected,date,leaderKey,serviceMode,serviceType})
+        return
+      }
       const next = groupVisitRows(data, selected, { date, leaderKey, serviceMode, serviceType, trackResults: nearbyOnly, assistedTrip: Boolean(trip) })
       onChange(next)
       setSelected([])
@@ -55,8 +59,14 @@ export default function AnnualVisitScheduleReview({ data, editable, onChange, on
       {group.map(item => <div key={item.key} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(180px,1fr) minmax(165px,auto)', gap: 9, alignItems: 'center', padding: '7px 0' }}>
         {editable && !trip ? <input type="checkbox" aria-label={`选择${item.title}`} checked={selected.includes(item.key)} onChange={event => setSelected(previous => event.target.checked ? [...previous, item.key] : previous.filter(key => key !== item.key))} /> : <span />}
         <div><strong style={{ fontSize: 13 }}>{item.title}</strong><div style={{ fontSize: 12, color: '#62776A' }}>{item.row.hospital || '医院待确认'}{item.row.order_dept ? ` · 开单科室：${item.row.order_dept}` : item.row.department ? ` · ${item.row.department}` : ''}{item.row.order_dept && item.row.department ? ` · 检查科室：${item.row.department}` : ''}{item.row.visitGroupId ? ` · 已归类：${item.row.visitGroupId}` : ''}</div></div>
-        {editable ? <DateInput value={item.date} onChange={value => onChange(changeVisitDate(data, item.moduleKey, item.index, value))} label={`${item.title}建议日期`} style={inputStyle} /> : <span style={{ fontSize: 13 }}>{item.date || '日期待确认'}</span>}
-        {(!trip || item.row.scheduleSeparationReason) && (group.length > 1 || item.row.scheduleSeparationReason) && <details style={{ gridColumn: '2 / -1', fontSize: 12, color: '#62776A' }}><summary style={{ cursor: 'pointer' }}>分开安排的原因或待核实条件{item.row.scheduleSeparationReason ? ' · 已填写' : ''}</summary>{editable ? <textarea defaultValue={item.row.scheduleSeparationReason || ''} onBlur={event => onChange(changeVisitSeparationReason(data, item.moduleKey, item.index, event.target.value))} rows={2} placeholder="如医嘱时限、准备要求、先后顺序；核实可同次就诊后清空" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginTop: 5 }} /> : <div style={{ marginTop: 5 }}>{item.row.scheduleSeparationReason || '暂无说明'}</div>}</details>}
+        {editable ? <DateInput value={item.date} onChange={value => onRevision ? onRevision({kind:'date',key:item.key,date:value}) : onChange(changeVisitDate(data, item.moduleKey, item.index, value))} label={`${item.title}建议日期`} style={inputStyle} /> : <span style={{ fontSize: 13 }}>{item.date || '日期待确认'}</span>}
+        {(!trip || item.row.scheduleSeparationReason) && (group.length > 1 || item.row.scheduleSeparationReason) && <details style={{ gridColumn: '2 / -1', fontSize: 12, color: '#62776A' }}><summary style={{ cursor: 'pointer' }}>分开安排的原因或待核实条件{item.row.scheduleSeparationReason ? ' · 已填写' : ''}</summary>{editable ? <textarea defaultValue={item.row.scheduleSeparationReason || ''} onBlur={event => {
+          const reason = event.target.value.trim()
+          if (reason !== (item.row.scheduleSeparationReason || '')) {
+            if (onRevision) onRevision({kind:'separate',key:item.key,reason})
+            else onChange(changeVisitSeparationReason(data,item.moduleKey,item.index,reason))
+          }
+        }} rows={2} placeholder="如医嘱时限、准备要求、先后顺序；核实可同次就诊后清空" style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginTop: 5 }} /> : <div style={{ marginTop: 5 }}>{item.row.scheduleSeparationReason || '暂无说明'}</div>}</details>}
       </div>)}
     </div>)}
     {editable && selected.length >= 2 && <div style={{ marginTop: 14, padding: 12, background: '#F0F6F2', borderRadius: 8 }}>

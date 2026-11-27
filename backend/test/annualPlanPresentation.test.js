@@ -108,3 +108,13 @@ test('已确认研判目标以目标和干预重点展示，内部研判来源�
   assert.equal(item.interventionFocus, '核实餐次与主食分配');
   assert.equal(customerModuleData(source).management_targets.records[0].sourceReviewId, undefined);
 });
+
+test('就医标题可引用同一公开管理目标中的就诊事由，内部依据仍隐藏', () => {
+  const {customerModuleData,buildAnnualPlanDisplayItems} = require('../src/utils/annualPlanPresentation');
+  const data = {management_targets:{records:[{issueId:'a',sourceTitle:'血清尿酸异常',goal:'降至正常范围',focus:'核对血清尿酸异常'}]},
+    medical_treatment:{records:[{sourceIds:['a'],visit_time:'2026-11-30',reason:'仅内部研判'}]}};
+  const item = buildAnnualPlanDisplayItems(customerModuleData(data)).find(i => i.moduleKey === 'medical_treatment');
+  assert.equal(item.title,'血清尿酸异常就诊');
+  assert.equal(item.schedule,'2026-11-30');
+  assert.ok(!JSON.stringify(item).includes('仅内部研判'));
+});

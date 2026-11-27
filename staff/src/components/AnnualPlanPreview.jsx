@@ -34,7 +34,7 @@ export default function AnnualPlanPreview({ patientId, planId, version, staffLis
         ? ({ medical_treatment: '请专科医生评估并明确后续诊治安排', abnormal_followup: '核对复查结果并确定下一步处理', checkup_completion: '完成检查并核对结果' }[item.moduleKey] || '完成本项安排后确认下一步')
         : item.goal
       const rows = [
-        ['为什么安排', item.problem], ['安排时间', [item.schedule, item.frequency].filter(Boolean).join(' · ')],
+        ['为什么安排', item.problem], [item.moduleKey === 'medical_treatment' ? '建议就诊日期' : '安排时间', [item.schedule, item.frequency].filter(Boolean).join(' · ')],
         ['医院／机构', item.careTarget?.hospital], ['就诊科室', !item.examArrangement && item.careTarget?.department],
         ['就诊专家', !item.examArrangement && item.careTarget?.expert],
         ['服务方式', [item.service?.modeLabel, item.service?.typeLabel].filter(Boolean).join(' · ')],
