@@ -643,7 +643,14 @@ textarea.form-control { resize: vertical; }
 @media (max-width: 680px) { .workbench-compact { flex-wrap: wrap; padding: 12px; } .annual-plan-action-buttons { width: 100%; } .annual-service-type-badge { margin-left: 0; } .annual-plan-actions--pilot .annual-plan-action-buttons { justify-content: flex-start; padding-top: 0; } .annual-track-panel { padding: 16px 18px; } .annual-track-heading { margin: -16px -18px 2px; padding: 16px 18px 16px 22px; } }
 
 /* Workload overview stays above task queues without occupying a tall first screen. */
-.home-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.issued-tasks { margin-bottom: 18px; }
+.issued-tasks .card-header { display: flex; justify-content: space-between; align-items: center; }
+.issued-tasks .card-body { max-height: 50vh; overflow-y: auto; }
+.issued-tasks article { padding: 12px 0; overflow-wrap: anywhere; }
+.issued-tasks article + article { border-top: 1px solid #e3ece7; }
+.issued-task-meta { color: #52685d; margin: 4px 0; font-size: 13px; }
+.issued-task-details { white-space: pre-wrap; }
+.home-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
 .home-stats .stat-card { padding: 14px 12px; gap: 10px; min-width: 0; }
 .home-stats .stat-card-icon { width: 38px; height: 38px; font-size: 20px; flex-shrink: 0; }
 .home-stats .stat-card-value, .home-stats .followup-stat-value strong { font-size: 24px; }

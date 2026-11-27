@@ -492,6 +492,7 @@ export const staffAPI = {
   getOperationsDashboard: () => req('/staff/operations/dashboard'),
 
   // Reports & Staff list
+  getTodayIssuedTasks: () => req('/staff/today-issued-tasks'),
   getReports2: () => req('/staff/reports'),
   getStaffList: (p = {}) => req('/staff/staff-list?' + qs(p)),
 

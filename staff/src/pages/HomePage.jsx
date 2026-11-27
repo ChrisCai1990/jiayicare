@@ -31,6 +31,9 @@ import { decisionReferralProgress, isCustomerOrder, plannerOrderRows } from '../
 import { serviceTaskTitle } from '../utils/serviceTaskTitle.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice } from '../utils/medicalPlanningAdvice'
 
+const ISSUED_STATUS = { planned: '待执行', in_progress: '进行中', missed: '待跟进', completed: '已完成', cancelled: '已取消', pending: '待接收', accepted: '已接收', rejected: '已退回' }
+const issuedTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+const scheduledDate = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric' })
 const ORDERS_PER_PAGE = 5
 const WORKBENCH_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'nutritionist', 'medicalAssistant', 'psychologist', 'rehabSpecialist', 'tcmDoctor', 'specialist', 'superadmin'])
 const ORDER_PROGRESS_ROLES = new Set(['familyDoctor', 'healthPlanner', 'healthManager', 'medicalAssistant', 'superadmin'])
@@ -49,6 +52,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const notification = useNotificationSummary()
   const workbenchReminder = useWorkbenchReminder()
+  const issuedTasks = useWorkbenchResource(async () => (await staffAPI.getTodayIssuedTasks()).data, getToken(), null)
+  const [issuedOpen, setIssuedOpen] = useState(false)
   const unreadMsgCount = notification.count ?? '—'
   const notificationSummary = notification.data?.summary || {}
   const notificationLandingTab = notificationSummary.metabolicHelpCount > 0 ? 'pilotHelp'
@@ -152,10 +157,26 @@ export default function HomePage() {
         <StatCard icon="📞" label="今日随访" value={reports?.today ? <FollowUpStatValue {...reports.today} /> : '-'} color="#0077B6" compact />
         <StatCard icon="📅" label="本月随访" value={reports?.month ? <FollowUpStatValue {...reports.month} /> : '-'} color="#22A06B" compact />
         <StatCard icon="⏰" label="逾期随访" value={reports?.overdue ?? '-'} color="#DC3545" />
+        <StatCard icon="📥" label="今日新任务" value={issuedTasks.data?.items.length ?? '—'} color="#1E6B50" expanded={issuedOpen} onClick={() => setIssuedOpen(open => !open)} />
         <StatCard icon="✅" label="今日健康监测" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
         <StatCard icon="🔔" label="消息通知" value={unreadMsgCount} color="#DC3545" onClick={() => nav('/notifications', { state: { tab: notificationLandingTab } })} />
         {notification.error && <span role="alert" style={{ color: '#B42318', fontSize: 12 }}>通知更新失败，显示上次结果 <button onClick={() => window.dispatchEvent(new Event('notif-refresh'))}>重试</button></span>}
       </div>
+
+      {issuedOpen && <section className="card issued-tasks" aria-label="今日新任务">
+        <div className="card-header"><strong>今日新任务</strong><button className="btn btn-secondary btn-sm" onClick={() => setIssuedOpen(false)}>收起</button></div>
+        <div className="card-body">
+          {issuedTasks.loading && <p role="status">正在加载今日下达的任务…</p>}
+          {issuedTasks.error && <p role="alert">新任务刷新失败 <button className="btn btn-secondary btn-sm" onClick={issuedTasks.refresh}>重试</button></p>}
+          {issuedTasks.data?.items.length === 0 && !issuedTasks.error && <p>今天还没有下达给你的新任务。</p>}
+          {issuedTasks.data?.items.map(item => <article key={item.kind + item.id}>
+            <strong>{item.patient && item.patient + ' · '}{item.title}</strong>
+            <div className="issued-task-meta">{item.kind === 'referral' ? '岗位转介' : '指派任务'} · {ISSUED_STATUS[item.status] || item.status} · {issuedTime.format(new Date(item.issued))} 下达
+              {item.scheduled && ' · 计划执行 ' + scheduledDate.format(new Date(item.scheduled))}</div>
+            {item.details && <div className="issued-task-details">{item.details}</div>}
+          </article>)}
+        </div>
+      </section>}
 
       {hasWorkbenchNav && <nav className="advisor-workbench-nav" aria-label={isAdvisor ? '健康顾问工作台' : '岗位工作台'}>
         {[
@@ -435,10 +456,14 @@ function FollowUpStatValue({ pending, completed }) {
   )
 }
 
-function StatCard({ icon, label, value, color, compact = false, onClick }) {
+function StatCard({ icon, label, value, color, compact = false, onClick, expanded }) {
   return (
     <div
       className="stat-card"
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-expanded={expanded}
+      onKeyDown={onClick ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } } : undefined}
       onClick={onClick}
       style={{ cursor: onClick ? 'pointer' : 'default' }}
     >

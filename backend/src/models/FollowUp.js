@@ -45,6 +45,7 @@ const followUpSchema = new mongoose.Schema({
   careFlowId: { type: mongoose.Schema.Types.ObjectId, default: null }, // Dedicated audited service lifecycle; never generic-editable.
   cancelReason: { type: String, default: '' },  // 取消原因（cancelled 时必填）
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 负责人
+  assignedAt: { type: Date }, // 最近一次转派给当前负责人的时间；首次下达使用 createdAt
   coordinationGroupId: { type: String, default: '' }, // 同一服务事项拆分出的执行/督办任务组
   taskRole: { type: String, enum: ['executor', 'supervisor', ''], default: '' },
   workflowKey: { type: String, default: '' }, // 同一子方案内对应的岗位任务方案ID；支持一站式服务拆成多组任务
