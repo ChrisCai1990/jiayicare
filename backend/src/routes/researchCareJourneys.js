@@ -10,7 +10,6 @@ const FollowUp = require('../models/FollowUp');
 const Journey = require('../models/ResearchCareJourney');
 const Candidate = require('../models/ResearchCandidate');
 const StudySetting = require('../models/ResearchStudySetting');
-const { deriveJourneySnapshot } = require('../utils/researchCareJourney');
 const { isAnnualCustomer } = require('../utils/researchAnnualCustomer');
 
 router.use(adminAuth);
@@ -129,29 +128,66 @@ router.get('/candidates', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-async function snapshotFor(patientId, year) {
-  const [reports, annualPlan] = await Promise.all([
-    Report.find({ user: patientId }).select('_id type documentCategory checkDate date createdAt aiStatus audit_status reviewedAt familyDoctorAudit.status').sort({ createdAt: -1 }).limit(100).lean(),
-    AnnualPlan.findOne({ patientId, year }).select('reviewStatus pushedAt confirmedAt').lean(),
+async function snapshotFor(patientId, year, end, catalog, live) {
+  const { projectEvidence } = require('../utils/woncaEvidence');
+  const createdAt = { $lte: end };
+  const [reports, drafts, plans, decisions, reviews, prep, user, medications, problemReview] = await Promise.all([
+    Report.find({ user:patientId, createdAt }).select('type documentCategory createdAt updatedAt aiStatus audit_status reviewedAt familyDoctorAudit.status checkDate date familyDoctorViewedAt advisorInterpretationConfirmedAt healthCourseDraft.status archiveOnly reportYear title screeningL2 reportItems.examDate reportItems.bodyPart reportItems.modality reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent reportItems.value reportItems.conclusion reportItems.diagnosis').sort({createdAt:-1}).lean(),
+    Draft.find({ patientId, createdAt }).select('reportId status purpose followUpAutomation.status createdAt updatedAt advisorReviewedAt').sort({createdAt:-1}).lean(),
+    AnnualPlan.find({ patientId, year, createdAt }).select('planType reviewStatus createdAt updatedAt moduleData pushedAt confirmedAt').sort({createdAt:1}).lean(),
+    require('../models/AnnualManagementDecision').find({ patientId,year,createdAt }).select('sourceKey supersedes reviewedAt itemId title sourceSnapshot.item.name sourceSnapshot.items.itemId reportId symptomRecordId direction directions status createdAt updatedAt').lean(),
+    require('../models/AIHealthCheckupReview').find({patientId,year,createdAt}).select('sourceVersion sourceKey itemText disposition linkedDecisionId createdAt updatedAt').lean(),
+    require('../models/AnnualPlanPreparation').findOne({patientId,year}).select('screeningConfirmedAt advisorReadyConfirmedAt').lean(),
+    User.findById(patientId).select('createdAt updatedAt aiHealthSummary archiveReviewSnapshotAt').lean(),
+    require('../models/Medication').find({user:patientId,createdAt,sourceRecordKey:/^prescription_(manual|report_review):/}).select('sourceRecordKey aiStatus createdAt updatedAt').lean(),
+    require('../models/AnnualReportProblemReview').findOne({patientId,year,createdAt}).select('updatedAt createdAt status topics.id topics.reviewed topics.decision').lean(),
   ]);
-  const drafts = reports.length
-    ? await Draft.find({ patientId, reportId: { $in: reports.map(row => row._id) } }).select('reportId status advisorReviewedAt createdAt').sort({ createdAt: -1 }).limit(100).lean()
-    : [];
-  const followUps = annualPlan ? await FollowUp.find({ patientId, sourceAnnualPlanId: annualPlan._id }).select('status assignedTo date completedAt').lean() : [];
-  return deriveJourneySnapshot({ reports, drafts, annualPlan, followUps });
+  const followUps = plans.length ? await FollowUp.find({ patientId, sourceAnnualPlanId:{ $in:plans.map(p=>p._id) },createdAt }).select('sourceAnnualPlanId date completedAt assignedTo status progressRecords.recordedAt progressRecords.consensusTopicOutcome createdAt updatedAt').lean() : [];
+  const evidence=projectEvidence({user,reports,drafts,plans,tasks:followUps,decisions,reviews,prep,medications,year,end,catalog,problemReview});
+  evidence.pendingViews = live ? await Report.countDocuments(require('../utils/reportAuditGate').pendingDoctorAuditFilter(patientId,user?.archiveReviewSnapshotAt)) : null;
+  const recent = reports.slice(0,100);
+  const recentIds = new Set(recent.map(r=>String(r._id)));
+  const legacy = require('../utils/researchCareJourney').deriveJourneySnapshot({reports:recent,drafts:drafts.filter(d=>recentIds.has(String(d.reportId))).slice(0,100),annualPlan:plans[0],followUps:followUps.filter(f=>String(f.sourceAnnualPlanId)===String(plans[0]?._id)),now:end});
+  return live ? {...legacy,evidence} : {evidence};
 }
 
-router.get('/journeys', async (req, res, next) => {
+function liveStatus(row,end) {
+  if(row.status==='enrolled' || row.withdrawnAt || row.lockedAt) return 'enrolled';
+  return !row.updatedAt || row.updatedAt<=end ? row.status : 'unknown';
+}
+
+router.get('/journeys', async (req,res,next)=>{
   try {
-    const year = Number(req.query.year) || new Date().getFullYear();
-    const rows = await Journey.find({ studyCode: STUDY }).sort({ enrolledAt: -1 }).lean();
-    const data = await Promise.all(rows.map(async row => ({
-      _id: row._id, researchNumber: row.researchNumber, status: row.status,
-      enrolledAt: row.enrolledAt, participantCode: participantCode(row.patientId),
-      snapshot: await snapshotFor(row.patientId, year),
-    })));
-    res.set('Cache-Control', 'no-store').json({ data, year });
-  } catch (error) { next(error); }
+    const year=Number(req.query.year) || new Date().getFullYear();
+    const day=req.query.cutoff;
+    const now=new Date();
+    const requested=day ? new Date(day+'T23:59:59.999+08:00') : now;
+    if (!Number.isInteger(year) || year<1900 || year>2200 || (day && (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(+requested) || new Date(+requested+28800000).toISOString().slice(0,10)!==day || day>new Date(+now+28800000).toISOString().slice(0,10)))) return res.status(400).json({message:'请选择有效的观察年度和截止日'});
+    const end=new Date(Math.min(+requested,+now));
+    const rows=await Journey.find({studyCode:STUDY,enrolledAt:{$lte:end}}).sort({enrolledAt:-1}).lean();
+    const catalog=rows.length ? await require('../utils/screeningMatch').buildAdminIndex() : [];
+    const data=[];
+    for(let i=0;i<rows.length;i+=4) {
+      data.push(...await Promise.all(rows.slice(i,i+4).map(async row=>({
+        _id:row._id,researchNumber:row.researchNumber,enrolledAt:row.enrolledAt,participantCode:participantCode(row.patientId),
+        status:row.withdrawnAt && row.withdrawnAt<=end ? 'withdrawn' : row.lockedAt && row.lockedAt<=end ? 'locked' : liveStatus(row,end),
+        cohort:(row.cohortHistory || []).filter(change=>change.at<=end).at(-1)?.cohort || 'unknown',
+        snapshot:await snapshotFor(row.patientId,year,end,catalog,+end===+now),
+      }))));
+    }
+    res.set('Cache-Control','no-store').json({data,year,observedAt:end});
+  } catch(error){next(error);}
+});
+
+router.patch('/journeys/:id/cohort', async (req,res,next)=>{
+  try {
+    if (!mongoose.isValidObjectId(req.params.id) || !['existing','new'].includes(req.body.cohort) || !['existing','new','unknown'].includes(req.body.previous)) return res.status(400).json({message:'分组无效'});
+    const at=new Date();
+    const row=await Journey.findOneAndUpdate({_id:req.params.id,studyCode:STUDY,status:'enrolled',cohort:req.body.previous==='unknown' ? {$in:[null,'unknown']} : req.body.previous},
+      {$set:{cohort:req.body.cohort,cohortVerifiedAt:at,cohortVerifiedBy:req.admin._id},$push:{cohortHistory:{at,cohort:req.body.cohort,by:req.admin._id}}},{new:true}).select('_id');
+    if (!row) return res.status(409).json({message:'分组或纳入状态已变化，请刷新'});
+    res.json({success:true});
+  } catch(error){next(error);}
 });
 
 router.post('/journeys', async (req, res, next) => {

@@ -85,3 +85,11 @@
 .research-setting-form { flex: 0 0 100%; padding-top: 14px; border-top: 1px solid var(--border); }
 .research-setting-form .form-group { max-width: 620px; }
 @media (max-width: 640px) { .research-counts { width: 100%; } .research-count-card { flex: 1; } }
+.wonca-tools { flex-wrap: wrap; padding: 14px 20px; color: var(--text-secondary); font-size: 13px; }
+.wonca-tools input, .wonca-evidence select { padding: 6px; border: 1px solid var(--border); border-radius: 5px; }
+.wonca-evidence details { margin: 8px 0; background: white; padding: 8px 12px; border: 1px solid var(--border); border-radius: 5px; }
+.wonca-evidence summary { cursor: pointer; font-weight: 600; }
+.wonca-scroll { overflow: auto; max-height: 22rem; }
+.wonca-scroll table { width: 100%; border-collapse: collapse; }
+.wonca-scroll table td, .wonca-scroll table th { padding: 7px; }
+.wonca-summary { margin: 0 20px 14px; font-size: 13px; } .wonca-summary summary { cursor: pointer; font-weight: 600; }

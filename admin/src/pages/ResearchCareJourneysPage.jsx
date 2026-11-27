@@ -1,13 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { adminAPI } from '../api'
+import { EvidenceDetails, exportEvidence, cohortLabel, day } from './WoncaEvidence'
 import './ResearchCareJourneysPage.css'
 
-const STATE = { enrolled: '进行中', withdrawn: '已撤回', locked: '已锁定' }
-const DRAFT_STATE = { advisor_review: '待顾问审核', approved: '已批准', rejected: '已退回', superseded: '已被新稿替代', excluded: '已排除', no_action: '无需随访' }
-const FOLLOWUP_STATE = { planned: '待执行', in_progress: '执行中', missed: '未完成', completed: '已完成', cancelled: '已取消' }
-const CATEGORY = { physical_exam: '体检资料', lab_report: '检验报告', exam_report: '检查报告', body_composition: '人体成分', functional_medicine: '功能医学', genetic_test: '基因检测', outpatient_record: '门诊病历', inpatient_record: '住院病历', prescription_order: '处方', questionnaire: '问卷', other_customer_material: '其他资料' }
-const dateText = value => value ? new Date(value).toLocaleDateString('zh-CN') : '未记录日期'
-const shortId = value => value ? String(value).slice(-6).toUpperCase() : '—'
+const STATE = { enrolled: '进行中', withdrawn: '已撤回', locked: '已锁定', unknown:'历史状态待核实' }
 const pageCount = (total, size) => Math.max(1, Math.ceil(total / size))
 
 function Pagination({ label, total, size, onSizeChange, page, onPageChange }) {
@@ -23,6 +19,9 @@ function Pagination({ label, total, size, onSizeChange, page, onPageChange }) {
 
 export default function ResearchCareJourneysPage() {
   const [year, setYear] = useState(new Date().getFullYear())
+  const [cutoff,setCutoff]=useState('')
+  const [observedAt,setObservedAt]=useState('')
+  const requestId=useRef(0)
   const [journeys, setJourneys] = useState([])
   const [expandedJourney, setExpandedJourney] = useState(null)
   const [candidateList, setCandidateList] = useState([])
@@ -52,6 +51,9 @@ export default function ResearchCareJourneysPage() {
   const [note, setNote] = useState('')
 
   const enrolledCount = journeys.filter(row => row.status === 'enrolled').length
+  const researchPlans = journeys.flatMap(row=>row.snapshot.evidence.plans)
+  const currentPrompts = journeys.flatMap(row=>row.snapshot.evidence.items.filter(item=>item.source==='已审核健康分析'))
+  const complaints = journeys.flatMap(row=>row.snapshot.evidence.items.filter(item=>item.source==='客户主诉' && item.state==='顾问已纳入'))
   const canEnroll = enrollTarget && setting && authorizationReference.trim() && authorizationConfirmed
   const currentCandidatePage = Math.min(candidatePage, pageCount(candidateList.length, candidatePageSize))
   const currentJourneyPage = Math.min(journeyPage, pageCount(journeys.length, journeyPageSize))
@@ -59,15 +61,20 @@ export default function ResearchCareJourneysPage() {
   const visibleJourneys = journeys.slice((currentJourneyPage - 1) * journeyPageSize, currentJourneyPage * journeyPageSize)
 
   const loadJourneys = async () => {
+    const id=++requestId.current
     setLoading(true)
+    setObservedAt('')
+    setJourneys([])
     setError('')
     try {
-      const result = await adminAPI.researchJourneys(year)
+      const result = await adminAPI.researchJourneys(year,cutoff)
+      if(id!==requestId.current) return
+      setObservedAt(result.observedAt)
       setJourneys(result.data || [])
     } catch (e) {
-      setError(e.message)
+      if(id===requestId.current) setError(e.message)
     } finally {
-      setLoading(false)
+      if(id===requestId.current) setLoading(false)
     }
   }
 
@@ -80,7 +87,7 @@ export default function ResearchCareJourneysPage() {
     }
   }
 
-  useEffect(() => { loadJourneys() }, [year])
+  useEffect(() => { loadJourneys() }, [year,cutoff])
   useEffect(() => {
     loadCandidates()
     adminAPI.researchStudySetting()
@@ -244,24 +251,31 @@ export default function ResearchCareJourneysPage() {
     </section>
 
     <section className="card research-list-card">
-      <div className="research-list-heading"><div><h2>正式纳入的服务旅程</h2><p>资料审核统计历年最近100条上传资料；两道审核分别计数，某类资料是否需要顾问审核须按业务流程判断。AI 草稿是报告问题/随访建议稿。随访只统计所选年度方案关联的任务。“进行中”表示研究纳入状态，不代表报告或随访未完成。点击研究编号查看逐项明细。</p></div><span className="research-total">共 {journeys.length} 条</span></div>
+      <div className="research-list-heading"><div><h2>正式纳入的服务旅程</h2><p>按上海时间统计。资料和报告建议稿取截至观察日的历年记录；年度方案及关联随访按所选年度。截止日后被改写且无法还原的状态标为历史无可核实记录。点击研究编号查看明细。</p></div><span className="research-total">共 {journeys.length} 条</span></div>
+      <div className="research-filter-controls wonca-tools">
+        <label>统计截止日 <input type="date" value={cutoff} max={day(new Date())} onChange={event=>{setCutoff(event.target.value);setJourneyPage(1);setExpandedJourney(null)}} /></label>
+        <button className="btn btn-secondary" disabled={loading || !observedAt || !journeys.length} onClick={()=>exportEvidence(journeys,year,observedAt)}>导出全部研究明细 CSV</button>
+        {observedAt && <span>既往在管 {journeys.filter(r=>r.cohort==='existing').length} 人 · 新进入管理 {journeys.filter(r=>r.cohort==='new').length} 人 · 分组待核实 {journeys.filter(r=>r.cohort==='unknown').length} 人</span>}
+        {observedAt && <span>纳入记录 {journeys.length} 人 · 年度方案 {journeys.reduce((n,r)=>n+r.snapshot.evidence.plans.length,0)} 份 · 可追溯管理来源的方案 {journeys.reduce((n,r)=>n+r.snapshot.evidence.plans.filter(p=>p.traceable).length,0)} 份</span>}
+      </div>
+      {observedAt && <details className="wonca-summary"><summary>年度研究指标与分母</summary>
+        <p>已保存待沟通议题的方案 {researchPlans.filter(p=>p.consensus>0).length} 份；能核实共识栏数量的方案 {researchPlans.filter(p=>p.consensus!==null).length} 份。</p>
+        <p>已纳入的主诉决定 {complaints.length} 项，其中能追到方案“安排就医”的 {complaints.filter(item=>item.position.includes('安排就医')).length} 项。</p>
+        <p>已审核健康分析的当前提示 {currentPrompts.length} 项（来源可核对 {journeys.filter(r=>r.snapshot.evidence.promptEvidence).length} 人）。需完善检查 {currentPrompts.filter(i=>i.state==='需完善检查').length}，无需纳入 {currentPrompts.filter(i=>i.state==='无需纳入').length}，需补资料 {currentPrompts.filter(i=>i.state==='需补资料').length}，已关联既有事项 {currentPrompts.filter(i=>i.state==='已关联既有事项').length}，待顾问处置 {currentPrompts.filter(i=>i.state==='待顾问处置').length}，仅有系统建议 {currentPrompts.filter(i=>i.state.startsWith('系统建议')).length}。</p>
+      </details>}
       {loading ? <div className="research-empty"><strong>正在加载研究旅程</strong></div>
         : journeys.length === 0 ? <div className="research-empty"><strong>尚未正式纳入客户</strong><p>候选名单建好后，可逐人核验并纳入。</p></div>
         : <div className="research-table-wrap"><table className="research-table">
-          <thead><tr>{['研究编号', '参与者编码', '资料审核（最近100条）', '报告随访AI稿（已批准/记录）', '年度方案', '年度方案关联随访（已完成/记录）', '纳入状态'].map(x => <th key={x}>{x}</th>)}</tr></thead>
-          <tbody>{visibleJourneys.map(row => <React.Fragment key={row._id}><tr>
+          <thead><tr>{['研究编号','参与者 / 分组','资料处理','报告建议稿','年度方案','年度关联随访','纳入状态'].map(x => <th key={x}>{x}</th>)}</tr></thead>
+          <tbody>{visibleJourneys.map(row => {const e=row.snapshot.evidence; return <React.Fragment key={row._id}><tr>
             <td><button type="button" className="research-code research-expand" aria-expanded={expandedJourney === row._id} onClick={() => setExpandedJourney(expandedJourney === row._id ? null : row._id)}>{row.researchNumber} {expandedJourney === row._id ? '▴' : '▾'}</button></td>
-            <td><span className="research-participant">{row.participantCode}</span></td>
-            <td><div>健管专员 {row.snapshot.report.managerAudited}/{row.snapshot.report.total}</div><div className="research-review-secondary">健康顾问 {row.snapshot.report.advisorAudited}/{row.snapshot.report.total}</div></td>
-            <td>{row.snapshot.draft.approved}/{row.snapshot.draft.total}</td>
-            <td><span className={row.snapshot.annualPlan ? 'research-plan-ready' : 'research-plan-empty'}>{row.snapshot.annualPlan ? row.snapshot.annualPlan.reviewStatus : '未创建'}</span></td>
-            <td>{row.snapshot.followUp.completed}/{row.snapshot.followUp.total}{row.snapshot.followUp.overdue ? <span className="research-overdue">超期 {row.snapshot.followUp.overdue}</span> : null}</td>
+            <td><span className="research-participant">{row.participantCode}</span><div>{cohortLabel[row.cohort]}</div></td>
+            <td>资料 {e.docs.length} 份<div>专员已审 {e.docs.filter(d=>d.manager==='已审核').length} · 顾问待查看 {e.pendingViews ?? '历史不可还原'}</div></td>
+            <td>已批准 {e.drafts.filter(d=>d.state==='已批准').length} · 生成失败 {e.drafts.filter(d=>d.generation==='生成失败').length}<div>共 {e.drafts.length} 条流程记录</div></td>
+            <td>{e.plans.length} 份 · 已有推送记录 {e.plans.filter(p=>p.pushed).length}</td>
+            <td>完成 {e.follow.filter(f=>f.state==='已完成').length}/{e.follow.length} 项<div>逾期 {e.follow.filter(f=>f.overdue).length} · 跟进记录 {e.follow.reduce((n,f)=>n+f.contacts,0)} 条</div></td>
             <td><span className={`research-status ${row.status}`}>{STATE[row.status]}</span></td>
-          </tr>{expandedJourney === row._id && <tr><td colSpan={7} className="research-detail-cell"><div className="research-detail-grid">
-            <section><h3>最近100条资料的逐项审核</h3>{row.snapshot.report.items?.length ? <ul>{row.snapshot.report.items.map(item => <li key={item.id}>资料 #{shortId(item.id)} · {CATEGORY[item.category] || item.category} · {dateText(item.date)}：健管专员{item.managerStatus === 'audited' ? '已审' : '未审'}，健康顾问{item.advisorStatus === 'audited' ? '已审' : '未审'}</li>)}</ul> : <p>无上传资料</p>}</section>
-            <section><h3>报告随访 AI 稿</h3>{row.snapshot.draft.items?.length ? <ul>{row.snapshot.draft.items.map(item => <li key={item.id}>草稿 #{shortId(item.id)}（资料 #{shortId(item.reportId)}）· {DRAFT_STATE[item.status] || item.status}</li>)}</ul> : <p>无草稿记录；这不表示资料未审核。</p>}</section>
-            <section><h3>所选年度方案关联随访</h3>{row.snapshot.followUp.items?.length ? <ul>{row.snapshot.followUp.items.map(item => <li key={item.id}>随访 #{shortId(item.id)} · {dateText(item.date)} · {FOLLOWUP_STATE[item.status] || item.status}{item.overdue ? ' · 已逾期' : ''}{!item.assigned ? ' · 未分配' : ''}</li>)}</ul> : <p>无关联任务；不代表整个随访计划已结束。</p>}</section>
-          </div></td></tr>}</React.Fragment>)}</tbody>
+          </tr>{expandedJourney === row._id && <tr><td colSpan={7} className="research-detail-cell"><EvidenceDetails row={row} canGroup={!cutoff || cutoff===day(new Date())} onGroup={async(id,cohort,previous)=>{try{await adminAPI.researchCohort(id,cohort,previous);await loadJourneys()}catch(err){setError(err.message)}}}/></td></tr>}</React.Fragment>})}</tbody>
         </table></div>}
       <Pagination label="正式纳入" total={journeys.length} size={journeyPageSize} onSizeChange={setJourneyPageSize} page={currentJourneyPage} onPageChange={page => { setExpandedJourney(null); setJourneyPage(page) }} />
     </section>
