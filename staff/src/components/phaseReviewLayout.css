@@ -1,0 +1,53 @@
+.phase-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 3px 0 12px;
+  border-bottom: 1px solid #dce7e1;
+}
+.phase-review-heading strong { color: #155e48; font-size: clamp(19px, 2vw, 22px); line-height: 1.45; }
+.phase-review-note { margin: 12px 0 16px; max-width: 72em; color: #586d62; font-size: 13px; line-height: 1.75; }
+.phase-review-status { border: 1px solid currentColor; border-radius: 20px; padding: 3px 10px; }
+.phase-month-goal { margin: 14px 0; padding: 2px 14px; border-left: 3px solid #368269; }
+.phase-month-goal strong { color: #245847; font-size: 14px; }
+.phase-month-goal p { max-width: 48em; margin: 6px 0 0; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
+.quarter-editor {
+  margin: 16px 0;
+  padding: 14px clamp(12px, 2vw, 24px);
+  border: 1px solid #ccded4;
+  border-radius: 12px;
+  background: #f7faf8;
+  color: #213f34;
+}
+.quarter-editor summary { font-size: 17px; line-height: 1.5; }
+.quarter-period { margin: 6px 0 16px; color: #50695d; font-size: 13px; line-height: 1.65; }
+.quarter-dimensions { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #d3e1d9; }
+.quarter-dimension {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px; background: transparent; border: 0; border-bottom: 3px solid transparent;
+  font: inherit; font-size: 14px; color: #53665d; cursor: pointer;
+}
+.quarter-dimension[aria-pressed="true"] { color: #155e48; font-weight: 700; border-bottom-color: #207152; }
+.quarter-dimension:hover { background: #eaf3ed; }
+.quarter-dimension:focus-visible { outline: 2px solid #207152; outline-offset: -2px; }
+.quarter-dimension span { border-radius: 12px; background: #e4eee7; padding: 1px 6px; font-size: 12px; }
+.quarter-empty { margin: 0; padding: 20px 2px; color: #607569; font-size: 14px; }
+.quarter-editor fieldset { min-width: 0; margin: 18px 0; padding: 14px 16px 16px; border: 1px solid #d5e3da; border-radius: 8px; background: #fff; }
+.quarter-editor legend { padding: 0 6px; font-size: 15px; line-height: 1.5; font-weight: 650; }
+.quarter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 18px 16px; }
+.quarter-fields label { display: block; min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.5; color: #41574d; }
+.quarter-fields .form-input { display: block; width: 100%; box-sizing: border-box; min-height: 40px; margin-top: 6px; font-size: 15px; font-weight: 400; }
+.quarter-editor fieldset > button { margin-top: 16px; }
+.quarter-editor small { display: block; margin-top: 5px; font-size: 12px; font-weight: 400; line-height: 1.65; color: #52675b; }
+.quarter-editor small:empty { display: none; }
+.quarter-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; border-top: 1px solid #dce7df; padding-top: 12px; }
+.quarter-actions button:last-child { margin-left: auto; }
+.phase-review-sections { margin-top: 14px; display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) {
+  .phase-review-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quarter-dimension { padding-inline: 6px; }
+  .quarter-fields { grid-template-columns: minmax(0, 1fr); }
+  .quarter-actions button { flex: 1 1 auto; }
+}

@@ -1,3 +1,4 @@
+import './phaseReviewLayout.css'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { staffAPI, API_ORIGIN, managementReviewAPI } from '../api'
 import AnnualGoalEvidencePreview from './AnnualGoalEvidencePreview'
@@ -190,15 +191,15 @@ function NextPhaseTargets({ item, history, patientId, enabled, onSaved, toast })
       toast('已保存 '+title+'目标')
     } catch(error){toast(error.message,'error')} finally {setSaving(false)}
   }
-  return <details open={!saved.length || undefined} style={{marginTop:10}}>
+  return <details className="quarter-editor" open={!saved.length || undefined}>
     <summary style={{cursor:'pointer',fontWeight:700}}>{title}管理目标</summary>
-    <p>{snapshot && !snapshot.quarterKey?'已有月度目标可带入本季度，保存后生效。':`从 ${snapshot?.periodKey || period} 起用于本季度月度评估。`}</p>
-    <div role="group" aria-label="目标维度" style={{display:'flex',gap:8,flexWrap:'wrap'}}>{targetDimensions.map(name=><button type="button" key={name} aria-pressed={dimension===name} className={dimension===name?'btn btn-primary':'btn btn-secondary'} onClick={()=>setDimension(name)}>{name}（{rows.filter(r=>category(r)===name).length}）</button>)}</div>
-    {!rows.some(r=>category(r)===dimension) && <p>暂无{dimension}目标</p>}
+    <p className="quarter-period">{snapshot && !snapshot.quarterKey?'已有月度目标可带入本季度，保存后生效。':`从 ${snapshot?.periodKey || period} 起用于本季度月度评估。`}</p>
+    <div role="group" aria-label="目标维度" className="quarter-dimensions">{targetDimensions.map(name=><button type="button" key={name} aria-pressed={dimension===name} className="quarter-dimension" onClick={()=>setDimension(name)}>{name}<span>{rows.filter(r=>category(r)===name).length}</span></button>)}</div>
+    {!rows.some(r=>category(r)===dimension) && <p className="quarter-empty">暂无{dimension}目标</p>}
     {annualError && <p>年度指标或参考范围加载失败。<button type="button" className="btn btn-secondary btn-sm" onClick={()=>setRetry(value=>value+1)}>重新加载</button></p>}
-    {rows.map((row,index)=>category(row)===dimension && <fieldset key={index} style={{padding:12,margin:'10px 0',border:'1px solid #DCE8E1',borderRadius:8}}>
+    {rows.map((row,index)=>category(row)===dimension && <fieldset key={index}>
       <legend>{row.metric || '新增'+dimension+'目标'}</legend>
-      <div style={{display:'grid',gap:8,gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))'}}>
+      <div className="quarter-fields">
         <label>{dimension==='指标'?'跟踪指标':dimension}<select className="form-input" value={row.metric || ''} disabled={!enabled||saving} onChange={e=>update(index,'metric',e.target.value)}>
           <option value="">请选择{dimension}</option>
           {row.metric && !Object.values(groups).some(names=>names.includes(row.metric)) && <option>{row.metric}</option>}
@@ -210,7 +211,7 @@ function NextPhaseTargets({ item, history, patientId, enabled, onSaved, toast })
       </div>
       {enabled&&<button type="button" className="btn btn-sm" disabled={saving} onClick={()=>setRows(rows.filter((_,i)=>i!==index))}>移除本项目标</button>}
     </fieldset>)}
-    {enabled&&<div style={{marginTop:12,display:'flex',gap:12,flexWrap:'wrap'}}>
+    {enabled&&<div className="quarter-actions">
       <button type="button" className="btn btn-secondary" disabled={saving||rows.length>=20} onClick={()=>setRows([...rows,{dimension,metric:'',goal:'',range:'',frequency:''}])}>＋ 添加{dimension}目标</button>
       <button type="button" className="btn btn-primary" disabled={saving || rows.some(r=>!r.metric.trim()||!r.goal.trim()||!r.frequency.trim())} onClick={save}>保存季度目标</button>
     </div>}
@@ -622,16 +623,16 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           const stageSections = splitStageAssessment(assessmentEdits[item._id] ?? item.content)
           const activeSectionIndex = activeAssessmentSections[item._id]
           const activeSection = Number.isInteger(activeSectionIndex) ? stageSections[activeSectionIndex] : null
-          return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.displayLabel || `${item.periodLabel}${item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}`}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
-            {item.templateSnapshot?.contentRevision === 'four-dimensions-v2' && status !== 'finalized' && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>本稿已按四板块新口径重新整理，待当前审核岗位核对。此前岗位已确认意见保留为原稿意见。</div>}
+          return <section className="phase-review" key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
+            <div className="phase-review-heading"><strong> {item.displayLabel || `${item.periodLabel}${item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}`}</strong><span className="phase-review-status" style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
+            {item.templateSnapshot?.contentRevision === 'four-dimensions-v2' && status !== 'finalized' && <p className="phase-review-note">本稿已按四板块新口径重新整理，待当前审核岗位核对。此前岗位已确认意见保留为原稿意见。</p>}
+            {item.notice && <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#FFF7E7', color: '#8A5700', fontSize: 12 }}>{item.notice}</div>}
+            <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
+            {stageSections[0].lines.some(line=>line.startsWith('本期年度管理目标：')) && <div className="phase-month-goal"><strong>本期目标</strong><p>{stageSections[0].lines.find(line=>line.startsWith('本期年度管理目标：')).split('本期年度管理目标：')[1]}</p></div>}
             {item.assessmentMode==='routine' && item.reviewWorkflow==='advisor_nutrition' && /^\d{4}-\d{2}$/.test(item.periodKey) && <NextPhaseTargets item={item} history={targetHistory} patientId={patientId} enabled={status==='team_review'&&['familyDoctor','superadmin'].includes(staff?.role)} onSaved={saved=>{
               setAssessments(list=>list.map(row=>row._id===saved._id?saved:row))
               setTargetHistory(list=>[saved.nextPhaseTargets,...list.filter(row=>row.periodKey!==saved.nextPhaseTargets.periodKey)])
             }} toast={toast}/>}
-            {item.notice && <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#FFF7E7', color: '#8A5700', fontSize: 12 }}>{item.notice}</div>}
-            <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
-            {stageSections[0].lines.some(line=>line.startsWith('本期年度管理目标：')) && <p><strong>本期目标</strong>　{stageSections[0].lines.find(line=>line.startsWith('本期年度管理目标：')).split('本期年度管理目标：')[1]}</p>}
             {canTeamEdit && /^\d{4}-\d{2}$/.test(item.periodKey) && <button type="button" disabled={busy} className="btn btn-secondary btn-sm" onClick={()=>previewMonthlyDraft(item)}>AI 整理本月评估草稿</button>}
             {onNavigate && <details style={{ marginTop: 8 }}><summary>查阅原始依据</summary><button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('reports')}>检查报告</button> <button type="button" className="btn btn-secondary btn-sm" onClick={() => onNavigate('serviceRecords')}>就医与服务记录</button></details>}
             {['finalized', 'approved'].includes(status) && onNavigate && <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 9 }} onClick={() => onNavigate('serviceRecords')}>查看服务档案中的评估记录</button>}
@@ -645,7 +646,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
               {status === 'team_review' && item.reviewWorkflow !== 'single_owner' && ['familyDoctor', 'superadmin'].includes(staff?.role) && <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>{(item.reviewWorkflow === 'advisor_nutrition' ? [['rehabSpecialist', '转交运动复健师']] : [['psychologist', '邀请心理咨询师'], ['rehabSpecialist', '邀请运动复健师'], ['tcmDoctor', '邀请中医师']]).filter(([role]) => !item.teamRoles.includes(role)).map(([role, label]) => <button key={role} className="btn btn-secondary btn-sm" disabled={busy} onClick={() => submitTeamReview(item, 'include_role', role)}>{label}</button>)}</div>}
             </div>}
             <PhaseGoalReview rows={assessmentGoalEdits[item._id] ?? item.goalReviews ?? []} editable={canTeamEdit && pendingTeamRole === 'familyDoctor'} onChange={rows => setAssessmentGoalEdits(values => ({ ...values, [item._id]: rows }))} />
-            <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(120px,1fr))', gap: 9 }}>
+            <div className="phase-review-sections">
               {stageSections.map((section, index) => <button key={section.label} type="button" onClick={() => setActiveAssessmentSections(values => ({ ...values, [item._id]: expanded ? index : values[item._id] === index ? null : index }))} style={{ border: `1px solid ${activeSectionIndex === index ? section.color : '#DCE8E1'}`, borderRadius: 10, padding: '12px 8px', background: activeSectionIndex === index ? section.background : '#fff', cursor: 'pointer', textAlign: 'center' }}>
                 <div style={{ fontSize: 25, lineHeight: 1 }}>{section.icon}</div>
                 <div style={{ marginTop: 7, fontSize: 13, fontWeight: 800, color: section.color }}>{section.label}</div>
