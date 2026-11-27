@@ -679,3 +679,27 @@ test('two-column breath test, conclusion-only cytology and echo continuation sta
   assert.deepEqual(check([{ ...items[0], diagnosis: '窦性心律' }, { ...items[1], findings: '测定值：4.0' },
     { ...items[2], pathologyDiagnosis: '见上皮内病变或恶性病变' }]), []);
 });
+
+test('page supplement recovers the left column when extraction omitted an existing diagnosis-only row', async () => {
+  const { mergeSupplementItems } = require('../src/utils/reportPageSupplement');
+  const row = { name: '甲状腺超声检查', itemType: 'imaging', sourcePage: 7, findings: '', sourceSection: '心脏彩超', orderName: '【心脏彩色多普勒超声检查】',
+    diagnosis: '甲状腺双侧叶结节，C-TIRADS 3', reviewIssues: ['检查所见与诊断结论栏均为空白，仅保留标题及引号内重复标题文字', '另一项核对提示'] };
+  const printedFindings = '甲状腺形态大小正常，双侧叶见低回声结节。';
+  async function run(existing, diagnosis = row.diagnosis) {
+    const evidence = { readability: 'clear', hasMedicalImages: false, sections: [
+      { title: '报告部份', clinicalText: printedFindings + '\n' + diagnosis, printedFindings, printedDiagnosis: diagnosis },
+    ] };
+    const parse = createReportImageParser(async (_, prompt) =>
+      JSON.stringify(prompt === IMAGE_EVIDENCE_PROMPT ? evidence : { items: [] }),
+      { report: { type: 'annual', reportItems: [existing] }, verifyTableRows: true });
+    return JSON.parse(await parse('image', 'supplement', { sourcePage: 7, regionIndex: 0 })).items;
+  }
+  const merged = mergeSupplementItems([row], await run(row));
+  assert.equal(merged.enriched.length, 1);
+  assert.equal(merged.items.length, 1);
+  assert.equal(merged.items[0].sourceSection, '甲状腺超声检查');
+  assert.equal(merged.items[0].findings, printedFindings);
+  assert.deepEqual(merged.items[0].reviewIssues, ['另一项核对提示']);
+  assert.deepEqual(await run(row, '甲状腺双侧叶结节，C-TIRADS 4'), []);
+  assert.deepEqual(await run({ ...row, manualReviewStatus: 'reviewed' }), []);
+});

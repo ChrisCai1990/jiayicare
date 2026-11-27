@@ -118,3 +118,16 @@ test('单次就医加入已确认行程保留独立科室和原因，仍只派�
   assert.throws(() => addOneTimeVisit(data, ' ', '', ''), /原因/)
   assert.equal(addOneTimeVisit(data, '独立就诊', '', '').medical_treatment.records[1].visitGroupId, undefined)
 })
+
+test('同日未定医院的仅提醒复查须核对，异日仍独立', async () => {
+  const {validateVisitGroups} = (await import('../../../backend/src/utils/annualVisitGroups.js')).default
+  const records = ['2027-03-08', '2027-09-08', '2027-03-08'].map((time,i) =>
+    ({ time, items: ['前列腺肿瘤标志物3项','心电图','心超'][i], serviceMode: 'reminder' }))
+  const data = { abnormal_followup: { records } }
+  assert.deepEqual(nearDateCandidates(data).map(r => r.index), [0,2])
+  assert.match(validateVisitGroups(data), /2027-03-08.*前列腺肿瘤标志物3项、心超/)
+  const grouped = groupVisitRows(data, nearDateCandidates(data).map(r => r.key), { date: records[0].time, leaderKey:'abnormal_followup:0', serviceMode:'reminder' })
+  assert.equal(validateVisitGroups(grouped), '')
+  records[2].scheduleSeparationReason = '需另日确认院区'
+  assert.equal(validateVisitGroups(data), '')
+})

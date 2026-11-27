@@ -21,6 +21,17 @@ function sameReportItem(a, b) {
   return !(aContext && bContext && aContext !== bContext);
 }
 
+function correctsThyroidSection(current, candidate) {
+  return current?.itemType === 'imaging' && candidate?.itemType === 'imaging'
+    && current.name === candidate.name && /甲状腺/.test(current.name)
+    && /心脏|心超/.test(current.orderName || current.sourceSection || '')
+    && /甲状腺/.test(candidate.sourceSection || '') && /^甲状腺/.test(candidate.findings || '')
+    && !String(current.findings || '').trim() && /TI[- ]?RADS/i.test(current.diagnosis || '')
+    && cleanPart(current.diagnosis) === cleanPart(candidate.diagnosis)
+    && (!current.sourcePage || !candidate.sourcePage || Number(current.sourcePage) === Number(candidate.sourcePage))
+    && (!current.examDate || !candidate.examDate || current.examDate === candidate.examDate);
+}
+
 // A page supplement often receives the same lab row with a different unit or
 // section spelling. Match the exact identity first; then treat a same-name
 // measured row on this page as existing instead of adding a competing result.
@@ -28,6 +39,8 @@ function supplementMatches(existingItems, candidate, options = {}) {
   const list = existingItems || [];
   const exact = list.filter(item => sameReportItem(item, candidate));
   if (exact.length) return exact;
+  const corrected = list.filter(item => correctsThyroidSection(item, candidate));
+  if (corrected.length) return corrected;
   if (candidate?.itemType === 'imaging' && cleanPart(candidate.name)) {
     const narrativeMatches = list.filter(item => item?.itemType === 'imaging'
       && cleanPart(item.name) === cleanPart(candidate.name)
@@ -150,8 +163,16 @@ function mergeSupplementItems(existingItems, candidates, options = {}) {
       }
       if (current.itemType === 'imaging' && candidate.itemType === 'imaging'
         && extendsNarrative(current.findings, candidate.findings)) patch.findings = candidate.findings;
+      if (correctsThyroidSection(current, candidate)) {
+        patch.sourceSection = candidate.sourceSection;
+        patch.orderName = candidate.sourceSection;
+      }
       if (Object.keys(patch).length) {
         result[index] = { ...current, ...patch };
+        if (patch.findings && result[index].diagnosis && Array.isArray(current.reviewIssues)) {
+          result[index].reviewIssues = current.reviewIssues.filter(issue =>
+            !/^检查所见与诊断结论栏均为空白[，,].*仅保留标题/.test(issue));
+        }
         enriched.push(result[index]);
       }
     }
@@ -221,6 +242,9 @@ function hasNamedOrganEvidence(item, organ) {
 function describeExistingReportItems(items) {
   return (items || []).filter(item => cleanPart(item?.name)).map(item => {
     const context = item.orderName || item.sourceSection || item.bodyPart || '';
+    if (!isHumanReviewed(item) && /甲状腺/.test(item.name) && !item.findings && /TI[- ]?RADS/i.test(item.diagnosis || '')) {
+      return item.name + '（已有分级结论，缺左栏检查所见，请按本页原文补全）';
+    }
     return `${item.name}${context ? `（${context}）` : ''}`;
   }).join('、');
 }

@@ -1,4 +1,5 @@
 import React from 'react'
+import dispatch from '../../../shared/annualDispatch.cjs'
 import AnnualPlanSection from './AnnualPlanSection'
 import nutritionCatalog from '../../../shared/annualNutritionAdvisorTargets.cjs'
 
@@ -52,7 +53,7 @@ export default function AnnualPlanTrackView({ actions, renderAction, goalForActi
           {(action.record.hospital || action.record.institution || action.record.department) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>就诊地点：{[action.record.hospital || action.record.institution, action.record.department].filter(Boolean).join(' · ')}</span>}
           {(action.record.reason || action.record.items || action.record.reviewItems?.length) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>要做什么：{action.record.reason || action.record.items || action.record.reviewItems.join('、')}</span>}
           {goalForAction?.(action) && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>希望达到：{goalForAction(action)}</span>}
-          {action.record.serviceMode && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>服务安排：{{ reminder: '提醒您自行安排', single: '协助安排单项服务', managed: '全程协助' }[action.record.serviceMode] || '待确认'}</span>}
+          {action.record.serviceMode && <span style={{ display: 'block', color: '#365E4C', fontSize: 12, fontWeight: 400 }}>服务安排：{{ reminder: '提醒您自行安排', single: dispatch.labels[action.record.serviceType] || '协助安排单项服务', managed: '全程协助' }[action.record.serviceMode] || '待确认'}</span>}
         </summary>
         {renderAction(action)}
         {onEditItem && ['vaccine', 'health_consensus', 'annual_checkup'].includes(action.key) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onEditItem(action.key, action.index)}>修改安排</button>}

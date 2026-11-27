@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { staffAPI } from '../api'
 import itemTools from '../../../shared/annualServiceItem.cjs'
 import planTools from '../../../shared/annualBookingPlan.cjs'
-import { bookingRequirements } from '../../../shared/annualBookingDisplay.cjs'
+import { bookingBrief, bookingRequirements } from '../../../shared/annualBookingDisplay.cjs'
 import CareFlowCard from './CareFlowCard'
 
 export function BookingSummary({ booking }) {
@@ -30,6 +30,8 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
   const change = (id, key, value) => setEntries(prev => prev.map(e => e.id === id ? { ...e, [key]: value } : e))
   const valid = entries.every((e, i) => e.mode === 'prebook' ? e.date && e.time && slots[i].department && (slots[i].hospital || e.hospital.trim()) && (!slots[i].candidates?.length || e.bookedExpertId) : e.note.trim() && (e.mode !== 'onsite' || slots[i].department))
   return <section style={{ fontSize: 14, lineHeight: 1.6 }}>
+    <h3 style={{ marginBottom: 4 }}>本次任务要求</h3>
+    <p style={{ marginTop: 0 }}>{bookingBrief(task, slots)}</p>
     {task.deliveryMode==='single' && canEdit && <button className="btn btn-primary" onClick={()=>setFullFlow(true)}>进入完整流程 / 回退顾问修订</button>}
     <div style={{ border: '1px solid #CDE3D8', borderRadius: 12, padding: 16, background: '#F7FBF8', display: 'grid', gap: 14 }}>
       <div><h3 style={{ margin: '0 0 4px' }}>顾问预约要求 <small style={{ fontWeight: 400, color: '#65776F' }}>只读</small></h3></div>
@@ -40,7 +42,7 @@ export default function AnnualBookingCard({ task, staff, onLinked }) {
     </div>
     {planTools.bookingReady(booked) ? <><b>预约安排已确认</b><BookingSummary booking={booked} /><p>现场预约仍待执行；预约安排不代表就医或检查完成。</p></> : canEdit && itemTools.needsBooking(task) ? <div style={{ display: 'grid', gap: 16 }}>
       {slots.map((s, i) => { const e = entries[i]; return <details key={s.id} open={slots.length === 1 || i === 0} style={{ background: '#F6FBF8', padding: 16, border: '1px solid #DCE9E2', borderRadius: 10, display: 'grid', gap: 10 }}>
-        <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{i + 1}. {s.title} · {s.department || '科室待确认'}</summary><div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{i + 1}. {s.type === 'exam' ? '检查预约' : '门诊预约'} · {s.title} · {s.department || '科室待确认'}</summary><div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
         <div>{s.orderDepartment && <div>开单科室：{s.orderDepartment}</div>}医院：{s.hospital || '未指定'}{s.campus ? ` · ${s.campus}` : ''}<br />{s.type === 'exam' ? '检查科室' : '就医/开单科室'}：{s.department || '待顾问确认'}<br />{s.candidates?.length ? '顾问候选专家' : s.type === 'exam' ? '检查专家' : '门诊专家'}：{s.candidates?.map(item => item.name).join('、') || s.expert || '未指定专家'}</div>
         {!s.department && <small style={{ color: '#B45309' }}>预约前需由顾问明确科室，现场办理也不能跳过。</small>}
         <label>办理方式<select className="form-input" value={e.mode} onChange={ev => change(s.id, 'mode', ev.target.value)}>

@@ -2304,6 +2304,32 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   });
 });
 
+// Personal inbox by issue time. Execution dates and subsequent status changes do not shift the day.
+router.get('/today-issued-tasks', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
+  const day = require('../utils/serviceAccess').chinaDay(new Date());
+  const start = new Date(day + 'T00:00:00+08:00');
+  const range = { $gte: start, $lt: new Date(start.getTime() + 86400000) };
+  const { humanFollowUpQuery } = require('../utils/humanFollowUpQuery');
+  const [tasks, referrals] = await Promise.all([
+    FollowUp.find({
+      assignedTo: req.staff._id, isBlocked: { $ne: true }, aiStatus: { $ne: 'pending' },
+      $or: [{ assignedAt: range }, { assignedAt: null, createdAt: range }],
+      $and: [{ $or: [{ taskRole: { $in: ['executor', 'supervisor'] } }, { sourceType: 'order' }, humanFollowUpQuery] },
+        { $or: [{ status: { $ne: 'completed' } }, { plannedContent: /\S/ }, { staffId: { $ne: req.staff._id } }, { taskRole: { $in: ['executor', 'supervisor'] } }] }],
+      $nor: [routineMedicationNoiseFilter, require('../utils/annualUmbrellaTask').obsoleteAnnualUmbrellaQuery],
+    }).select('patientId theme content plannedContent date status assignedAt createdAt').populate('patientId', 'name').lean(),
+    Referral.find({ toStaffId: req.staff._id, createdAt: range, expertConsultationCaseId: null })
+      .select('patientId reason content status createdAt').populate('patientId', 'name').lean(),
+  ]);
+  const items = [
+    ...tasks.map(t => ({ id: String(t._id), kind: 'task', title: t.theme || '指派任务', details: t.plannedContent || t.content,
+      patient: t.patientId?.name, scheduled: t.date, issued: t.assignedAt || t.createdAt, status: t.status })),
+    ...referrals.map(r => ({ id: String(r._id), kind: 'referral', title: r.reason || '岗位转介', details: r.content,
+      patient: r.patientId?.name, issued: r.createdAt, status: r.status })),
+  ].sort((a, b) => b.issued - a.issued || a.id.localeCompare(b.id));
+  res.json({ success: true, data: { day, items } });
+});
+
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
@@ -3338,6 +3364,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       }
     }
   });
+  if (followUp.isModified('assignedTo')) followUp.assignedAt = new Date();
   // 计划要求与执行结果分开保存。兼容旧记录：首次执行前先固化原计划内容。
   if (!followUp.plannedContent && previousStatus !== 'completed') {
     followUp.plannedContent = previousContent || '';
@@ -3482,8 +3509,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   if (outpatientStaffAssignment) {
     const commonFilter = { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', status: { $in: ['planned', 'in_progress'] } };
     await Promise.all([
-      FollowUp.updateMany({ ...commonFilter, theme: { $regex: '门诊一站式.*首次代诊开检查单' } }, { $set: { assignedTo: outpatientStaffAssignment.proxyVisitStaffId } }),
-      FollowUp.updateMany({ ...commonFilter, theme: { $regex: '门诊一站式.*检查及专家门诊陪诊与归档' } }, { $set: { assignedTo: outpatientStaffAssignment.escortStaffId } }),
+      FollowUp.updateMany({ ...commonFilter, theme: { $regex: '门诊一站式.*首次代诊开检查单' } , assignedTo: { $ne: outpatientStaffAssignment.proxyVisitStaffId } }, { $set: { assignedTo: outpatientStaffAssignment.proxyVisitStaffId, assignedAt: new Date() } }),
+      FollowUp.updateMany({ ...commonFilter, theme: { $regex: '门诊一站式.*检查及专家门诊陪诊与归档' } , assignedTo: { $ne: outpatientStaffAssignment.escortStaffId } }, { $set: { assignedTo: outpatientStaffAssignment.escortStaffId, assignedAt: new Date() } }),
     ]);
   }
   await advanceCheckupTask(followUp);
@@ -3547,7 +3574,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
         if (escortStaffId) {
           await FollowUp.updateMany(
             { sourceHealthPlanId: followUp.sourceHealthPlanId, taskRole: 'executor', theme: { $regex: '门诊一站式.*检查及专家门诊陪诊与归档' }, status: { $in: ['planned', 'in_progress'] } },
-            { $set: { assignedTo: escortStaffId, isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), formData: { handoffSnapshot: followUp.formData || {} } } }
+            { $set: { assignedTo: escortStaffId, assignedAt: new Date(), isBlocked: false, activationEvent: '', date: new Date(), remindAt: new Date(), nextFollowUpDate: new Date(), formData: { handoffSnapshot: followUp.formData || {} } } }
           );
         }
       }
@@ -20465,7 +20492,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
-  const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
+  const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage)
+    .map(item => item.toObject ? item.toObject() : item);
   const latestMissing = filterMissingReportItems(oldPage, newPage, supplementOptions);
   const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item, supplementOptions).length && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
