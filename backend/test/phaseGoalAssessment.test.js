@@ -34,7 +34,7 @@ test('生活方式按整月不同日期归纳，核对行动指向待查随访',
   const records = [1,8,15,31,31].map(n=>({type:'exercise',label:'运动',recordedAt:'2026-10-'+String(n).padStart(2,'0'),value:'【晚上】快走',recordedBy:{source:'customer'}}));
   const [changes,life,analysis,actions]=assessment({period:{end:'2026-10-31'},recentHealthRecords:records,periodReports:[],periodFollowups:[{theme:'核对复查结果',date:'2026-10-20',status:'planned'}]});
   assert.match(changes[0],/建议阶段目标（待确认）/);
-  assert.match(life[0],/运动记录4天，其中4天记有「快走」/);
+  assert.match(life[0],/暂时无法判断相关性/);
   assert.match(analysis[1],/核对复查结果/);
   assert.match(actions[0],/健管专员.*健康顾问.*核对复查结果/);
   assert.match(actions[1],/顾问.*目标范围/);
@@ -45,7 +45,7 @@ test('期初维持目标和最近两次体测按同名同单位核对',()=>{
  const context={openingPlan:plan,confirmedAnnualPlan:plan,period:{start:'2026-10-01',end:'2026-10-31'},recentHealthRecords:['01','31'].map(d=>({type:'weight',value:70,unit:'kg',recordedAt:'2026-10-'+d})),periodFollowups:[],periodReports:[],latestBodyReports:['10-12','09-02'].map((d,i)=>({checkDate:'2026-'+d,reportItems:[{name:'体脂率',unit:'%',value:25-i}]}))};
  const [changes,relation]=assessment(context);
  assert.match(changes[5],/09-02.*24 → 25%（\+1个百分点）/);
- assert.match(relation[0],/继续维持/);
+ assert.match(changes[0],/继续维持/);
 });
 
 test('多日监测保留首末值，历史体测可作为报告前值，已设指标带入评估',()=>{
@@ -53,4 +53,21 @@ test('多日监测保留首末值，历史体测可作为报告前值，已设�
  assert.match(result[0][3],/2天.*128\/84mmHg → 2026-10-31 125\/82mmHg/);
  assert.match(result[0][5],/07-15.*25 → 24.6%/);
  assert.match(result[0][0],/血压.*维持.*每周一次/);
+});
+
+test('同日多次测量按天均衡，未记录行为的日子不进入对照',()=>{
+ const records=['01','02','03','04','05','06','07'].flatMap((d,i)=>{
+   const recordedAt='2026-10-'+d;
+   return [{type:'bloodPressure',value:i<3?'120/80':'110/75',recordedAt},...(i<6?[{type:'diet',value:i<3?'应酬':'没有应酬',recordedAt}]:[])]
+ });
+ const res=assessment({period:{end:'2026-10-31'},recentHealthRecords:records,periodReports:[],periodFollowups:[],periodTargets:[{metric:'血压'}]});
+ assert.match(res[1][0],/应酬与收缩压.*3天平均 120 mmHg.*3天平均 110 mmHg/);
+});
+
+test('无应酬未饮酒结合自评睡眠质量；单纯睡眠时长不能判断质量',()=>{
+ const make=(date,type,value,extra)=>({recordedAt:'2026-10-'+date,type,value,extra});
+ const rows=['01','02','03','04','05','06','07'].flatMap((date,i)=>[make(date,'diet','没有应酬'),make(date,'alcohol','无'),make(date,'sleep','8',i===6?{}:{sleepQuality:i<3?'良好':'较差'}),make(date,'bloodPressure',i<3?'120/80':'130/85')]);
+ const ctx={recentHealthRecords:rows,period:{end:'2026-10-31'},periodTargets:[],periodReports:[],periodFollowups:[]};
+ assert.match(assessment(ctx)[1][0],/睡眠好的3天.*120\/80.*睡眠较差的3天为 130\/85/);
+ assert.match(assessment({...ctx,recentHealthRecords:rows.map(r=>({...r,extra:{}}))})[1][0],/7天.*缺少明确的睡眠质量/);
 });

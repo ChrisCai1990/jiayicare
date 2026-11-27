@@ -22,6 +22,96 @@ function coverage(records) {
   }
   return groups;
 }
+function socialSleepPressure(records) {
+  const days = new Map();
+  for (const row of records) {
+    if (!row.recordedAt || !['diet','alcohol','sleep','bloodPressure'].includes(row.type)) continue;
+    const date = day(row.recordedAt);
+    if (!days.has(date)) days.set(date,{diet:new Set(),alcohol:new Set(),sleep:new Set(),pressure:[]});
+    const entry = days.get(date);
+    const value = String(row.value ?? '').replace(/【[^】]+】/g,'').trim();
+    if (row.type==='bloodPressure') {
+      const parts=value.match(/^(\d+(?:\.\d+)?)\s*[/／]\s*(\d+(?:\.\d+)?)$/);
+      if(parts && (!row.unit || row.unit==='mmHg') && Number(parts[1])>Number(parts[2]) && Number(parts[2])>0) entry.pressure.push([Number(parts[1]),Number(parts[2])]);
+    } else if (row.type==='sleep') {
+      const quality=String(row.extra?.sleepQuality || value).trim();
+      if (/^(良好|好|睡眠好|睡眠良好)$/.test(quality)) entry.sleep.add(true);
+      if (/^(较差|差|睡眠差|睡眠较差)$/.test(quality)) entry.sleep.add(false);
+    } else {
+      const negative = row.type==='diet'?/^(没有应酬|无应酬|未应酬)$/:/^(无|无饮酒|未饮酒|没有饮酒|不饮酒)$/;
+      const positive = row.type==='diet'?/^(应酬|有应酬|聚餐)$/:/^(有|饮酒|有饮酒|喝酒)$/;
+      if (negative.test(value)) entry[row.type].add(false);
+      if (positive.test(value)) entry[row.type].add(true);
+    }
+  }
+  const matched=[], other=[], partial=[];
+  for (const entry of days.values()) {
+    if(!entry.pressure.length || entry.diet.size!==1 || entry.alcohol.size!==1 || entry.diet.has(true) || entry.alcohol.has(true))continue;
+    if(entry.sleep.size>1)continue;
+    const daily=[0,1].map(index=>entry.pressure.reduce((sum,p)=>sum+p[index],0)/entry.pressure.length);
+    if(!entry.sleep.size)partial.push(daily);
+    else (entry.sleep.has(true)?matched:other).push(daily);
+  }
+  const describe=rows=>[0,1].map(i=>Number((rows.reduce((sum,p)=>sum+p[i],0)/rows.length).toFixed(1))).join('/')+' mmHg';
+  if(matched.length){
+    let text='无应酬、未饮酒且自评睡眠好的'+matched.length+'天，日均血压的平均值为 '+describe(matched)+'。';
+    return text+(matched.length>=3 && other.length>=3?'同样无应酬、未饮酒但自评睡眠较差的'+other.length+'天为 '+describe(other)+'。这只是本期记录中的差别。':'可对照的睡眠较差日期有'+other.length+'天，资料不足以判断两组是否有稳定差别。');
+  }
+  if(partial.length)return '无应酬且未饮酒的'+partial.length+'天有血压记录（日均血压的平均值 '+describe(partial)+'），这些日期缺少明确的睡眠质量评价。';
+  return '';
+}
+function lifestyleAssociations(records, targets) {
+  const comparisons = [
+    ['diet', '应酬', /^(?:有应酬|应酬|聚餐)$/, /^(?:无应酬|没有应酬|未应酬)$/],
+    ['exercise', '运动', /^(?:快走|步行|跑步|游泳|骑行|力量训练|俯卧撑)(?:[、，+＋ ].*|\d+分钟)?$/, /^(?:无运动|未运动|没有运动|未锻炼|休息)$/],
+    ['alcohol', '饮酒', /^(?:饮酒|有饮酒|喝酒)$/, /^(?:无|无饮酒|未饮酒|没有饮酒|不饮酒)$/],
+    ['smoking', '吸烟', /^(?:吸烟|有吸烟)$/, /^(?:无|未吸烟|没有吸烟|不吸烟)$/],
+  ];
+  const measures = [
+    ['weight','体重','kg'], ['bloodPressure','收缩压','mmHg'], ['bloodPressure','舒张压','mmHg'],
+    ['heartRate','心率','次/分'], ['sleep','睡眠时长','小时'],
+  ].sort((a,b)=>Number(targets.some(t=>String(t.metric).includes(b[1])||t.metric==='血压'&&b[0]==='bloodPressure'))-
+                 Number(targets.some(t=>String(t.metric).includes(a[1])||t.metric==='血压'&&a[0]==='bloodPressure')));
+  const mean=values=>values.reduce((sum,v)=>sum+v,0)/values.length;
+  const details=[];
+  for (const [type,label,positive,negative] of comparisons) {
+    const groups=new Map();
+    for (const r of records.filter(r=>r.type===type && r.recordedAt)) {
+      const value=String(r.value??'').replace(/【[^】]+】/g,'').trim();
+      const flag=positive.test(value)?1:negative.test(value)?0:null;
+      if(flag===null)continue;
+      const date=day(r.recordedAt);
+      if(!groups.has(date))groups.set(date,new Set());
+      groups.get(date).add(flag);
+    }
+    if(!groups.size)continue;
+    for (const [outcome,name,unit] of measures) {
+      const paired=[[],[]], byDate=new Map();
+      for (const r of records.filter(r=>r.type===outcome && r.recordedAt)) {
+        const date=day(r.recordedAt), flags=groups.get(date);
+        if(flags?.size!==1)continue;
+        let raw=String(r.value??'').trim();
+        if(outcome==='bloodPressure'){
+          const bp=raw.match(/^(\d+(?:\.\d+)?)\s*[/／]\s*(\d+(?:\.\d+)?)$/);
+          raw=bp?.[name==='收缩压'?1:2]??'';
+        }
+        if(!/^\d+(?:\.\d+)?$/.test(raw)||Number(raw)<=0||(r.unit&&r.unit!==unit&&!(outcome==='sleep'&&r.unit==='h')))continue;
+        if(!byDate.has(date))byDate.set(date,[]);
+        byDate.get(date).push(Number(raw));
+      }
+      for(const [date,values] of byDate)paired[[...groups.get(date)][0]].push(mean(values));
+      if(paired.some(group=>group.length<3))continue;
+      const [without,withBehavior]=paired.map(group=>Number(mean(group).toFixed(1)));
+      details.push(label+'与'+name+'：记有'+label+'的'+paired[1].length+'天平均 '+withBehavior+' '+unit+'，明确记为无'+label+'的'+paired[0].length+'天平均 '+without+' '+unit+'。'+
+        (withBehavior===without?'两组记录均值相同。':'两组记录均值相差 '+Number(Math.abs(withBehavior-without).toFixed(1))+' '+unit+'。')+'仅为本期同日观察，不能认定因果。');
+      break;
+    }
+  }
+  const combined=socialSleepPressure(records);
+  if(combined)return [combined,...details.slice(0,1)].join('；');
+  return details.length?details.slice(0,2).join('；'):'本期缺少两组各至少3个不同日期、且有同一指标测量的行为对照，暂时无法判断相关性。';
+}
+
 function assessment(context) {
   const records = context.recentHealthRecords, reports = context.periodReports;
   const tasks = context.periodFollowups.filter(t => t.status !== 'cancelled' && !t.isBlocked);
@@ -81,37 +171,7 @@ function assessment(context) {
   const entered=phaseTargets.map(t=>t.metric+'：'+t.goal+(t.range?'，目标范围 '+t.range:'')+'，记录频率 '+t.frequency);
   const goal = entered.length ? '本阶段已设目标：'+entered.join('；') : goalResults.length ? '期初目标：'+[...new Set(goalResults)].join('；') : (linkedGoals.length?'期内确认目标：'+[...new Set(linkedGoals)].join('；'):'') || '本期未匹配到已确认的年度目标。建议阶段目标（待确认）：'+suggestedGoal+'。';
   const weight = require('./phaseAssessmentWeightEvidence').comparableWeightChange(records);
-  const lifestyle = [];
-  for (const [type,label] of [['exercise','运动'],['diet','饮食'],['sleep','睡眠'],['mood','情绪'],['smoking','吸烟'],['alcohol','饮酒']]) {
-    const rows = records.filter(r=>r.type===type);
-    if (!rows.length) continue;
-    const values = new Map(), dates = new Set();
-    for (const r of rows) {
-      const date = day(r.recordedAt), value=String(r.value??'').replace(/【[^】]+】/g,'').trim();
-      dates.add(date);
-      if(value){if(!values.has(value))values.set(value,new Set());values.get(value).add(date);}
-    }
-    const common=[...values].sort((a,b)=>b[1].size-a[1].size)[0];
-    lifestyle.push(label+'记录'+dates.size+'天'+(common && ['diet','exercise','smoking','alcohol'].includes(type)?'，其中'+common[1].size+'天记有「'+common[0].slice(0,32)+'」':''));
-  }
-  const outcomeTypes=[['weight','体重'],['bloodPressure','血压'],['sleep','睡眠']];
-  const observedDates=new Map();
-  for(const r of records){
-    if(!r.recordedAt || r.value==null || !String(r.value).trim())continue;
-    if(!observedDates.has(r.type))observedDates.set(r.type,new Map());
-    observedDates.get(r.type).set(day(r.recordedAt),String(r.value)+(r.unit||''));
-  }
-  for(const [behavior,label] of [['exercise','运动'],['diet','饮食'],['sleep','睡眠']]){
-    const dates=observedDates.get(behavior);
-    if(!dates)continue;
-    for(const [type,outcome] of outcomeTypes){
-      if(type===behavior)continue;
-      const pairs=[...(observedDates.get(type)||[])].filter(([date])=>dates.has(date)).sort(([a],[b])=>a.localeCompare(b));
-      if(pairs.length<2)continue;
-      lifestyle.push('同时记录'+label+'和'+outcome+'的'+pairs.length+'天，首末记录为 '+pairs[0][1]+' → '+pairs.at(-1)[1]);
-      break;
-    }
-  }
+  const relation=lifestyleAssociations(records,phaseTargets);
   const groups=[...coverage(records).values()].sort((a,b)=>b.days.size-a.days.size);
   const habitSummary=groups.length>3 ? groups.slice(0,3).map(g=>g.label+g.days.size+'天').join('、')+'；共记录'+groups.length+'类项目。' : habits.join('；');
   const waistDays=new Set(records.filter(r=>r.type==='waist').map(r=>day(r.recordedAt))).size;
@@ -170,7 +230,7 @@ function assessment(context) {
     if(lines.length) bodySummary=current.checkDate+(prior?'，对比 '+prior.checkDate:'，首次可用体测')+'；'+lines.join('；');
   }
   const observations=[goal,habitSummary||'本期暂无可确认的客户自记数据。',timing,dailySummary.join('；')||daily,hospitalSummary,bodySummary,symptomsSummary];
-  return [observations,[lifestyle.length?lifestyle.join('；')+'。'+(weight?'同期体重从'+weight.first.value+' kg变为'+weight.last.value+' kg。':'')+(entered.length?'对照本阶段目标：'+entered.join('；')+'。':goalResults.length?'结合期初目标核对：'+goalResults.join('；')+'。':'期初未明确维持或改善目标，无法判断是否达标。')+'仅凭同期记录不能认定因果。':'本期缺少生活方式记录，无法分析与健康结果的关联。'+goalResults.join('；')],[results+(waistDays===1?'腰围仅记录1天，只能作为基线。':''),execution],[followUp,review]];
+  return [observations,[relation],[results+(waistDays===1?'腰围仅记录1天，只能作为基线。':''),execution],[followUp,review]];
 
 }
 function render(values) {
