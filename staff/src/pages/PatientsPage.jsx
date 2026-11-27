@@ -142,6 +142,7 @@ export default function PatientsPage() {
           <p className="page-subtitle">共 {total} 位会员</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-secondary" onClick={() => nav('/patients/card-custody')}>医保卡台账</button>
           {can('patients', 'create') && <button className="btn btn-secondary" onClick={() => setShowAssign(true)}>分配已有会员</button>}
           {can('patients', 'create') && <button className="btn btn-primary" onClick={() => nav('/patients/new')}>＋ 新增会员</button>}
         </div>

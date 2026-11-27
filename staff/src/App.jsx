@@ -20,6 +20,7 @@ import { hasModulePermission } from './modulePermission'
 import LoginPage from './pages/LoginPage'
 import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
+import { CustodyLedger } from './components/CardCustody'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
 import NewPatientPage from './pages/NewPatientPage'
@@ -232,6 +233,7 @@ export default function App() {
               <Route path="in-app-service-groups" element={<ErrorBoundary><InAppServiceGroupsPage /></ErrorBoundary>} />
               <Route path="ai-workspace" element={<ErrorBoundary><AiWorkspacePage /></ErrorBoundary>} />
               <Route path="patients" element={<PatientsPage />} />
+              <Route path="patients/card-custody" element={<CustodyLedger />} />
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<ErrorBoundary><PatientDetailPage /></ErrorBoundary>} />
               <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />

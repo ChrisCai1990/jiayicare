@@ -890,6 +890,7 @@ router.get('/service-tasks', staffAuth, async (req, res) => {
 
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的会员列表
+require('./cardCustody')(router, staffAuth, checkPermission, getVisibleStaffIds);
 router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
   const { page = 1, limit = 20, search = '', disease = '', type = '', scope = '' } = req.query;
   const staff = req.staff;
@@ -958,6 +959,7 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
     filter.patientType = type;
   }
 
+  if (req.query.custody) return require('./cardCustody').list(req, res, filter, isMentor);
   const skip = (Number(page) - 1) * Number(limit);
   const [patients, total] = await Promise.all([
     User.find(filter)

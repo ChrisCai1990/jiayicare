@@ -192,6 +192,8 @@ export const staffAPI = {
   me: () => req('/staff/me'),
 
   // Patients
+  getCardCustody: id => req(`/staff/patients/${id}/card-custody`),
+  saveCardCustody: (id, data) => req(`/staff/patients/${id}/card-custody`, { method: 'POST', body: JSON.stringify(data) }),
   getPatients:        (p = {}) => req('/staff/patients?' + qs(p)),
   getWecomKfUnboundContacts: () => req('/staff/wecom-kf/unbound-contacts'),
   bindWecomKfContact: (data) => req('/staff/wecom-kf/contacts', { method: 'POST', body: JSON.stringify(data) }),
