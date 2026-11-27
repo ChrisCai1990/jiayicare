@@ -55,3 +55,16 @@ test('已启动的预约流程从原服务需求带出结构化清单', async ()
   assert.deepEqual(result.state.data.visitItems, visitItems);
   assert.deepEqual(bookingSlots({ plannedContent, visitItems: result.state.data.visitItems }).map(row => row.type), ['outpatient', 'exam']);
 });
+
+test('旧年度预约直接按同次清单生成表单，主门诊只办理一次', () => {
+  const slots = bookingSlots({ theme: '就医随访', plannedContent: [
+    '医院：甲医院', '科室：消化内科', '候选专家：甲医生',
+    '同次就诊事项：胃部就诊 · 就诊科室：消化内科；手麻 · 就诊科室：神经内科；心脏超声 · 开单科室：心内科 · 检查科室：超声科',
+    '手麻：科室神经内科；原因手麻',
+    '心脏超声：科室心内科；专家乙医生',
+  ].join('\n') });
+  assert.deepEqual(slots.map(s => [s.title, s.department, s.expert]), [
+    ['胃部就诊', '消化内科', '甲医生'], ['手麻', '神经内科', ''], ['心脏超声', '超声科', '乙医生'],
+  ]);
+  assert.equal(slots[2].orderDepartment, '心内科');
+});

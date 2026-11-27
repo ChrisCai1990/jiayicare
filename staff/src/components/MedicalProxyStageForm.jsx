@@ -1,3 +1,4 @@
+import ProxyAppointmentFields from './ProxyAppointmentFields'
 import DateField from '../../../shared/DateField.jsx'
 import React from 'react'
 import { ChecklistAttachments } from './ServiceTaskChecklist'
@@ -361,7 +362,7 @@ export default function MedicalProxyStageForm({ task, value = {}, onChange, repo
     </div>
     {bookingSlots(value).map((row, index) => <div key={index} style={{ border: '1px solid #DCE8E2', borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong>预约 {index + 1}</strong>{index >= (value.planSnapshot?.appointmentTargets?.length || 1) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: bookingSlots(value).filter((_, i) => i !== index) })}>移除</button>}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{[['hospital', '医院'], ['department', '科室/检查项目'], ['expert', '专家/医生'], ['campus', '院区'], ['appointmentDate', '预约日期'], ['appointmentTime', '预约时间']].map(([key, title]) => <label key={key} style={{ display: 'grid', gap: 4, fontSize: 12 }}>{title}<DateField className="form-control" type={key === 'appointmentDate' ? 'date' : key === 'appointmentTime' ? 'time' : 'text'} value={row[key] || ''} onChange={e => { const slots = bookingSlots(value).map((item, i) => i === index ? { ...item, [key]: e.target.value } : item); onChange({ ...value, appointmentSlots: slots, ...(index === 0 ? { appointmentDate: slots[0].appointmentDate, appointmentTime: slots[0].appointmentTime, appointmentExpert: slots[0].expert, campus: slots[0].campus } : {}) }) }} /></label>)}</div>
+      <ProxyAppointmentFields row={row} onChange={(key, newValue) => { const slots = bookingSlots(value).map((item, i) => i === index ? { ...item, [key]: newValue } : item); onChange({ ...value, appointmentSlots: slots, ...(index === 0 ? { appointmentDate: slots[0].appointmentDate, appointmentTime: slots[0].appointmentTime, appointmentExpert: slots[0].expert, campus: slots[0].campus } : {}) }) }} />
     </div>)}
     <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange({ ...value, appointmentSlots: [...bookingSlots(value), { hospital: value.planSnapshot?.hospital || '', department: '', expert: '', campus: value.campus || '', appointmentDate: '', appointmentTime: '' }] })}>＋ 新增预约</button>
     {bookingSlots(value).some(row => row.appointmentDate && value.preferredDateStart && value.preferredDateEnd && (row.appointmentDate < value.preferredDateStart || row.appointmentDate > value.preferredDateEnd)) && input('dateDifferenceNote', '超出期望区间说明及客户确认情况', 3)}

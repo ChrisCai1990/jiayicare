@@ -7,12 +7,15 @@ function bookingRequirements(task) {
   const timing = field('预约安排日期');
   const itemsLine = field('同次就诊事项');
   const titles = itemsLine ? itemsLine.split('；').map(text).filter(Boolean) : [];
-  const visitItems = titles.map((title, index) => {
+  const visitItems = titles.map((label, index) => {
+    const [title, ...fields] = label.split(/ · (?=(?:就诊科室|开单科室|检查科室)：)/);
+    const departmentField = name => fields.find(part => part.startsWith(name + '：'))?.slice(name.length + 1) || '';
+    const orderDepartment = departmentField('开单科室'), examDepartment = departmentField('检查科室');
     const detail = lines.find(line => line.startsWith(`${title}：`))?.slice(title.length + 1).trim() || '';
     const parts = detail.split(/；(?=科室|专家|原因)/).map(text);
     const get = label => parts.find(part => part.startsWith(label))?.slice(label.length).trim() || '';
-    const primary = title === plan.items || (!titles.includes(plan.items) && index === 0);
-    return { moduleKey: 'item', recordIndex: index, title, department: get('科室') || (primary ? plan.department : ''),
+    const primary = title === plan.items || (!detail && index === 0);
+    return { moduleKey: examDepartment ? 'abnormal_followup' : 'item', recordIndex: index, title, primary, orderDepartment, examDepartment, department: examDepartment || departmentField('就诊科室') || get('科室') || (primary ? plan.department : ''),
       expert: get('专家') || (primary ? plan.expert : ''),
       reason: get('原因') || (primary ? plan.reason : '') };
   });

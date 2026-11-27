@@ -14,6 +14,7 @@ import ExpertConsultationsPage from './ExpertConsultationsPage'
 import ScheduleBookingDialog from '../components/ScheduleBookingDialog'
 import MonitoringFollowUpFields, { isStaffMonitoringFollowUp, initialMonitoringMeasurement, monitoringSubmission } from '../components/MonitoringFollowUpFields'
 import annualBookingPlan from '../../../shared/annualBookingPlan.cjs'
+import annualServiceItem from '../../../shared/annualServiceItem.cjs'
 import annualDispatch from '../../../shared/annualDispatch.cjs'
 import FollowUpProgressFields, { FollowUpProgressHistory, followUpSaveLabel } from '../components/FollowUpProgressFields'
 import FollowUpOutcomeReview from '../components/FollowUpOutcomeReview'
@@ -277,8 +278,9 @@ export default function FollowUpsPage() {
 
   const handleSearch = (e) => { e.preventDefault(); setPage(1); load() }
 
+  const usesVisitForm = f => annualServiceItem.isAssistance(f) || (f.sourceType === 'order' && String(f.workflowKey || '').startsWith('medical_proxy:'))
   const openExec = (f) => {
-    if (annualNutrition.isTask(f) || annualDispatch.dedicated(f)) { nav(`/patients/${f.patientId?._id || f.patientId}?tab=followups&followUpId=${f._id}`); return }
+    if (usesVisitForm(f) || annualNutrition.isTask(f) || annualDispatch.dedicated(f)) { nav(`/patients/${f.patientId?._id || f.patientId}?tab=followups&followUpId=${f._id}`); return }
     setExecItem(f)
     const checklist = checkupConclusionStage(f) ? [] : normalizeServiceChecklist(f.serviceChecklist, f.taskPurposes, f.dependsOnTaskId?.serviceChecklist)
     const priorResults = f.dependsOnTaskId?.formData?.nutritionStageAssessment?.targetResults || []
@@ -559,7 +561,7 @@ export default function FollowUpsPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ color: '#1E6B50', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}
                         title="打开本条随访"
-                        onClick={() => annualNutrition.isTask(f) || isPendingExec(f) || isCheckupAppointmentBookingTask(f) ? openExec(f) : setDetailItem(f)}>
+                        onClick={() => usesVisitForm(f) || annualNutrition.isTask(f) || isPendingExec(f) || isCheckupAppointmentBookingTask(f) ? openExec(f) : setDetailItem(f)}>
                         {f.patientId?.name || '-'}
                       </span>
                       <span style={{ fontSize: 12, color: '#8AA89C' }}>{f.patientId?.phone}</span>
@@ -606,7 +608,7 @@ export default function FollowUpsPage() {
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
                     {isPendingExec(f) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setScheduleBookingContext({ relatedType: 'follow_up', relatedId: f._id, patientId: f.patientId?._id || f.patientId, label: `${f.patientId?.name || '会员'} · ${serviceTaskTitle(f) || '随访任务'}`, title: serviceTaskTitle(f) || '随访任务', category: 'task' })}>预约时间</button>}
                     {isPendingExec(f) && (
-                      <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>{f.taskRole === 'supervisor' ? '处理督办' : f.taskRole ? '处理事务' : '执行随访'}</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>{annualServiceItem.isAssistance(f) ? '办理就医协助' : f.taskRole === 'supervisor' ? '处理督办' : f.taskRole ? '处理事务' : '执行随访'}</button>
                     )}
                     {annualBookingPlan.canEditPlan(f, staff?.role) && f.status !== 'cancelled' && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
                       <button className="btn btn-secondary btn-sm" onClick={() => openEdit(f)}>编辑</button>
@@ -614,7 +616,7 @@ export default function FollowUpsPage() {
                     {isPendingExec(f) && (
                       annualBookingPlan.canEditPlan(f, staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => openCancel(f)}>取消</button>
                     )}
-                    <button className="btn btn-secondary btn-sm" onClick={() => isCheckupAppointmentBookingTask(f) ? openExec(f) : setDetailItem(f)}>{isCheckupAppointmentBookingTask(f) ? '填写三号预约' : '详情'}</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => (usesVisitForm(f) || isCheckupAppointmentBookingTask(f)) ? openExec(f) : setDetailItem(f)}>{isCheckupAppointmentBookingTask(f) ? '填写三号预约' : '详情'}</button>
                     <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${f.patientId?._id}`)}>会员</button>
                   </div>
                 </div>

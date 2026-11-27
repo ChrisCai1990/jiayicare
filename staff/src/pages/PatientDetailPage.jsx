@@ -3023,8 +3023,9 @@ export default function PatientDetailPage() {
           nav(`/patients/${id}?tab=records&recordView=lifestyle&interviewTaskId=${target._id}`, { replace: true })
           return
         }
-        if (ibdStage(target) && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
-        else if (isDecisionReferralTask(target) || annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
+        if (medicalProxyStage(target) && medicalProxyStage(target) !== 'supervise' && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
+        else if (ibdStage(target) && ['planned', 'in_progress', 'missed'].includes(target.status)) openExec(target)
+        else if (medicalProxyStage(target) || isDecisionReferralTask(target) || (target && annualServiceItem.isAssistance(target)) || annualNutrition.isTask(target) || annualDispatch.dedicated(target)) setFollowUpDetail(target)
         else if (isCheckupAdvisorReviewTask(target)) setCheckupAdvisorReview(target)
         else if (target?.aiStatus === 'pending') setFollowUpDetail(target)
         else toast('该随访审核任务已处理或不存在')
@@ -3045,7 +3046,7 @@ export default function PatientDetailPage() {
     if (medicalProxyStage(f) === 'post_visit_audit') { loadServiceRecords(); loadReports() }
     // Workbench appointment projection is not an execution checklist. Keep the
     // advisor plan visible and use the dedicated receipt without ending follow-up.
-    if (f.annualBookingTask === true || annualDispatch.dedicated(f)) {
+    if (annualServiceItem.isAssistance(f) || f.annualBookingTask === true || annualDispatch.dedicated(f)) {
       setFollowUpDetail(f)
       return
     }

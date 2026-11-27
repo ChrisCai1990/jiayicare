@@ -113,8 +113,10 @@ async function buildAnnualPlanFollowUps(plan) {
       sourceType: 'scheduled',
       deliveryMode: delivery.serviceMode || 'reminder',
       deliveryType: delivery.serviceType || '',
-      ...(delivery.bookingRequired === true ? { formData: { bookingRequest: {
-        required: true, hospital: delivery.hospital || '', department: delivery.department || '',
+      ...(delivery.bookingRequired === true || delivery.visitItems?.length > 1 ? { formData: { bookingRequest: {
+        required: delivery.bookingRequired === true,
+        ...(delivery.visitItems?.length > 1 ? { visitItems: delivery.visitItems } : {}),
+        hospital: delivery.hospital || '', department: delivery.department || '',
         items: delivery.items || '', experts: delivery.expertSnapshots || [],
         orderDepartment: delivery.order_dept || '', orderExperts: delivery.orderExpertSnapshots || [],
       } } } : {}),
@@ -208,7 +210,7 @@ async function buildAnnualPlanFollowUps(plan) {
       const lines = [...details, executor && `执行人员：${staffName(executor)}`].filter(Boolean);
       const theme = mod.key === 'abnormal_followup' && rec.reviewGroupVersion === 1 ? '专科复查就医随访' : mod.theme;
       push(rec.appointmentSchedulingVersion === 1 ? appointmentDay(rec[mod.dateField]) : rec[mod.dateField], `${theme} · ${label}`, lines.join('\n'), executor,
-        `${mod.key}:${String(sourceDate(plan, mod.key, i, mod.dateField, rec[mod.dateField])).slice(0, 10)}:${String(label).trim()}`, rec);
+        `${mod.key}:${String(sourceDate(plan, mod.key, i, mod.dateField, rec[mod.dateField])).slice(0, 10)}:${String(label).trim()}`, { ...rec, visitItems: visitItems.map(item => ({ ...item, primary: item.moduleKey === mod.key && item.recordIndex === i })) });
     });
   }
 

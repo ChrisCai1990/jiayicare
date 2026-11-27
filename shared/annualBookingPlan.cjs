@@ -16,7 +16,7 @@ function bookingPlan(task) {
   };
   const clean = value => ['无', '未定', '待定', '待确认', '未填写', '-'].includes(value) ? '' : value;
   return { hospital: clean(get(['就医/会诊医院', '复查医院', '计划体检机构', '医院'])), campus: clean(get(['院区'])),
-    department: clean(get(['科室', '检查科室'])), expert: clean(get(['专家', '检查专家'])),
+    department: clean(get(['科室', '检查科室'])), expert: clean(get(['候选专家', '专家', '检查专家'])),
     examDepartment: clean(get(['检查科室', '科室'])), examExpert: clean(get(['检查专家', '专家'])),
     orderExpert: clean(get(['开单专家'])),
     orderDepartment: get(['开单科室']), items: get(['项目', '待完善项目', '重点关注']) || task.theme || '',
@@ -32,13 +32,15 @@ function protectedEdit(task, role, body) {
 // from the ordering department or split a clinical item on arbitrary punctuation.
 function bookingSlots(task) {
   const p = bookingPlan(task);
-  if (Array.isArray(task.visitItems) && task.visitItems.length > 1) {
-    return task.visitItems.map((item, index) => ({
+  const visitItems = task.visitItems || task.formData?.bookingRequest?.visitItems || (p.text.includes('同次就诊事项：') ? require('./annualBookingDisplay.cjs').bookingRequirements(task).visitItems : []);
+  if (Array.isArray(visitItems) && visitItems.length > 1) {
+    return visitItems.map((item, index) => ({
       id: `visit-${item.moduleKey || 'item'}-${item.recordIndex ?? index}`,
       type: ['checkup_completion', 'abnormal_followup'].includes(item.moduleKey) ? 'exam' : 'outpatient',
       title: item.title || `就诊事项 ${index + 1}`,
       hospital: p.hospital, campus: p.campus,
-      department: item.department || '', expert: item.expert || '',
+      department: item.examDepartment || item.department || '', expert: item.examExpert || item.expert || '',
+      ...(item.primary && task.formData?.bookingRequest?.experts?.length ? { candidates: task.formData.bookingRequest.experts } : {}),
       orderDepartment: item.orderDepartment || '', orderExpert: item.orderExpert || '',
       examDepartment: item.examDepartment || '', examExpert: item.examExpert || '',
     }));
