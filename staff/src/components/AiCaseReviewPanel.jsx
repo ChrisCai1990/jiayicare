@@ -107,7 +107,13 @@ function AssessmentPointEditor({ id, line, disabled, onCommit }) {
 
 function AssessmentLine({ line, color }) {
   const divider = line.indexOf('：')
-  if (divider > 0 && divider < 28) return <div style={{ padding: '9px 11px', borderRadius: 8, background: '#fff', marginTop: 7, fontSize: 13, lineHeight: 1.65 }}><strong style={{ color }}>{line.slice(0, divider)}</strong><span style={{ color: '#33473E' }}>：{line.slice(divider + 1)}</span></div>
+  if (divider > 0 && divider < 28) {
+    const parts = line.slice(divider + 1).split(/[；;](?![^（）]*）)/).map(part=>part.trim()).filter(Boolean)
+    return <div style={{ padding: '9px 11px', borderRadius: 8, background: '#fff', marginTop: 7, fontSize: 13, lineHeight: 1.65 }}>
+      <strong style={{ color }}>{line.slice(0, divider)}</strong>
+      {parts.map((part,index)=><div key={index} style={{color:'#33473E',marginTop:3}}>{part}</div>)}
+    </div>
+  }
   return <div style={{ padding: '8px 11px 8px 25px', position: 'relative', borderBottom: '1px dashed #DCE8E1', fontSize: 13, lineHeight: 1.65 }}><span style={{ position: 'absolute', left: 10, color }}>•</span>{line}</div>
 }
 
