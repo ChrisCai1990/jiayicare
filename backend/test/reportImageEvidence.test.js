@@ -703,3 +703,15 @@ test('page supplement recovers the left column when extraction omitted an existi
   assert.deepEqual(await run(row, '甲状腺双侧叶结节，C-TIRADS 4'), []);
   assert.deepEqual(await run({ ...row, manualReviewStatus: 'reviewed' }), []);
 });
+
+test('first-pass thyroid item never retains an unrelated cardiac heading from another crop', () => {
+  const item = { name: '甲状腺超声检查', sourceSection: '心脏彩超', orderName: '心超', itemType: 'imaging', diagnosis: '甲状腺双侧叶结节，C-TIRADS 3' };
+  const evidence = { hasMedicalImages: false, readability: 'clear', sections: [
+    { title: item.name, clinicalText: item.diagnosis },
+  ] };
+  assert.deepEqual(guardImageEvidence({ items: [item] }, evidence).items,
+    [{ ...item, orderName: item.name, sourceSection: item.name }]);
+  assert.deepEqual(guardImageEvidence({ items: [item] }, { ...evidence, sections: [
+    { title: '心脏彩超', clinicalText: item.diagnosis },
+  ] }).items, []);
+});

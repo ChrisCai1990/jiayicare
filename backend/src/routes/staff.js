@@ -18867,7 +18867,8 @@ function cleanupExtractedItems(items) {
     // 真正所属的检验单分组，看起来像是"从免疫五项里消失了"。
     const onA = str(it.orderName), onB = str(result[idx].orderName);
     const freqA = orderNameFreq.get(onA) || 0, freqB = orderNameFreq.get(onB) || 0;
-    const betterOrderName = freqA >= freqB ? onA : onB;
+    const betterOrderName = ['lab', 'data'].includes(winner.itemType)
+      ? (freqA >= freqB ? onA : onB) : winner.orderName;
     result[idx] = winner.orderName === betterOrderName ? winner : { ...winner, orderName: betterOrderName };
   });
 

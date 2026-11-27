@@ -193,7 +193,7 @@ function findUncoveredExamSections(sections, items) {
   for (const section of sections || []) {
     const title = String(section?.title || '').trim();
     const clinicalText = cleanClinicalTranscript(section?.clinicalText);
-    if (!title || /^(?:影像|超声)?(?:检查|检验|检测)?(?:项目|结果|名称|所见|描述|诊断|提示|结论|印象|医师意见)$/u.test(title)
+    if (!title || /^(?:报告部[份分]|诊断结论|检查结果|检查所见)$/.test(normalizeText(title)) || /^(?:影像|超声)?(?:检查|检验|检测)?(?:项目|结果|名称|所见|描述|诊断|提示|结论|印象|医师意见)$/u.test(title)
         || section.rows?.some(row => String(row.name || '').trim() && String(row.value || '').trim())
         || normalizeText(clinicalText).length < 6) continue;
     const key = normalizeText(title);
@@ -237,7 +237,16 @@ function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, 
   const sections = evidenceSections(evidence);
   if (!evidence.hasMedicalImages && evidence.readability === 'clear' && !sections
       && !requireSectionEvidence && !verifyTableRows) return parsed;
-  const candidates = Array.isArray(parsed.items) ? parsed.items : [];
+  const candidates = (Array.isArray(parsed.items) ? parsed.items : []).map(item => {
+    if (item.itemType !== 'imaging' || !/甲状腺/.test(item.name)
+        || !/心脏|心超/.test([item.sourceSection, item.orderName].join(' '))) return item;
+    const section = sections && sectionForItem({ name: item.name }, sections);
+    // A crop can contain just one heading. A name-only match must never
+    // preserve cardiac metadata on a thyroid result.
+    if (!section || !/甲状腺/.test(section.title) || !/甲状腺/.test(section.clinicalText)
+        || !/甲状腺/.test([item.findings, item.diagnosis].join(' '))) return null;
+    return { ...item, sourceSection: section.title, orderName: section.title };
+  });
   const clinicalText = sections?.length ? sections.map(section => [section.clinicalText,
     ...(section.rows || []).map(row => `${row.name} ${row.value} ${row.unit} ${row.referenceRange}`)].join('\n')).join('\n')
     : cleanClinicalTranscript(evidence.clinicalText);
@@ -246,6 +255,7 @@ function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, 
   const imageOnly = evidence.hasMedicalImages === true && evidence.readability === 'clear' && !transcript;
   const blockedReasons = { section_mismatch: 0, row_mismatch: 0, uncovered_rows: 0, uncovered_narrative: 0, unverified_text: 0, unreadable: 0 };
   const items = evidence.readability !== 'clear' || imageOnly ? [] : candidates.filter(item => {
+    if (!item) { blockedReasons.section_mismatch++; return false; }
     const imaging = ['imaging', 'diagnosis', 'pathology'].includes(item.itemType);
     const section = imaging && sections ? sectionForItem(item, sections) : null;
     if (imaging && ((sections && !section && !standaloneText) || (requireSectionEvidence && !sections))) {
