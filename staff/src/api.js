@@ -71,6 +71,8 @@ async function req(path, options = {}) {
     for (const flag of ['needReportAudit', 'needDoctorAnalysis', 'needDietaryReview', 'needCheckupReports', 'generationInProgress']) {
       if (data[flag]) err[flag] = true
     }
+    if (data.correctionField) err.correctionField = data.correctionField
+    if (data.issueId) err.issueId = data.issueId
     if (data.checkupReadiness) err.checkupReadiness = data.checkupReadiness
     if (data.needConfirm) { err.needConfirm = true; err.approvedBy = data.approvedBy }
     throw err

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { staffAPI, managementReviewAPI } from '../api'
 import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs'
 import { annualManagementSourceKey, findAnnualManagementDecision } from '../utils/annualManagementDecision.mjs'
@@ -32,7 +32,10 @@ function load(patientId, year) {
   if (!pending.has(key)) pending.set(key, staffAPI.getAnnualManagementDecisions(patientId, year).finally(() => pending.delete(key)))
   return pending.get(key)
 }
-export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast, onSaved }) {
+export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast, onSaved, correctionId, correctionMessage, correctionField }) {
+  const trigger = useRef(null)
+  const correctionPanel = useRef(null)
+  const openedCorrection = useRef(null)
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [drafting, setDrafting] = useState(false)
   const [title, setTitle] = useState(''), [directions, setDirections] = useState([]), [note, setNote] = useState('')
   const [goal, setGoal] = useState('')
@@ -44,10 +47,10 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
   const [priorDecisions, setPriorDecisions] = useState([])
   const [replacesId, setReplacesId] = useState('')
   const [withdrawReason, setWithdrawReason] = useState(null)
-  const [pilot, setPilot] = useState(false)
+  const [pilot, setPilot] = useState(null)
   const [planCheck, setPlanCheck] = useState({ loading: false, formal: false, plan: null, error: '' })
   const [amendment, setAmendment] = useState({ reason: '', advice: '', changeReason: '新增专项筛查结果', date: '', timingReason: '' })
-  useEffect(() => { let active = true; setPilot(false); if (patientId && year) loadPilot(patientId, year).then(value => { if (active) setPilot(value) }); return () => { active = false } }, [patientId, year])
+  useEffect(() => { let active = true; setPilot(null); if (patientId && year) loadPilot(patientId, year).then(value => { if (active) setPilot(value) }); return () => { active = false } }, [patientId, year])
   useEffect(() => {
     if (!open || pilot || !patientId || !year) return
     let active = true
@@ -98,6 +101,16 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     window.addEventListener(eventName, refresh)
     return () => { active = false; window.removeEventListener(eventName, refresh) }
   }, [patientId, year, key])
+  useEffect(() => {
+    if (!correctionId || saved?._id !== correctionId || openedCorrection.current === correctionId || !trigger.current) return
+    // Wait for the current plan's editing mode before opening its source form.
+    if (pilot === null) return
+    openedCorrection.current = correctionId
+    trigger.current.click()
+  }, [correctionId, saved, pilot])
+  useEffect(() => {
+    if (open && correctionId) correctionPanel.current?.focus()
+  }, [open, correctionId])
   if (!['familyDoctor', 'superadmin'].includes(staff?.role) || (!reportSource && !symptomSource)
     || !pilot && (symptomSource || source.kind === 'report_item')) return null
   const submit = async () => {
@@ -160,7 +173,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
     finally { setDrafting(false) }
   }
   return <>
-    <button type="button" className={`btn ${saved ? 'btn-primary' : 'btn-secondary'} btn-sm`} title={saved ? `已纳入年度管理：${directionText(savedDirections) || '管理方向待核对'}；点击可查看或调整` : '点击确认是否纳入年度管理'} onClick={event => {
+    <button ref={trigger} disabled={!!correctionId && (saved?._id !== correctionId || pilot === null)} type="button" className={`btn ${saved ? 'btn-primary' : 'btn-secondary'} btn-sm`} title={saved ? `已纳入年度管理：${directionText(savedDirections) || '管理方向待核对'}；点击可查看或调整` : '点击确认是否纳入年度管理'} onClick={event => {
       event.stopPropagation(); setReplacesId(''); setTitle(saved?.title || suggestedIssue || suggestions[0] || '');
       setDirections(savedDirections); setNote(saved?.note || ''); setGoal(saved?.goal || '')
       const legacyTimingDirection = saved?.reviewPlan?.kind === 'recheck' && savedDirections.includes('medical_treatment')
@@ -189,9 +202,10 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <select className="form-input" value={replacesId} onChange={event => setReplacesId(event.target.value)}>
             <option value="">独立管理事项</option>{priorDecisions.map(row => <option key={row._id} value={row._id}>替代 {row.sourceSnapshot?.checkDate} · {row.title} · {directionText(row.directions?.length ? row.directions : [row.direction])}</option>)}
           </select></label>}
-        <label className="form-label">具体问题</label><input autoFocus className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
+        <label className="form-label">具体问题</label><input autoFocus={!correctionId} className="form-input" maxLength={80} value={title} disabled={drafting} onChange={e => setTitle(e.target.value)} placeholder="例如：肺结节" />
         <label className="form-label" style={{ marginTop: 12 }}>管理方向</label>
-        <div role="group" aria-label="管理方向（可多选）" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>{DIRECTIONS.filter(([value]) => (value !== 'ongoing_management' || savedDirections.includes(value)) && (!symptomSource || ['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(value))).map(([value, label]) => <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 8px', border: `1px solid ${hasDirection(value) ? '#17694D' : '#DDE6E0'}`, borderRadius: 7, cursor: 'pointer', background: hasDirection(value) ? '#F1F8F3' : '#FFF' }}><input type="checkbox" checked={hasDirection(value)} disabled={drafting} onChange={() => toggleDirection(value)} />{label}</label>)}</div>
+        {correctionMessage && <div role="alert" style={{ color: '#9F1239', marginBottom: 8 }}>{correctionMessage}</div>}
+        <div ref={correctionField === 'direction' ? correctionPanel : undefined} tabIndex={-1} role="group" aria-label="管理方向（可多选）" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>{DIRECTIONS.filter(([value]) => (value !== 'ongoing_management' || savedDirections.includes(value)) && (!symptomSource || ['medical_treatment', 'ongoing_management', 'nutrition_assessment'].includes(value))).map(([value, label]) => <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 8px', border: `1px solid ${hasDirection(value) ? '#17694D' : '#DDE6E0'}`, borderRadius: 7, cursor: 'pointer', background: hasDirection(value) ? '#F1F8F3' : '#FFF' }}><input type="checkbox" checked={hasDirection(value)} disabled={drafting} onChange={() => toggleDirection(value)} />{label}</label>)}</div>
         {pilot && !(directions.length === 1 && hasDirection('monitoring')) && <><label className="form-label" style={{ marginTop: 12 }}>管理目标</label>
         <textarea className="form-input" rows={2} maxLength={240} value={goal} onChange={e => setGoal(e.target.value)} placeholder="写出本年度要达到或明确的可核对结果；缺少基线时先以建立基线为目标" />
         <button type="button" className="btn btn-secondary btn-sm" disabled={drafting || busy || !direction || !title.trim()} onClick={draft} style={{ marginTop: 8 }}>
@@ -213,7 +227,7 @@ export default function SpecialtyConcernButton({ patientId, year, source, source
           <label className="form-label" style={{ marginTop: 8 }}>需复查项目（用顿号或换行分隔）</label>
           <textarea className="form-input" rows={2} value={reviewItems} onChange={e => setReviewItems(e.target.value)} placeholder="逐项填写具体检查名称，由顾问确认" />
         </div>}</>}
-        {pilot && hasDirection('monitoring') && <div style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
+        {pilot && hasDirection('monitoring') && <div ref={correctionField === 'monitoring' ? correctionPanel : undefined} tabIndex={-1} role="group" aria-label="日常监测项目与周期" style={{ marginTop: 12, padding: 10, background: '#F4F8F5', borderRadius: 6 }}>
           <strong>日常监测 · 每项选择周期；血压、血糖、体重选择监测时间</strong>
           {MONITORING_METRICS.map(([type, label]) => { const selected = monitoringItems.find(item => item.type === type); const periods = splitMonitoringPeriods(selected?.time); const choices = MONITORING_PERIODS[type] || []; return <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
             <label style={{ minWidth: 76 }}><input type="checkbox" checked={!!selected} onChange={e => setMonitoringItems(previous => e.target.checked ? [...previous, { type, time: type === 'weight' ? '晨起' : '', frequency: '' }] : previous.filter(item => item.type !== type))} /> {label}</label>

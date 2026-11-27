@@ -1,4 +1,5 @@
 import nutritionMetricRules from '../../../shared/nutritionComparisonMetrics.cjs'
+import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
 import ProfessionalAssessmentFields from '../components/ProfessionalAssessmentFields'
 import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
@@ -567,6 +568,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }, [patientMode, id, year, planType, currentPlanVersion, dirty, metricSelectionDirty])
   const [confirmedAt, setConfirmedAt] = useState(null)
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
+  const [sourceDecisions, setSourceDecisions] = useState([])
   const [generationError, setGenerationError] = useState('')
   useEffect(() => setGenerationError(''), [id, year, planType])
   const [staffList, setStaffList]   = useState([])
@@ -630,6 +632,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getAnnualManagementDecisions(id, year),
       ]).then(([patRes, planRes, preparationRes, assessmentRes, targetsRes, decisionsRes]) => {
         if (cancelled) return
+        setSourceDecisions(decisionsRes.data || [])
         setClosedLoopEnabled(preparationRes.enabled !== false)
         setPatient(patRes.data?.user || patRes.data)
         setProfessionalAssessments(assessmentRes.data || [])
@@ -968,7 +971,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         : `「${ptName}」标准动作筛查完成，当前资料下暂无适用项目`)
     } catch (err) {
       setGenerationCoverage([])
-      setGenerationError(err.message || 'AI生成方案失败')
+      setGenerationError({ message: err.message || 'AI生成方案失败', issueId: err.issueId, field: err.correctionField })
+      if (err.issueId) openDetailedAction('#annual-generation-error')
       toast(err.message || 'AI生成方案失败')
     } finally {
       setAiPlanLoading(false)
@@ -1268,6 +1272,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
   }
+  const correction = generationError?.issueId && sourceDecisions.find(row => `management_issue:${row._id}` === generationError.issueId)
   const locateDraftIssue = issue => {
     const { key, index, message, title } = issue
     if (key === 'ai') return nav(`/patients/${id}?tab=ai&checkupReview=1&checkupYear=${year}&checkupText=${encodeURIComponent(title)}#ai-checkup-review`)
@@ -1543,7 +1548,14 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         <ReportFollowUpDrafts patientId={id} year={year} canEdit={canEdit} />
       )}
 
-      {generationError && <div role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError}。已有方案未被本次生成替换。</div>}
+      {generationError && <div id="annual-generation-error" role="alert" style={{ padding: 16, marginBottom: 16, background: '#FFF1F2', color: '#9F1239', borderRadius: 10 }}>生成未完成：{generationError.message}。已有方案未被本次生成替换。
+        {correction && <div style={{ marginTop: 8 }}>
+          {correction.sourceSnapshot?.reportTitle || '原管理决定'} · {correction.title}　
+          <SpecialtyConcernButton key={correction._id} correctionId={correction._id} correctionField={generationError.field} correctionMessage={generationError.message} patientId={id} year={year} staff={staff} toast={toast}
+            source={{ kind: correction.sourceKey.split(':')[0], reportId: correction.reportId, itemId: correction.itemId, recordId: correction.symptomRecordId }}
+            sourceLabel={correction.sourceSnapshot?.reportTitle} onSaved={() => { setGenerationError(''); toast('管理决定已更新，可重新生成方案') }} />
+        </div>}
+      </div>}
       {patientMode && pushedAt && !annualPilot && <div style={{ padding: 12, marginBottom: 16, background: '#F0F8F3', borderRadius: 8, color: '#2F614A', fontSize: 13 }}>方案已发送给客户，并已启动相应随访与专业评估。客户提出修改意见后，请核对并局部修订。</div>}
 
       {annualPilot && pushedAt && patientMode && plansByType[planType]?._id && <AnnualExecutionReview key={`${id}:${plansByType[planType]._id}`} patientId={id} planId={plansByType[planType]._id} planVersion={currentPlanVersion} canEdit={canEdit} onDataChange={setExecutionReviewData} />}

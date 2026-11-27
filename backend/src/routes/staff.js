@@ -15650,7 +15650,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       .select('title type documentCategory institution hospital checkDate reportItems.institution reportItems.itemId reportItems.name reportItems.value reportItems.status reportItems.examDate reportItems.modality reportItems.findings reportItems.diagnosis reportItems.conclusion')
       .sort({ checkDate: -1, createdAt: -1 }).lean();
     const management = closedLoop ? await require('../utils/annualManagementEvidence').load(user._id, year) : { evidence: [], stale: [] };
-    const actionEvidence = require('../utils/annualManagementEvidence').generationActionEvidence(management.evidence);
+    const actionEvidence = require('../utils/annualManagementEvidence').generationActionEvidence(management.evidence, annualFlowForYear);
     if (management.stale.length) return res.status(409).json({ success: false, message: `以下管理方向的来源报告已变化，请重新核对：${management.stale.join('、')}` });
     if (management.unresolved?.length) return res.status(409).json({ success: false, message: `已审核AI健康信息整理还有待完善检查未由顾问逐项处理：${management.unresolved.join('、')}` });
     const confirmedReviews = require('../utils/annualReviewPlan').reviewGroups(management.evidence);
@@ -15659,6 +15659,16 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     for (const source of management.evidence) {
       for (const direction of require('../utils/annualManagementEvidence').directionsOf(source.content)) {
       if (direction === 'nutrition_assessment') continue;
+      if (annualFlowForYear && direction === 'monitoring') {
+        try {
+          const items = source.content.directionTimings?.monitoring?.items;
+          require('../utils/annualManagementAction').normalizeTiming({ items: Array.isArray(items) ? items : [] }, direction);
+        } catch (error) {
+          return res.status(409).json({ success: false, issueId: source.id, correctionField: 'monitoring',
+            message: `“${source.content.problem}”的日常监测需补充：${error.message}。请在原管理决定中修正后重新生成` });
+        }
+        continue;
+      }
       if (source.content.legacyReviewNote) return res.status(409).json({ success: false, message: `“${source.content.problem}”的顾问备注写有复查期限，请在原管理决定中补齐复查间隔和具体项目后重新生成` });
       const review = source.content.reviewPlan?.kind === 'recheck' && ['abnormal_followup', 'ongoing_management'].includes(direction);
       if (source.content.reviewPlan?.kind === 'recheck' && direction === 'ongoing_management') continue;
@@ -15671,7 +15681,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       }
       if (review && !allowedKeys.includes('abnormal_followup')) return res.status(409).json({ success: false, message: `“${source.content.problem}”需要复查，但当前模板未启用定期复查板块` });
       if (direction !== 'ongoing_management' && !allowedKeys.includes(direction)) {
-        return res.status(409).json({ success: false, message: `“${source.content.problem}”的管理方向未在当前年度方案服务版本启用，请核对模板` });
+        return res.status(409).json({ success: false, issueId: source.id, correctionField: 'direction', message: `“${source.content.problem}”的管理方向（${direction === 'monitoring' ? '日常监测' : direction}）未在当前年度方案服务版本启用，请核对原管理决定和服务模板` });
       }
       }
     }

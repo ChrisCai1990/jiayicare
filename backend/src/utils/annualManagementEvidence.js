@@ -239,7 +239,15 @@ function managementTargets(evidence = [], pilot = true) {
   });
 }
 
-function generationActionEvidence(evidence = []) {
+function generationActionEvidence(evidence = [], manualMonitoring = false) {
+  if (manualMonitoring) return evidence.flatMap(item => {
+    const selected = directionsOf(item.content);
+    if (!selected.includes('monitoring')) return selected.some(value => value !== 'nutrition_assessment') ? [item] : [];
+    const directions = selected.filter(value => value !== 'monitoring');
+    if (!directions.some(value => value !== 'nutrition_assessment')) return [];
+    const { monitoring, ...directionTimings } = item.content.directionTimings || {};
+    return [{ ...item, content: { ...item.content, directions, direction: directions[0], directionTimings } }];
+  });
   return evidence.filter(item => directionsOf(item.content).some(value => value !== 'nutrition_assessment'));
 }
 

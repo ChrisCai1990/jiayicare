@@ -84,4 +84,4 @@ function parseDraft(value) {
   return { goal, action };
 }
 
-module.exports = { normalizeAction, parseDraft };
+module.exports = { normalizeTiming, normalizeAction, parseDraft };

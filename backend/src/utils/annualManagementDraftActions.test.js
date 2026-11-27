@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { draftPlanActions, validatePlanCoverage, managementTargets } = require('./annualManagementEvidence');
+const { draftPlanActions, validatePlanCoverage, managementTargets, generationActionEvidence } = require('./annualManagementEvidence');
 const { normalizeAction } = require('./annualManagementAction');
 
 test('日常监测逐项保存，血压与体重独立带入方案并逐项校验', () => {
@@ -97,4 +97,15 @@ test('多选方向的独立日期只进入各自行动', () => {
   assert.equal(actions.find(row => row.key === 'medical_treatment').record.visit_time, '2027-01-19');
   assert.equal(actions.find(row => row.key === 'checkup_completion').record.time, '2027-02-20');
   assert.equal(managementTargets(evidence)[0].directionTimings.nutrition_assessment.firstDueDate, '2026-12-01');
+});
+
+test('新版手工监测只从 AI 动作中移出，混合来源保留其他方向', () => {
+  const monitoring = { id: 'management_issue:1', content: { direction: 'monitoring' } };
+  const mixed = { id: 'management_issue:2', content: { direction: 'monitoring',
+    directions: ['monitoring', 'medical_treatment'], directionTimings: { monitoring: { items: [] }, medical_treatment: { mode: 'pending' } } } };
+  const sources = [monitoring, mixed];
+  assert.deepEqual(generationActionEvidence(sources, false), sources);
+  assert.deepEqual(generationActionEvidence(sources, true), [{ id: mixed.id, content: { direction: 'medical_treatment',
+    directions: ['medical_treatment'], directionTimings: { medical_treatment: { mode: 'pending' } } } }]);
+  assert.equal(mixed.content.directions[0], 'monitoring');
 });
