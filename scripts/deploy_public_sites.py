@@ -11,6 +11,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
+import urllib.request
+import urllib.error
 from ssh_config import connect
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -139,6 +141,38 @@ with open('/tmp/jiayicare-public-sites.lock','w') as lock:
             out.write(remote)
         sftp.close()
         print(run(client, f'python3 {stage}/apply.py {stage}'))
+        changed_urls = []
+        for name in changed:
+            if not name.startswith('corporate-site/') or Path(name).suffix.lower() != '.html':
+                continue
+            relative = Path(name).relative_to('corporate-site').as_posix()
+            if relative == 'index.html':
+                changed_urls.append('https://www.jiaycare.com/')
+            elif relative.endswith('/index.html'):
+                changed_urls.append('https://www.jiaycare.com/' + relative[:-len('index.html')])
+            else:
+                changed_urls.append('https://www.jiaycare.com/' + relative)
+        changed_urls = sorted(set(changed_urls))
+        key_path = ROOT / 'corporate-site' / 'indexnow-key.txt'
+        if changed_urls and key_path.is_file():
+            key = key_path.read_text(encoding='utf-8').strip()
+            payload = json.dumps({
+                'host': 'www.jiaycare.com',
+                'key': key,
+                'keyLocation': 'https://www.jiaycare.com/indexnow-key.txt',
+                'urlList': changed_urls,
+            }).encode('utf-8')
+            request = urllib.request.Request(
+                'https://api.indexnow.org/indexnow',
+                data=payload,
+                headers={'Content-Type': 'application/json; charset=utf-8'},
+                method='POST',
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=20) as response:
+                    print(json.dumps({'indexnow': response.status, 'urls': changed_urls}))
+            except Exception as error:
+                print(json.dumps({'indexnow': 'notification failed', 'error': str(error), 'urls': changed_urls}))
     finally:
         client.close()
 
