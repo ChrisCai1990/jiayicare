@@ -1,3 +1,4 @@
+import reminderReview from '../../../shared/annualReminderReview.cjs'
 export const VISIT_DATE_FIELDS = { medical_treatment: 'visit_time', checkup_completion: 'time', abnormal_followup: 'time' }
 
 export function hospitalIdentity(value) {
@@ -200,10 +201,10 @@ export function suggestedAssistedVisits(data) {
 }
 
 export function nearDateCandidates(data) {
-  const rows = nearbyVisitRows(data).filter(item => item.hospital && item.date && !item.row.scheduleSeparationReason?.trim() && !item.row.datePending)
-  return rows.filter(item => rows.some(other => other.key !== item.key && other.hospital === item.hospital &&
+  const rows = nearbyVisitRows(data).filter(item => item.date && !item.row.scheduleSeparationReason?.trim() && !item.row.datePending)
+  return rows.filter(item => rows.some(other => other.key !== item.key && (reminderReview.needsReview(item, other) || (item.hospital && other.hospital === item.hospital &&
     (!item.row.visitMergeConfirmed || !other.row.visitMergeConfirmed) &&
-    Math.abs(Date.parse(other.date) - Date.parse(item.date)) <= 14 * 86400000))
+    Math.abs(Date.parse(other.date) - Date.parse(item.date)) <= 14 * 86400000))))
 }
 
 export function byVisitDepartment(items, departmentFor) {

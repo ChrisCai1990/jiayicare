@@ -30,4 +30,13 @@ function bookingRequirements(task) {
   };
 }
 
-module.exports = { bookingRequirements };
+function bookingBrief(task, slots) {
+  const type = task.deliveryType || task.formData?.serviceRequest?.serviceType;
+  const service = require('./annualDispatch.cjs').labels[type];
+  const action = type === 'proxy_visit' ? '帮助客户预约代诊' : type === 'proxy_booking' ? '为客户代办预约' : service ? '协助客户安排' + service : '协助客户安排预约';
+  const needsOrder = slots.some(slot => slot.orderDepartment || slot.title === '开单门诊');
+  const hasExams = slots.some(slot => slot.type === 'exam');
+  return action + (needsOrder ? '，联系开单科室落实检查单' : '') + (hasExams ? '，逐项核对检查预约方式' : '') + '，并向客户确认实际安排。';
+}
+
+module.exports = { bookingRequirements, bookingBrief };
