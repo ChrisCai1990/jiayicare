@@ -46,7 +46,7 @@ function lifestyleSummary(label,rows){
   if(alcohol.length)parts.push(`饮酒记录覆盖${coveredDays(alcohol)}天${alcoholTop?`，${alcoholTop[1]}条填“${alcoholTop[0]}”`:''}`);
   pattern=parts.join('；');
  }
- if(!pattern){const common=commonValues(rows).filter(([,n])=>n>1);pattern=common.length?`较常见的记录为${common.map(([value,n])=>`${value.slice(0,24)}（${n}条）`).join('、')}`:'具体内容多样，需结合原记录核对';}
+ if(!pattern){const common=commonValues(rows).filter(([,n])=>n>1 || rows.length===1);pattern=common.length?`较常见的记录为${common.map(([value,n])=>`${value.slice(0,24)}（${n}条）`).join('、')}`:'具体内容多样，需结合原记录核对';}
  return `${scope}；${pattern}。${days<15?'这些描述仅代表已记录的日期。':''}`;
 }
 function sections({records=[],reports=[],followups=[]}={}){

@@ -531,7 +531,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
             </div>
             {!expanded && activeSection && <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: activeSection.background, borderLeft: `4px solid ${activeSection.color}` }}>
               <div style={{ fontWeight: 800, color: activeSection.color, marginBottom: 7 }}>{activeSection.title}</div>
-              {activeSection.lines.length ? activeSection.lines.map((line, index) => <AssessmentLine key={index} line={line} color={activeSection.color} />) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
+              {activeSection.lines.length ? activeSection.lines.map((line, index) => <React.Fragment key={index}>{line.startsWith('健康数据记录习惯：') && <h4>行为习惯变化</h4>}{line.startsWith('日常监测数据：') && <h4>健康指标变化</h4>}<AssessmentLine line={line} color={activeSection.color} /></React.Fragment>) : <div style={{ color: '#7A8C83', fontSize: 13 }}>本板块暂无内容</div>}
             </div>}
             <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => { if (!expanded && !Number.isInteger(activeSectionIndex)) setActiveAssessmentSections(values => ({ ...values, [item._id]: 0 })); setExpandedAssessments(values => ({ ...values, [item._id]: !expanded })) }}>{expanded ? '收起正文' : (canNutritionReview || canDoctorReview || canTeamEdit ? '查看并修改四个板块' : '查看原文')}</button>
             {expanded && <>

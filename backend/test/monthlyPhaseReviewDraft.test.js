@@ -6,7 +6,13 @@ const MedicalReport = require('../src/models/MedicalReport');
 const ServiceRecord = require('../src/models/ServiceRecord');
 const { buildMonthlyPhaseReviewDraft } = require('../src/utils/monthlyPhaseReviewDraft');
 
-const query = rows => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => rows }) }) }) });
+const query = rows => {
+  const chain={sort:()=>chain,limit:()=>chain,select:()=>chain,lean:async()=>rows};
+  return chain;
+};
+test.beforeEach(t=>{
+  for(const name of ['AnnualPlan','HealthPlan']) t.mock.method(require('../src/models/'+name),'findOne',()=>query(null));
+});
 
 test('月度四板块仅列已归类的筛查数据，医疗记录条数不冒充原因分析', async t => {
   t.mock.method(HealthRecord, 'find', () => query([{ type: 'weight', label: '体重', recordedAt: new Date('2026-10-10') }]));
@@ -40,7 +46,7 @@ test('月度底稿写明体重下降及同期生活记录，并提出具体核�
   assert.match(draft.content, /早餐：鸡蛋、面包/);
   assert.match(draft.content, /步行30分钟/);
   assert.match(draft.content, /不能认定因果/);
-  assert.match(draft.content, /本期暂无明确问题需要新增措施/);
+  assert.match(draft.content, /团队行动与复核/);
   assert.doesNotMatch(draft.content, /体重下降.*因.*步行/);
 });
 

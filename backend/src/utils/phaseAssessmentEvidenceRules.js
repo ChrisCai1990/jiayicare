@@ -6,4 +6,4 @@ const PHASE_ASSESSMENT_EVIDENCE_RULES = `只描述有来源的记录、日期、
 生活方式与指标必须有相近时间的两类记录，且存在可比较的变化，才能描述可观察的时间关联，并说明不代表因果；否则明确写“现有记录无法分析两者关联”，指出缺少哪类同期证据。不得从一次饮食描述推断整月膳食结构发生变化。
 营养相关问题交已分配营养师结合现有饮食记录和日常习惯核对；若需要进一步访谈，说明需确认的具体问题，不把AI推测当作营养师结论。健康顾问在营养师核对后综合确认下一步事项、责任角色和复评时间。`;
 
-module.exports = { PHASE_ASSESSMENT_EVIDENCE_RULES: PHASE_ASSESSMENT_EVIDENCE_RULES+'\n最新四板块口径（优先于旧模板要求）：\n'+require('./reviewFourSections').rules };
+module.exports = { PHASE_ASSESSMENT_EVIDENCE_RULES: PHASE_ASSESSMENT_EVIDENCE_RULES+'\n最新四板块口径（优先于旧模板要求）：\n'+require('./phaseGoalAssessment').rules };

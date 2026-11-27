@@ -73,15 +73,16 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
   const monthlyWindow = end.getTime() - start.getTime() <= 32 * 86400000;
   const healthRecordsQuery = HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end }, deletedAt: null }).sort({ recordedAt: 1 })
     .select('category type label value unit extra status note recordedAt recordedBy.source');
-  const [records, followups, plan, reports, nutritionPlan] = await Promise.all([
+  const [records, followups, plan, reports, nutritionPlan, previousCustomerRecords] = await Promise.all([
     (monthlyWindow ? healthRecordsQuery : healthRecordsQuery.limit(240)).lean(),
     FollowUp.find({ patientId: user._id, date: { $gte: start, $lte: end } }).sort({ date: 1 })
-      .select('date type status theme content plannedContent executedContent vitals checkInItems completedAt cancelReason isBlocked').limit(60).lean(),
+      .select('date type status theme content plannedContent executedContent vitals checkInItems completedAt cancelReason isBlocked managementIssueIds sourceAnnualPlanId').lean(),
     AnnualPlan.findOne({ patientId: user._id, confirmedAt: { $ne: null, $lte: end } }).sort({ confirmedAt: -1 })
       .select('year planType templateName moduleData notes confirmedAt').lean(),
     MedicalReport.find({ user: user._id, audit_status: 'audited', checkDate:{$lte:new Date(end.getTime()+8*3600000).toISOString().slice(0,10)} }).sort({ checkDate: -1, createdAt: -1 }).limit(100)
-      .select('type documentCategory screeningItemId screeningL1 screeningCategory title reportYear checkDate institution examConclusion keyFindings reportItems.name reportItems.value reportItems.unit reportItems.status reportItems.conclusion').lean(),
+      .select('type documentCategory screeningItemId screeningL1 screeningCategory title reportYear checkDate institution examConclusion keyFindings reportItems.name reportItems.value reportItems.unit reportItems.status reportItems.conclusion reportItems.screeningKey reportItems.screeningKeys').lean(),
     require('../models/HealthPlan').findOne({patientId:user._id,type:'nutrition',confirmedAt:{$ne:null,$lte:end}}).sort({confirmedAt:-1}).select('title content items description startDate endDate confirmedAt').lean(),
+    HealthRecord.find({user:user._id,deletedAt:null,'recordedBy.source':'customer',recordedAt:{$gte:new Date(+start-(end-start+1)),$lt:start}}).select('type label recordedAt recordedBy.source').lean(),
   ]);
   const reportBaselines = reports.map(report => ({
     title: report.title, date: report.checkDate || report.reportYear, institution: report.institution,
@@ -98,6 +99,7 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     monitoringCoverage: { recordCount: records.length, distinctDays: daysCovered.size, types },
     comparableChanges: { weight: weightChange },
     currentLifestyle: { lifestyle: user.lifestyle, lifestyle_data: user.lifestyle_data, preferences: user.preferences },
+    previousCustomerRecords,
     confirmedAnnualPlan: plan,
     confirmedNutritionPlan: nutritionPlan,
     periodFollowups: followups,
