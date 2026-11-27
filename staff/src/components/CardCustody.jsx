@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { usePermission } from '../App'
 import Pagination from './Pagination'
+import { ArrowLeft, ChevronRight, ClipboardList, CreditCard, Search } from 'lucide-react'
+import './custodyLedger.css'
 
 const states = { none: '未寄存', stored: '在库', lent: '已借出', released: '已取回' }
 const actions = { deposit: '登记寄存', lend: '登记借出', return: '归还入库', release: '客户取回' }
@@ -38,18 +40,38 @@ export function CustodyLedger() {
     }).catch(err => { if (active) setError(err.message) })
     return () => { active = false }
   }, [mode, search, page, reload])
-  return <div className="page"><Link to="/patients">返回我的会员</Link><h1 className="page-title">医保卡台账</h1>
-    <div className="card card-body"><label>搜索会员<input className="form-control" placeholder="姓名、手机号或客户编号" value={search} onChange={e => { setPage(1); setSearch(e.target.value) }} /></label>
-      <label>医保卡状态<select className="form-control" value={mode} onChange={e => { setPage(1); setMode(e.target.value) }}>
-        {Object.entries({ active: '寄存中（在库及借出）', stored: '在库', lent: '已借出', overdue: '逾期未还', released: '已取回' }).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-      </select></label></div>
-    {error && <p role="alert">{error} <button onClick={() => setReload(reload + 1)}>重试</button></p>}
-    {!data && !error && <p>正在读取台账…</p>}
-    {data && <><p>共 {data.total} 位会员</p>{data.patients.map(card => <div className="card card-body" key={card._id}>
-      <Link to={'/patients/' + card._id + '?tab=info#card-custody'}>{card.member.name || '查看会员'}</Link>
-      <strong>{states[card.state]} {overdue(card) && '· 逾期未还'}</strong><EventDetails event={card.current} />
-    </div>)}{data.total > 20 && <Pagination page={page} totalPages={Math.ceil(data.total / 20)} onChange={setPage} />}</>}
-  </div>
+  const can = usePermission()
+  const filters = { active: '寄存中', stored: '在库', lent: '已借出', overdue: '逾期未还', released: '已取回' }
+  const initialView = mode === 'active' && !search
+  return <main className="page custody-ledger">
+    <Link className="custody-back" to="/patients"><ArrowLeft size={15} />我的会员</Link>
+    <header className="custody-heading"><span className="custody-icon"><CreditCard size={25} /></span><h1>医保卡台账</h1></header>
+    <section className="custody-panel" aria-label="医保卡记录">
+      <div className="custody-tools">
+        <div role="group" aria-label="医保卡状态" className="custody-filters">
+          {Object.entries(filters).map(([key, label]) => <button type="button" key={key} aria-pressed={mode === key}
+            onClick={() => { setPage(1); setMode(key) }}>{label}</button>)}
+        </div>
+        <label className="custody-search"><Search size={16} /><input type="search" aria-label="搜索会员" placeholder="搜索姓名、手机号或客户编号" value={search}
+          onChange={e => { setPage(1); setSearch(e.target.value) }} /></label>
+      </div>
+      <div className="custody-caption"><h2>{filters[mode]}记录</h2>{data && <span>共 {data.total} 位会员</span>}</div>
+      {error && <div className="custody-message" role="alert">{error}<button className="btn btn-secondary" onClick={() => setReload(n => n + 1)}>重试</button></div>}
+      {!data && !error && <div className="custody-message" role="status">正在读取台账…</div>}
+      {data && !data.patients.length && <div className="custody-message">
+        <span className="custody-empty-icon"><ClipboardList size={32} strokeWidth={1.5} /></span>
+        <strong>{search ? '未找到匹配的会员' : '暂无' + filters[mode] + '记录'}</strong>
+        {initialView && can('patients','edit') && <><p>打开会员的客户概览，在「医保卡寄存」中登记第一张卡。</p><Link className="btn btn-secondary" to="/patients">前往会员列表<ChevronRight size={15} /></Link></>}
+        {!initialView && <button className="btn btn-secondary" onClick={() => { setMode('active'); setSearch(''); setPage(1) }}>重置筛选</button>}
+      </div>}
+      {data?.patients.map(card => <article className="custody-row" key={card._id}>
+        <div className="custody-member"><Link to={'/patients/' + card._id + '?tab=info#card-custody'}>{card.member.name || '查看会员'}<ChevronRight size={15} /></Link>
+          <span className={'custody-status ' + (overdue(card) ? 'overdue' : card.state)}>{overdue(card) ? '逾期未还' : states[card.state]}</span></div>
+        <div className="custody-details"><EventDetails event={card.current} /></div>
+      </article>)}
+      {data?.total > 20 && <Pagination page={page} totalPages={Math.ceil(data.total / 20)} onChange={setPage} />}
+    </section>
+  </main>
 }
 export default function CardCustody({ patientId, services }) {
   const can = usePermission()

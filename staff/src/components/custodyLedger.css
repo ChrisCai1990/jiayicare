@@ -1,0 +1,40 @@
+.custody-ledger { width: 100%; max-width: 1280px; margin-inline: auto; }
+.custody-back, .custody-member a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.custody-back { color: #526b61; font-size: 13px; }
+.custody-back:hover, .custody-member a:hover { text-decoration: underline; }
+.custody-heading { display: flex; align-items: center; gap: 13px; margin: 16px 0 22px; }
+.custody-heading h1 { margin: 0; color: #183c31; font-size: clamp(23px, 2vw, 30px); line-height: 1.3; }
+.custody-icon, .custody-empty-icon { display: grid; place-items: center; background: #e1f0e9; color: #297556; border-radius: 12px; }
+.custody-icon { width: 46px; height: 46px; }
+.custody-panel { background: #fff; border: 1px solid #dce6df; border-radius: 16px; box-shadow: 0 5px 20px #183c3108; }
+.custody-tools { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; padding: 20px 24px; border-bottom: 1px solid #e3ebe6; }
+.custody-filters { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; background: #f0f5f2; border-radius: 10px; }
+.custody-filters button { font: inherit; font-size: 14px; color: #465e52; border: 0; background: transparent; border-radius: 7px; padding: 8px 13px; cursor: pointer; }
+.custody-filters button:hover { background: #e1eae4; }
+.custody-filters button[aria-pressed=true] { background: #22684e; color: white; }
+.custody-search { display: flex; align-items: center; gap: 8px; border: 1px solid #cfdcd4; border-radius: 9px; padding: 9px 12px; color: #557163; width: min(100%, 270px); }
+.custody-search:focus-within { outline: 2px solid #43846c; }
+.custody-search input { min-width: 0; width: 100%; font: inherit; font-size: 14px; border: 0; outline: 0; background: transparent; }
+.custody-caption { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 18px 24px 12px; }
+.custody-caption h2 { font-size: 16px; margin: 0; }
+.custody-caption span, .custody-message p { color: #62756a; font-size: 13px; }
+.custody-message { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 12px; min-height: 225px; padding: 24px; text-align: center; }
+.custody-empty-icon { width: 62px; height: 62px; background: #eff6f2; border-radius: 50%; }
+.custody-message p { margin: 0; }
+.custody-message a { text-decoration: none; }
+.custody-row { margin: 0 24px; padding: 15px 0; border-top: 1px solid #e7ede9; display: grid; gap: 14px; grid-template-columns: minmax(150px,1fr) 3fr; }
+.custody-member { display: flex; flex-wrap: wrap; align-items: baseline; align-content: start; gap: 8px; }
+.custody-member a { color: #205e49; font-weight: 600; }
+.custody-status { font-size: 12px; padding: 2px 8px; border-radius: 9px; background: #eff2f1; color: #4c5c53; }
+.custody-status.stored { background: #e4f4eb; color: #286748; }
+.custody-status.lent { background: #fff2d9; color: #775414; }
+.custody-status.overdue { background: #fae5df; color: #9c3c26; }
+.custody-details { font-size: 14px; line-height: 1.7; color: #455c50; overflow-wrap: anywhere; }
+@media (max-width: 680px) {
+  .custody-tools { padding: 14px; flex-direction: column-reverse; align-items: stretch; }
+  .custody-search { width: 100%; box-sizing: border-box; }
+  .custody-filters { justify-content: flex-start; }
+  .custody-filters button { flex: 1 0 auto; padding: 8px 5px; font-size: 13px; }
+  .custody-caption { padding-inline: 16px; }
+  .custody-row { grid-template-columns: 1fr; margin-inline: 16px; gap: 7px; }
+}
