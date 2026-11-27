@@ -20465,7 +20465,8 @@ async function runReportPageParseControlled(reportId, pageNum) {
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
-  const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage);
+  const oldPage = (latest.reportItems || []).filter(belongsToRequestedPage)
+    .map(item => item.toObject ? item.toObject() : item);
   const latestMissing = filterMissingReportItems(oldPage, newPage, supplementOptions);
   const latestEnrichment = newPage.filter(item => supplementMatches(oldPage, item, supplementOptions).length && hasReportItemEvidence(item));
   const deletedItems = (latest.deletedReportItems || []).filter(belongsToRequestedPage);
