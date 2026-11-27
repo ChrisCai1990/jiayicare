@@ -132,7 +132,7 @@ async function snapshotFor(patientId, year, end, catalog, live) {
   const { projectEvidence } = require('../utils/woncaEvidence');
   const createdAt = { $lte: end };
   const [reports, drafts, plans, decisions, reviews, prep, user, medications, problemReview] = await Promise.all([
-    Report.find({ user:patientId, createdAt }).select('type documentCategory createdAt updatedAt aiStatus audit_status reviewedAt familyDoctorAudit.status checkDate date familyDoctorViewedAt advisorInterpretationConfirmedAt healthCourseDraft.status archiveOnly reportYear title screeningL2 reportItems.examDate reportItems.bodyPart reportItems.modality reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent reportItems.value reportItems.conclusion reportItems.diagnosis').sort({createdAt:-1}).lean(),
+    Report.find({ user:patientId, createdAt }).select('type documentCategory createdAt updatedAt aiStatus audit_status reviewedAt familyDoctorAudit.status checkDate date familyDoctorViewedAt advisorInterpretationConfirmedAt healthCourseDraft.status archiveOnly reportYear title screeningL2 advisorCorrection.status advisorCorrection.resubmittedAt reportItems.itemId reportItems.examDate reportItems.bodyPart reportItems.modality reportItems.name reportItems.orderName reportItems.screeningKey reportItems.screeningKeys reportItems.screeningParent reportItems.value reportItems.conclusion reportItems.diagnosis').sort({createdAt:-1}).lean(),
     Draft.find({ patientId, createdAt }).select('reportId status purpose followUpAutomation.status createdAt updatedAt advisorReviewedAt').sort({createdAt:-1}).lean(),
     AnnualPlan.find({ patientId, year, createdAt }).select('planType reviewStatus createdAt updatedAt moduleData pushedAt confirmedAt').sort({createdAt:1}).lean(),
     require('../models/AnnualManagementDecision').find({ patientId,year,createdAt }).select('sourceKey supersedes reviewedAt itemId title sourceSnapshot.item.name sourceSnapshot.items.itemId reportId symptomRecordId direction directions status createdAt updatedAt').lean(),
@@ -144,7 +144,14 @@ async function snapshotFor(patientId, year, end, catalog, live) {
   ]);
   const followUps = plans.length ? await FollowUp.find({ patientId, sourceAnnualPlanId:{ $in:plans.map(p=>p._id) },createdAt }).select('sourceAnnualPlanId date completedAt assignedTo status progressRecords.recordedAt progressRecords.consensusTopicOutcome createdAt updatedAt').lean() : [];
   const evidence=projectEvidence({user,reports,drafts,plans,tasks:followUps,decisions,reviews,prep,medications,year,end,catalog,problemReview});
-  evidence.pendingViews = live ? await Report.countDocuments(require('../utils/reportAuditGate').pendingDoctorAuditFilter(patientId,user?.archiveReviewSnapshotAt)) : null;
+  const pendingDocs = live ? await Report.find(require('../utils/reportAuditGate').pendingDoctorAuditFilter(patientId,user?.archiveReviewSnapshotAt))
+    .select('documentCategory type createdAt advisorCorrection.resubmittedAt').sort({createdAt:-1}).lean() : null;
+  evidence.pendingDocuments = pendingDocs?.map(r => ({
+    key: String(r._id).slice(-8).toUpperCase(),
+    category: require('../utils/woncaEvidence').materialCategory(r),
+    reason: r.advisorCorrection?.resubmittedAt ? '退回后重新提交' : '新增资料',
+  })) ?? null;
+  evidence.pendingViews = evidence.pendingDocuments?.length ?? null;
   const recent = reports.slice(0,100);
   const recentIds = new Set(recent.map(r=>String(r._id)));
   const legacy = require('../utils/researchCareJourney').deriveJourneySnapshot({reports:recent,drafts:drafts.filter(d=>recentIds.has(String(d.reportId))).slice(0,100),annualPlan:plans[0],followUps:followUps.filter(f=>String(f.sourceAnnualPlanId)===String(plans[0]?._id)),now:end});

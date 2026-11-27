@@ -14,6 +14,8 @@ const planTypes = {
 function sections(row) {
   const e = row.snapshot.evidence;
   return [
+    ...(e.pendingDocuments ? [['顾问待查看资料', ['资料编号','资料类型','待查看原因'],e.pendingDocuments.map(d=>[d.key,d.category,d.reason])]] : []),
+    ...(e.screeningRows ? [['年度专项筛查核对', ['资料编号','筛查项目','处理记录','管理方向'],e.screeningRows.map(d=>[d.report,d.item,d.state,d.direction || '—'])]] : []),
     [
       '年度方案',
       [

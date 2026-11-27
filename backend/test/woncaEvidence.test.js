@@ -86,3 +86,13 @@ test('历史退回与生成失败分开，药物审核与报告查看独立', ()
   assert.equal(r.drafts[0].generation, '生成失败');
   assert.match(r.drafts[0].state, /未区分/);
 });
+test('annual screening groups use examination year and explicit item evidence', () => {
+  const { screeningRows } = require('../src/utils/woncaEvidence');
+  const report = {_id:'report01', reportYear:2026, audit_status:'audited', advisorInterpretationConfirmedAt:new Date(),
+    reportItems:[{itemId:'1',screeningKey:'a'}, {itemId:'2',screeningKey:'a'}, {itemId:'3',screeningKey:'b'}, {itemId:'4',screeningKey:'c',examDate:'2025-12-12'}]};
+  const decision = {_id:'d1', reportId:'report01', sourceKey:'report_item:report01:1', itemId:'1', direction:'monitoring'};
+  const result = screeningRows([report,{...report,archiveOnly:true}], [decision], [{id:'a',label:'A'},{id:'b',label:'B'}], 2026);
+  assert.equal(result.length, 2);
+  assert.equal(result[0].direction, '日常监测');
+  assert.equal(result[1].state, '已解读／逐项决定未见记录');
+});
