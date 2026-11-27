@@ -645,7 +645,7 @@ export default function ServicePlansScreen({ navigation, route }) {
         ['复查项目', item.reviewItems?.join('、')],
         ['具体安排', item.interventionPlan],
         ['完成后', item.completionStandard],
-        ['安排时间', item.schedule],
+        [item.moduleKey === 'medical_treatment' ? '建议就诊日期' : '安排时间', item.schedule],
         ['执行频率', item.frequency],
         ['需要您完成', item.customerAction],
         ['医院／机构', item.careTarget?.hospital],

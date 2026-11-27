@@ -11977,13 +11977,9 @@ async function reviewAnnualDraft(req, res, preview) {
     }
     plan.moduleData = normalized;
     plan.markModified('moduleData');
-    if (require('../utils/annualFlowPilot').enabledForPlan(plan)) {
-      for (const [groupId, entries] of require('../utils/annualVisitGroups').visitGroups(plan.moduleData)) {
-        if (entries.length < 2 || entries.every(entry => entry.row.visitMergeConfirmed)) continue;
-        const message = `请确认是否合并“${groupId}”：${entries.map(({row, title}) => row.reviewItems?.join('、') || title).join('、')}`;
-        if (!preview) return res.status(409).json({ success: false, message });
-        problems.push({ key: 'visits', message });
-      }
+    for (const message of require('../utils/annualVisitGroups').unconfirmedVisitGroups(plan.moduleData)) {
+      if (!preview) return res.status(409).json({ success:false, message });
+      problems.push({key:'visits',message});
     }
     const issue = require('../utils/annualPlanPublishValidation').validate(plan.moduleData);
     if (preview) problems.push(...require('../utils/annualDraftIssues').draftIssues(plan.moduleData));
