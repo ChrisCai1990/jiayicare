@@ -17,7 +17,7 @@ function log(s, at, action, actual = '', previous = '') {
 function reconcile(original, entries, today, planActive = true) {
   const s = structuredClone(original);
   if (s.phase === 'finished') return s;
-  const endFirst = plus(s.firstStart, 84);
+  const endFirst = s.firstStart && plus(s.firstStart, 84);
   const endSecond = s.secondStart && plus(s.secondStart, 84);
   function advance(date) {
     const previous = s.targetAt;
@@ -31,7 +31,7 @@ function reconcile(original, entries, today, planActive = true) {
     }
   }
   for (const actual of [...new Set(entries)].sort()) {
-    if (actual <= s.lastMeasured || actual > today || actual > s.end) continue;
+    if ((s.enrolledOn && actual < s.enrolledOn) || actual <= s.lastMeasured || actual > today || actual > s.end) continue;
     advance(actual);
     const previous = s.targetAt;
     s.lastMeasured = actual;
@@ -83,11 +83,16 @@ async function persist(FollowUp, task, s) {
 }
 async function sync(task) {
   const FollowUp=require('../models/FollowUp'), User=require('../models/User'), Plan=require('../models/HealthPlan');
-  const [patient,plan]=await Promise.all([User.findById(task.patientId).select('bodyCompHistory').lean(),Plan.findOne({_id:task.sourceHealthPlanId,patientId:task.patientId,type:'nutrition'}).select('status').lean()]);
+  const annual = task.bodyCompCycle.serviceType === 'annual';
+  const source = annual
+    ? require('../models/AnnualPlan').findOne({_id:task.sourceAnnualPlanId,patientId:task.patientId}).select('reviewStatus pushedAt moduleData.nutrition_assessment.enabled')
+    : Plan.findOne({_id:task.sourceHealthPlanId,patientId:task.patientId,type:'nutrition'}).select('status');
+  const [patient,plan]=await Promise.all([User.findById(task.patientId).select('bodyCompHistory').lean(),source.lean()]);
   if(!patient || !plan)return null;
   const original=task.bodyCompCycle;
   const entries=measurementOptions(patient,original.lastMeasured).map(row=>row.measuredAt);
-  const s=reconcile(original,entries,day(new Date()),plan.status==='active');
+  const active = annual ? Boolean(plan.pushedAt && plan.reviewStatus === 'approved' && plan.moduleData?.nutrition_assessment?.enabled === true) : plan.status === 'active';
+  const s=reconcile(original,entries,day(new Date()),active);
   return JSON.stringify(original)===JSON.stringify(s)?task:persist(FollowUp,task,s);
 }
 function startScheduler(){

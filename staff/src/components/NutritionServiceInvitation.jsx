@@ -15,7 +15,7 @@ export default function NutritionServiceInvitation({task,onClose,onSaved}){
   return <div className="modal-overlay"><div className="modal" style={{maxWidth:620}}>
     <div className="modal-header"><h3>{task.theme}</h3><button onClick={onClose}>关闭</button></div>
     <div className="modal-body" style={{display:'grid',gap:12}}>
-      <p>营养服务　{s.start} 至 {s.end}　｜　强化 2 个周期</p>
+      <p>营养服务　{s.start} 至 {s.end}　｜　{s.serviceType==='annual'?'年度管理 · 每84天体测':'强化 2 个周期'}</p>
       <strong>{task.plannedContent}</strong>
       {s.phase!=='finished'&&<><div>当前安排　{s.targetAt}</div><label>{s.phase==='rest'?'协调日期 / 实际启动日':'体测计划日期'} <input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label>
       <div><button disabled={saving} onClick={()=>save('schedule')}>{s.phase==='rest'?'保存下次协调日期':s.phase==='quarter'&&s.waiting?'登记营养师确认的目标日':'保存预约日期'}</button>

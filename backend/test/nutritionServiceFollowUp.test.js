@@ -35,3 +35,12 @@ test('service expires, preserves history and blocks manual activity', () => {
   assert.throws(()=>action(initial,{action:'end',reason:' '},'2026-11-28'));
   assert.equal(reconcile(initial,[],'2026-11-28',false).phase,'finished');
 });
+
+test('annual invitation retains the assessment date until a new measurement, then rolls 84 days', () => {
+  const annual={phase:'quarter',serviceType:'annual',start:'2025-11-11',end:'2027-11-10',enrolledOn:'2026-11-27',targetAt:'2026-11-30',lastMeasured:'2026-04-22',history:[]};
+  assert.deepEqual(reconcile(annual,['2026-04-22','2026-08-01'],'2026-11-27'),annual);
+  const after=reconcile(annual,['2026-12-02'],'2026-12-03');
+  assert.equal(after.targetAt,'2027-02-24');
+  assert.deepEqual(reconcile(after,['2026-12-02'],'2026-12-03'),after);
+  assert.equal(reconcile(after,[],'2027-11-11').phase,'finished');
+});
