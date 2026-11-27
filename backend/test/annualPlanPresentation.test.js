@@ -118,3 +118,12 @@ test('就医标题可引用同一公开管理目标中的就诊事由，内部�
   assert.equal(item.schedule,'2026-11-30');
   assert.ok(!JSON.stringify(item).includes('仅内部研判'));
 });
+
+test('复查按建议日期升序，同日保序、待定置后，原索引及已确认分组保留', () => {
+  const records = ['2027-12-02','2029-01-27','2027/2/27','待确认','2026-12-01','2027-02-27','2026-12-01']
+    .map((time,index) => ({ time, items: '项目'+index, ...([4,6].includes(index) ? {visitGroupId:'同日',visitMergeConfirmed:true} : {}) }));
+  const view = buildAnnualPlanDisplayItems({abnormal_followup:{records}});
+  assert.deepEqual(view.map(row=>row.id), ['visit:同日', ...[2,5,0,1,3].map(i=>'abnormal_followup:'+i)]);
+  assert.deepEqual(view[0].visitItems.map(row=>row.title), ['项目4','项目6']);
+  assert.equal(records[0].time,'2027-12-02');
+});

@@ -101,7 +101,14 @@ function buildAnnualPlanDisplayItems(moduleData = {}) {
         service: { mode: 'monitoring', modeLabel: '按方案监测' } });
       return;
     }
-    records.forEach((record, index) => { if (record && Object.keys(record).length && !(moduleKey === 'personalized_followups' && internalDaily(record))) items.push(normalizeItem(moduleKey, record, index)); });
+    const displayRows = records.flatMap((record, index) =>
+      record && Object.keys(record).length ? [normalizeItem(moduleKey, record, index)] : []);
+    if (moduleKey === 'abnormal_followup') {
+      const { canonicalDay } = require('./annualPlanDates');
+      const sortDay = item => canonicalDay(item.schedule) || '9999-99-99';
+      displayRows.sort((left, right) => sortDay(left).localeCompare(sortDay(right)));
+    }
+    items.push(...displayRows);
   });
   const grouped = new Map();
   for (const [groupId, entries] of require('./annualVisitGroups').visitGroups(moduleData)) {
