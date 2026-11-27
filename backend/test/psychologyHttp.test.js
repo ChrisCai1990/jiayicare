@@ -40,7 +40,13 @@ test('HTTP authorization, audit and version boundaries with isolated model doubl
   assert.equal((await call('psychologist', { action: 'update', version: 0, status: 'ended' })).status, 403);
   assert.equal((await call('psychologist', { action: 'session', version: 9, content: 'x', date: '2026-11-07' })).status, 409);
   assert.equal(writes, 0);
-  assert.equal((await call('psychologist', { action: 'session', version: 0, content: '正式会谈', date: '2026-11-07T10:00:00+08:00' })).status, 200);
+  const session = { action: 'session', version: 0, content: '正式会谈', date: '2026-11-07T13:30:00+08:00', endDate: '2026-11-07T15:30:00+08:00', nextDate: '2026-11-14T13:30:00+08:00' };
+  for (const invalid of [{ endDate: session.date }, { endDate: 'invalid' }, { nextDate: session.endDate }]) {
+    assert.equal((await call('psychologist', { ...session, ...invalid })).status, 400);
+  }
+  assert.equal((await call('psychologist', session)).status, 200);
+  assert.equal(care.sessions[0].endDate.getTime(), Date.parse(session.endDate));
+  assert.equal(care.sessions[0].nextDate.getTime(), Date.parse(session.nextDate));
   assert.equal(writes, 1); assert.equal(care.sessions.length, 1);
   assert.equal((await call('familyDoctor', { action: 'update', version: 1, status: 'ended' })).status, 200);
   assert.equal((await call('psychologist')).status, 404);

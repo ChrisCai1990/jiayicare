@@ -82,9 +82,15 @@ router.post('/:id', async (req, res) => {
   if (req.body.version !== care.__v) return res.status(409).json({ success: false, message: '档案已更新，请刷新后重试' });
   if (req.body.action === 'session') {
     if (req.staff.role !== 'psychologist' || care.status !== 'active') return res.status(403).json({ success: false, message: '仅进行中的咨询师可以提交记录' });
-    const { content, date, nextDate } = req.body;
+    const { content, date, endDate, nextDate } = req.body;
     if (typeof content !== 'string' || !content.trim() || content.length > 30000 || !date || !Number.isFinite(Date.parse(date)) || (nextDate && !Number.isFinite(Date.parse(nextDate)))) return res.status(400).json({ success: false, message: '请填写有效日期和咨询记录' });
-    care.sessions.push({ content: content.trim(), date, nextDate: nextDate || null, authorId: req.staff._id });
+    if (endDate !== undefined && (typeof endDate !== 'string' || !Number.isFinite(Date.parse(endDate)) || Date.parse(endDate) <= Date.parse(date))) {
+      return res.status(400).json({ success: false, message: '咨询结束时间须晚于开始时间' });
+    }
+    if (nextDate && Date.parse(nextDate) <= Date.parse(endDate || date)) {
+      return res.status(400).json({ success: false, message: '下次预约时间须晚于本次咨询' });
+    }
+    care.sessions.push({ content: content.trim(), date, endDate, nextDate: nextDate || null, authorId: req.staff._id });
   } else if (req.body.action === 'transfer') {
     if (req.staff.role !== 'familyDoctor' || care.status === 'ended') return res.status(403).json({ success: false });
     if (!mongoose.isValidObjectId(req.body.psychologistId) || typeof req.body.reason !== 'string' || !req.body.reason.trim() || req.body.reason.length > 1000) return res.status(400).json({ success: false, message: '请选择咨询师并填写交接原因' });

@@ -11,9 +11,20 @@ const sessionSections = [
   ['progress', '咨询过程与进展', '记录本次咨询过程、采用的方法及进展'],
   ['recommendations', '风险及后续建议', '记录风险评估情况、后续建议与跟进安排'],
 ]
-const emptySession = () => ({ date: '', nextDate: '', ...Object.fromEntries(sessionSections.map(([key]) => [key, ''])) })
+const emptySession = () => ({ date: '', endDate: '', nextDate: '', ...Object.fromEntries(sessionSections.map(([key]) => [key, ''])) })
 // Keep the existing protected content contract and historical records intact.
 const sessionContent = session => sessionSections.map(([key, label]) => `【${label}】\n${session[key].trim()}`).join('\n\n')
+
+const sessionTime = (date, options) => new Date(date).toLocaleString('zh-CN', {
+  ...options, hour: '2-digit', minute: '2-digit', hour12: false,
+})
+const fullDate = { year: 'numeric', month: '2-digit', day: '2-digit' }
+function sessionPeriod({ date, endDate }) {
+  const start = sessionTime(date, fullDate)
+  if (!endDate) return start
+  const sameDay = new Date(date).toDateString() === new Date(endDate).toDateString()
+  return start + ' – ' + sessionTime(endDate, sameDay ? {} : fullDate)
+}
 
 export default function PsychologyPage({ embedded = false, patient = null }) {
   const { staff } = useStaff()
@@ -61,23 +72,26 @@ export default function PsychologyPage({ embedded = false, patient = null }) {
       </> : <>
         {!patient && <button className="btn btn-secondary" onClick={() => setCare(null)}>返回列表</button>}
         <div className="psychology-record-header"><div><h2>咨询师记录</h2><span>{!patient && `${care.patient.name} · `}{{ active: '进行中', paused: '暂停', ended: '已结束' }[care.status]} · 共 {care.sessions.length} 次咨询</span></div><small>仅负责顾问与咨询师可见</small></div>
-        {[...care.sessions].sort((a, b) => new Date(b.date) - new Date(a.date) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).map((s, index) => <article className="card psychology-record" key={s._id}><details><summary><strong>{index === 0 ? '最近一次咨询' : '咨询记录'}</strong><time>{new Date(s.date).toLocaleString('zh-CN')}</time><span className="psychology-record-author">咨询师：{s.authorName || '未记录姓名'}</span><span className="psychology-record-toggle"><span className="when-closed">查看详情</span><span className="when-open">收起</span></span></summary><div className="psychology-record-body"><p style={{ whiteSpace: 'pre-wrap' }}>{s.content}</p>{s.originalContent && <details className="psychology-original-record"><summary>查看分类整理前的原始记录</summary><p style={{ whiteSpace: 'pre-wrap' }}>{s.originalContent}</p></details>}{s.nextDate && <p>下次咨询：{new Date(s.nextDate).toLocaleString('zh-CN')}</p>}</div></details></article>)}
+        {[...care.sessions].sort((a, b) => new Date(b.date) - new Date(a.date) || new Date(b.createdAt || 0) - new Date(a.createdAt || 0)).map((s, index) => <article className="card psychology-record" key={s._id}><details><summary><strong>{index === 0 ? '最近一次咨询' : '咨询记录'}</strong><time>{sessionPeriod(s)}</time><span className="psychology-record-author">咨询师：{s.authorName || '未记录姓名'}</span><span className="psychology-record-toggle"><span className="when-closed">查看详情</span><span className="when-open">收起</span></span></summary><div className="psychology-record-body"><p style={{ whiteSpace: 'pre-wrap' }}>{s.content}</p>{s.originalContent && <details className="psychology-original-record"><summary>查看分类整理前的原始记录</summary><p style={{ whiteSpace: 'pre-wrap' }}>{s.originalContent}</p></details>}{s.nextDate && <p>下次预约：{sessionTime(s.nextDate, fullDate)}</p>}</div></details></article>)}
         {!care.sessions.length && <p>尚未提交咨询记录。</p>}
         {!advisor && care.status === 'active' && <form className="card psychology-session-form" onSubmit={e => {
           e.preventDefault()
           if (sessionSections.some(([key]) => !session[key].trim())) { setError('请填写全部五项咨询记录；不适用的项目请注明原因。'); return }
+          if (session.endDate <= session.date) { setError('咨询结束时间须晚于开始时间'); return }
+          if (session.nextDate && session.nextDate <= session.endDate) { setError('下次预约时间须晚于本次咨询'); return }
           const content = sessionContent(session)
           if (content.length > 30000) { setError('咨询记录合计不能超过30000字，请精简后提交。'); return }
-          save({ action: 'session', content, date: session.date ? new Date(session.date).toISOString() : '', nextDate: session.nextDate ? new Date(session.nextDate).toISOString() : '' })
+          save({ action: 'session', content, date: new Date(session.date).toISOString(), endDate: new Date(session.endDate).toISOString(), nextDate: session.nextDate ? new Date(session.nextDate).toISOString() : '' })
         }}>
           <h3>新增会谈记录</h3>
           <p className="psychology-session-hint">请按以下五项填写，提交后负责顾问可完整查看。首次咨询或不适用的项目请注明情况。</p>
-          <label className="psychology-field">会谈时间 <input className="form-input" required type="datetime-local" value={session.date} onChange={e => setSession({ ...session, date: e.target.value })} /></label>
+          <label className="psychology-field">咨询开始时间 <input className="form-input" required type="datetime-local" value={session.date} onChange={e => setSession({ ...session, date: e.target.value })} /></label>
+          <label className="psychology-field">咨询结束时间 <input className="form-input" required type="datetime-local" min={session.date} value={session.endDate} onChange={e => setSession({ ...session, endDate: e.target.value })} /></label>
           {sessionSections.map(([key, label, placeholder], index) => <label className="psychology-session-section" key={key}>
             <span><span className="psychology-section-number">{index + 1}</span>{label} <span aria-hidden="true">*</span></span>
             <textarea className="form-input" required maxLength={30000} rows={4} value={session[key]} onChange={e => setSession({ ...session, [key]: e.target.value })} placeholder={placeholder} />
           </label>)}
-          <label className="psychology-field">下次咨询 <input className="form-input" type="datetime-local" value={session.nextDate} onChange={e => setSession({ ...session, nextDate: e.target.value })} /></label>
+          <label className="psychology-field">下次预约时间（选填） <input className="form-input" type="datetime-local" min={session.endDate} value={session.nextDate} onChange={e => setSession({ ...session, nextDate: e.target.value })} /></label>
           {error && <div role="alert" className="consultation-form-error">{error}</div>}
           <button className="btn btn-primary">提交正式记录</button>
         </form>}
