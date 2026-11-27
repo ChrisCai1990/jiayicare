@@ -5,7 +5,7 @@ test('按年度目标、六项阶段变化及后续分析并保持四卡片解�
  assert.equal(content.split('\n\n').length,4);
  assert.equal(content.split('\n').filter(s=>s.startsWith('- ')).length,12);
  assert.match(content,/三、问题分析\n- 记录与结果/);
- assert.match(content,/四、下一步规划\n- 客户行动/);
+ assert.match(content,/四、下一步规划\n- 团队跟进/);
  assert.match(content,/随访完成及时性/);
 });
 test('不完整或空内容不得保存成成功草稿',()=>{

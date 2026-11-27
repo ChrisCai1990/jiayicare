@@ -46,7 +46,7 @@ test('月度底稿写明体重下降及同期生活记录，并提出具体核�
   assert.match(draft.content, /早餐：鸡蛋、面包/);
   assert.match(draft.content, /步行30分钟/);
   assert.match(draft.content, /不能认定因果/);
-  assert.match(draft.content, /团队行动与复核/);
+  assert.match(draft.content, /团队跟进/);
   assert.doesNotMatch(draft.content, /体重下降.*因.*步行/);
 });
 
