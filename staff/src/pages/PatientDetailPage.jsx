@@ -56,7 +56,7 @@ import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import CardCustody from '../components/CardCustody'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { staffAPI, psychologyAPI, managementReviewAPI, API_ORIGIN } from '../api'
+import { staffAPI, psychologyAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import { useAiWorkbench } from '../components/AiWorkbenchProvider'
 import PatientInventoryConsumption from '../components/PatientInventoryConsumption'
@@ -2498,22 +2498,8 @@ export default function PatientDetailPage() {
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
-  const [currentScreeningPilot, setCurrentScreeningPilot] = useState(null)
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(() => checkupReviewYear || (annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')
     ? Number(annualWorkflowYear) : new Date().getFullYear()))
-  useEffect(() => {
-    let active = true
-    setCurrentScreeningPilot(null)
-    Promise.all([managementReviewAPI.get(id), staffAPI.getAnnualPlan(id, screeningSummaryYear)]).then(([access, response]) => {
-      if (!active) return
-      const plans = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean)
-      const plan = plans.find(row => row.pushedAt || row.confirmedAt) || plans[0]
-      setCurrentScreeningPilot(plan
-        ? plan.flowVersion === 2 || plan.flowVersion == null && access.restored === true
-        : access.newPlanFlowEnabled === true)
-    }).catch(() => { if (active) setCurrentScreeningPilot(false) })
-    return () => { active = false }
-  }, [id, screeningSummaryYear])
   useEffect(() => {
     if (annualWorkflowStep === 'screening' && /^\d{4}$/.test(annualWorkflowYear || '')) setScreeningSummaryYear(Number(annualWorkflowYear))
   }, [annualWorkflowStep, annualWorkflowYear, id])
@@ -7254,7 +7240,7 @@ export default function PatientDetailPage() {
                 </div>
               </div>
               <AnnualReviewCommunicationPanel patientId={id} year={screeningSummaryYear} staff={staff} toast={toast} onOpenReview={openSpecialtyReview} />
-              {currentScreeningPilot === null ? <div style={{ margin: '0 16px 14px', padding: 14 }}>正在读取筛查核对方式…</div> : currentScreeningPilot ? <CurrentScreeningChecklist patientId={id} year={Number(screeningSummaryYear)} reports={screeningReports} staff={staff} toast={toast} onOpenReport={openReportDetail} focusCheckupText={checkupReviewYear === Number(screeningSummaryYear) ? checkupReviewText : ''} openCheckupReview={!!checkupReviewYear} /> : null}
+              <CurrentScreeningChecklist patientId={id} year={Number(screeningSummaryYear)} reports={screeningReports} staff={staff} toast={toast} onOpenReport={openReportDetail} focusCheckupText={checkupReviewYear === Number(screeningSummaryYear) ? checkupReviewText : ''} openCheckupReview={!!checkupReviewYear} />
               {(() => {
                 // 2026-07-02：体检方案里已开具但客户还未做/未上传报告的检验检查项目，在这里做一条轻量提示——
                 // 不把方案项目直接并入下面的三层筛查树渲染（那块逻辑已经很复杂，硬塞进去容易出连锁问题），

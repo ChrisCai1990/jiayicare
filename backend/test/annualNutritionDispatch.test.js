@@ -27,7 +27,7 @@ test('年度草稿可单独形成内部营养师任务，保留指标快照且�
   assert.equal(first.taskRole, 'executor');
   assert.equal(String(first.assignedTo), String(nutritionistId));
   assert.deepEqual(first.formData.annualNutritionMetrics, ['体重', '空腹血糖', '睡眠质量']);
-  assert.equal(first.formData.annualFlowVersion, undefined);
+  assert.equal(first.formData.annualFlowVersion, 2);
   assert.equal(buildTask({ ...plan, flowVersion: 2 }, patient, { _id: actorId }).formData.annualFlowVersion, 2);
   assert.equal(isTask(first), true);
   assert.equal(String(buildTask(plan, patient, { _id: actorId })._id), String(first._id));

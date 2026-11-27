@@ -126,9 +126,9 @@ test('consensus trial advances topics on one task and closes after advisor decis
 test('consensus trial starts with one topic and advisor chooses the next after contact', async () => {
   const s = setup({ patientId: pilotId, formData: { healthConsensus: { question: '主题一', topicPath: ['主题一'], currentTopicIndex: 0 } } });
   const nextAt = new Date('2026-11-24T10:00:00+08:00').toISOString();
-  const first = await saveProgress({ ...s.args, body: { ...s.args.body, topicOutcome: 'next', nextTopic: '主题二', nextContactAt: nextAt } });
+  const first = await saveProgress({ ...s.args, now:new Date('2026-11-22T10:00:00+08:00'), body: { ...s.args.body, topicOutcome: 'next', nextTopic: '主题二', nextContactAt: nextAt } });
   assert.deepEqual(first.formData.healthConsensus.topicPath, ['主题一', '主题二']);
   assert.equal(first.formData.healthConsensus.currentTopicIndex, 1);
   assert.match(first.theme, /主题二/);
-  await assert.rejects(saveProgress({ ...s.args, body: { ...s.args.body, requestId: 'request-0002', updatedAt: first.updatedAt, topicOutcome: 'next', nextTopic: '<script>', nextContactAt: nextAt } }), { statusCode: 400 });
+  await assert.rejects(saveProgress({ ...s.args, now:new Date('2026-11-22T10:00:00+08:00'), body: { ...s.args.body, requestId: 'request-0002', updatedAt: first.updatedAt, topicOutcome: 'next', nextTopic: '<script>', nextContactAt: nextAt } }), { statusCode: 400 });
 });

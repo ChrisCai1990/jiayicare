@@ -5,7 +5,7 @@ import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { staffAPI, rehabAPI, managementReviewAPI } from '../api'
+import { staffAPI, rehabAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, MedicalResourcesContext, ModulePanel, RecordEditor, NutritionComparisonMetricPicker } from '../components/ModulePanel'
 import AnnualServicePeriodPanel from '../components/AnnualServicePeriodPanel'
@@ -405,12 +405,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [patient, setPatient]       = useState(null)
-  const [annualFlowAccess, setAnnualFlowAccess] = useState({ restored: false, newPlanFlowEnabled: false })
-  useEffect(() => {
-    setAnnualFlowAccess({ restored: false, newPlanFlowEnabled: false })
-    if (!patientMode || !id) return
-    managementReviewAPI.get(id).then(result => setAnnualFlowAccess({ restored: result.restored === true, newPlanFlowEnabled: result.newPlanFlowEnabled === true })).catch(() => {})
-  }, [patientMode, id])
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
@@ -429,10 +423,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [lastGenerationKey, setLastGenerationKey] = useState('')
   const [plansByType, setPlansByType] = useState({}) // patientMode: { servicePlanCode: plan }，各服务版本独立保存
   const [year, setYear]             = useState(() => Number(searchParams.get('year')) || new Date().getFullYear())
-  const selectedFlowPlan = plansByType[planType]
-  const annualPilot = Boolean(patientMode && (selectedFlowPlan
-    ? selectedFlowPlan.flowVersion === 2 || selectedFlowPlan.flowVersion == null && annualFlowAccess.restored
-    : annualFlowAccess.newPlanFlowEnabled))
+  const annualPilot = Boolean(patientMode)
   const [loading, setLoading]       = useState(true)
   useEffect(() => {
     if (!patientMode || loading || !window.location.hash) return

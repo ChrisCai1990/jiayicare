@@ -11,6 +11,11 @@ const checkup = require('../src/utils/aiHealthCheckupItems');
 const Decision = require('../src/models/AnnualManagementDecision');
 const evidenceService = require('../src/utils/annualManagementEvidence');
 
+function mockApprovedReportInputs(t) {
+  t.mock.method(require('../src/models/MedicalReport'), 'find', () => chain([]));
+  t.mock.method(require('../src/utils/screeningMatch'), 'buildAdminIndex', async () => ({}));
+}
+
 const handler = router.stack.find(layer => layer.route?.path === '/patients/:id/annual-plan/:planId/append-screening-action')?.route.stack.at(-1).handle;
 const getPlanHandler = router.stack.find(layer => layer.route?.path === '/patients/:id/annual-plan' && layer.route.methods.get)?.route.stack.at(-1).handle;
 const id = () => new mongoose.Types.ObjectId().toString();
@@ -40,6 +45,7 @@ test('金娟试点只把已核对缺项补入已发布方案，并留下执行�
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId, aiHealthSummary: {} }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(CheckupReview, 'findOne', () => chain({ _id: reviewId, sourceKey: 'key', sourceVersion: 'version', itemText: '甲状腺超声待补', title: '甲状腺超声' }));
+  mockApprovedReportInputs(t);
   t.mock.method(checkup, 'approvedItems', () => ({ approved: true, version: 'version', items: [{ sourceKey: 'key', text: '甲状腺超声待补' }] }));
   t.mock.method(AnnualPlan, 'findOneAndUpdate', async (filter, update) => { saved = { filter, update }; return { ...plan, moduleData: update.$set.moduleData }; });
   t.mock.method(PushRecord, 'updateOne', async (filter, update) => { noticeAttempts++; notified = { filter, ...update.$setOnInsert }; });
@@ -137,6 +143,7 @@ test('通知失败后重试只补发通知，不重复补入方案', async t => 
   t.mock.method(User, 'findById', () => chain({ tenantId: null, assignedFamilyDoctor: staffId, aiHealthSummary: {} }));
   t.mock.method(AnnualPlan, 'findOne', () => chain(plan));
   t.mock.method(CheckupReview, 'findOne', () => chain({ _id: reviewId, sourceKey: 'key', sourceVersion: 'version', itemText: '骨密度待补', title: '骨密度检查' }));
+  mockApprovedReportInputs(t);
   t.mock.method(checkup, 'approvedItems', () => ({ approved: true, version: 'version', items: [{ sourceKey: 'key', text: '骨密度待补' }] }));
   t.mock.method(AnnualPlan, 'findOneAndUpdate', async (_filter, update) => {
     planWrites++; plan.moduleData = update.$set.moduleData; plan.supplementRevisions.push(update.$push.supplementRevisions); return plan;

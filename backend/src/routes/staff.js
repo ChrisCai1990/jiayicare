@@ -11600,7 +11600,6 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     const phaseAssessmentFrequency = req.body.phaseAssessmentFrequency || '';
     if (!['', 'biweekly', 'monthly', 'quarterly'].includes(phaseAssessmentFrequency)) return res.status(400).json({ success: false, message: '阶段评估周期无效' });
     let { moduleData } = req.body;
-    const requestedAdvisorTargets = moduleData?.nutrition_assessment?.advisorTargets !== undefined;
     moduleData = require('../utils/annualPlanDates').normalize(moduleData);
     moduleData = { ...(moduleData || {}), nutrition_assessment: require('../utils/annualNutritionDispatch').draftModule(moduleData) };
     try {
@@ -11695,19 +11694,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     }
     const selector = sourcePlan ? { _id: sourcePlan._id } : legacy ? { _id: legacy._id } : { patientId: req.params.id, year: targetYear, planType: servicePlanCode };
     const existingVersion = await AnnualPlan.findOne(selector).select('patientId flowVersion updatedAt confirmedAt frozenAt pushedAt +supplementRevisions').lean();
-    const annualFlow = existingVersion
-      ? require('../utils/annualFlowPilot').enabledForPlan(existingVersion)
-      : require('../utils/annualFlowPilot').enabledForNewPlan(req.params.id);
-    // Legacy drafts must not be rejected for fields added by our own normalizer.
-    // Explicit new-flow input still goes through the version gate below.
-    moduleData = require('../utils/annualDraftCompatibility').preserveLegacyNutritionInput(moduleData, annualFlow, requestedAdvisorTargets);
-    if (!annualFlow && (moduleData.nutrition_assessment?.advisorTargets !== undefined
-      || moduleData.health_consensus?.records?.length
-      || (moduleData.management_targets?.records || []).some(row => ['goalDimension', 'baseline', 'goalMetric', 'symptomTerm', 'lifestyleType', 'rehabRelevant', 'actionTiming'].some(key => row[key] !== undefined))))
-      return res.status(404).json({ success: false, message: '当前方案不支持新版年度管理事项' });
     try { require('../utils/annualPlanVersion').assertPlanVersion(existingVersion, req.body.baseUpdatedAt); }
     catch (error) { return res.status(error.statusCode || 409).json({success:false,message:error.message}); }
-    const frozen = closedLoop ? existingVersion : null;
+    const frozen = existingVersion;
     if (frozen?.confirmedAt || frozen?.frozenAt || frozen?.pushedAt) return res.status(409).json({ success: false, message: '已推送或已确认方案不可直接覆盖；请在补充依据入口保存修订草稿，执行任务保持不变' });
     if (moduleData.nutrition_assessment.enabled === false && existingVersion?._id && await FollowUp.exists({
       sourceAnnualPlanId: existingVersion._id, workflowKey: 'annual_nutrition_assessment', status: { $ne: 'cancelled' },
@@ -11721,8 +11710,7 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
         moduleData: moduleData || {}, phaseAssessmentFrequency, notes: notes || '', ...(closedLoop ? { continuitySource: continuity.source || null } : {}), templateId: templateId || null, templateName: templateName || normalizedTemplate.content?.planName || template.name || '',
         templateSnapshot: template ? { name: template.name, type: template.type, content: template.content, capturedAt: new Date() } : null,
         createdBy: req.staff._id, reviewStatus: 'pending', reviewedBy: null, reviewedAt: null, reviewNote: '',
-        pushedAt: null, pushedBy: null, confirmedAt: null },
-        $setOnInsert: { flowVersion: annualFlow ? 2 : 1 } },
+        pushedAt: null, pushedBy: null, confirmedAt: null, flowVersion: 2 } },
       { upsert: !existingVersion, new: true, setDefaultsOnInsert: true }
     );
     if (!plan) return res.status(409).json({ success: false, message: '方案状态已变化，请刷新后核对' });
