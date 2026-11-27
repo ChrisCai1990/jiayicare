@@ -36,5 +36,21 @@ test('生活方式按整月不同日期归纳，核对行动指向待查随访',
   assert.match(changes[0],/建议阶段目标（待确认）/);
   assert.match(life[0],/运动记录4天，其中4天记有「快走」/);
   assert.match(analysis[1],/核对复查结果/);
-  assert.ok(actions.every(line=>line.includes('核对复查结果')));
+  assert.match(actions[0],/健管专员.*健康顾问.*核对复查结果/);
+  assert.match(actions[1],/顾问.*目标范围/);
+});
+
+test('期初维持目标和最近两次体测按同名同单位核对',()=>{
+ const plan={confirmedAt:'2026-09-01',moduleData:{management_targets:{records:[{goal:'维持体重',goalMetric:{source:'vital',key:'weight',operator:'lte',targetValue:72}}]}}};
+ const context={openingPlan:plan,confirmedAnnualPlan:plan,period:{start:'2026-10-01',end:'2026-10-31'},recentHealthRecords:['01','31'].map(d=>({type:'weight',value:70,unit:'kg',recordedAt:'2026-10-'+d})),periodFollowups:[],periodReports:[],latestBodyReports:['10-12','09-02'].map((d,i)=>({checkDate:'2026-'+d,reportItems:[{name:'体脂率',unit:'%',value:25-i}]}))};
+ const [changes,relation]=assessment(context);
+ assert.match(changes[5],/09-02.*24 → 25%（\+1个百分点）/);
+ assert.match(relation[0],/继续维持/);
+});
+
+test('多日监测保留首末值，历史体测可作为报告前值，已设指标带入评估',()=>{
+ const result=assessment({period:{start:'2026-10-01',end:'2026-10-31'},recentHealthRecords:['01','31'].map((d,i)=>({type:'bloodPressure',label:'血压',unit:'mmHg',value:i?'125/82':'128/84',recordedAt:'2026-10-'+d})),bodyCompHistory:[{measuredAt:'2026-07-15',bodyFatRate:'25'}],latestBodyReports:[{checkDate:'2026-10-13',reportItems:[{name:'体脂率',value:'24.6',unit:'%'}]}],periodReports:[],periodFollowups:[],periodTargets:[{metric:'血压',goal:'维持',range:'约定范围',frequency:'每周一次'}]});
+ assert.match(result[0][3],/2天.*128\/84mmHg → 2026-10-31 125\/82mmHg/);
+ assert.match(result[0][5],/07-15.*25 → 24.6%/);
+ assert.match(result[0][0],/血压.*维持.*每周一次/);
 });

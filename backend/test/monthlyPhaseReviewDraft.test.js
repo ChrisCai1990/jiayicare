@@ -11,7 +11,8 @@ const query = rows => {
   return chain;
 };
 test.beforeEach(t=>{
-  for(const name of ['AnnualPlan','HealthPlan']) t.mock.method(require('../src/models/'+name),'findOne',()=>query(null));
+  t.mock.method(require('../src/models/User'),'findById',()=>query(null));
+  for(const name of ['AnnualPlan','HealthPlan','PhaseAssessment']) t.mock.method(require('../src/models/'+name),'findOne',()=>query(null));
 });
 
 test('月度四板块仅列已归类的筛查数据，医疗记录条数不冒充原因分析', async t => {
@@ -46,7 +47,7 @@ test('月度底稿写明体重下降及同期生活记录，并提出具体核�
   assert.match(draft.content, /早餐：鸡蛋、面包/);
   assert.match(draft.content, /步行30分钟/);
   assert.match(draft.content, /不能认定因果/);
-  assert.match(draft.content, /团队行动与复核/);
+  assert.match(draft.content, /团队跟进/);
   assert.doesNotMatch(draft.content, /体重下降.*因.*步行/);
 });
 
