@@ -64,7 +64,7 @@ const tag = (value) => String(value).slice(-8).toUpperCase();
 const materialCategory = r => categories[r.documentCategory] || '旧分类：' + (r.type || '未标记');
 
 // 一份报告内的同一专项只计一次。报告级解读不证明每个专项均已作出去向决定。
-function screeningRows(reports, decisions, catalog, year) {
+function screeningRows(reports, decisions, catalog, year, snapshotAt) {
   const names = new Map(catalog.map(entry => [entry.id, entry.label]));
   const effective = require('./annualManagementEvidence').effectiveDecisions(decisions);
   const rows = [];
@@ -79,14 +79,18 @@ function screeningRows(reports, decisions, catalog, year) {
         groups.get(key).push(item);
       }
     }
+    const latestChange = Math.max(+new Date(r.createdAt || 0), +new Date(r.advisorCorrection?.resubmittedAt || 0));
+    const viewed = r.familyDoctorViewedAt && +new Date(r.familyDoctorViewedAt) >= latestChange;
+    const covered = snapshotAt && +new Date(snapshotAt) >= latestChange;
+    const viewState = viewed ? '报告已查看' : covered ? '档案确认已覆盖' : '未见当前查看记录';
     for (const [key, items] of groups) {
       const matched = effective.filter(d => String(d.reportId) === String(r._id) && (
         d.sourceKey === 'screening:' + r._id + ':' + key ||
         items.some(item => item.itemId && [`screening:${r._id}:${item.itemId}`,`report_item:${r._id}:${item.itemId}`].includes(d.sourceKey))
       ));
       const directions = [...new Set(matched.flatMap(d => d.directions?.length ? d.directions : [d.direction]).filter(Boolean))];
-      rows.push({report:tag(r._id), item:names.get(key) || '未匹配目录项目', state:matched.length ? '有纳入决定' :
-        r.advisorCorrection?.status === 'returned' ? '待资料订正' : !r.advisorInterpretationConfirmedAt ? '待解读核对' : '已解读／逐项决定未见记录',
+      rows.push({report:tag(r._id), item:names.get(key) || '未匹配目录项目', included:matched.length > 0, state:matched.length ? '已纳入管理' : '未见纳入记录',
+        viewState, viewAt:viewed ? r.familyDoctorViewedAt : covered ? snapshotAt : null,
         direction:directions.map(d => modules[d] || d).join('、')});
     }
   }
@@ -277,7 +281,7 @@ function projectEvidence({
       };
     });
   return {
-    screeningRows: canRebuild && decisions.every(r => known(r,end)) ? screeningRows(datedReports, decisions, catalog || [], year) : null,
+    screeningRows: canRebuild && decisions.every(r => known(r,end)) ? screeningRows(datedReports, decisions, catalog || [], year, user.archiveReviewSnapshotAt) : null,
     docs,
     drafts: draftRows,
     plans: planRows.map(({ links, ...p }) => p),

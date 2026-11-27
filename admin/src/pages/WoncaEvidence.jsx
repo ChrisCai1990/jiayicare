@@ -11,11 +11,31 @@ const planTypes = {
   chronic_stable: '慢病稳定',
   health_prevention: '健康预防',
 };
+function pendingPrompts(e) {
+  return e.promptEvidence ? e.items.filter(i => i.source === '已审核健康分析' && i.state === '待顾问处置') : null;
+}
+
+export function ScreeningSummary({ e }) {
+  const rows = e.screeningRows;
+  const prompts = pendingPrompts(e);
+  return <>
+    <details><summary>资料待查看 {e.pendingViews == null ? '历史不可还原' : e.pendingViews+' 份'}</summary>
+      {e.pendingDocuments?.map(d=><div key={d.key}>{d.key} · {d.category} · {d.reason}</div>)}
+    </details>
+    <details><summary>五年分析 AI 提示待处理 {prompts ? prompts.length+' 项' : '来源待核实'}</summary>
+      {prompts?.map((p,i)=><div key={i}>{p.key} · {p.state}</div>)}
+    </details>
+    <details><summary>年度筛查{rows ? '共 '+rows.length+' 项，其中已纳入管理 '+rows.filter(d=>d.included).length+' 项' : '：历史不可还原'}</summary>
+      <small>按检查年度及报告内专项汇总。查看记录来自原报告或档案确认，管理方向来自顾问已保存的决定。</small>
+      {rows?.map((d,i)=><div key={i}>{d.report} · {d.item} · {d.viewState} · {d.state} {d.direction}</div>)}
+    </details>
+  </>;
+}
 function sections(row) {
   const e = row.snapshot.evidence;
   return [
     ...(e.pendingDocuments ? [['顾问待查看资料', ['资料编号','资料类型','待查看原因'],e.pendingDocuments.map(d=>[d.key,d.category,d.reason])]] : []),
-    ...(e.screeningRows ? [['年度专项筛查核对', ['资料编号','筛查项目','处理记录','管理方向'],e.screeningRows.map(d=>[d.report,d.item,d.state,d.direction || '—'])]] : []),
+    ...(e.screeningRows ? [['年度筛查与管理记录', ['资料编号','筛查项目','报告查看','确认日期','纳入记录','管理方向'],e.screeningRows.map(d=>[d.report,d.item,d.viewState,date(d.viewAt),d.state,d.direction || '—'])]] : []),
     [
       '年度方案',
       [
@@ -169,6 +189,9 @@ export function exportEvidence(rows, year, observedAt) {
       ['资料就绪确认', date(e.ready)],
       ['方案数', e.plans.length],
       ['顾问资料待查看', e.pendingViews ?? missing],
+      ['年度筛查总项数', e.screeningRows?.length ?? missing],
+      ['有纳入记录的筛查项数', e.screeningRows?.filter(d=>d.included).length ?? missing],
+      ['五年分析 AI 提示待处理', pendingPrompts(e)?.length ?? missing],
       ['五年分析来源可核对', e.promptEvidence ? '是' : '缺少可还原来源'],
     ])
       csv.push([...base, '参与者', '', field, value]);

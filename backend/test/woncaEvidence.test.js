@@ -94,5 +94,11 @@ test('annual screening groups use examination year and explicit item evidence', 
   const result = screeningRows([report,{...report,archiveOnly:true}], [decision], [{id:'a',label:'A'},{id:'b',label:'B'}], 2026);
   assert.equal(result.length, 2);
   assert.equal(result[0].direction, '日常监测');
-  assert.equal(result[1].state, '已解读／逐项决定未见记录');
+  assert.equal(result[1].state, '未见纳入记录');
+  assert.equal(result[0].included, true);
+  assert.equal(result[1].included, false);
+  assert.equal(result[1].viewState, '未见当前查看记录');
+  const rows = snapshot => screeningRows([{...report, createdAt:'2026-01-01', familyDoctorViewedAt:'2026-01-02', advisorCorrection:{resubmittedAt:'2026-01-03'}}], [], [], 2026, snapshot);
+  assert.equal(rows('2026-01-02')[0].viewState, '未见当前查看记录');
+  assert.equal(rows('2026-01-04')[0].viewState, '档案确认已覆盖');
 });
