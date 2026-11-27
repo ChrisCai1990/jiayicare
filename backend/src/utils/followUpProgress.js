@@ -28,7 +28,7 @@ async function saveProgress({ FollowUp, id, actor, body, now = new Date() }) {
   const requestedNextTopic = String(body.nextTopic || '').trim();
   const nextTopic = topics[topicIndex + 1] || requestedNextTopic;
   if (consensus && (!['continue', 'next', 'complete'].includes(topicOutcome) || topicOutcome === 'next' && (!nextTopic || nextTopic.length > 120 || /[\r\n<>]/.test(nextTopic)))) throw fail('请选择有效的下一共识主题', 400);
-  const next = healthDataPlan?.enabled ? require('../../../shared/healthDataPlan.cjs').nextContact(healthDataPlan, now, body.nextContactAt) : body.nextContactAt ? new Date(body.nextContactAt) : null;
+  const next = body.nextContactAt && healthDataPlan?.enabled ? require('../../../shared/healthDataPlan.cjs').nextContact(healthDataPlan, now, body.nextContactAt) : body.nextContactAt ? new Date(body.nextContactAt) : null;
   if (next && !Number.isFinite(next.getTime())) throw fail('下次跟进时间无效', 400);
   if (medicalContinuation && next && next <= now) throw fail('下次跟进时间须晚于本次处理时间', 400);
   if (consensus && topicOutcome !== 'complete' && (!next || next <= now)) throw fail('继续共识沟通时请安排下一次时间', 400);

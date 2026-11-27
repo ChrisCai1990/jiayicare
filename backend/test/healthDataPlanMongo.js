@@ -16,18 +16,19 @@ async function main(){
  await sync(plan);await sync(plan);
  assert.equal(await FollowUp.countDocuments({}),1);assert.equal(await Reminder.countDocuments({}),1);
  let task=await FollowUp.findOne({}).lean();
+ const originalDate=+task.date;
  const now=new Date();
  const {saveProgress}=require('../src/utils/followUpProgress');
  const args={FollowUp,id:task._id,actor:{_id:staff,role:'healthManager'},now,body:{requestId:'synthetic-progress-01',content:'合成沟通记录',type:'phone',updatedAt:task.updatedAt}};
  await saveProgress(args);await saveProgress(args);await sync(plan);
- task=await FollowUp.findOne({}).lean();assert.equal(task.progressRecords.length,1);assert.equal(+task.date,+now+14*86400000);
+ task=await FollowUp.findOne({}).lean();assert.equal(task.progressRecords.length,1);assert.equal(+task.date,originalDate);assert.equal(task.progressRecords[0].nextContactAt,null);
  row.healthDataPlan={...config,enabled:false};await sync(plan);
  assert.equal(await FollowUp.countDocuments({}),1);assert.equal((await FollowUp.findOne({})).status,'cancelled');assert.equal((await Reminder.findOne({})).enabled,false);
  row.healthDataPlan=config;await sync(plan);
  task=await FollowUp.findOne({}).lean();assert.equal(task.status,'planned');assert.equal(task.progressRecords.length,1);assert.equal(await FollowUp.countDocuments({}),1);
  await Reminder.updateOne({},{$set:{userDisabled:true,enabled:false}});await sync(plan);assert.equal((await Reminder.findOne({})).enabled,false);
  await FollowUp.updateOne({},{$set:{status:'completed'}});await sync(plan);assert.equal((await FollowUp.findOne({})).status,'completed');assert.equal(await FollowUp.countDocuments({}),1);
- console.log('PASS: real Mongo one task/reminder, retry, history, 14-day advance, pause/resume, user opt-out and no reopening completed tasks');
+ console.log('PASS: real Mongo one task/reminder, retry, history, no advance without date, pause/resume, user opt-out and no reopening completed tasks');
  }finally{assert.match(mongoose.connection.name,/^jiayicare_healthdata_test_[a-f0-9]+$/);await mongoose.connection.dropDatabase();await mongoose.disconnect();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;mongoose.disconnect();});

@@ -1,3 +1,4 @@
+import schedule from '../../../shared/followUpDue.cjs'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
 import { followUpDateRange } from '../utils/staffWorkspace'
@@ -107,7 +108,7 @@ function DetailModal({ item, onClose }) {
         </div>
         <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           <Row label="会员" value={`${item.patientId?.name}  ${item.patientId?.phone || ''}`} />
-          <Row label="计划日期" value={formatChineseDate(item.date)} />
+          <Row label="计划日期" value={formatChineseDate(schedule.dueDate(item))} />
           <Row label="制定人" value={item.staffId?.name} />
           <Row label="制定时间" value={item.createdAt ? formatChineseDateTime(item.createdAt) : ''} />
           <Row label="随访主题" value={serviceTaskTitle(item)} />
@@ -195,8 +196,7 @@ export default function FollowUpsPage() {
   const [total,        setTotal]        = useState(0)
   const [page,         setPage]         = useState(1)
   // 用本地时间取"今天"日期，不能用 toISOString（会转成UTC，凌晨0-8点北京时间会倒退一天，导致当天记录被默认筛选范围漏掉）
-  const now = new Date()
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const todayStr = schedule.dayKey(new Date())
   const [statusTab,    setStatusTab]    = useState(searchParams.get('status') || 'active')
   const sourceType = searchParams.get('sourceType') || ''
   const [patientName,  setPatientName]  = useState('')
@@ -233,7 +233,7 @@ export default function FollowUpsPage() {
   const openEdit = (f) => {
     setEditItem(f)
     setEditForm({
-      date: f.date ? f.date.slice(0, 10) : '',
+      date: schedule.dueDate(f) ? schedule.dayKey(schedule.dueDate(f)) : '',
       theme: serviceTaskTitle(f),
       type: f.type || 'phone',
       content: f.content || '',
@@ -244,7 +244,10 @@ export default function FollowUpsPage() {
   const handleEdit = async () => {
     setEditSaving(true)
     try {
-      await staffAPI.updateFollowUp(editItem._id, editForm)
+      const updates = { ...editForm }
+      const previous = schedule.dueDate(editItem)
+      if (previous && updates.date === schedule.dayKey(previous)) delete updates.date
+      await staffAPI.updateFollowUp(editItem._id, updates)
       toast('随访计划已更新')
       setEditItem(null)
       load()
@@ -578,7 +581,7 @@ export default function FollowUpsPage() {
                     <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
                       {serviceTaskTitle(f) || '常规随访'}
                       <span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span>
-                      <span style={{ color: '#8AA89C' }}>{formatChineseDate(f.nextFollowUpDate||f.date)}{f.nextFollowUpDate?'（下次跟进）':''}</span>
+                      <span style={{ color: '#8AA89C' }}>{formatChineseDate(schedule.dueDate(f))}{schedule.scheduledContact(f)?'（下次跟进）':''}</span>
                       {f.assignedTo?.name && <><span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span><span style={{ color: '#8AA89C' }}>负责人 {f.assignedTo.name}</span></>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

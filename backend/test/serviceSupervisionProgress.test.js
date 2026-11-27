@@ -155,8 +155,8 @@ test('insurance shows case steps and the first unfinished step', () => {
 test('services without a fixed path show actual tasks without inventing a total', () => {
   const progress = serviceProgress('followup', {}, [
     { _id: 'done', status: 'completed', theme: '需求确认', createdAt: '2026-10-01' },
-    { _id: 'open', status: 'missed', theme: '顾问审核', createdAt: '2026-10-02' },
-  ], current);
+    { _id: 'open', status: 'missed', date: '2026-10-02', theme: '顾问审核', createdAt: '2026-10-02' },
+  ], current, new Date('2026-10-03T00:00:00+08:00'));
   assert.equal(progress.observed, true);
   assert.equal(progress.total, null);
   assert.equal(progress.generatedCompleted, 1);

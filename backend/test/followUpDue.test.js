@@ -15,3 +15,15 @@ test('历史配药随访保留原日期，本轮按已约定的下次时间计�
   assert.equal(dueDate({ ...task, progressRecords: [] }), task.date);
   assert.equal(dueDate({ ...task, status: 'completed' }), task.date);
 });
+
+test('备注不改期，正式约定按北京时间次日零点转逾期', () => {
+  const { isOverdue, validPlanDate } = require('../../shared/followUpDue.cjs');
+  for (const value of [null, '', '2026-02-30', '12月3日联系']) assert.equal(validPlanDate(value), false);
+  assert.equal(validPlanDate('2026-12-03'), true);
+  const task = { date: '2026-11-18', status: 'in_progress', progressRecords: [{ content: '12月3日联系' }] };
+  assert.equal(isOverdue(task, new Date('2026-11-28T00:00:00+08:00')), true);
+  task.progressRecords.push({ nextContactAt: '2026-12-03T09:00:00+08:00' }, { content: '12月8日联系' });
+  assert.equal(isOverdue(task, new Date('2026-12-03T23:59:59+08:00')), false);
+  assert.equal(isOverdue(task, new Date('2026-12-04T00:00:00+08:00')), true);
+  for (const status of ['completed', 'cancelled']) assert.equal(isOverdue({ ...task, status }), false);
+});

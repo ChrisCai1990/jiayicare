@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 let _ssePublish = null;
 function ssePublish(...args) { if (!_ssePublish) { try { _ssePublish = require('./messages').ssePublish; } catch {} } _ssePublish?.(...args); }
 const mongoose = require('mongoose');
+const followUpDates = require('../../../shared/followUpDue.cjs');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
@@ -2394,9 +2395,15 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   }
   if (dateFrom || dateTo) {
     const rangeField = status === 'completed' && dateField === 'completedAt' ? 'completedAt' : 'date';
-    filter[rangeField] = {};
-    if (dateFrom) filter[rangeField].$gte = new Date(dateFrom);
-    if (dateTo) { const end = new Date(dateTo); end.setDate(end.getDate() + 1); filter[rangeField].$lt = end; }
+    const bounds = {};
+    const boundary = value => /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value + 'T00:00:00+08:00') : new Date(value);
+    if (dateFrom) bounds.$gte = boundary(dateFrom);
+    if (dateTo) bounds.$lt = new Date(+boundary(dateTo) + 86400000);
+    if (rangeField === 'completedAt') filter.completedAt = bounds;
+    else {
+      const due = followUpDates.workbenchDueExpression();
+      filter.$and.push({ $expr: { $and: [{ $ne: [due, null] }, ...Object.entries(bounds).map(([op, value]) => ({ [op]: [due, value] }))] } });
+    }
   }
 
   let workbenchSummary, pageIds, workbenchTotal;
@@ -2415,7 +2422,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     const actionable = { 'serviceTracking.status': { $ne: 'waiting' } };
     const base = [
       { $match: FollowUp.find(filter).cast(FollowUp) },
-      { $project: { serviceTracking: 1, date: require('../../../shared/followUpDue.cjs').workbenchDueExpression() } },
+      { $project: { serviceTracking: 1, date: followUpDates.workbenchDueExpression() } },
     ];
     const waitingFilter = { 'serviceTracking.status': 'waiting' };
     const ranges = Object.fromEntries(Object.entries(buckets).map(([key, range]) => [key, { ...actionable, ...range }]));
@@ -2546,6 +2553,9 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
   // 医护端"记录随访"表单默认传 status=completed（语义是"我刚做完记一笔"），只在派给自己/不指派时成立。
   const assignedToOther = plannedAssignee && String(plannedAssignee) !== String(req.staff._id);
   const finalStatus = assignedToOther ? 'planned' : (status || 'completed');
+  if (followUpDates.openStatuses.includes(finalStatus) && !followUpDates.validPlanDate(date)) {
+    return res.status(400).json({ success: false, message: '请填写有效的随访日期' });
+  }
   if (finalStatus === 'planned' && !String(content || '').trim()) {
     return res.status(400).json({ success: false, message: '请填写本次随访的具体事项或要求，方便执行人和发起人核对' });
   }
@@ -3373,6 +3383,16 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     }
     req.body.formData = incoming;
   }
+  const openPlan = followUpDates.openStatuses.includes(req.body.status || followUp.status);
+  if (isOwner && openPlan && req.body.date !== undefined && !followUpDates.validPlanDate(req.body.date)) {
+    return res.status(400).json({ success: false, message: '请填写有效的随访日期' });
+  }
+  if (isOwner && openPlan && req.body.date && followUpDates.scheduledContact(followUp) && +new Date(req.body.date) !== +new Date(followUpDates.dueDate(followUp))) {
+    const revised = new Date(req.body.date);
+    followUp.progressRecords.push({ requestId: crypto.randomUUID(), recordedAt: new Date(), staffId: req.staff._id,
+      staffName: req.staff.name, content: '调整随访计划日期', nextContactAt: revised });
+    followUp.remindAt = revised;
+  }
   allowed.forEach(k => {
     if (req.body[k] !== undefined) {
       // ObjectId 字段传空字符串时设为 null，避免 Mongoose BSONError
@@ -3924,9 +3944,8 @@ router.get('/reports', staffAuth, async (req, res) => {
   // 与随访列表共用完全相同的角色/会员归属口径，保证首页数字和点击结果一致。
   const followUpOwnerFilter = await getWorkbenchFollowUpOwnerFilter(staff);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const today = followUpDates.dayStart(new Date());
+  const todayKey = followUpDates.dayKey(today);
   const activeMemberFilter = {
     isDeleted: { $ne: true },
     serviceExpiry: { $gte: todayKey },
@@ -3934,11 +3953,10 @@ router.get('/reports', staffAuth, async (req, res) => {
   const myFilter = staff.role === 'superadmin'
     ? activeMemberFilter
     : { ...activeMemberFilter, [assignmentField]: staff._id };
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const tomorrow = new Date(+today + 86400000);
+  const monthStart = new Date(todayKey.slice(0, 7) + '-01T00:00:00+08:00');
+  const nextMonth = followUpDates.dayKey(new Date(+monthStart + 32 * 86400000)).slice(0, 7);
+  const monthEnd = new Date(nextMonth + '-01T00:00:00+08:00');
   const availableNowFilter = { $or: [{ remindAt: null }, { remindAt: { $lte: new Date() } }] };
   const fixedFollowUpOnlyFilter = { $and: [
     { $or: [{ taskRole: '' }, { taskRole: null }, { taskRole: { $exists: false } }] },
@@ -3947,13 +3965,14 @@ router.get('/reports', staffAuth, async (req, res) => {
   ] };
 
   const openStatuses = ['planned', 'in_progress', 'missed'];
+  const due = followUpDates.workbenchDueExpression();
   const [totalPatients, todayPending, todayCompleted, monthPending, monthCompleted, overdue] = await Promise.all([
     User.countDocuments(myFilter),
-    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: today, $lt: tomorrow } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, $expr: { $and: [{ $gte: [due, today] }, { $lt: [due, tomorrow] }] } }] }),
     FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, { status: 'completed', completedAt: { $gte: today, $lt: tomorrow } }] }),
-    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $gte: monthStart, $lt: monthEnd } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, $expr: { $and: [{ $gte: [due, monthStart] }, { $lt: [due, monthEnd] }] } }] }),
     FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, { status: 'completed', completedAt: { $gte: monthStart, $lt: monthEnd } }] }),
-    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, date: { $lt: today } }] }),
+    FollowUp.countDocuments({ $and: [followUpOwnerFilter, fixedFollowUpOnlyFilter, availableNowFilter, { status: { $in: openStatuses }, $expr: { $and: [{ $ne: [due, null] }, { $lt: [due, today] }] } }] }),
   ]);
 
   // 慢病分布

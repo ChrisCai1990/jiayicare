@@ -1,3 +1,4 @@
+const schedule = require('../../../shared/followUpDue.cjs');
 const crypto = require('crypto');
 const User = require('../models/User');
 const Admin = require('../models/Admin');
@@ -125,19 +126,19 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
       // records without assignedTo belong to staffId, not the customer's team.
       const owner = role ? review.reviewer(t, p) : t.assignedTo || t.staffId;
       return { taskId: id(t), label: t.aiStatus === 'pending' ? `${t.theme || '随访计划'} · 待审核` : t.theme || '待处理事项',
-        person: person(owner, role), blocked: !!t.isBlocked, dueAt: t.date || t.remindAt || null };
+        person: person(owner, role), blocked: !!t.isBlocked, dueAt: schedule.dueDate(t) || null };
     });
     const dispatch = remaining.find(t => t.annualDispatch && t.annualDispatch.status !== 'completed');
     if (dispatch) {
       const pendingReview = dispatch.annualDispatch.status === 'pending_review';
       const child = g.tasks.find(t => id(t) === id(dispatch.annualDispatch.executionId));
       current = [{ taskId: id(pendingReview ? dispatch : child || dispatch), label: pendingReview ? '规划师验收代办结果' : '就医专员办理',
-        person: person(pendingReview ? dispatch.assignedTo : dispatch.annualDispatch.assigneeId, pendingReview ? 'healthPlanner' : 'medicalAssistant'), blocked: false, dueAt: child?.date || null }];
+        person: person(pendingReview ? dispatch.assignedTo : dispatch.annualDispatch.assigneeId, pendingReview ? 'healthPlanner' : 'medicalAssistant'), blocked: false, dueAt: schedule.dueDate(pendingReview ? dispatch : child || dispatch) || null }];
     }
     if (g.type === 'flow') {
       const stage = s.state.stage, role = care.roles[stage];
       const step = remaining.find(t => t.workflowKey === `care_flow:${stage}`);
-      current = [{ taskId: id(step || s.parentId), label: stage === 'closed' ? '审核已通过，待同步随访' : care.labels[stage] || '待核对流程', person: person(s.state.people?.[role]?.id, role), blocked: false, dueAt: step?.date || null }];
+      current = [{ taskId: id(step || s.parentId), label: stage === 'closed' ? '审核已通过，待同步随访' : care.labels[stage] || '待核对流程', person: person(s.state.people?.[role]?.id, role), blocked: false, dueAt: schedule.dueDate(step) || null }];
     } else if (!current.length) {
       const isShipping = g.type === 'order' && shipping.hasShippingHandoff(s);
       const owner = isShipping ? p.assignedHealthManager : ibdAnnual ? p.assignedFamilyDoctor : s.currentAssignee || s.assignedTo;
@@ -171,7 +172,7 @@ async function loadServices(actor, { patientIds, includeOwn = false, now = new D
     const title = s.serviceName || s.title || s.state?.title || (g.type === 'flow' ? g.tasks.find(t => id(t) === id(s.parentId))?.theme : s.theme) || '服务进度';
     const requestTask = g.type === 'followup' ? g.tasks.find(t => !t.sourceType && id(t.staffId) === id(actor)) || g.tasks[0] : null;
     const row = { key: g.key, patientId: g.patientId, patientName: p.name, title, current, coordinator,
-      startedBySelf, plannedAt: requestTask?.date || s.scheduledAt || null,
+      startedBySelf, plannedAt: schedule.dueDate(requestTask) || s.scheduledAt || null,
       requestContent: String(requestTask?.plannedContent || requestTask?.content || s.description || s.note || '').trim(),
       progress: serviceProgress(g.type, s, g.tasks, current, now),
       reasons, attention: !!reasons.length, latest: latest || (intakeRecord

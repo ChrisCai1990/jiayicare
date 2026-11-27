@@ -2,16 +2,13 @@ import React from 'react'
 import schedule from '../../../shared/followUpDue.cjs'
 import { formatChineseDate, formatChineseDateTime } from '../utils/date'
 
-const OPEN_STATUSES = new Set(['planned', 'in_progress', 'missed'])
 
 export default function FollowUpDueDateBanner({ task }) {
   if (!task || task.taskRole || !schedule.dueDate(task)) return null
   const contact = schedule.scheduledContact(task)
   const dueDate = new Date(schedule.dueDate(task))
   if (Number.isNaN(dueDate.getTime())) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const overdue = OPEN_STATUSES.has(task.status) && dueDate < today
+  const overdue = schedule.isOverdue(task)
 
   return <div style={{ padding: '12px 14px', borderRadius: 9, border: `1px solid ${overdue ? '#F0C6BF' : '#D9E8DF'}`, background: overdue ? '#FFF4F1' : '#F4F9F6', flexShrink: 0 }}>
     <div style={{ fontSize: 12, color: '#65776F' }}>{contact ? '下次跟进时间' : '本次随访应执行日期'}</div>

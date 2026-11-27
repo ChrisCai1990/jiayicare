@@ -31,18 +31,13 @@ export default function FollowUpsPanel() {
   const params = { status: 'active', includeFuture: '1', workbench: 'human', page: page + 1,
     limit: PAGE_SIZE, patientName: searchName.trim(), workbenchTime: timeGroup }
   const { data, loading, error, refresh } = useWorkbenchResource(async () => {
-    const now = new Date()
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+    const dayStart = schedule.dayStart(new Date()).toISOString()
     return (await staffAPI.getFollowUps({ ...params, dayStart })).data
   }, getToken() + JSON.stringify(params), { followUps: [], total: 0, workbenchSummary: { counts: {}, waiting: 0 } })
   const items = data.followUps || []
   const counts = data.workbenchSummary?.counts || {}
   const total = counts.all || 0
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  // 按自然日比较，不按精确时刻——此前用 date < now（精确到秒）比较，商城下单生成待办时
-  // date 存的是下单那一秒的时间戳，导致下单几乎立刻就被判定"已过期"（2026-07-13 反馈）
-  const isOverdue = (d) => new Date(d) < todayStart
+
   const TIME_GROUPS = [
     ['all', '全部'], ['overdue', '已逾期'], ['today', '今日'],
     ['week', '未来7天'], ['month', '8–30天'], ['later', '更晚'],
@@ -105,7 +100,7 @@ export default function FollowUpsPanel() {
         </div>}
         {pageItems.map((f, i) => {
           const due = schedule.dueDate(f)
-          const overdue = due && isOverdue(due)
+          const overdue = schedule.isOverdue(f)
           return (
             <div
               key={f._id}

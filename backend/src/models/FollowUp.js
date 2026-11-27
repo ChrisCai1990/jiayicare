@@ -5,7 +5,11 @@ const followUpSchema = new mongoose.Schema({
   staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true }, // 随访人
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true }, // 会员
   clientVisible: { type: Boolean, default: true }, // 内部日常跟进只进入员工工作台
-  date:      { type: Date, default: Date.now },
+  date:      {
+    type: Date,
+    default() { return ['planned', 'in_progress', 'missed'].includes(this.status) ? undefined : new Date(); },
+    required() { return ['planned', 'in_progress', 'missed'].includes(this.status) && (this.isNew || this.isModified('date')); },
+  },
   type: {
     type: String,
     enum: ['phone', 'wechat', 'visit', 'video', 'other'],

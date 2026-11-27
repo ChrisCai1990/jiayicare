@@ -22,8 +22,7 @@ const humanFollowUpQuery = {
 function timeBuckets(dayStart) {
   let today = new Date(dayStart || NaN);
   if (!Number.isFinite(today.getTime())) {
-    const now = new Date();
-    today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    today = require('../../../shared/followUpDue.cjs').dayStart(new Date());
   }
   const after = days => new Date(today.getTime() + days * 86400000);
   return { all: {}, overdue: { date: { $lt: today } }, today: { date: { $gte: today, $lt: after(1) } },
