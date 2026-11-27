@@ -80,7 +80,8 @@ import { currentPageEvidence, summarizeReportPages } from '../utils/reportPageCo
 import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
-import SpecialtyConcernButton from '../components/SpecialtyConcernButton'
+import { labManagementSource } from '../utils/annualManagementDecision.mjs'
+import SpecialtyConcernButton, { LabManagementSummary } from '../components/SpecialtyConcernButton'
 import { screeningItemIssueTitle } from '../utils/specialtyIssueSuggestion.mjs'
 import AICheckupReview from '../components/AICheckupReview'
 import CurrentScreeningChecklist from '../components/CurrentScreeningChecklist'
@@ -6994,12 +6995,16 @@ export default function PatientDetailPage() {
                     {totalCount > 0 && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{totalCount} 项</span>}
                     <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
-                  <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
+                  {labItems.length > 0
+                    ? ['familyDoctor', 'superadmin'].includes(staff?.role) && <LabManagementSummary key={`${id}:${screeningSummaryYear}:${r._id}`} record={r} patientId={id}
+                        year={Number(screeningSummaryYear)} staff={staff} toast={toast} expanded={isExpanded}
+                        onExpand={() => setExpandedRecords(prev => new Set([...prev, r._id]))} />
+                    : <SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
                     source={r.isAI && r._sourceItems?.[0]?.itemId
                       ? { kind: 'screening', reportId: r._sourceItems[0].reportId, itemId: r._sourceItems[0].itemId }
                       : { kind: 'screening_report', reportId: (r._sourceItems || [])[0]?.reportId || r._id }}
                     sourceText={[r.note, r.examConclusion, ...(r.reportItems || []).filter(item => item.status === 'abnormal' || item.status === 'attention' || item.itemType === 'imaging').flatMap(item => [item.name, item.conclusion, item.diagnosis, item.findings])].filter(Boolean).join('；')}
-                    sourceLabel={`${r.checkDate || '日期待核实'} · ${r.title || r.screeningL3 || '专项筛查记录'}`} />
+                    sourceLabel={`${r.checkDate || '日期待核实'} · ${r.title || r.screeningL3 || '专项筛查记录'}`} />}
                   {r.isAI
                     ? (<>
                         <button onClick={() => {
@@ -7058,7 +7063,7 @@ export default function PatientDetailPage() {
                             <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
                             <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
                             <td style={{ padding: '4px 8px' }}><SpecialtyConcernButton patientId={id} year={Number(screeningSummaryYear)} staff={staff} toast={toast} onOpenReview={openSpecialtyReview}
-                              source={{ kind: 'screening', reportId: (r._sourceItems || [])[0]?.reportId || r._id, itemId: item.itemId, itemName: item.name }}
+                              source={labManagementSource(r, item)}
                               suggestedIssue={screeningItemIssueTitle(item)}
                               sourceText={[item.name, item.conclusion, item.diagnosis, item.findings].filter(Boolean).join('；')}
                               sourceLabel={`${r.checkDate || '日期待核实'} · ${item.name}`} /></td>
@@ -7313,7 +7318,8 @@ export default function PatientDetailPage() {
                     aiVirtualMap[vKey].reportItems.push({
                       reportId: rid,
                       reportTitle: it.reportTitle || '',
-                      itemId: it.itemId || '',
+                      // 检验行按报告中的实际子项保存，旧报告缺少编号时按子项名核对。
+                      itemId: ['imaging', 'data'].includes(sub.itemType) ? it.itemId : it.matchedItems?.length && sub.itemId || '',
                       name: sub.name || it.itemLabel,
                       sourcePage: sub.sourcePage || '',
                       examDate: sub.examDate || '',

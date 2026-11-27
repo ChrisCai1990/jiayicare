@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { staffAPI } from '../api'
 import { specialtyIssueSuggestions } from '../utils/specialtyIssueSuggestion.mjs'
-import { annualManagementSourceKey, findAnnualManagementDecision } from '../utils/annualManagementDecision.mjs'
+import { annualManagementSourceKey, findAnnualManagementDecision, labManagementSummary } from '../utils/annualManagementDecision.mjs'
 import DateField from '../../../shared/DateField.jsx'
 import annualAppointment from '../../../shared/annualAppointment.cjs'
 import { MONITORING_METRICS, MONITORING_PERIODS } from '../utils/monitoringMetrics'
@@ -20,6 +20,28 @@ function load(patientId, year) {
   const key = `${patientId}:${year}`
   if (!pending.has(key)) pending.set(key, staffAPI.getAnnualManagementDecisions(patientId, year).finally(() => pending.delete(key)))
   return pending.get(key)
+}
+export function LabManagementSummary({ record, patientId, year, staff, toast, expanded, onExpand }) {
+  const [decisions, setDecisions] = useState([])
+  useEffect(() => {
+    let active = true
+    const refresh = () => load(patientId, year).then(result => {
+      if (active) setDecisions(result.data || [])
+    }).catch(() => {})
+    const event = `annual-decisions:${patientId}:${year}`
+    refresh()
+    window.addEventListener(event, refresh)
+    return () => { active = false; window.removeEventListener(event, refresh) }
+  }, [patientId, year])
+  const { count, legacy } = labManagementSummary(record, decisions)
+  return <>
+    <button type="button" aria-expanded={expanded} onClick={onExpand} className={`btn ${count || legacy.length ? 'btn-primary' : 'btn-secondary'} btn-sm`}>
+      {count ? `已纳入管理 · ${count} 项` : legacy.length ? '有历史管理记录' : '查看单项管理'}
+    </button>
+    {expanded && legacy.map(source => <span key={annualManagementSourceKey(source)}>历史整组记录：
+      <SpecialtyConcernButton source={source} sourceLabel={`${record.checkDate || ''} · 历史整组记录`} {...{ patientId, year, staff, toast }} />
+    </span>)}
+  </>
 }
 export default function SpecialtyConcernButton({ patientId, year, source, sourceLabel, sourceText = '', suggestedIssue = '', staff, toast, onSaved, correctionId, correctionMessage, correctionField }) {
   const trigger = useRef(null)
