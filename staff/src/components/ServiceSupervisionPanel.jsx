@@ -7,6 +7,7 @@ import Pagination from './Pagination'
 import NutritionAssessmentPanel from './NutritionAssessmentPanel'
 
 const date = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '未设定'
+const progressSources = { order: '服务订单', plan: '服务方案', flow: '就医流程', insurance: '保险服务', followup: '随访', group: '随访', annual: '随访' }
 const decisionActions = { intake: '确认客户需求并转交顾问', advisor: '确认方案并发起转介', booking: '完成预约和客户沟通', specialist: '整理专家并回复转介', advisor_review: '审核专科回复并归档', planner_final: '确认服务并完成验收' }
 export default function ServiceSupervisionPanel({ pendingOnly = false }) {
   const { staff } = useStaff()
@@ -32,6 +33,14 @@ export default function ServiceSupervisionPanel({ pendingOnly = false }) {
   const { services = [], completed = [], inbox = [] } = resource.data
   const attention = services.filter(s => s.attention)
   const rows = pendingOnly ? services.filter(row => row.actionTaskId) : statusFilter === 'pending' ? services : statusFilter === 'completed' ? completed : [...services, ...completed]
+  const overview = staff?.role === 'familyDoctor' && !pendingOnly
+  const sourceCounts = new Map()
+  if (overview) {
+    for (const row of rows) {
+      const source = progressSources[row.key.split(':')[0]] || '其他服务'
+      sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1)
+    }
+  }
   const currentPage = Math.min(page, Math.max(1, Math.ceil(rows.length / 5)))
   const currentInboxPage = Math.min(inboxPage, Math.max(1, Math.ceil(inbox.length / 5)))
   const start = value => { setForm(value); setNote(''); setError(''); setNotice('') }
@@ -52,10 +61,13 @@ export default function ServiceSupervisionPanel({ pendingOnly = false }) {
     <div>{r.note}</div><div style={{ color: '#667085' }}>{r.handledAt ? `处理反馈（${date(r.handledAt)}）：${r.response}` : '尚无处理反馈（实际进度以原服务为准）'}</div>
   </div>)}</details>
   return <section className="card" style={{ marginBottom: 20 }} aria-label="服务督办">
-    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}><div className="card-title">{pendingOnly ? '待我协调与处理' : staff?.role === 'familyDoctor' ? '服务进度总览' : '需协调的服务'}{attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div>{staff?.role === 'familyDoctor' && !pendingOnly && <div role="group" aria-label="服务进度状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', services.length], ['completed', '已完成', completed.length], ['all', '全部', services.length + completed.length]].map(([key, label, count]) => <button key={key} type="button" className={statusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={statusFilter === key} onClick={() => { setStatusFilter(key); setPage(1) }}>{label} {count}</button>)}</div>}</div>
+    <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}><div className="card-title">{pendingOnly ? '待我协调与处理' : staff?.role === 'familyDoctor' ? '服务进度总览' : '需协调的服务'}{overview ? ` · 共 ${services.length + completed.length} 项` : attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div>{staff?.role === 'familyDoctor' && !pendingOnly && <div role="group" aria-label="服务进度状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', services.length], ['completed', '已完成', completed.length], ['all', '全部', services.length + completed.length]].map(([key, label, count]) => <button key={key} type="button" className={statusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={statusFilter === key} onClick={() => { setStatusFilter(key); setPage(1) }}>{label} {count}</button>)}</div>}</div>
     <div className="card-body">
       {staff?.role === 'familyDoctor' && !pendingOnly && <details style={{ marginBottom: 14, borderBottom: '1px solid #E3ECE7', paddingBottom: 12 }}><summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>营养评估进度</summary><NutritionAssessmentPanel compact embedded /></details>}
-      {staff?.role === 'familyDoctor' && !pendingOnly && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>查看所属客户的完整服务进度。随访由健管专员督导，就医协助由健康规划师督导；需要整体健康判断时在本人专业待办中处理。</p>}
+      {staff?.role === 'familyDoctor' && !pendingOnly && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>待完成 {services.length} 项，其中 {attention.length} 项需关注。订单预约、就医协助和体检方案可在各自的专项页查看。随访由健管专员督导，就医协助由健康规划师督导。</p>}
+      {overview && rows.length > 0 && <p style={{ fontSize: 13, color: '#52685D' }}>
+        {{ pending: '待完成', completed: '已完成', all: '全部' }[statusFilter]} {rows.length} 项按来源分布：{Array.from(sourceCounts, ([source, count]) => `${source} ${count} 项`).join('、')}
+      </p>}
       {resource.loading && <div role="status">正在读取服务进度…</div>}
       {resource.error && <div role="alert">进度更新失败：{resource.error} <button onClick={resource.refresh}>重试</button></div>}
       {notice && <p role="status">{notice}</p>}

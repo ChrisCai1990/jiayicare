@@ -57,3 +57,17 @@ test('source task opens read-only preview without navigating to repair-enabled p
   const h = await mount({ data: { services: [{ ...service, taskId: 'f' }], inbox: [] } });
   try { await h.click('查看原服务'); const modal = h.el.querySelector('[role=dialog]'); assert.match(modal.textContent, /核对预约要求/); assert.equal(modal.querySelectorAll('button').length, 1); assert.equal(modal.querySelector('button').textContent, '关闭'); assert.equal(h.navigation.length, 0) } finally { await h.close() }
 });
+
+test('overview reconciles each status with its sources and identifies attention as a pending subset', async () => {
+  const h = await mount({ data: { services: [service, { ...service, key: 'annual:u:p:a', attention: false }],
+    completed: [{ ...service, key: 'order:o', status: 'completed', attention: false }] } });
+  try {
+    assert.match(h.el.textContent, /服务进度总览 · 共 3 项/);
+    assert.match(h.el.textContent, /待完成 2 项，其中 1 项需关注/);
+    assert.match(h.el.textContent, /待完成 2 项按来源分布：随访 2 项/);
+    await h.click('已完成 1');
+    assert.match(h.el.textContent, /已完成 1 项按来源分布：服务订单 1 项/);
+    await h.click('全部 3');
+    assert.match(h.el.textContent, /全部 3 项按来源分布：随访 2 项、服务订单 1 项/);
+  } finally { await h.close() }
+});
