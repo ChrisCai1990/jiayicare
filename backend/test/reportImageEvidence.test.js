@@ -644,3 +644,18 @@ for (const mode of ['normal', 'legacy', 'budget-pause', 'page-budget', 'page-cir
   assert.equal(calls, mode === 'checkpoint' ? 0 : 2);
   assert.equal((final.reportItems || []).length, 0);
 });
+
+test('page-header thyroid continuation requires its own ultrasound evidence and clinical clauses', () => {
+  const thyroid = { name: '甲状腺超声检查', itemType: 'imaging',
+    findings: '甲状腺形态大小正常，左叶见低回声结节。', diagnosis: '甲状腺双侧叶结节，C-TIRADS 3' };
+  const breast = { title: '双侧乳房彩超检查', clinicalText: '双乳腺体增厚。' };
+  const guard = (title, clinicalText, candidates) => guardImageEvidence({ items: candidates }, {
+    hasMedicalImages: false, readability: 'clear', sections: [{ title, clinicalText }, breast],
+  }).items;
+  const text = thyroid.findings + '\n' + thyroid.diagnosis;
+  for (const title of ['', '【报告部份】', '报告部分']) {
+    assert.deepEqual(guard(title, text, [thyroid, { ...thyroid, diagnosis: breast.clinicalText }]), [thyroid]);
+  }
+  assert.deepEqual(guard('报告部分', thyroid.findings, [{ ...thyroid, diagnosis: '' }]), []);
+  assert.deepEqual(guard('报告部分', text + '。双侧颈动脉正常。', [thyroid]), []);
+});

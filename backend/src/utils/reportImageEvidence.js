@@ -11,6 +11,7 @@ sections[].clinicalText 只能是该栏目文字原文，保持原字、数字�
 图文混排页必须保留图外真实的全部检查文字；纯文字报告即使标题为超声也不算包含医学影像。
 超声报告图外印刷的“超声描述”和“超声诊断/医师意见”要分别转录；尤其核对页面下方的小字诊断栏。诊断栏下方印刷的分级解释、概率和参考文献与本次患者诊断分开转录，不得混为一句；手写覆盖印刷文字时，只转录仍能确认的印刷内容。
 按原件印刷的栏目边界分别转录，不要把上一栏目的所见接到下一栏目。每个 sections 元素只包含该栏目之下、下一栏目标题之前的文字；同一栏目的检查所见和诊断均保留。栏目标题不清楚时 title=""，不要猜。
+页首续页的“报告部分/报告部份”是页眉。即使未重印项目标题，也要将下一检查标题之前的左右两栏分别按所见、结论顺序转录到同一段 clinicalText，title 留空。
 检验表格按真实印刷行写入 sections[].rows，每行分别填写原文项目名、结果、单位、参考范围；任何字段不清楚则留空，不得借用相邻行。叙述性所见和诊断写入 clinicalText；没有表格行时 rows=[]。栏目顺序按页面阅读顺序，不依赖医院或固定模板。
 严格返回 JSON：{"hasMedicalImages":true,"readability":"clear","sections":[{"title":"原件栏目标题","clinicalText":"该栏目叙述原文或空字符串","rows":[{"name":"","value":"","unit":"","referenceRange":""}]}]}。没有印刷检查文字和表格行时 sections=[]。`;
 
@@ -68,13 +69,23 @@ function cleanClinicalTranscript(text) {
   }).join('\n');
 }
 
+// A continuation can start with a page header instead of a printed exam title.
+function continuationTitle(section, index) {
+  if (index !== 0 || section.rows?.length
+      || !/^(?:报告部[分份])?$/.test(normalizeText(section.title))) return section.title;
+  const text = section.clinicalText;
+  if (/^\s*甲状腺/.test(text) && /回声/.test(text) && /(?:C[- ]?)?TI[- ]?RADS\s*[1-6]/i.test(text)
+      && !/乳腺|颈动脉|骨密度|心脏|BI[- ]?RADS/i.test(text)) return '甲状腺超声检查';
+  return section.title;
+}
+
 function evidenceSections(evidence) {
   if (!Array.isArray(evidence?.sections)) return null;
   if (evidence.sections.some(section => !section || typeof section.title !== 'string' || typeof section.clinicalText !== 'string'
       || (section.rows !== undefined && (!Array.isArray(section.rows) || section.rows.some(row => !row || typeof row !== 'object' || Array.isArray(row)
         || ['name', 'value', 'unit', 'referenceRange'].some(field => row[field] != null && !['string', 'number'].includes(typeof row[field]))))))) return null;
-  return evidence.sections.map(section => ({
-    title: section.title, clinicalText: cleanClinicalTranscript(section.clinicalText),
+  return evidence.sections.map((section, index) => ({
+    title: continuationTitle(section, index), clinicalText: cleanClinicalTranscript(section.clinicalText),
     rows: Array.isArray(section.rows) ? section.rows.map(row => ({
       name: String(row.name ?? ''), value: String(row.value ?? ''), unit: String(row.unit ?? ''),
       referenceRange: String(row.referenceRange ?? ''),
