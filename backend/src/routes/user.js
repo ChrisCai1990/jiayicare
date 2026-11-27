@@ -940,7 +940,7 @@ async function generateHealthPlanFollowUp(plan) {
       : (patient?.assignedHealthManager || patient?.assignedFamilyDoctor);
   const typeLabel = plan.type === 'nutrition' ? 'AI营养方案' : (plan.type === 'medical_assist' ? 'AI就医协助方案' : 'AI体检方案');
   await FollowUp.findOneAndUpdate(
-    { sourceHealthPlanId: plan._id, sourceType: 'health_plan' },
+    { sourceHealthPlanId: plan._id, sourceType: 'health_plan', 'bodyCompCycle.serviceVersion': { $ne: 1 } },
     { $set: {
       patientId: plan.patientId, staffId: plan.staffId, assignedTo: assignedTo || plan.staffId,
       date: new Date(Date.now() + 7 * 86400000),

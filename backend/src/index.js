@@ -234,6 +234,7 @@ app.listen(PORT, () => {
   require('./utils/customerReminderPushScheduler').startCustomerReminderPushScheduler();
   require('./utils/serviceExpiryPushScheduler').startServiceExpiryPushScheduler();
   require('./utils/appointmentReminderScheduler').startAppointmentReminderScheduler();
+  require('./utils/nutritionServiceFollowUp').startScheduler();
   require('./utils/checkupAppointmentReminderScheduler').startCheckupAppointmentReminderScheduler();
 });
 
