@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -44,7 +45,7 @@ export default function ContentReviewsPage() {
     try {
       const r = await staffAPI.reviewContentReview(id, { action, note: note || '' })
       toast(r.message || '审核已保存', 'success')
-      nav('/home')
+      returnToEntry(nav, '/home')
     } catch (e) {
       const message = e.message || '审核保存失败'
       toast(message, 'error')
@@ -54,9 +55,9 @@ export default function ContentReviewsPage() {
   }
 
   if (loading) return <div className="page-container">加载审核稿…</div>
-  if (!item) return <div className="page-container"><button onClick={() => nav('/home')}>返回工作台</button><p style={{ marginTop: 16 }}>该审核稿已不在您的待处理列表，可能已完成或已转交下一环节。</p></div>
+  if (!item) return <div className="page-container"><button onClick={() => returnToEntry(nav, '/home')}>返回</button><p style={{ marginTop: 16 }}>该审核稿已不在您的待处理列表，可能已完成或已转交下一环节。</p></div>
   return <div className="page-container" style={{ maxWidth: 920 }}>
-    <button onClick={() => nav('/home')} style={{ border: 'none', background: 'none', color: '#1E6B50', cursor: 'pointer', padding: 0 }}>← 返回工作台</button>
+    <button onClick={() => returnToEntry(nav, '/home')} style={{ border: 'none', background: 'none', color: '#1E6B50', cursor: 'pointer', padding: 0 }}>← 返回</button>
     <div className="card" style={{ marginTop: 16, padding: 24 }}>
       <div style={{ fontSize: 13, color: '#7C3AED', fontWeight: 600 }}>官网 GEO 内容审核 · {item.status === 'changes_requested' ? '已退回，等待编辑修订；修订后重新送审' : item.status === 'pending' ? `当前环节：${roleName(item.currentRole)}` : '历史记录（只读）'}</div>
       <h2 style={{ margin: '8px 0' }}>{item.title}</h2>

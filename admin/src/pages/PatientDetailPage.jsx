@@ -1,3 +1,5 @@
+import { useEntryView } from '../../../shared/useEntryView'
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { adminAPI } from '../api'
@@ -188,7 +190,7 @@ export default function PatientDetailPage() {
   const { admin } = useAdmin()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useEntryView('tab', 'overview')
   const [showMsg, setShowMsg] = useState(false)
   const [showTask, setShowTask] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
@@ -237,7 +239,7 @@ export default function PatientDetailPage() {
   return (
     <>
       {/* Back */}
-      <button className="back-link" onClick={() => nav('/patients')}>← 返回会员列表</button>
+      <button className="back-link" onClick={() => returnToEntry(nav, '/patients')}>← 返回</button>
 
       {/* Patient header */}
       <div className="card" style={{ marginBottom: 20 }}>

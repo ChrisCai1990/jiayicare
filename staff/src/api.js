@@ -1,3 +1,4 @@
+import { clearEntryViews } from '../../shared/entryViews.mjs'
 // 本地医护端也使用正式 HTTPS 域名：直接访问服务器 IP 会被重定向到 HTTPS，
 // 随后因证书不匹配导致浏览器 fetch 失败。
 import { resolveApiBase } from './utils/isolatedApiBase.mjs'
@@ -22,6 +23,7 @@ export const clearToken = ()  => {
   localStorage.removeItem('jy_staff_push_token')
   localStorage.removeItem('jy_staff_push_marker')
   localStorage.removeItem('jy_staff_token')
+  clearEntryViews()
   localStorage.removeItem('jy_staff_info')
 }
 

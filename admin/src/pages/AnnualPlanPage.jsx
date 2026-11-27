@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -347,7 +348,7 @@ export default function AnnualPlanPage({ templateMode }) {
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
       {/* 顶部导航 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <button onClick={() => nav(backPath)}
+        <button onClick={() => returnToEntry(nav, backPath)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}>
           ←
         </button>
@@ -423,9 +424,9 @@ export default function AnnualPlanPage({ templateMode }) {
 
           {/* 底部保存 */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button onClick={() => nav(backPath)}
+            <button onClick={() => returnToEntry(nav, backPath)}
               style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
-              {templateMode ? '返回方案列表' : '返回会员详情'}
+              返回
             </button>
             <button onClick={handleSave} disabled={saving}
               style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '10px 28px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>

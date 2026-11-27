@@ -1,3 +1,5 @@
+import { useEntryView } from '../../../shared/useEntryView'
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import SleepAssessmentPreparation from '../components/SleepAssessmentPreparation'
 import PsychologyPage from './PsychologyPage'
 import ReferralRecordCard from '../components/ReferralRecordCard'
@@ -2207,16 +2209,10 @@ export default function PatientDetailPage() {
   const [medicalServiceOnly, setMedicalServiceOnly] = useState(new URLSearchParams(location.search).get('serviceFilter') === 'medical')
   const requestedServiceView = new URLSearchParams(location.search).get('serviceView') || 'overview'
   const initialTab = new URLSearchParams(location.search).has('healthRecordId') && requestedTab === 'portrait' ? 'symptoms' : ['monitoring', 'archive'].includes(requestedTab) ? 'records' : requestedTab
-  const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
+  const [tab, setTab] = useEntryView('tab', initialTab === 'requisitions' ? 'info' : initialTab)
   const openSpecialtyReview = topicId => { setTab('aiCase'); nav(`/patients/${id}?tab=aiCase&caseReviewId=${topicId}`) }
-  const [healthBaseView, setHealthBaseView] = useState(new URLSearchParams(location.search).get('recordView') === 'lifestyle' ? 'lifestyle' : requestedTab === 'monitoring' ? 'monitoring' : 'profile')
-  useEffect(() => {
-    if (new URLSearchParams(location.search).get('recordView') === 'lifestyle' && requestedTab === 'records') {
-      setTab('records')
-      setHealthBaseView('lifestyle')
-    }
-  }, [location.search, requestedTab])
-  const [screeningWorkspaceView, setScreeningWorkspaceView] = useState('screening')
+  const [healthBaseView, setHealthBaseView] = useEntryView('healthBaseView', new URLSearchParams(location.search).get('recordView') === 'lifestyle' ? 'lifestyle' : requestedTab === 'monitoring' ? 'monitoring' : 'profile')
+  const [screeningWorkspaceView, setScreeningWorkspaceView] = useEntryView('screeningWorkspaceView', 'screening')
   useEffect(() => {
     if (!location.hash || loading) return
     const targetId = decodeURIComponent(location.hash.slice(1))
@@ -2238,7 +2234,7 @@ export default function PatientDetailPage() {
   const focusedMonitoringEntry = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
-  const [serviceManagementView, setServiceManagementView] = useState(requestedServiceView)
+  const [serviceManagementView, setServiceManagementView] = useEntryView('serviceManagementView', requestedServiceView)
   const [monthlyReviewEnabled, setMonthlyReviewEnabled] = useState(false)
   useEffect(() => {
     if (tab !== 'plans' || serviceManagementView !== 'annual') return
@@ -5218,7 +5214,7 @@ export default function PatientDetailPage() {
     <div className="page" style={{ overflowX: 'hidden', maxWidth: '100%' }}>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => nav(annualWorkflowBack || '/patients')}>{annualWorkflowBack ? '← 返回年度流程' : '← 返回'}</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => returnToEntry(nav, annualWorkflowBack || '/patients')}>← 返回</button>
           <div>
             <h1 className="page-title" style={{ marginBottom: 2 }}>
               {user.name}

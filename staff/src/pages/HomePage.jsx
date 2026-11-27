@@ -1,3 +1,4 @@
+import { useEntryView } from '../../../shared/useEntryView'
 import { groupPurchasedItems } from '../../../shared/groupPurchasedItems.cjs'
 import ExpertConsultationTasksPanel from '../components/ExpertConsultationTasksPanel'
 import { isServiceActionable } from '../utils/workbenchReminder.mjs'
@@ -53,7 +54,7 @@ export default function HomePage() {
   const notification = useNotificationSummary()
   const workbenchReminder = useWorkbenchReminder()
   const issuedTasks = useWorkbenchResource(async () => (await staffAPI.getTodayIssuedTasks()).data, getToken(), null)
-  const [issuedOpen, setIssuedOpen] = useState(false)
+  const [issuedOpen, setIssuedOpen] = useEntryView('issuedOpen', false)
   const unreadMsgCount = notification.count ?? '—'
   const notificationSummary = notification.data?.summary || {}
   const notificationLandingTab = notificationSummary.metabolicHelpCount > 0 ? 'pilotHelp'
@@ -77,23 +78,14 @@ export default function HomePage() {
   const [orderPage, setOrderPage] = useState(1)
   const [orderHistoryPage, setOrderHistoryPage] = useState(1)
   const [serviceTasks, setServiceTasks] = useState([])
-  const [advisorArea, setAdvisorArea] = useState('todo')
-  const [advisorTodoView, setAdvisorTodoView] = useState(() => {
-    const target = new URLSearchParams(location.search).get('todo')
-    return ['all', 'followup', 'service', 'expert'].includes(target) ? target : 'all'
-  })
-  const [roleTodoView, setRoleTodoView] = useState('all')
+  const [advisorArea, setAdvisorArea] = useEntryView('advisorArea', 'todo')
+  const requestedTodo = new URLSearchParams(location.search).get('todo')
+  const initialTodo = ['all', 'followup', 'service', 'expert'].includes(requestedTodo) ? requestedTodo : 'all'
+  const [advisorTodoView, setAdvisorTodoView] = useEntryView('advisorTodoView', initialTodo)
+  const [roleTodoView, setRoleTodoView] = useEntryView('roleTodoView', initialTodo)
   const [geoCount, setGeoCount] = useState('加载中')
-  const [advisorProgressView, setAdvisorProgressView] = useState('overview')
+  const [advisorProgressView, setAdvisorProgressView] = useEntryView('advisorProgressView', 'overview')
 
-  useEffect(() => {
-    const target = new URLSearchParams(location.search).get('todo')
-    if (['all', 'followup', 'service', 'expert'].includes(target)) {
-      setAdvisorArea('todo')
-      setAdvisorTodoView(target)
-      setRoleTodoView(target)
-    }
-  }, [location.search, location.key])
 
   useEffect(() => { if (advisorArea === 'todo') { setOrderStatusFilter('pending'); setOrderPage(1) } }, [advisorArea])
 

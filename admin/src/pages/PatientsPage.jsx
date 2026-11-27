@@ -1,3 +1,4 @@
+import { useEntryView } from '../../../shared/useEntryView'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../api'
@@ -16,12 +17,12 @@ export default function PatientsPage() {
   const toast = useToast()
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [q, setQ] = useState('')
-  const [hasService, setHasService] = useState('')
-  const [stage, setStage] = useState('')
-  const [channel, setChannel] = useState('')
-  const [deleted, setDeleted] = useState('active')
+  const [page, setPage] = useEntryView('page', 1)
+  const [q, setQ] = useEntryView('q', '')
+  const [hasService, setHasService] = useEntryView('hasService', '')
+  const [stage, setStage] = useEntryView('stage', '')
+  const [channel, setChannel] = useEntryView('channel', '')
+  const [deleted, setDeleted] = useEntryView('deleted', 'active')
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async (p = page) => {
@@ -38,8 +39,7 @@ export default function PatientsPage() {
     finally { setLoading(false) }
   }, [q, hasService, stage, channel, deleted, page])
 
-  useEffect(() => { load(1); setPage(1) }, [q, hasService, stage, channel, deleted])
-  useEffect(() => { load(page) }, [page])
+  useEffect(() => { load(page) }, [load, page])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -59,21 +59,21 @@ export default function PatientsPage() {
             className="search-input"
             placeholder="🔍  搜索姓名或手机号..."
             value={q}
-            onChange={e => setQ(e.target.value)}
+            onChange={e => { setQ(e.target.value); setPage(1) }}
           />
-          <select className="filter-select" value={hasService} onChange={e => setHasService(e.target.value)}>
+          <select className="filter-select" value={hasService} onChange={e => { setHasService(e.target.value); setPage(1) }}>
             <option value="">全部会员</option>
             <option value="true">已开通服务</option>
             <option value="false">未开通服务</option>
           </select>
-          <select aria-label="建档状态" className="filter-select" value={stage} onChange={e => setStage(e.target.value)}>
+          <select aria-label="建档状态" className="filter-select" value={stage} onChange={e => { setStage(e.target.value); setPage(1) }}>
             <option value="">全部建档状态</option><option value="active">已建档</option><option value="pending">待建档</option>
           </select>
-          <select aria-label="首次来源" className="filter-select" value={channel} onChange={e => setChannel(e.target.value)}>
+          <select aria-label="首次来源" className="filter-select" value={channel} onChange={e => { setChannel(e.target.value); setPage(1) }}>
             <option value="">全部来源</option><option value="invite">有邀请关系</option>
             {['微信搜索','扫码或识别二维码','好友分享','群聊分享'].map(value => <option key={value}>{value}</option>)}
           </select>
-          {admin?.role === 'superadmin' && <select className="filter-select" value={deleted} onChange={e => setDeleted(e.target.value)}>
+          {admin?.role === 'superadmin' && <select className="filter-select" value={deleted} onChange={e => { setDeleted(e.target.value); setPage(1) }}>
             <option value="active">正常会员</option><option value="only">会员回收站</option>
           </select>}
         </div>

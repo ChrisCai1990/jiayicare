@@ -4,7 +4,7 @@ import ProfessionalAssessmentFields from '../components/ProfessionalAssessmentFi
 import DateField from '../../../shared/DateField.jsx'
 import '../components/ReportFollowUpDrafts.css'
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI, rehabAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import { StaffListContext, MedicalResourcesContext, ModulePanel, RecordEditor, NutritionComparisonMetricPicker } from '../components/ModulePanel'
@@ -1606,7 +1606,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             <span style={{ fontSize: 12, fontWeight: 700, color: preparation.checklist.ready ? '#15803D' : '#B45309' }}>{preparation.checklist.ready ? '✓ 已就绪' : '待完善'}</span>
           </div>
           {preparation.continuity?.mode === 'renewal' && <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558' }}>参考 {preparation.continuity.previousYear} 年已确认方案；年度总评可作为补充资料。{preparation.continuity.summary && <details style={{ marginTop: 8 }}><summary>已审核总评内容</summary><div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{preparation.continuity.summary}</div></details>}</div>}
-          {!!preparation.caseReviews?.length && <details style={{ marginTop: 10 }}><summary>按需查看团队研判</summary><div>专项研判仅用于复杂问题的团队讨论，不作为年度方案生成或推送条件。已确认的结论可作补充依据。</div><a href={`/patients/${id}?tab=aiCase`}>查看研判记录</a></details>}
+          {!!preparation.caseReviews?.length && <details style={{ marginTop: 10 }}><summary>按需查看团队研判</summary><div>专项研判仅用于复杂问题的团队讨论，不作为年度方案生成或推送条件。已确认的结论可作补充依据。</div><Link to={`/patients/${id}?tab=aiCase`}>查看研判记录</Link></details>}
           {!!generationCoverage.length && <details style={{ marginTop: 10 }}><summary>本次来源核对（含待确认及未采用原因）</summary>{generationCoverage.map(item => <div key={item.sourceId}>{item.sourceId}：{{ included: '已纳入', deferred: '待确认', not_applicable: '未采用' }[item.status]}；{item.reason}</div>)}</details>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8, marginTop: 14 }}>
             {preparation.checklist.items.filter(item => !item.complete).map(item => (
@@ -1791,7 +1791,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
             <section>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>已纳入的问题与对应方案</div>
-            {unresolvedSymptoms.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>截至本方案年度有尚未处理的不适主诉（展示最近 {unresolvedSymptoms.length} 条），请先核对是否需要立即就医及是否进入年度管理：{unresolvedSymptoms.map(row => row.value).join('、')}。<a href={`/patients/${id}?tab=symptoms`} style={{ marginLeft: 6 }}>查看并处理主诉</a></div>}
+            {unresolvedSymptoms.length > 0 && <div role="alert" style={{ fontSize: 12, color: '#9A5B13', background: '#FFF5E8', borderRadius: 8, padding: 10, marginBottom: 10 }}>截至本方案年度有尚未处理的不适主诉（展示最近 {unresolvedSymptoms.length} 条），请先核对是否需要立即就医及是否进入年度管理：{unresolvedSymptoms.map(row => row.value).join('、')}。<Link to={`/patients/${id}?tab=symptoms`} style={{ marginLeft: 6 }}>查看并处理主诉</Link></div>}
             {!moduleData.management_targets?.records?.length && <div style={{ fontSize: 12, color: '#62776A', marginTop: 8 }}>暂无逐条管理目标。可在专项筛查选择“纳入管理”，或在AI健康信息整理中核对待完善检查。</div>}
             {managementTargetGroups.map(group => <div key={group.ids[0]} style={{ background: '#fff', border: '1px solid #B9D8C8', borderRadius: 12, padding: 16, marginBottom: 10 }}>
               {group.entries.length > 1 && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>{groupHeading(group)}</div>}

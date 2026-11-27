@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useCallback, createContext, useContext } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -626,7 +627,7 @@ export default function AnnualPlanPage() {
       {/* ── 顶部导航 ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
-          onClick={() => nav(`/patients/${id}`)}
+          onClick={() => returnToEntry(nav, `/patients/${id}`)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}
         >
           ←
@@ -723,10 +724,10 @@ export default function AnnualPlanPage() {
           {/* ── 底部保存按钮 ── */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
             <button
-              onClick={() => nav(`/patients/${id}`)}
+              onClick={() => returnToEntry(nav, `/patients/${id}`)}
               style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
             >
-              返回会员详情
+              返回
             </button>
             <button
               onClick={handleSave}

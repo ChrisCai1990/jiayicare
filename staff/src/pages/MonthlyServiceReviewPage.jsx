@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -82,7 +83,7 @@ function LegacyMonthlyServiceReviewPage() {
   const setAction = (index, patch) => setActions(items => items.map((item, i) => i === index ? { ...item, ...patch } : item))
 
   return <div style={{ maxWidth: 980, margin: '0 auto', padding: '24px 20px 80px' }}>
-    <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/annual-health`)}>← 年度健康管理</button>
+    <button className="btn btn-secondary btn-sm" onClick={() => returnToEntry(nav, `/patients/${id}/annual-health`)}>返回</button>
     <h2 style={{ margin: '18px 0 5px' }}>月度服务复盘</h2>
     <p style={{ color: '#65776F', marginTop: 0 }}>团队内部记录，不等同于阶段性健康评估；未经确认的内容不会展示给客户。</p>
     {error && <div style={{ padding: 12, background: '#FFF0F0', color: '#A12E2E', borderRadius: 8, marginBottom: 12 }}>{error}</div>}

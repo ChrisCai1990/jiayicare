@@ -1,3 +1,4 @@
+import { useEntryView } from '../../../shared/useEntryView'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -102,15 +103,15 @@ export default function PatientsPage() {
   const can = usePermission()
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [disease, setDisease] = useState('')
+  const [page, setPage] = useEntryView('page', 1)
+  const [search, setSearch] = useEntryView('search', '')
+  const [disease, setDisease] = useEntryView('disease', '')
   const [loading, setLoading] = useState(true)
   const [showAssign, setShowAssign] = useState(false)
-  const [sortByScore, setSortByScore] = useState(false) // 按评分从低到高排序（高危优先）
+  const [sortByScore, setSortByScore] = useEntryView('sortByScore', false) // 按评分从低到高排序（高危优先）
   const [isMentor, setIsMentor] = useState(false) // 是否团队导师，决定要不要显示"我的客户/团队客户"Tab
-  const [scope, setScope] = useState('team') // mine=只看自己名下 team=看全团队（默认，与此前行为一致）
-  const [limit, setLimit] = useState(20)
+  const [scope, setScope] = useEntryView('scope', 'team') // mine=只看自己名下 team=看全团队（默认，与此前行为一致）
+  const [limit, setLimit] = useEntryView('limit', 20)
 
   const load = useCallback(async () => {
     setLoading(true)

@@ -1,3 +1,4 @@
+import { clearEntryViews } from '../../shared/entryViews.mjs'
 // 管理端走同域 /api，由 Nginx 转发至后端，避免 HTTPS 页面请求 HTTP 接口被浏览器拦截。
 const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/admin` : '/api/admin'
 // 上传接口返回相对路径(如/api/uploads/xxx.jpg)，admin后台域名(admin.jiaycare.com)跟后端API
@@ -14,6 +15,7 @@ export function setToken(t) {
 export function clearToken() {
   _token = ''
   localStorage.removeItem('jy_admin_token')
+  clearEntryViews()
   localStorage.removeItem('jy_admin_info')
 }
 export function getToken() { return _token }

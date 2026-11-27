@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { staffAPI } from '../api'
@@ -16,7 +17,7 @@ export default function AnnualWorkflowPage() {
   useEffect(refresh, [id])
   const flow = state.data
   return <div style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 20px' }}>
-    <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}`)}>返回客户档案</button>
+    <button className="btn btn-secondary btn-sm" onClick={() => returnToEntry(nav, `/patients/${id}`)}>返回</button>
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginTop: 16 }}>
       <div><h1 style={{ margin: 0, fontSize: 24 }}>年度健康管理流程</h1>{flow && <p style={{ color: '#52675D' }}>{flow.patientName} · {flow.year}年度 · 当前：{flow.label}</p>}</div>
       <button className="btn btn-secondary btn-sm" disabled={state.loading} onClick={refresh}>刷新进度</button>

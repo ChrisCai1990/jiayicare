@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useStaff } from '../App'
@@ -31,12 +32,12 @@ export default function SingleReportFollowUpPage() {
       const remaining = data.filter(todo => todo.patientId === id && todo.link && todo.link !== currentLink)
       setCompletion({ draftId: completedDraftId, nextTodo: remaining[0] || null, message: remaining.length ? `本次审核已完成，这位客户还有 ${remaining.length} 项待办。` : '本次审核已完成，这位客户目前没有其他待办。' })
     } catch {
-      setCompletion({ draftId: completedDraftId, message: '本次审核已完成，暂时无法读取下一项待办。请返回工作台刷新。' })
+      setCompletion({ draftId: completedDraftId, message: '本次审核已完成，暂时无法读取下一项待办。请返回刷新。' })
     }
   }
 
   return <main style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 16px' }}>
-    <button type="button" className="btn btn-secondary" onClick={() => nav('/home')} style={{ marginBottom: 18 }}>返回工作台</button>
+    <button type="button" className="btn btn-secondary" onClick={() => returnToEntry(nav, '/home')} style={{ marginBottom: 18 }}>返回</button>
     <h1 style={{ margin: '0 0 8px', fontSize: 28 }}>单次随访方案</h1>
     <p style={{ color: '#61746a', margin: '0 0 24px' }}>核对本次就医或检查资料，确认本次随访安排。</p>
     <ReportFollowUpDrafts key={`${id}:${reviewDraftId || ''}`} patientId={id} year={year} canEdit={canEdit} singleOnly onCompleted={findNextTodo} completionNotice={completion} onNextTodo={() => nav(completion.nextTodo.link, { state: { sourceTodo: completion.nextTodo } })} />

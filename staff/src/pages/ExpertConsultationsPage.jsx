@@ -1,7 +1,8 @@
+import { useEntryView } from '../../../shared/useEntryView'
 import ConsultationCreatePanel from '../components/ConsultationCreatePanel'
 import './ConsultationHub.css'
 import PsychologyPage from './PsychologyPage'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import ExpertReplyForm from '../components/ExpertReplyForm'
 import ConsultationFollowupReview from '../components/ConsultationFollowupReview'
 import ConsultationCorrespondence from '../components/ConsultationCorrespondence'
@@ -22,8 +23,8 @@ function StandardExpertConsultationsPage({ embedded = false, hideCreate = false 
   const { staff } = useStaff()
   const self = id(staff)
   const [rows, setRows] = useState([])
-  const [selectedId, setSelectedId] = useState('')
-  const [listOpen, setListOpen] = useState(true)
+  const [selectedId, setSelectedId] = useEntryView('consultation.selectedId', '')
+  const [listOpen, setListOpen] = useEntryView('consultation.listOpen', true)
   const [experts, setExperts] = useState([])
   const [reports, setReports] = useState([])
   const [referrals, setReferrals] = useState([])
@@ -39,8 +40,8 @@ function StandardExpertConsultationsPage({ embedded = false, hideCreate = false 
   const [busy, setBusy] = useState(false)
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState({ patientId: '', type: 'single', expertCount: 2, request: '' })
-  const [filter, setFilter] = useState('')
-  const [mineOnly, setMineOnly] = useState(false)
+  const [filter, setFilter] = useEntryView('consultation.filter', '')
+  const [mineOnly, setMineOnly] = useEntryView('consultation.mineOnly', false)
   const needsMe = row => {
     if (staff?.role === 'superadmin') return !['completed', 'cancelled'].includes(row.status)
     if (row.status === 'team_assignment') return id(row.plannerId) === self || (!row.plannerId && staff?.role === 'healthPlanner')
@@ -82,13 +83,13 @@ function StandardExpertConsultationsPage({ embedded = false, hideCreate = false 
   }
   useEffect(() => {
     load().then(items => {
-      const requestedId = new URLSearchParams(window.location.search).get('caseId')
+      const requestedId = selectedId || new URLSearchParams(window.location.search).get('caseId')
       const requested = items.find(item => id(item) === requestedId)
-      if (requested) choose(requested)
+      if (requested) choose(requested, selectedId ? listOpen : false)
     }).catch(e => setError(e.message))
   }, [])
-  async function choose(row) {
-    setListOpen(false); setSelectedId(id(row)); setBookingMode('coordinate'); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false)
+  async function choose(row, showList = false) {
+    setListOpen(showList); setSelectedId(id(row)); setBookingMode('coordinate'); setError(''); setEditingRequest(false); setRequestDraft(row.clientRequest || ''); setShowReferralChange(false)
     setForm({ ...(row.status === 'team_assignment' && !row.plannerId ? { plannerId: self } : {}),
       ...(row.referralId ? { referralId: id(row.referralId) } : {}), reportIds: (row.materialReportIds || []).map(id) })
     setReferrals([]); setExperts([]); setSlots([])
@@ -126,13 +127,13 @@ function StandardExpertConsultationsPage({ embedded = false, hideCreate = false 
   const slotOptions = staffId => slots.filter(slot => id(slot.staffId) === id(staffId) && (+new Date(slot.endAt) - +new Date(slot.startAt)) >= 15 * 60000 && (+new Date(slot.endAt) - +new Date(slot.startAt)) <= 30 * 60000)
   const referralPicker = <div style={{ padding: 12, border: '1px solid #DDE8E1', borderRadius: 8, margin: '12px 0' }}>
     <p>选择转介信，确认专家和预约安排。专家及时间已与双方确认的，可直接预约推送。</p>
-    <p><a href={`/patients/${id(selected?.patientId)}?tab=referrals&compose=referral&consultationCaseId=${id(selected)}&consultationType=${selected?.type}`}>填写转介信</a></p>
+    <p><Link to={`/patients/${id(selected?.patientId)}?tab=referrals&compose=referral&consultationCaseId=${id(selected)}&consultationType=${selected?.type}`}>填写转介信</Link></p>
     <label>本次转介<select className="form-input" value={form.referralId || ''} onChange={e => set('referralId')(e.target.value)}><option value="">请选择可履约的外部医疗转介</option>{referrals.map(referral => <option key={id(referral)} value={id(referral)}>{referral.reason} · {referral.medicalExpertSnapshot?.name || '专家'} · {new Date(referral.createdAt).toLocaleDateString('zh-CN')}</option>)}</select></label>
     {!referrals.length && <p>暂无可关联的转介。创建后返回这里，重新打开本咨询事项即可刷新列表。</p>}
     {form.referralId && (() => { const referral = referrals.find(item => id(item) === form.referralId); return referral && <div style={{ padding: 10, background: '#F5F8F6', whiteSpace: 'pre-wrap' }}>原因：{referral.reason}<br/>问题：{referral.questionList || '见转介说明'}<br/>{referral.content}</div> })()}
     {selected?.type === 'mdt' && members.map((member,index)=><label key={index} style={{display:'block'}}>专家 {index+1}<select className="form-input" value={member.expertId} onChange={e=>updateMember(index,'expertId',e.target.value)}><option value="">请选择专家</option>{experts.map(x=><option key={id(x)} value={id(x)}>{x.name}</option>)}</select></label>)}
     <label style={{display:'block',margin:'12px 0'}}><input type="checkbox" checked={!!form.materialsReviewed} onChange={e=>set('materialsReviewed')(e.target.checked)} /> 已审核本次资料、转介原因和会诊诉求</label>
-    <p><a href={`/patients/${id(selected?.patientId)}?tab=reports`}>查看／审核来源报告</a></p>
+    <p><Link to={`/patients/${id(selected?.patientId)}?tab=reports`}>查看／审核来源报告</Link></p>
     <label>预约安排<select className="form-input" value={bookingMode} onChange={e => setBookingMode(e.target.value)}><option value="coordinate">尚需协调，交健管专员安排</option><option value="direct">专家和时间均已确认，直接预约</option></select></label>
     {bookingMode === 'direct' && <>
       {selected?.type === 'single' && <div style={{ margin: '12px 0' }}><b>已确认时间（北京时间）</b><label style={{ display: 'block' }}>开始<input type="datetime-local" className="form-input" value={form.confirmedStart || ''} onChange={e => { set('confirmedStart')(e.target.value); set('partiesConfirmed')(false); setMembers(current => current.map(m => ({ ...m, slotId: '' }))) }} /></label><label style={{ display: 'block' }}>结束<input type="datetime-local" className="form-input" value={form.confirmedEnd || ''} onChange={e => { set('confirmedEnd')(e.target.value); set('partiesConfirmed')(false); setMembers(current => current.map(m => ({ ...m, slotId: '' }))) }} /></label><button className="btn btn-secondary" onClick={() => {
@@ -228,10 +229,10 @@ function StandardExpertConsultationsPage({ embedded = false, hideCreate = false 
           {selected.status === 'final_review' && advisor && <button className="btn btn-primary" disabled={busy} onClick={() => action('complete', {})}>审核随访计划并结束服务</button>}
           <details key={`materials-${selectedId}`} style={{ marginTop: 24, borderTop: '1px solid #DDE8E1', paddingTop: 16 }}>
             <summary style={{ cursor: 'pointer', fontWeight: 600 }}>查看转介资料、预约记录与专家回复</summary>
-          <p><a href={`/patients/${id(selected.patientId)}?tab=reports`}>查看客户已上传报告</a>　<a href={`/patients/${id(selected.patientId)}`}>查看客户档案</a></p>
+          <p><Link to={`/patients/${id(selected.patientId)}?tab=reports`}>查看客户已上传报告</Link>　<Link to={`/patients/${id(selected.patientId)}`}>查看客户档案</Link></p>
           {selected.desiredExpertId && <p>客户指定专家编号：{id(selected.desiredExpertId)}</p>}
           {selected.materialSummary && <p>资料摘要：{selected.materialSummary}</p>}
-          {selected.referralId ? <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>关联的转介信</b><p>原因：{selected.referralId.reason}</p><p>问题：{selected.referralId.questionList || '见转介说明'}</p><p style={{ whiteSpace: 'pre-wrap' }}>{selected.referralId.content}</p><a href={`/patients/${id(selected.patientId)}?tab=referrals`}>查看原转介记录</a></div> : selected.referralPurpose && <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>历史咨询转介内容</b><p>目的：{selected.referralPurpose}</p><p>问题：{selected.referralQuestions}</p><p>背景：{selected.referralContext}</p></div>}
+          {selected.referralId ? <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>关联的转介信</b><p>原因：{selected.referralId.reason}</p><p>问题：{selected.referralId.questionList || '见转介说明'}</p><p style={{ whiteSpace: 'pre-wrap' }}>{selected.referralId.content}</p><Link to={`/patients/${id(selected.patientId)}?tab=referrals`}>查看原转介记录</Link></div> : selected.referralPurpose && <div style={{ background: '#F5F8F6', padding: 12, borderRadius: 8 }}><b>历史咨询转介内容</b><p>目的：{selected.referralPurpose}</p><p>问题：{selected.referralQuestions}</p><p>背景：{selected.referralContext}</p></div>}
           {selected.members?.map((member, index) => <div key={index} id={index === 0 ? 'consultation-assigned-experts' : undefined} style={{ borderTop: '1px solid #E1EAE6', marginTop: 12, paddingTop: 8 }}>
             <b>专家 {index + 1}</b> · {time(member.startAt)} 至 {time(member.endAt)} · {member.repliedAt ? '已回复' : '待回复'}
             {member.opinion && <p>分析：{member.opinion}<br/>下一步：{member.nextStep}{member.noBetterOption && '（暂无更好方案）'}</p>}

@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -278,7 +279,7 @@ export default function NewPatientPage() {
     <div className="page">
       <div className="page-header">
         <div><h1 className="page-title">新增会员</h1><p className="page-subtitle">完整录入会员档案</p></div>
-        <button className="btn btn-secondary" onClick={() => nav(-1)}>← 返回</button>
+        <button className="btn btn-secondary" onClick={() => returnToEntry(nav, '/patients')}>← 返回</button>
       </div>
 
       {/* 会员类型选择（成人/儿童） */}
@@ -693,7 +694,7 @@ export default function NewPatientPage() {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 20 }}>
-          <button type="button" className="btn btn-secondary" onClick={() => nav(-1)}>取消</button>
+          <button type="button" className="btn btn-secondary" onClick={() => returnToEntry(nav, '/patients')}>取消</button>
           <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? '保存中...' : '保存会员'}</button>
         </div>
       </form>

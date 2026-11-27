@@ -1,3 +1,4 @@
+import { returnToEntry } from '../../../shared/returnNavigation.mjs'
 import DateField from '../../../shared/DateField.jsx'
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -517,7 +518,7 @@ export default function PlanDetailPage() {
     <div className="page">
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => nav('/plans')}>← 返回方案列表</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => returnToEntry(nav, '/plans')}>← 返回</button>
           {plan.patientId?._id && (
             <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${plan.patientId._id}`)}>↩ 返回会员详情</button>
           )}
