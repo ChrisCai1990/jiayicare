@@ -292,6 +292,16 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     if (item.status === 'team_review') {
       if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '其他岗位已更新复盘，请刷新后继续' });
       const role = req.staff.role;
+      if (req.body.action === 'save_next_targets') {
+        if(item.reviewWorkflow!=='advisor_nutrition' || !/^\d{4}-\d{2}$/.test(item.periodKey) || item.assessmentMode!=='routine')return res.status(409).json({success:false,message:'仅用于常规月度复盘'});
+        if(role!=='superadmin' && (role!=='familyDoctor'||!isAssignedReviewer(user,req.staff,role)))return res.status(403).json({success:false,message:'请由所属健康顾问保存目标'});
+        const rows=req.body.rows;
+        if(!Array.isArray(rows)||rows.length>20||rows.some(r=>!r||['metric','goal','frequency','range'].some(k=>typeof r[k]!=='string'||r[k].length>160)||['metric','goal','frequency'].some(k=>!r[k].trim())))return res.status(400).json({success:false,message:'请填写指标、目标、记录频率，最多20项'});
+        const [y,m]=item.periodKey.split('-').map(Number);
+        item.nextPhaseTargets={periodKey:new Date(Date.UTC(y,m,1)).toISOString().slice(0,7),updatedAt:new Date(),rows:rows.map(({metric,goal,range,frequency})=>({metric:metric.trim(),goal:goal.trim(),range:range.trim(),frequency:frequency.trim()}))};
+        await item.save();
+        return res.json({success:true,data:item});
+      }
       if (req.body.action === 'preview_four_sections') {
         if (item.reviewWorkflow !== 'advisor_nutrition' || !/^\d{4}-\d{2}$/.test(item.periodKey)) return res.status(409).json({success:false,message:'仅用于原月度综合复盘'});
         const currentRole = item.teamReviews?.nutritionist?.status === 'approved' ? 'familyDoctor' : 'nutritionist';

@@ -11,7 +11,8 @@ const query = rows => {
   return chain;
 };
 test.beforeEach(t=>{
-  for(const name of ['AnnualPlan','HealthPlan']) t.mock.method(require('../src/models/'+name),'findOne',()=>query(null));
+  t.mock.method(require('../src/models/User'),'findById',()=>query(null));
+  for(const name of ['AnnualPlan','HealthPlan','PhaseAssessment']) t.mock.method(require('../src/models/'+name),'findOne',()=>query(null));
 });
 
 test('月度四板块仅列已归类的筛查数据，医疗记录条数不冒充原因分析', async t => {

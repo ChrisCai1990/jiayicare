@@ -4,6 +4,8 @@ async function generate(user, window) {
  // Raw evidence is the input; a preformatted worksheet biases the model into copying lists.
  delete context.fourSectionEvidence;
  delete context.currentLifestyle;
+ delete context.bodyCompHistory;
+ delete context.bodyComposition;
  delete context.historicalTrendSummary;
  // Background summaries must not become this period's smoking, mood or behavior facts.
 

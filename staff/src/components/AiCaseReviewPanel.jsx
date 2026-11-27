@@ -117,6 +117,33 @@ function AssessmentLine({ line, color }) {
   return <div style={{ padding: '8px 11px 8px 25px', position: 'relative', borderBottom: '1px dashed #DCE8E1', fontSize: 13, lineHeight: 1.65 }}><span style={{ position: 'absolute', left: 10, color }}>•</span>{line}</div>
 }
 
+function NextPhaseTargets({ item, patientId, enabled, onSaved, toast }) {
+  const saved = item.nextPhaseTargets?.rows || []
+  const empty = { metric:'', goal:'', range:'', frequency:'' }
+  const [rows,setRows] = useState(saved)
+  const [saving,setSaving] = useState(false)
+  useEffect(()=>setRows(item.nextPhaseTargets?.rows || []),[item._id,item.nextPhaseTargets])
+  const [year,month]=item.periodKey.split('-').map(Number)
+  const period=new Date(Date.UTC(year,month,1)).toISOString().slice(0,7)
+  const update=(index,key,value)=>setRows(rows.map((row,i)=>i===index?{...row,[key]:value}:row))
+  async function save(){
+    setSaving(true)
+    try {
+      const response=await staffAPI.reviewPhaseAssessment(patientId,item._id,{action:'save_next_targets',revision:item.__v,rows})
+      onSaved(response.data)
+      toast('已保存 '+period+' 阶段目标')
+    } catch(error){toast(error.message,'error')} finally {setSaving(false)}
+  }
+  return <details open={!saved.length || undefined} style={{marginTop:10}}>
+    <summary style={{cursor:'pointer',fontWeight:700}}>{period} 阶段管理目标（{saved.length}项）</summary>
+    {rows.map((row,index)=><div key={index} style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}}>
+      {[['metric','跟踪指标'],['goal','维持或改善目标'],['range','目标范围或判定标准'],['frequency','记录频率']].map(([key,label])=><label key={key}>{label}<input className="form-input" value={row[key]||''} disabled={!enabled||saving} onChange={e=>update(index,key,e.target.value)}/></label>)}
+      {enabled&&<button type="button" disabled={saving} onClick={()=>setRows(rows.filter((_,i)=>i!==index))}>移除</button>}
+    </div>)}
+    {enabled&&<div style={{marginTop:8}}><button type="button" disabled={saving||rows.length>=20} onClick={()=>setRows([...rows,{...empty}])}>新增指标</button> <button type="button" disabled={saving} onClick={save}>保存阶段目标</button></div>}
+  </details>
+}
+
 function StageWorkflow({ assessment }) {
   if (!assessment) return <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>尚未生成评估</div>
   if (assessment.status === 'team_review') return <div style={{ marginTop: 10, fontSize: 12, color: '#4A6558' }}>{assessment.templateSnapshot?.source === 'local_manual' ? '系统内人工复盘底稿' : 'AI评估草稿'} → {assessment.teamRoles.map(role => `${PHASE_ROLES[role]}${assessment.teamReviews?.[role]?.status === 'approved' ? '✓' : '待核对'}`).join(' → ')} → 写入服务档案</div>
@@ -523,6 +550,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.displayLabel || `${item.periodLabel}${item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}`}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             {item.templateSnapshot?.contentRevision === 'four-dimensions-v2' && status !== 'finalized' && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>本稿已按四板块新口径重新整理，待当前审核岗位核对。此前岗位已确认意见保留为原稿意见。</div>}
+            {item.assessmentMode==='routine' && item.reviewWorkflow==='advisor_nutrition' && /^\d{4}-\d{2}$/.test(item.periodKey) && <NextPhaseTargets item={item} patientId={patientId} enabled={status==='team_review'&&['familyDoctor','superadmin'].includes(staff?.role)} onSaved={saved=>setAssessments(list=>list.map(row=>row._id===saved._id?saved:row))} toast={toast}/>}
             {item.notice && <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#FFF7E7', color: '#8A5700', fontSize: 12 }}>{item.notice}</div>}
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
             {stageSections[0].lines.some(line=>line.startsWith('本期年度管理目标：')) && <p><strong>本期目标</strong>　{stageSections[0].lines.find(line=>line.startsWith('本期年度管理目标：')).split('本期年度管理目标：')[1]}</p>}
