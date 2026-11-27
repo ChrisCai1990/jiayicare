@@ -13,6 +13,7 @@ export default function ServiceSupervisionPanel({ pendingOnly = false }) {
   const { staff } = useStaff()
   const nav = useNavigate()
   const resource = useWorkbenchResource(async () => (await staffAPI.getServiceSupervision({ includeCompleted: '1' })).data, getToken(), { services: [], completed: [], inbox: [] })
+  const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('pending')
   const [page, setPage] = useState(1)
   const [inboxPage, setInboxPage] = useState(1)
@@ -30,7 +31,13 @@ export default function ServiceSupervisionPanel({ pendingOnly = false }) {
     try { const result = await staffAPI.getSupervisionTask(service.taskId); if (request === previewRequest.current) setPreview({ task: result.data }) }
     catch (e) { if (request === previewRequest.current) setPreview({ error: e.message }) }
   }
-  const { services = [], completed = [], inbox = [] } = resource.data
+  const showSearch = !pendingOnly && staff?.role === 'familyDoctor'
+  const keyword = showSearch ? search.trim().toLowerCase() : ''
+  const matches = service => [service?.patientName, service?.title].some(value => value?.toLowerCase().includes(keyword))
+  const { services: pendingServices = [], completed: completedServices = [], inbox: feedback = [] } = resource.data
+  const services = keyword ? pendingServices.filter(matches) : pendingServices
+  const completed = keyword ? completedServices.filter(matches) : completedServices
+  const inbox = keyword ? feedback.filter(item => matches(item.service)) : feedback
   const attention = services.filter(s => s.attention)
   const rows = pendingOnly ? services.filter(row => row.actionTaskId) : statusFilter === 'pending' ? services : statusFilter === 'completed' ? completed : [...services, ...completed]
   const overview = staff?.role === 'familyDoctor' && !pendingOnly
@@ -63,6 +70,9 @@ export default function ServiceSupervisionPanel({ pendingOnly = false }) {
   return <section className="card" style={{ marginBottom: 20 }} aria-label="服务督办">
     <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}><div className="card-title">{pendingOnly ? '待我协调与处理' : staff?.role === 'familyDoctor' ? '服务进度总览' : '需协调的服务'}{overview ? ` · 共 ${services.length + completed.length} 项` : attention.length > 0 ? ` · ${attention.length}项需关注` : ''}{inbox.length > 0 ? ` · ${inbox.length}条待反馈` : ''}</div>{staff?.role === 'familyDoctor' && !pendingOnly && <div role="group" aria-label="服务进度状态筛选" style={{ display: 'flex', gap: 6 }}>{[['pending', '待完成', services.length], ['completed', '已完成', completed.length], ['all', '全部', services.length + completed.length]].map(([key, label, count]) => <button key={key} type="button" className={statusFilter === key ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'} aria-pressed={statusFilter === key} onClick={() => { setStatusFilter(key); setPage(1) }}>{label} {count}</button>)}</div>}</div>
     <div className="card-body">
+      {showSearch && <input type="search" className="form-control" aria-label="搜索客户姓名或服务名称" placeholder="搜索客户姓名或服务名称"
+        value={search} onChange={event => { setSearch(event.target.value); setPage(1); setInboxPage(1) }}
+        style={{ width: '100%', maxWidth: 360, marginBottom: 14 }} />}
       {staff?.role === 'familyDoctor' && !pendingOnly && <details style={{ marginBottom: 14, borderBottom: '1px solid #E3ECE7', paddingBottom: 12 }}><summary style={{ cursor: 'pointer', color: '#1E6B50', fontWeight: 600 }}>营养评估进度</summary><NutritionAssessmentPanel compact embedded /></details>}
       {staff?.role === 'familyDoctor' && !pendingOnly && <p style={{ marginTop: 0, fontSize: 13, color: '#667085' }}>待完成 {services.length} 项，其中 {attention.length} 项需关注。订单预约、就医协助和体检方案可在各自的专项页查看。随访由健管专员督导，就医协助由健康规划师督导。</p>}
       {overview && rows.length > 0 && <p style={{ fontSize: 13, color: '#52685D' }}>
@@ -106,7 +116,7 @@ export default function ServiceSupervisionPanel({ pendingOnly = false }) {
         {!!s.history.length && history(s)}
       </article>)}
       {rows.length > 5 && <Pagination compact page={currentPage} totalPages={Math.ceil(rows.length / 5)} onChange={setPage} />}
-      {!resource.loading && !resource.error && staff?.role === 'familyDoctor' && !rows.length && <span style={{ color: '#667085' }}>暂无{statusFilter === 'completed' ? '已完成' : '待完成'}的服务。</span>}
+      {!resource.loading && !resource.error && staff?.role === 'familyDoctor' && !rows.length && <span style={{ color: '#667085' }}>{keyword ? '当前状态下没有匹配的服务。' : statusFilter === 'all' ? '暂无服务。' : statusFilter === 'completed' ? '暂无已完成的服务。' : '暂无待完成的服务。'}</span>}
       {form && <form onSubmit={submit} style={{ marginTop: 16, padding: 16, background: '#F3F7F5', borderRadius: 8 }}>
         <b>{form.request ? '填写实际处理反馈' : `${form.kind === 'coordinate' ? '请求协调' : '提醒处理'} → ${form.person.name}`} · {(form.service || form.request.service).title}</b>
         <p style={{ color: '#667085', fontSize: 13 }}>{form.request ? '反馈供顾问查看。实际服务仍在原入口办理。' : '说明需要跟进的具体事项，接收人会在工作台看到。'}</p>
