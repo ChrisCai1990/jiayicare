@@ -84,6 +84,19 @@ async function persist(FollowUp, task, s) {
 async function sync(task) {
   const FollowUp=require('../models/FollowUp'), User=require('../models/User'), Plan=require('../models/HealthPlan');
   const annual = task.bodyCompCycle.serviceType === 'annual';
+  // Some annual members have an existing standalone booking or an archived assessment.
+  // Their explicit enrollment follows the member's service window independently of plan publication.
+  if (annual && task.bodyCompCycle.enrollmentSource === 'annualMembership') {
+    const patient = await User.findById(task.patientId).select('bodyCompHistory serviceStartDate serviceExpiry').lean();
+    if (!patient) return null;
+    const original = task.bodyCompCycle;
+    const expiry = patient.serviceExpiry && day(new Date(patient.serviceExpiry));
+    const start = patient.serviceStartDate && day(new Date(patient.serviceStartDate));
+    const state = { ...original, start: start || original.start, end: expiry || original.end };
+    const entries = measurementOptions(patient, state.lastMeasured || state.enrolledOn).map(row => row.measuredAt);
+    const next = reconcile(state, entries, day(new Date()), Boolean(expiry && start));
+    return JSON.stringify(next) === JSON.stringify(original) ? task : persist(FollowUp, task, next);
+  }
   const source = annual
     ? require('../models/AnnualPlan').findOne({_id:task.sourceAnnualPlanId,patientId:task.patientId}).select('reviewStatus pushedAt moduleData.nutrition_assessment.enabled')
     : Plan.findOne({_id:task.sourceHealthPlanId,patientId:task.patientId,type:'nutrition'}).select('status');
