@@ -1018,13 +1018,13 @@ router.get('/checkup-progress', staffAuth, async (req, res) => {
       type: 'annual_checkup',
       status: { $in: ['active', 'completed'] },
       pushedAt: { $ne: null },
-    }).select('patientId title items content.serviceInstanceId status pushedAt createdAt').lean();
+    }).select('patientId title checkupDate items content.serviceInstanceId status pushedAt createdAt').lean();
 
     const sourceIds = [...new Set(plans.flatMap(plan => [String(plan._id), String(plan.content?.serviceInstanceId || '')])
       .filter(id => /^[a-f\d]{24}$/i.test(id)))];
     const stageTasks = sourceIds.length ? await FollowUp.find({ sourceHealthPlanId: { $in: sourceIds }, patientId: { $in: patientIds },
       sourceType: 'health_plan', taskRole: 'executor', status: { $ne: 'cancelled' } })
-      .select('patientId sourceHealthPlanId followUpSchemeId theme status isBlocked').lean() : [];
+      .select('patientId sourceHealthPlanId followUpSchemeId theme status isBlocked serviceChecklist.appointmentDetails.appointmentDate').sort({ updatedAt: -1, _id: -1 }).lean() : [];
     const schemeIds = [...new Set(stageTasks.map(task => String(task.followUpSchemeId || '')).filter(Boolean))];
     const stageSchemes = schemeIds.length ? await FollowUpPlan.find({ _id: { $in: schemeIds } })
       .select('_id workflowStageKey').lean() : [];

@@ -55,6 +55,7 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
             <strong style={{ color: '#1A2B24', fontSize: 14 }}>{row.patientName}</strong>
             <span style={{ color: '#8AA89C', fontSize: 12 }}>{row.patientPhone}</span>
             <span style={{ color: '#667085', fontSize: 12, overflowWrap: 'anywhere' }}>{row.planTitle}</span>
+            <span style={{ color: '#52685D', fontSize: 12 }}>体检安排日期：{row.checkupDate?.slice(0, 10) || '待确认'}</span>
           </span>
           <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 12 }}>
             {taskMode && row.pendingCount > 0 && <span style={{ color: row.workStage === 'review' ? '#0077B6' : row.workStage === 'unknown' ? '#667085' : '#8A6A20', background: row.workStage === 'review' ? '#E7F4FB' : row.workStage === 'unknown' ? '#F2F4F7' : '#FFF4D6', padding: '2px 8px', borderRadius: 99, fontWeight: 700 }}>{row.workStage === 'review' ? '体检后核对' : row.workStage === 'waiting_exam' ? '已预约·待体检' : row.workStage === 'booking' ? '预约体检' : '阶段待确认'}</span>}

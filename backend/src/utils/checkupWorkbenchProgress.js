@@ -21,11 +21,14 @@ function summarizeCheckupItems(items = [], auditedReports = null) {
   };
 }
 
-function checkupWorkStage(plan, tasks = [], schemes = []) {
+function stageResolver(schemes) {
   const stageByScheme = new Map(schemes.map(scheme => [String(scheme._id), scheme.workflowStageKey]));
-  const stageOf = task => stageByScheme.get(String(task.followUpSchemeId || ''))
+  return task => stageByScheme.get(String(task.followUpSchemeId || ''))
     || (/报告.*(?:回收|获取|归档)|审核.*报告/.test(task.theme || '') ? 'report_collection'
       : /体检预约|预约.*体检/.test(task.theme || '') ? 'booking' : '');
+}
+
+function checkupWorkStage(plan, tasks = [], schemes = [], stageOf = stageResolver(schemes)) {
   const active = tasks.filter(task => task.status !== 'cancelled');
   const hasReview = plan.status === 'completed'
     || active.some(task => ['report_collection', 'result_review', 'final_acceptance'].includes(stageOf(task)) && !task.isBlocked)
@@ -39,16 +42,22 @@ function checkupWorkStage(plan, tasks = [], schemes = []) {
 
 function buildCheckupWorkbenchRows(plans, patients, includeCompleted = false, auditedReports = null, tasksByPlan = new Map(), schemes = []) {
   const patientMap = new Map(patients.map(patient => [String(patient._id), patient]));
+  const stageOf = stageResolver(schemes);
   return plans.flatMap(plan => {
     if ((plan.type && plan.type !== 'annual_checkup') || !['active', 'completed'].includes(plan.status) || !plan.pushedAt) return [];
     const patient = patientMap.get(String(plan.patientId));
     const ownReports = auditedReports === null ? null : auditedReports.filter(report => String(report.user) === String(plan.patientId));
     const progress = summarizeCheckupItems(plan.items, ownReports);
     if (!patient || !progress.totalItems || (!includeCompleted && !progress.pendingCount)) return [];
+    const tasks = tasksByPlan.get(String(plan._id)) || [];
+    const bookingDate = tasks.find(task => task.status === 'completed'
+      && task.serviceChecklist?.[0]?.appointmentDetails?.appointmentDate
+      && stageOf(task) === 'booking')?.serviceChecklist[0].appointmentDetails.appointmentDate;
+    const checkupDate = bookingDate || plan.checkupDate || plan.items.find(item => item?.scheduledDate)?.scheduledDate || null;
     return [{
       patientId: plan.patientId, patientName: patient.name, patientPhone: patient.phone,
-      planId: plan._id, planTitle: plan.title, ...progress,
-      workStage: checkupWorkStage(plan, tasksByPlan.get(String(plan._id)) || [], schemes), createdAt: plan.createdAt,
+      planId: plan._id, planTitle: plan.title, checkupDate, ...progress,
+      workStage: checkupWorkStage(plan, tasks, schemes, stageOf), createdAt: plan.createdAt,
     }];
   }).sort((a, b) => b.pendingCount - a.pendingCount
     || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))

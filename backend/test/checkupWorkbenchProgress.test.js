@@ -112,3 +112,17 @@ test('workbench counts only linked audited reports for the same patient', () => 
   assert.equal(buildCheckupWorkbenchRows([completed], patients, true, [{ _id: 'r1', user: 'patient' }])[0].completedCount, 1);
   assert.equal(buildCheckupWorkbenchRows([{ ...completed, items: [{ name: '血常规', status: 'completed' }] }], patients, true, [])[0].missingReportCount, 1);
 });
+
+test('schedule uses confirmed booking before the plan date and supports older plans', () => {
+  const scheduled = { ...plan, checkupDate: '2027-01-15' };
+  const booking = { followUpSchemeId: 'book', status: 'completed',
+    serviceChecklist: [{ appointmentDetails: { appointmentDate: '2027-01-18' } }] };
+  const tasks = new Map([['plan', [booking]]]);
+  const schemes = [{ _id: 'book', workflowStageKey: 'booking' }];
+  const dateOf = record => buildCheckupWorkbenchRows([record], patients, true, null, tasks, schemes)[0].checkupDate;
+  assert.equal(dateOf(scheduled), '2027-01-18');
+  booking.status = 'cancelled';
+  assert.equal(dateOf(scheduled), '2027-01-15');
+  assert.equal(dateOf({ ...plan, items: [{ scheduledDate: '2027-01-12' }] }), '2027-01-12');
+  assert.equal(dateOf(plan), null);
+});

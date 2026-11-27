@@ -31,12 +31,15 @@ test('real component supports pagination, completed history, counts, opening pla
   const root = createRoot(document.getElementById('root'));
   let opened, retried = false;
   const rows = [...Array.from({ length: 6 }, (_, i) => row(String(i + 1))), row('done', true)];
+  rows[0].checkupDate = '2027-01-15T00:00:00.000Z';
   const props = { rows, onOpen: id => { opened = id; }, onRetry: () => { retried = true; } };
   const text = () => document.body.textContent;
   const button = label => [...document.querySelectorAll('button')].find(b => b.textContent === label);
   try {
     await act(async () => root.render(React.createElement(CheckupProgressList, props)));
     assert.match(text(), /6位客户 · 6份方案/);
+    assert.match(text(), /体检安排日期：2027-01-15/);
+    assert.match(text(), /体检安排日期：待确认/);
     assert.match(text(), /核对中/);
     assert.match(text(), /项目核对 1\/3 项 · 待核对 2 项/);
     assert.doesNotMatch(text(), /客户6/);
@@ -44,7 +47,7 @@ test('real component supports pagination, completed history, counts, opening pla
     assert.match(text(), /客户6/);
     await act(async () => document.querySelector('button[aria-label="查看客户6的体检方案6"]').click());
     assert.equal(opened.planId, '6');
-    await act(async () => button('已完成 1').click());
+    await act(async () => button('核对已结束 1').click());
     assert.match(text(), /客户done/);
     assert.match(text(), /项目核对 3\/3 项/);
     assert.doesNotMatch(text(), /客户6/);
@@ -57,7 +60,7 @@ test('real component supports pagination, completed history, counts, opening pla
     assert.equal(retried, true);
     await act(async () => root.render(React.createElement(CheckupProgressList, { ...props, rows: [row('1', true)] })));
     assert.match(text(), /暂无待完成的体检方案/);
-    await act(async () => button('已完成 1').click());
+    await act(async () => button('核对已结束 1').click());
     assert.match(text(), /客户1/);
   } finally {
     await act(async () => root.unmount());
