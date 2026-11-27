@@ -613,7 +613,6 @@ export const staffAPI = {
   reviseAnnualNutritionMetrics: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-metrics`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAnnualNutritionTask: (patientId, planId) => req(`/staff/patients/${patientId}/annual-nutrition-task?planId=${encodeURIComponent(planId)}`),
   cancelAnnualNutritionTask: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-cancel`, { method: 'POST', body: JSON.stringify(data) }),
-  dispatchAnnualNutritionTask: (patientId, data) => req(`/staff/patients/${patientId}/annual-nutrition-dispatch`, { method: 'POST', body: JSON.stringify(data) }),
   reviewPlanChoices: patientId => req(`/staff/patients/${patientId}/review-plan-amendment`),
   reviewPlanAmendment: (patientId, data) => req(`/staff/patients/${patientId}/review-plan-amendment`, { method:'POST', body:JSON.stringify(data) }),
   reviseAnnualPlan: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan-revision`, { method:'PATCH', body:JSON.stringify(data) }),

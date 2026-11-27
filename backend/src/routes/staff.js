@@ -11475,26 +11475,9 @@ router.post('/patients/:id/annual-nutrition-cancel', staffAuth, async (req, res)
   } catch (error) { return res.status(500).json({ success: false, message: '取消失败，请刷新核对任务状态' }); }
 });
 
-router.post('/patients/:id/annual-nutrition-dispatch', staffAuth, async (req, res) => {
-  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可派发营养评估' });
-  try {
-    const visibleIds = await getVisiblePlanPatientIds(req.staff);
-    if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权派发该会员的营养评估' });
-    if (!mongoose.isValidObjectId(req.body.planId)) return res.status(400).json({ success: false, message: '年度方案 ID 无效' });
-    const plan = await AnnualPlan.findOne({ _id: req.body.planId, patientId: req.params.id }).lean();
-    if (!plan) return res.status(404).json({ success: false, message: '请先保存年度方案草稿' });
-    if (!plan.moduleData?.nutrition_assessment || plan.moduleData.nutrition_assessment.enabled === false) return res.status(409).json({ success: false, message: '请先保存年度营养评估及对比指标' });
-    if (plan.updatedAt?.toISOString() !== req.body.baseUpdatedAt) return res.status(409).json({ success: false, message: '年度方案已更新，请刷新后核对指标再派发' });
-    const patient = await User.findById(req.params.id).select('_id tenantId isDeleted assignedNutritionist').lean();
-    if (!patient || patient.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
-    if (String(patient.tenantId || '') !== String(req.staff.tenantId || '')) return res.status(403).json({ success: false, message: '无权派发其他机构的任务' });
-    if (!patient.assignedNutritionist) return res.status(409).json({ success: false, message: '请先为客户分配责任营养师' });
-    const nutritionist = await Admin.findById(patient.assignedNutritionist).select('_id role staffStatus tenantId').lean();
-    if (!nutritionist || nutritionist.role !== 'nutritionist' || nutritionist.staffStatus === 'inactive'
-      || String(nutritionist.tenantId || '') !== String(patient.tenantId || '')) return res.status(409).json({ success: false, message: '责任营养师不可用，请先核对分配' });
-    const dispatched = await require('../utils/annualNutritionDispatch').dispatch(plan, patient, req.staff, FollowUp);
-    res.json({ success: true, data: dispatched.task, reused: dispatched.reused });
-  } catch (error) { res.status(error.statusCode || 500).json({ success: false, message: error.message }); }
+router.post('/patients/:id/annual-nutrition-dispatch', staffAuth, (_req, res) => {
+  return res.status(410).json({ success: false, code: 'ANNUAL_NUTRITION_STANDALONE_RETIRED',
+    message: '单独派发入口已关闭。请刷新页面，核对年度方案后点击“推送并分发”，营养评估将随方案派发。' });
 });
 
 // 年度管理方案：只有健康顾问/超管可生成和编辑（2026-07-07 用户明确规则：年度管理方案和年度体检方案

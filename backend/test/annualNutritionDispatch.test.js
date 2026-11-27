@@ -95,3 +95,15 @@ test('已派发但未开始的营养任务跟随已确认的执行营养师和�
   assert.equal(String(update.assignedTo), String(newNutritionist));
   assert.equal(update.date.toISOString(), new Date('2026-11-27T09:00:00+08:00').toISOString());
 });
+
+test('旧页面请求单独派发直接返回停用提示，无需读取方案或写入任务', async () => {
+  const router = require('../src/routes/staff');
+  const route = router.stack.find(layer => layer.route?.methods.post &&
+    layer.route.path === '/patients/:id/annual-nutrition-dispatch').route;
+  const response = { status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
+  await route.stack.at(-1).handle({}, response);
+  assert.equal(response.code, 410);
+  assert.equal(response.body.success, false);
+  assert.equal(response.body.code, 'ANNUAL_NUTRITION_STANDALONE_RETIRED');
+  assert.match(response.body.message, /刷新页面.*推送并分发/);
+});
