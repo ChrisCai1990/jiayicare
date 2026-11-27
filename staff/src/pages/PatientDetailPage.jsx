@@ -76,7 +76,7 @@ import AnnualCheckupPreparationCard, { isAnnualCheckupPreparation } from '../com
 import AiRuleHint from '../components/AiRuleHint'
 import AppIcon from '../components/AppIcon'
 import ReportImageEvidenceNotice from '../components/ReportImageEvidenceNotice'
-import { summarizeReportPages } from '../utils/reportPageCoverage.mjs'
+import { currentPageEvidence, summarizeReportPages } from '../utils/reportPageCoverage.mjs'
 import ReviewSourceImage from '../components/ReviewSourceImage'
 import ReportPlanConflictCard from '../components/ReportPlanConflictCard'
 import AiCaseReviewPanel from '../components/AiCaseReviewPanel'
@@ -13638,7 +13638,8 @@ export default function PatientDetailPage() {
         // 以便明确提示“无提取数据”并按页补提，不能从首个有条目的页开始把它们隐藏掉。
         const expectedPages = Array.from({ length: lastSourcePage }, (_, i) => i + 1)
         const activePage = ocrReviewPage || firstSourcePage
-        const activeImageEvidence = ocrReviewReport.imagePageEvidence?.[activePage]
+        const activeImageEvidence = currentPageEvidence(ocrReviewReport.imagePageEvidence?.[activePage],
+          ocrEditItems.filter(item => Number(item.sourcePage || 1) === activePage))
         const isImageOnlyPage = activeImageEvidence?.status === 'image_only'
         const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage
           ? ocrReviewReport.pageParseStatus : ocrReviewReport.pageParseStatusByPage?.[activePage] || null
@@ -13858,7 +13859,8 @@ export default function PatientDetailPage() {
                   )
                 })()}
               <div className="modal-body ocr-review-fields" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
-                {activePageParse && activePageParse.status !== 'image_only' && (
+                {activePageParse && activePageParse.status !== 'image_only'
+                  && !(activePageParse.status === 'needs_review' && activeImageEvidence !== ocrReviewReport.imagePageEvidence?.[activePage]) && (
                   <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing || activePageParse.status === 'needs_review' ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing || activePageParse.status === 'needs_review' ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
                     {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : pageParseStale ? `第${activePage}页上次补提已中断，可以重新补提。` : activePageParse.message}
                   </div>

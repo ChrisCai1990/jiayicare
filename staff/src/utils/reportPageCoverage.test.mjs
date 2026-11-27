@@ -28,3 +28,12 @@ test('failed first-pass pages remain visible even if a candidate survived', () =
   const [row] = summarizeReportPages([7], [{ sourcePage: 7, name: '检查' }], {}, {}, {}, [7])
   assert.deepEqual(row.reasons, ['首轮识别失败或不完整'])
 })
+
+test('reviewed page shows the actual section conflict and retains unrelated warnings', () => {
+  const reviewed = (name, sourceSection) => ({ sourcePage: 7, name, sourceSection, itemType: 'imaging', manualReviewStatus: 'reviewed', findings: '原件所见' })
+  const items = [reviewed('甲状腺超声检查', '心脏彩超'), reviewed('双侧乳房彩超检查', '双侧乳房彩超检查')]
+  const evidence = { 7: { status: 'needs_review', blockedReasons: { uncovered_sections: 4, uncovered_rows: 2 }, uncoveredSections: ['甲状腺超声检查', '【双侧乳房彩超检查】', '诊断结论', '心脏彩色多普勒超声检查'] } }
+  assert.deepEqual(summarizeReportPages([7], items, evidence)[0].reasons,
+    ['已核对项目栏目不符 1', '原件结果行待补 2', '检查栏目待核对 1'])
+  assert.equal(evidence[7].uncoveredSections.length, 4)
+})
