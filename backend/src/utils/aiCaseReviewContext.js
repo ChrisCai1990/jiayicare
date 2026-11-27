@@ -1,4 +1,5 @@
 const MedicalReport = require('../models/MedicalReport');
+const User = require('../models/User');
 const HealthRecord = require('../models/HealthRecord');
 const Medication = require('../models/Medication');
 const Supplement = require('../models/Supplement');
@@ -73,7 +74,7 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
   const monthlyWindow = end.getTime() - start.getTime() <= 32 * 86400000;
   const healthRecordsQuery = HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end }, deletedAt: null }).sort({ recordedAt: 1 })
     .select('category type label value unit extra status note recordedAt recordedBy.source');
-  const [records, followups, plan, reports, nutritionPlan, previousCustomerRecords] = await Promise.all([
+  const [records, followups, plan, reports, nutritionPlan, previousCustomerRecords, bodyProfile, targetPlan, openingPlan, latestBodyReports] = await Promise.all([
     (monthlyWindow ? healthRecordsQuery : healthRecordsQuery.limit(240)).lean(),
     FollowUp.find({ patientId: user._id, date: { $gte: start, $lte: end } }).sort({ date: 1 })
       .select('date type status theme content plannedContent executedContent vitals checkInItems completedAt cancelReason isBlocked managementIssueIds sourceAnnualPlanId').lean(),
@@ -83,7 +84,17 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
       .select('type documentCategory screeningItemId screeningL1 screeningCategory title reportYear checkDate institution examConclusion keyFindings reportItems.name reportItems.value reportItems.unit reportItems.status reportItems.conclusion reportItems.screeningKey reportItems.screeningKeys').lean(),
     require('../models/HealthPlan').findOne({patientId:user._id,type:'nutrition',confirmedAt:{$ne:null,$lte:end}}).sort({confirmedAt:-1}).select('title content items description startDate endDate confirmedAt').lean(),
     HealthRecord.find({user:user._id,deletedAt:null,'recordedBy.source':'customer',recordedAt:{$gte:new Date(+start-(end-start+1)),$lt:start}}).select('type label recordedAt recordedBy.source').lean(),
+    User.findById(user._id).select('bodyComposition bodyCompHistory').lean(),
+    require('../models/PhaseAssessment').findOne({patientId:user._id,'nextPhaseTargets.periodKey':new Date(+start+8*3600000).toISOString().slice(0,7),assessmentMode:'routine'}).select('nextPhaseTargets').lean(),
+    AnnualPlan.findOne({patientId:user._id,confirmedAt:{$ne:null,$lte:start}}).sort({confirmedAt:-1}).select('moduleData confirmedAt').lean(),
+    MedicalReport.find({user:user._id,audit_status:'audited',checkDate:{$lte:new Date(+end+8*3600000).toISOString().slice(0,10)},$or:[{documentCategory:'body_composition'},{type:'body_composition'}]}).sort({checkDate:-1,createdAt:-1}).limit(1).select('checkDate documentCategory type reportItems.name reportItems.value reportItems.unit').lean(),
   ]);
+  const priorDayLifestyle=await HealthRecord.find({user:user._id,deletedAt:null,type:{$in:['diet','alcohol','exercise','mood','smoking']},recordedAt:{$gte:new Date(+start-86400000),$lt:start}}).select('type value recordedAt').lean();
+  const latestBodyReport=latestBodyReports[0];
+  if(latestBodyReport?.checkDate){
+    const earlier=await MedicalReport.find({user:user._id,audit_status:'audited',checkDate:{$lt:latestBodyReport.checkDate},$or:[{documentCategory:'body_composition'},{type:'body_composition'}]}).sort({checkDate:-1,createdAt:-1}).limit(1).select('checkDate documentCategory type reportItems.name reportItems.value reportItems.unit').lean();
+    latestBodyReports.push(...earlier);
+  }
   const reportBaselines = reports.map(report => ({
     title: report.title, date: report.checkDate || report.reportYear, institution: report.institution,
     conclusion: report.examConclusion,
@@ -100,6 +111,9 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     comparableChanges: { weight: weightChange },
     currentLifestyle: { lifestyle: user.lifestyle, lifestyle_data: user.lifestyle_data, preferences: user.preferences },
     previousCustomerRecords,
+    openingPlan, latestBodyReports, bodyComposition:bodyProfile?.bodyComposition, bodyCompHistory:bodyProfile?.bodyCompHistory,
+    periodTargets:targetPlan?.nextPhaseTargets?.rows||[],
+    examBaselineReports:reports.map(r=>({checkDate:r.checkDate,reportItems:(r.reportItems||[]).map(({name,value,unit})=>({name,value,unit}))})),
     confirmedAnnualPlan: plan,
     confirmedNutritionPlan: nutritionPlan,
     periodFollowups: followups,
@@ -108,7 +122,7 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     fourSectionEvidence: require('./reviewFourSections').sections({records,followups,reports:reports.filter(r=>r.checkDate>=new Date(start.getTime()+8*3600000).toISOString().slice(0,10))}),
     historicalTrendSummary: { aiHealthSummary: user.aiHealthSummary, aiRiskAssessment: user.aiRiskAssessment },
     basic: { age: user.age, gender: user.gender, height: user.height, weight: user.weight, chronicDiseases: user.chronicDiseases },
-    recentHealthRecords: records,
+    recentHealthRecords: records, priorDayLifestyle:priorDayLifestyle.filter(r=>new Date(r.recordedAt)<start),
     sources: [
       `近${days}天健康监测：${records.length}条，覆盖${daysCovered.size}天`,
       `本周期随访与执行记录：${followups.length}条`,

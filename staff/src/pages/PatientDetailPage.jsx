@@ -12428,7 +12428,7 @@ export default function PatientDetailPage() {
       )}
 
       {/* 执行任务弹窗：随访、监测、复查与就医等任务共用执行结果表单。 */}
-      {execItem && isBodyCompInvitation(execItem) && <BodyCompInvitation task={execItem} onClose={() => setExecItem(null)} onSaved={action => { setExecItem(null); loadFollowUps(); load(); toast(action === 'rescheduled' ? '邀约日期已更新' : '本轮已完成，下一轮邀约已生成') }} />}
+      {execItem && isBodyCompInvitation(execItem) && <BodyCompInvitation task={execItem} onClose={() => setExecItem(null)} onSaved={action => { setExecItem(null); loadFollowUps(); load(); toast(action === 'updated' ? '已更新原随访任务' : action === 'rescheduled' ? '邀约日期已更新' : '本轮已完成，下一轮邀约已生成') }} />}
       {execItem && !isBodyCompInvitation(execItem) && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: (isCheckupAppointmentBookingTask(execItem) || medicalProxyStage(execItem) || medicationProxyStage(execItem) || isCheckupBookingTask(execItem) || isCheckupOnsiteTask(execItem) || isCheckupReportCollectionTask(execItem) || isOutpatientAdvisorAssessmentTask(execItem) || isOutpatientAppointmentTask(execItem) || isOutpatientStaffAssignmentTask(execItem) || isOutpatientEscortVisitTask(execItem) || isOutpatientPostVisitReviewTask(execItem)) ? 780 : 520 }}>
