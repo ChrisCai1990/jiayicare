@@ -135,12 +135,19 @@ function NextPhaseTargets({ item, patientId, enabled, onSaved, toast }) {
     } catch(error){toast(error.message,'error')} finally {setSaving(false)}
   }
   return <details open={!saved.length || undefined} style={{marginTop:10}}>
-    <summary style={{cursor:'pointer',fontWeight:700}}>{period} 阶段管理目标（{saved.length}项）</summary>
-    {rows.map((row,index)=><div key={index} style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}}>
-      {[['metric','跟踪指标'],['goal','维持或改善目标'],['range','目标范围或判定标准'],['frequency','记录频率']].map(([key,label])=><label key={key}>{label}<input className="form-input" value={row[key]||''} disabled={!enabled||saving} onChange={e=>update(index,key,e.target.value)}/></label>)}
-      {enabled&&<button type="button" disabled={saving} onClick={()=>setRows(rows.filter((_,i)=>i!==index))}>移除</button>}
-    </div>)}
-    {enabled&&<div style={{marginTop:8}}><button type="button" disabled={saving||rows.length>=20} onClick={()=>setRows([...rows,{...empty}])}>新增指标</button> <button type="button" disabled={saving} onClick={save}>保存阶段目标</button></div>}
+    <summary style={{cursor:'pointer',fontWeight:700}}>{period} 阶段管理目标（已保存 {saved.length} 项）</summary>
+    {enabled && !rows.length && <p>尚未添加目标</p>}
+    {rows.map((row,index)=><fieldset key={index} style={{padding:12,margin:'10px 0',border:'1px solid #DCE8E1',borderRadius:8}}>
+      <legend>目标 {index+1}</legend>
+      <div style={{display:'grid',gap:8,gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))'}}>
+        {[['metric','跟踪指标'],['goal','维持或改善目标'],['range','目标范围或判定标准'],['frequency','记录频率']].map(([key,label])=><label key={key}>{label}<input className="form-input" value={row[key]||''} disabled={!enabled||saving} onChange={e=>update(index,key,e.target.value)}/></label>)}
+      </div>
+      {enabled&&<button type="button" className="btn btn-sm" disabled={saving} onClick={()=>setRows(rows.filter((_,i)=>i!==index))}>移除本项目标</button>}
+    </fieldset>)}
+    {enabled&&<div style={{marginTop:12,display:'flex',gap:12,flexWrap:'wrap'}}>
+      <button type="button" className="btn btn-secondary" disabled={saving||rows.length>=20} onClick={()=>setRows([...rows,{...empty}])}>＋ 添加一项目标</button>
+      <button type="button" className="btn btn-primary" disabled={saving || rows.some(r=>!r.metric.trim()||!r.goal.trim()||!r.frequency.trim())} onClick={save}>保存{period}目标</button>
+    </div>}
   </details>
 }
 

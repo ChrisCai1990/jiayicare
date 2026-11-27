@@ -89,6 +89,7 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     AnnualPlan.findOne({patientId:user._id,confirmedAt:{$ne:null,$lte:start}}).sort({confirmedAt:-1}).select('moduleData confirmedAt').lean(),
     MedicalReport.find({user:user._id,audit_status:'audited',checkDate:{$lte:new Date(+end+8*3600000).toISOString().slice(0,10)},$or:[{documentCategory:'body_composition'},{type:'body_composition'}]}).sort({checkDate:-1,createdAt:-1}).limit(1).select('checkDate documentCategory type reportItems.name reportItems.value reportItems.unit').lean(),
   ]);
+  const priorDayLifestyle=await HealthRecord.find({user:user._id,deletedAt:null,type:{$in:['diet','alcohol','exercise','mood','smoking']},recordedAt:{$gte:new Date(+start-86400000),$lt:start}}).select('type value recordedAt').lean();
   const latestBodyReport=latestBodyReports[0];
   if(latestBodyReport?.checkDate){
     const earlier=await MedicalReport.find({user:user._id,audit_status:'audited',checkDate:{$lt:latestBodyReport.checkDate},$or:[{documentCategory:'body_composition'},{type:'body_composition'}]}).sort({checkDate:-1,createdAt:-1}).limit(1).select('checkDate documentCategory type reportItems.name reportItems.value reportItems.unit').lean();
@@ -112,6 +113,7 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     previousCustomerRecords,
     openingPlan, latestBodyReports, bodyComposition:bodyProfile?.bodyComposition, bodyCompHistory:bodyProfile?.bodyCompHistory,
     periodTargets:targetPlan?.nextPhaseTargets?.rows||[],
+    examBaselineReports:reports.map(r=>({checkDate:r.checkDate,reportItems:(r.reportItems||[]).map(({name,value,unit})=>({name,value,unit}))})),
     confirmedAnnualPlan: plan,
     confirmedNutritionPlan: nutritionPlan,
     periodFollowups: followups,
@@ -120,7 +122,7 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     fourSectionEvidence: require('./reviewFourSections').sections({records,followups,reports:reports.filter(r=>r.checkDate>=new Date(start.getTime()+8*3600000).toISOString().slice(0,10))}),
     historicalTrendSummary: { aiHealthSummary: user.aiHealthSummary, aiRiskAssessment: user.aiRiskAssessment },
     basic: { age: user.age, gender: user.gender, height: user.height, weight: user.weight, chronicDiseases: user.chronicDiseases },
-    recentHealthRecords: records,
+    recentHealthRecords: records, priorDayLifestyle:priorDayLifestyle.filter(r=>new Date(r.recordedAt)<start),
     sources: [
       `近${days}天健康监测：${records.length}条，覆盖${daysCovered.size}天`,
       `本周期随访与执行记录：${followups.length}条`,
