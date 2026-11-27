@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { staffAPI, API_ORIGIN, managementReviewAPI } from '../api'
 import AnnualGoalEvidencePreview from './AnnualGoalEvidencePreview'
 import PhaseGoalReview from './PhaseGoalReview'
+import { readLifestyleComparison } from '../utils/phaseLifestyleComparison.mjs'
+import { dailyMetricGroups, annualMetricOptions } from '../utils/phaseMetricOptions.mjs'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
@@ -109,6 +111,21 @@ function AssessmentLine({ line, color }) {
   const divider = line.indexOf('：')
   if (divider > 0 && divider < 28) {
     const parts = line.slice(divider + 1).split(/[；;](?![^（）]*）)/).map(part=>part.trim()).filter(Boolean)
+    if (line.startsWith('行为与结果的关联：')) {
+      const {findings,insufficient} = readLifestyleComparison(line)
+      if (findings.length || insufficient.length) return <div style={{padding:12,background:'#fff',borderRadius:8,lineHeight:1.65}}>
+        {findings.map(({exposed,reference,measures})=><section key={exposed}>
+          <strong style={{color}}>{exposed}与{reference}相比 · {measures[0].time}记录</strong>
+          <ul style={{margin:'4px 0 8px',paddingLeft:22}}>{measures.map(m=><li key={m.metric}>{m.metric} {m.difference}</li>)}</ul>
+          <details><summary>查看两组均值与天数</summary>
+            {measures.map(m=><div key={m.metric}>{m.metric} · {exposed} {m.a} {m.unit}（{m.n} 天），{reference} {m.b} {m.unit}（{m.m} 天）</div>)}
+          </details>
+        </section>)}
+        {!!findings.length && <p>这些差异反映本期有记录日期的组间均值，其他同期行为也可能影响结果。</p>}
+        {!!insufficient.length && <p>{insufficient.join('、')}的对照记录不足，每组需至少有 3 个配对日期才能比较。</p>}
+        <details><summary>查看完整分析与记录依据</summary>{parts.map((part,i)=><div key={i}>{part}</div>)}</details>
+      </div>
+    }
     return <div style={{ padding: '9px 11px', borderRadius: 8, background: '#fff', marginTop: 7, fontSize: 13, lineHeight: 1.65 }}>
       <strong style={{ color }}>{line.slice(0, divider)}</strong>
       {parts.map((part,index)=><div key={index} style={{color:'#33473E',marginTop:3}}>{part}</div>)}
@@ -125,6 +142,21 @@ function NextPhaseTargets({ item, patientId, enabled, onSaved, toast }) {
   useEffect(()=>setRows(item.nextPhaseTargets?.rows || []),[item._id,item.nextPhaseTargets])
   const [year,month]=item.periodKey.split('-').map(Number)
   const period=new Date(Date.UTC(year,month,1)).toISOString().slice(0,7)
+  const targetYear = period.slice(0,4)
+  const editing = enabled && rows.length > 0
+  const [annualMetrics,setAnnualMetrics] = useState([])
+  const [annualError,setAnnualError] = useState(false)
+  const [retry,setRetry] = useState(0)
+  useEffect(()=>{
+    let active = true
+    setAnnualMetrics([])
+    setAnnualError(false)
+    if (editing) staffAPI.getAnnualPlan(patientId,targetYear)
+      .then(response=>{ if (active) setAnnualMetrics(annualMetricOptions(response.data || [])) })
+      .catch(()=>{ if (active) setAnnualError(true) })
+    return ()=>{ active=false }
+  },[editing,patientId,targetYear,retry])
+  const groups = {...dailyMetricGroups,'年度方案已下发':annualMetrics}
   const update=(index,key,value)=>setRows(rows.map((row,i)=>i===index?{...row,[key]:value}:row))
   async function save(){
     setSaving(true)
@@ -137,10 +169,18 @@ function NextPhaseTargets({ item, patientId, enabled, onSaved, toast }) {
   return <details open={!saved.length || undefined} style={{marginTop:10}}>
     <summary style={{cursor:'pointer',fontWeight:700}}>{period} 阶段管理目标（已保存 {saved.length} 项）</summary>
     {enabled && !rows.length && <p>尚未添加目标</p>}
+    {annualError && <p>年度方案指标加载失败。<button type="button" className="btn btn-secondary btn-sm" onClick={()=>setRetry(value=>value+1)}>重新加载</button></p>}
     {rows.map((row,index)=><fieldset key={index} style={{padding:12,margin:'10px 0',border:'1px solid #DCE8E1',borderRadius:8}}>
       <legend>目标 {index+1}</legend>
       <div style={{display:'grid',gap:8,gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))'}}>
-        {[['metric','跟踪指标'],['goal','维持或改善目标'],['range','目标范围或判定标准'],['frequency','记录频率']].map(([key,label])=><label key={key}>{label}<input className="form-input" value={row[key]||''} disabled={!enabled||saving} onChange={e=>update(index,key,e.target.value)}/></label>)}
+        <label>跟踪指标<select className="form-input" value={row.metric || ''} disabled={!enabled||saving} onChange={e=>update(index,'metric',e.target.value)}>
+          <option value="">请选择指标</option>
+          {row.metric && !Object.values(groups).some(names=>names.includes(row.metric)) && <option>{row.metric}</option>}
+          {Object.entries(groups).map(([group,names])=>names.length>0 && <optgroup key={group} label={group}>
+            {names.map(name=><option key={name}>{name}</option>)}
+          </optgroup>)}
+        </select></label>
+        {[['goal','维持或改善目标'],['range','目标范围或判定标准'],['frequency','记录频率']].map(([key,label])=><label key={key}>{label}<input className="form-input" value={row[key]||''} disabled={!enabled||saving} onChange={e=>update(index,key,e.target.value)}/></label>)}
       </div>
       {enabled&&<button type="button" className="btn btn-sm" disabled={saving} onClick={()=>setRows(rows.filter((_,i)=>i!==index))}>移除本项目标</button>}
     </fieldset>)}
