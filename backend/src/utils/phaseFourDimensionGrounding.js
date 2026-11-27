@@ -33,6 +33,7 @@ function ground(value,context){
  else if(!active.length){out[2][1]=short((completed.length?'本期相关工作人员任务已办结；本次客户是否完成就医或检查，须另看实际资料与结论，不能从任务状态推断。':'本期无有效待办；已取消轮次保留原因，不能当作工作人员逾期。')+(duplicate.length?'存在重复发起后取消的任务，不应归因为客户放弃。':''));out[3][1]='核对已归档结果；如仍需跟进，以新的有效计划和日期安排，不重新将已完结轮次计为逾期。';}
  else {out[2][1]=short((completed.length?'已有上一轮办结记录；':'')+`当前有效待办：${names}。`+(overdue.length?`其中 ${overdue.length} 条当前任务计划日期已过，属于工作人员待办逾期；客户是否完成医疗行为仍须核对资料。`:'当前任务未超过计划日期，不能视作工作人员逾期。')+(duplicate.length?'重复发起后取消的任务不计逾期。':''));
  out[3][1]=overdue.length?short(`由责任岗位优先处理当前逾期待办${names}，记录联系及安排结果；客户实际就医或检查情况以资料核对。`):short(`按当前有效计划跟进${names}；本次未做的原因和下次安排依据实际反馈记录，不将上一轮已办结任务重新标为逾期。`);}
+ if(out[3].length>2)out[3][2]=diet.length?'营养师在下次随访核对膳食记录及体测安排。':'本期暂无明确的营养跟进依据。';
  return out;
 }
 module.exports={ground};

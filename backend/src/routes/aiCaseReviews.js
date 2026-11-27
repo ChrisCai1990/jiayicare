@@ -197,6 +197,21 @@ router.get('/ai-case-review/templates', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.get('/patients/:patientId/phase-metric-references', staffAuth, async (req,res) => {
+  try {
+    const user=await patientOr404(req,res); if(!user)return;
+    const period=String(req.query.period||'');
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))return res.status(400).json({success:false,message:'阶段月份无效'});
+    const reports=await MedicalReport.find({user:user._id,audit_status:'audited',checkDate:{$lt:period+'-01',$gt:''}})
+      .sort({checkDate:-1,createdAt:-1}).select('checkDate reportItems.name reportItems.unit reportItems.referenceRange').lean();
+    const byName=new Map();
+    for(const report of reports)for(const item of report.reportItems||[]){
+      if(item.name && !byName.has(item.name))byName.set(item.name,{metric:item.name,unit:item.unit,range:item.referenceRange,date:report.checkDate});
+    }
+    res.json({success:true,data:[...byName.values()]});
+  } catch(error){res.status(500).json({success:false,message:'阶段指标参考值读取失败'});}
+});
+
 router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res) => {
   try {
     const user = await patientOr404(req, res); if (!user) return;
@@ -211,7 +226,8 @@ router.get('/patients/:patientId/phase-assessments', staffAuth, async (req, res)
       }
     }
     const { prematureCalendarQuarter } = require('../utils/phaseAssessmentPeriodDisplay');
-    res.json({ success: true, data: data.map(item => ({ ...item, ...(prematureCalendarQuarter(item) || {}) })), healthManagementEnabled: require('../utils/healthManagementRollout').enabledForPatient(user._id) });
+    const snapshots=await PhaseAssessment.find({patientId:user._id,assessmentMode:'routine','nextPhaseTargets.periodKey':{$exists:true}}).select('nextPhaseTargets').lean();
+    res.json({ success: true, targetHistory:snapshots.map(r=>r.nextPhaseTargets), data: data.map(item => ({ ...item, ...(prematureCalendarQuarter(item) || {}) })), healthManagementEnabled: require('../utils/healthManagementRollout').enabledForPatient(user._id) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -292,13 +308,17 @@ router.patch('/patients/:patientId/phase-assessments/:assessmentId', staffAuth, 
     if (item.status === 'team_review') {
       if (req.body.revision !== item.__v) return res.status(409).json({ success: false, message: '其他岗位已更新复盘，请刷新后继续' });
       const role = req.staff.role;
-      if (req.body.action === 'save_next_targets') {
+      if (['save_next_targets','save_quarter_targets'].includes(req.body.action)) {
         if(item.reviewWorkflow!=='advisor_nutrition' || !/^\d{4}-\d{2}$/.test(item.periodKey) || item.assessmentMode!=='routine')return res.status(409).json({success:false,message:'仅用于常规月度复盘'});
         if(role!=='superadmin' && (role!=='familyDoctor'||!isAssignedReviewer(user,req.staff,role)))return res.status(403).json({success:false,message:'请由所属健康顾问保存目标'});
         const rows=req.body.rows;
         if(!Array.isArray(rows)||rows.length>20||rows.some(r=>!r||['metric','goal','frequency','range'].some(k=>typeof r[k]!=='string'||r[k].length>160)||['metric','goal','frequency'].some(k=>!r[k].trim())))return res.status(400).json({success:false,message:'请填写指标、目标、记录频率，最多20项'});
         const [y,m]=item.periodKey.split('-').map(Number);
-        item.nextPhaseTargets={periodKey:new Date(Date.UTC(y,m,1)).toISOString().slice(0,7),updatedAt:new Date(),rows:rows.map(({metric,goal,range,frequency})=>({metric:metric.trim(),goal:goal.trim(),range:range.trim(),frequency:frequency.trim()}))};
+        const periodKey=new Date(Date.UTC(y,m,1)).toISOString().slice(0,7);
+        const quarterly=req.body.action==='save_quarter_targets';
+        if(!quarterly && item.nextPhaseTargets?.quarterKey)return res.status(409).json({success:false,message:'目标已按季度管理，请刷新后编辑'});
+        if(quarterly && rows.some(r=>!['行为习惯','指标','症状'].includes(r.dimension)))return res.status(400).json({success:false,message:'请选择目标维度'});
+        item.nextPhaseTargets={periodKey,quarterKey:quarterly?require('../../../shared/phaseTargetQuarter.cjs').quarterOf(periodKey):undefined,updatedAt:new Date(),rows:rows.map(({dimension,metric,goal,range,frequency})=>({dimension:quarterly?dimension:undefined,metric:metric.trim(),goal:goal.trim(),range:range.trim(),frequency:frequency.trim()}))};
         await item.save();
         return res.json({success:true,data:item});
       }

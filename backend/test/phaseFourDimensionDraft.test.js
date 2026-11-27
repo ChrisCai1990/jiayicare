@@ -3,9 +3,9 @@ const {renderDraft,dimensions}=require('../src/utils/phaseFourDimensionDraft');
 test('按年度目标、六项阶段变化及后续分析并保持四卡片解析兼容',()=>{
  const content=renderDraft(dimensions.map(labels=>labels.map(()=> '本期暂无记录')));
  assert.equal(content.split('\n\n').length,4);
- assert.equal(content.split('\n').filter(s=>s.startsWith('- ')).length,12);
- assert.match(content,/三、问题分析\n- 记录与结果/);
- assert.match(content,/四、下一步规划\n- 团队跟进/);
+ assert.equal(content.split('\n').filter(s=>s.startsWith('- ')).length,14);
+ assert.match(content,/三、问题分析\n- 行为习惯前后变化/);
+ assert.match(content,/四、下一步规划\n- 健管专员/);
  assert.match(content,/随访完成及时性/);
 });
 test('不完整或空内容不得保存成成功草稿',()=>{

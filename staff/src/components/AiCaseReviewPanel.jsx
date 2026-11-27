@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { staffAPI, API_ORIGIN, managementReviewAPI } from '../api'
 import AnnualGoalEvidencePreview from './AnnualGoalEvidencePreview'
 import PhaseGoalReview from './PhaseGoalReview'
+import phaseQuarter from '../../../shared/phaseTargetQuarter.cjs'
 import { readLifestyleComparison } from '../utils/phaseLifestyleComparison.mjs'
-import { dailyMetricGroups, annualMetricOptions } from '../utils/phaseMetricOptions.mjs'
+import { dailyMetricGroups, annualMetricOptions, metricUnits, metricReference } from '../utils/phaseMetricOptions.mjs'
 import ReviewPlanAmendment from './ReviewPlanAmendment'
 import AnnualConcernsPanel from './AnnualConcernsPanel'
 import { parseAnnualReviewMessage } from '../utils/annualReviewMessage.mjs'
@@ -134,59 +135,84 @@ function AssessmentLine({ line, color }) {
   return <div style={{ padding: '8px 11px 8px 25px', position: 'relative', borderBottom: '1px dashed #DCE8E1', fontSize: 13, lineHeight: 1.65 }}><span style={{ position: 'absolute', left: 10, color }}>•</span>{line}</div>
 }
 
-function NextPhaseTargets({ item, patientId, enabled, onSaved, toast }) {
-  const saved = item.nextPhaseTargets?.rows || []
-  const empty = { metric:'', goal:'', range:'', frequency:'' }
-  const [rows,setRows] = useState(saved)
-  const [saving,setSaving] = useState(false)
-  useEffect(()=>setRows(item.nextPhaseTargets?.rows || []),[item._id,item.nextPhaseTargets])
+const targetDimensions=['行为习惯','指标','症状']
+const symptomMetrics=['排便形态','排便次数','夜间醒来情况','睡眠质量','日间精力','腹胀','腹痛','头晕','手麻']
+function targetDimension(metric) {
+  if(symptomMetrics.includes(metric))return '症状'
+  return Object.entries(dailyMetricGroups).some(([group,names])=>group.endsWith('习惯') && names.includes(metric)) ? '行为习惯' : '指标'
+}
+function NextPhaseTargets({ item, history, patientId, enabled, onSaved, toast }) {
   const [year,month]=item.periodKey.split('-').map(Number)
   const period=new Date(Date.UTC(year,month,1)).toISOString().slice(0,7)
+  const quarter=phaseQuarter.quarterOf(period)
+  const title=quarter.replace('-Q',' 年第 ')+' 季度'
+  const snapshot=phaseQuarter.targetsForMonth(history,period)
+  const saved=snapshot?.rows || []
+  const [dimension,setDimension]=useState('行为习惯')
+  const [rows,setRows]=useState(saved)
+  const [saving,setSaving]=useState(false)
+  useEffect(()=>setRows(snapshot?.rows || []),[snapshot,item._id])
   const targetYear = period.slice(0,4)
   const editing = enabled && rows.length > 0
-  const [annualMetrics,setAnnualMetrics] = useState([])
+  const [plans,setPlans] = useState([])
+  const [references,setReferences] = useState([])
+  const refFor = metric => references.find(row=>row.metric===metric)
+  const unitFor = metric => metricUnits[metric] || refFor(metric)?.unit
+  const referenceFor = metric => {
+    const ref=refFor(metric)
+    if(ref?.range && (!metricUnits[metric] || ref.unit===metricUnits[metric]))return ref.date+' 报告参考范围：'+ref.range+' '+(ref.unit||'')
+    return metricReference(metric,plans)
+  }
+  const annualMetrics = useMemo(()=>annualMetricOptions(plans),[plans])
   const [annualError,setAnnualError] = useState(false)
   const [retry,setRetry] = useState(0)
   useEffect(()=>{
     let active = true
-    setAnnualMetrics([])
+    setPlans([])
+    setReferences([])
     setAnnualError(false)
     if (editing) staffAPI.getAnnualPlan(patientId,targetYear)
-      .then(response=>{ if (active) setAnnualMetrics(annualMetricOptions(response.data || [])) })
+      .then(response=>{ if (active) setPlans(response.data || []) })
       .catch(()=>{ if (active) setAnnualError(true) })
+    if (editing) staffAPI.getPhaseMetricReferences(patientId,period)
+      .then(response=>{if(active)setReferences(response.data || [])})
+      .catch(()=>{if(active)setAnnualError(true)})
     return ()=>{ active=false }
-  },[editing,patientId,targetYear,retry])
-  const groups = {...dailyMetricGroups,'年度方案已下发':annualMetrics}
+  },[editing,patientId,targetYear,period,retry])
+  const groups=Object.fromEntries(Object.entries({...dailyMetricGroups,'症状主诉':symptomMetrics.filter(m=>!Object.values(dailyMetricGroups).flat().includes(m)),'年度方案已下发':annualMetrics}).map(([label,names])=>[label,names.filter(name=>targetDimension(name)===dimension)]))
+  const category=row=>row.dimension || targetDimension(row.metric)
   const update=(index,key,value)=>setRows(rows.map((row,i)=>i===index?{...row,[key]:value}:row))
   async function save(){
     setSaving(true)
     try {
-      const response=await staffAPI.reviewPhaseAssessment(patientId,item._id,{action:'save_next_targets',revision:item.__v,rows})
+      const response=await staffAPI.reviewPhaseAssessment(patientId,item._id,{action:'save_quarter_targets',revision:item.__v,rows:rows.map(row=>({...row,dimension:category(row)}))})
       onSaved(response.data)
-      toast('已保存 '+period+' 阶段目标')
+      toast('已保存 '+title+'目标')
     } catch(error){toast(error.message,'error')} finally {setSaving(false)}
   }
   return <details open={!saved.length || undefined} style={{marginTop:10}}>
-    <summary style={{cursor:'pointer',fontWeight:700}}>{period} 阶段管理目标（已保存 {saved.length} 项）</summary>
-    {enabled && !rows.length && <p>尚未添加目标</p>}
-    {annualError && <p>年度方案指标加载失败。<button type="button" className="btn btn-secondary btn-sm" onClick={()=>setRetry(value=>value+1)}>重新加载</button></p>}
-    {rows.map((row,index)=><fieldset key={index} style={{padding:12,margin:'10px 0',border:'1px solid #DCE8E1',borderRadius:8}}>
-      <legend>目标 {index+1}</legend>
+    <summary style={{cursor:'pointer',fontWeight:700}}>{title}管理目标</summary>
+    <p>{snapshot && !snapshot.quarterKey?'已有月度目标可带入本季度，保存后生效。':`从 ${snapshot?.periodKey || period} 起用于本季度月度评估。`}</p>
+    <div role="group" aria-label="目标维度" style={{display:'flex',gap:8,flexWrap:'wrap'}}>{targetDimensions.map(name=><button type="button" key={name} aria-pressed={dimension===name} className={dimension===name?'btn btn-primary':'btn btn-secondary'} onClick={()=>setDimension(name)}>{name}（{rows.filter(r=>category(r)===name).length}）</button>)}</div>
+    {!rows.some(r=>category(r)===dimension) && <p>暂无{dimension}目标</p>}
+    {annualError && <p>年度指标或参考范围加载失败。<button type="button" className="btn btn-secondary btn-sm" onClick={()=>setRetry(value=>value+1)}>重新加载</button></p>}
+    {rows.map((row,index)=>category(row)===dimension && <fieldset key={index} style={{padding:12,margin:'10px 0',border:'1px solid #DCE8E1',borderRadius:8}}>
+      <legend>{row.metric || '新增'+dimension+'目标'}</legend>
       <div style={{display:'grid',gap:8,gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))'}}>
-        <label>跟踪指标<select className="form-input" value={row.metric || ''} disabled={!enabled||saving} onChange={e=>update(index,'metric',e.target.value)}>
-          <option value="">请选择指标</option>
+        <label>{dimension==='指标'?'跟踪指标':dimension}<select className="form-input" value={row.metric || ''} disabled={!enabled||saving} onChange={e=>update(index,'metric',e.target.value)}>
+          <option value="">请选择{dimension}</option>
           {row.metric && !Object.values(groups).some(names=>names.includes(row.metric)) && <option>{row.metric}</option>}
           {Object.entries(groups).map(([group,names])=>names.length>0 && <optgroup key={group} label={group}>
             {names.map(name=><option key={name}>{name}</option>)}
           </optgroup>)}
         </select></label>
-        {[['goal','维持或改善目标'],['range','目标范围或判定标准'],['frequency','记录频率']].map(([key,label])=><label key={key}>{label}<input className="form-input" value={row[key]||''} disabled={!enabled||saving} onChange={e=>update(index,key,e.target.value)}/></label>)}
+        {[['goal','维持或改善目标'],['range','目标范围或判定标准'],['frequency','记录频率']].map(([key,label])=><label key={key}>{label}{key==='goal' && unitFor(row.metric) && '（'+unitFor(row.metric)+'）'}<input className="form-input" placeholder={key==='goal' && Object.entries(dailyMetricGroups).some(([g,names])=>g.endsWith('习惯') && names.includes(row.metric))?'目前习惯 → 本阶段希望达到的状态':undefined} value={row[key]||''} disabled={!enabled||saving} onChange={e=>update(index,key,e.target.value)}/>{key==='range' && <small>{referenceFor(row.metric)}</small>}</label>)}
       </div>
       {enabled&&<button type="button" className="btn btn-sm" disabled={saving} onClick={()=>setRows(rows.filter((_,i)=>i!==index))}>移除本项目标</button>}
     </fieldset>)}
     {enabled&&<div style={{marginTop:12,display:'flex',gap:12,flexWrap:'wrap'}}>
-      <button type="button" className="btn btn-secondary" disabled={saving||rows.length>=20} onClick={()=>setRows([...rows,{...empty}])}>＋ 添加一项目标</button>
-      <button type="button" className="btn btn-primary" disabled={saving || rows.some(r=>!r.metric.trim()||!r.goal.trim()||!r.frequency.trim())} onClick={save}>保存{period}目标</button>
+      <button type="button" className="btn btn-secondary" disabled={saving||rows.length>=20} onClick={()=>setRows([...rows,{dimension,metric:'',goal:'',range:'',frequency:''}])}>＋ 添加{dimension}目标</button>
+      <button type="button" className="btn btn-primary" disabled={saving || rows.some(r=>!r.metric.trim()||!r.goal.trim()||!r.frequency.trim())} onClick={save}>保存季度目标</button>
     </div>}
   </details>
 }
@@ -224,6 +250,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
   const [managedTemplates, setManagedTemplates] = useState([])
   const [reviewSettings, setReviewSettings] = useState({ allowCustomTopic: true })
   const [assessments, setAssessments] = useState([])
+  const [targetHistory,setTargetHistory]=useState([])
   const [closedLoop, setClosedLoop] = useState(false)
   const [assessmentEdits, setAssessmentEdits] = useState({})
   const [assessmentGoalEdits, setAssessmentGoalEdits] = useState({})
@@ -280,6 +307,7 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
       const requestedTopicId = new URLSearchParams(window.location.search).get('caseReviewId')
       if ((topicRes.data || []).some(item => item._id === requestedTopicId)) setActiveId(requestedTopicId)
       setAssessments(assessmentRes.data || [])
+      setTargetHistory(assessmentRes.targetHistory || [])
       setClosedLoop(assessmentRes.healthManagementEnabled === true)
       const targetId = new URLSearchParams(window.location.search).get('phaseAssessmentId')
       const target = (assessmentRes.data || []).find(item => item._id === targetId)
@@ -597,7 +625,10 @@ export default function AiCaseReviewPanel({ patientId, staff, toast, mode = 'all
           return <section key={item._id} id={`phase-assessment-${item._id}`} style={{ border: '1px solid #DCE8E1', borderRadius: 10, padding: 13, background: status === 'finalized' ? '#F2FAF6' : '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><strong style={{ color: '#155E48' }}>📊 {item.displayLabel || `${item.periodLabel}${item.teamRoles?.length ? '阶段性评估与复盘' : item.assessmentMode === 'intensive_nutrition' ? '评估' : '阶段性健康评估'}`}</strong><span style={{ fontSize: 12, fontWeight: 700, color: status === 'doctor_review' ? '#B45309' : status === 'finalized' ? '#16845B' : '#7C3AED' }}>{statusLabel}</span></div>
             {item.templateSnapshot?.contentRevision === 'four-dimensions-v2' && status !== 'finalized' && <div style={{ marginTop: 8, fontSize: 12, color: '#65776F' }}>本稿已按四板块新口径重新整理，待当前审核岗位核对。此前岗位已确认意见保留为原稿意见。</div>}
-            {item.assessmentMode==='routine' && item.reviewWorkflow==='advisor_nutrition' && /^\d{4}-\d{2}$/.test(item.periodKey) && <NextPhaseTargets item={item} patientId={patientId} enabled={status==='team_review'&&['familyDoctor','superadmin'].includes(staff?.role)} onSaved={saved=>setAssessments(list=>list.map(row=>row._id===saved._id?saved:row))} toast={toast}/>}
+            {item.assessmentMode==='routine' && item.reviewWorkflow==='advisor_nutrition' && /^\d{4}-\d{2}$/.test(item.periodKey) && <NextPhaseTargets item={item} history={targetHistory} patientId={patientId} enabled={status==='team_review'&&['familyDoctor','superadmin'].includes(staff?.role)} onSaved={saved=>{
+              setAssessments(list=>list.map(row=>row._id===saved._id?saved:row))
+              setTargetHistory(list=>[saved.nextPhaseTargets,...list.filter(row=>row.periodKey!==saved.nextPhaseTargets.periodKey)])
+            }} toast={toast}/>}
             {item.notice && <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 8, background: '#FFF7E7', color: '#8A5700', fontSize: 12 }}>{item.notice}</div>}
             <div style={{ fontSize: 12, color: '#65776F', marginTop: 5 }}>{PHASE_DOMAINS[item.assessmentDomain] || '历史营养评估'} · {item.templateSnapshot?.name || '模板驱动评估'} · {evidenceCount ? `${evidenceCount}项依据` : '依据待核实'}{['finalized', 'approved'].includes(status) ? ' · 归档位置：服务档案 / 阶段性评估' : ''}</div>
             {stageSections[0].lines.some(line=>line.startsWith('本期年度管理目标：')) && <p><strong>本期目标</strong>　{stageSections[0].lines.find(line=>line.startsWith('本期年度管理目标：')).split('本期年度管理目标：')[1]}</p>}

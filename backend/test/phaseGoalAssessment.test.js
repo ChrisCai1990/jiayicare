@@ -4,6 +4,18 @@ const {assessment, render} = require('../src/utils/phaseGoalAssessment');
 const {templateAssessmentFromContent} = require('../src/utils/phaseAssessment');
 const {headings} = require('../src/utils/reviewFourSections');
 
+test('饮酒次日的主诉以明确反馈日期为分母，漏填不计无症状',()=>{
+  const rows=[];
+  for(let d=1;d<=8;d++){
+    const recordedAt='2026-10-0'+d;
+    rows.push({type:'alcohol',value:d<=4?'啤酒':'未饮酒',recordedAt});
+    if(d>=2 && d!==5)rows.push({type:'symptom',value:d<=4?'腹胀':'无不适',recordedAt});
+  }
+  const result=assessment({period:{start:'2026-10-01',end:'2026-10-31'},recentHealthRecords:rows,periodReports:[],periodFollowups:[]});
+  assert.match(result[1][1],/腹胀.*3\/3 天和 0\/3 天.*100 个百分点/);
+  assert.equal(result[3].length,3);
+});
+
 test('同次就医办结与各项目结果独立，周记录和撤销事项按来源核对', () => {
   const confirmedAnnualPlan = {
     _id:'plan', confirmedAt:'2026-09-01', moduleData:{

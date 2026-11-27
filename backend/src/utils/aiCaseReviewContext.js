@@ -73,7 +73,7 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
   // a false "no records" conclusion. Keep the whole bounded monthly window.
   const monthlyWindow = end.getTime() - start.getTime() <= 32 * 86400000;
   const healthRecordsQuery = HealthRecord.find({ user: user._id, recordedAt: { $gte: start, $lte: end }, deletedAt: null }).sort({ recordedAt: 1 })
-    .select('category type label value unit extra status note recordedAt recordedBy.source');
+    .select('category type label value unit extra status note recordedAt createdAt recordedBy.source');
   const [records, followups, plan, reports, nutritionPlan, previousCustomerRecords, bodyProfile, targetPlan, openingPlan, latestBodyReports] = await Promise.all([
     (monthlyWindow ? healthRecordsQuery : healthRecordsQuery.limit(240)).lean(),
     FollowUp.find({ patientId: user._id, date: { $gte: start, $lte: end } }).sort({ date: 1 })
@@ -85,11 +85,14 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
     require('../models/HealthPlan').findOne({patientId:user._id,type:'nutrition',confirmedAt:{$ne:null,$lte:end}}).sort({confirmedAt:-1}).select('title content items description startDate endDate confirmedAt').lean(),
     HealthRecord.find({user:user._id,deletedAt:null,'recordedBy.source':'customer',recordedAt:{$gte:new Date(+start-(end-start+1)),$lt:start}}).select('type label recordedAt recordedBy.source').lean(),
     User.findById(user._id).select('bodyComposition bodyCompHistory').lean(),
-    require('../models/PhaseAssessment').findOne({patientId:user._id,'nextPhaseTargets.periodKey':new Date(+start+8*3600000).toISOString().slice(0,7),assessmentMode:'routine'}).select('nextPhaseTargets').lean(),
+    require('../models/PhaseAssessment').find({patientId:user._id,'nextPhaseTargets.periodKey':{$exists:true},assessmentMode:'routine'}).select('nextPhaseTargets').lean(),
     AnnualPlan.findOne({patientId:user._id,confirmedAt:{$ne:null,$lte:start}}).sort({confirmedAt:-1}).select('moduleData confirmedAt').lean(),
     MedicalReport.find({user:user._id,audit_status:'audited',checkDate:{$lte:new Date(+end+8*3600000).toISOString().slice(0,10)},$or:[{documentCategory:'body_composition'},{type:'body_composition'}]}).sort({checkDate:-1,createdAt:-1}).limit(1).select('checkDate documentCategory type reportItems.name reportItems.value reportItems.unit').lean(),
   ]);
   const priorDayLifestyle=await HealthRecord.find({user:user._id,deletedAt:null,type:{$in:['diet','alcohol','exercise','mood','smoking']},recordedAt:{$gte:new Date(+start-86400000),$lt:start}}).select('type value recordedAt').lean();
+  const firstHabits=await Promise.all(['diet','exercise','smoking','alcohol','sleep','mood'].map(type=>
+    HealthRecord.findOne({user:user._id,deletedAt:null,type,'recordedBy.source':'customer',recordedAt:{$lte:end},value:{$nin:['',null]}})
+      .sort({recordedAt:1,_id:1}).select('type value unit recordedAt').lean()));
   const latestBodyReport=latestBodyReports[0];
   if(latestBodyReport?.checkDate){
     const earlier=await MedicalReport.find({user:user._id,audit_status:'audited',checkDate:{$lt:latestBodyReport.checkDate},$or:[{documentCategory:'body_composition'},{type:'body_composition'}]}).sort({checkDate:-1,createdAt:-1}).limit(1).select('checkDate documentCategory type reportItems.name reportItems.value reportItems.unit').lean();
@@ -106,13 +109,14 @@ async function buildStageAssessmentContext(user, days = 30, window = null) {
   const weightChange = comparableWeightChange(records);
   return clean({
     capturedAt: end,
+    firstHabits:firstHabits.filter(Boolean),
     period: { days, start, end },
     monitoringCoverage: { recordCount: records.length, distinctDays: daysCovered.size, types },
     comparableChanges: { weight: weightChange },
     currentLifestyle: { lifestyle: user.lifestyle, lifestyle_data: user.lifestyle_data, preferences: user.preferences },
     previousCustomerRecords,
     openingPlan, latestBodyReports, bodyComposition:bodyProfile?.bodyComposition, bodyCompHistory:bodyProfile?.bodyCompHistory,
-    periodTargets:targetPlan?.nextPhaseTargets?.rows||[],
+    periodTargets:require('../../../shared/phaseTargetQuarter.cjs').targetsForMonth(targetPlan.map(r=>r.nextPhaseTargets),new Date(+start+8*3600000).toISOString().slice(0,7))?.rows||[],
     examBaselineReports:reports.map(r=>({checkDate:r.checkDate,reportItems:(r.reportItems||[]).map(({name,value,unit})=>({name,value,unit}))})),
     confirmedAnnualPlan: plan,
     confirmedNutritionPlan: nutritionPlan,
