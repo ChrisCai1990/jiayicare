@@ -22,6 +22,12 @@ const TASK_CAT = {
   followup: '随访', medication: '用药', exercise: '运动', diet: '饮食',
   checkup: '复查', lifestyle: '生活', other: '其他',
 }
+function formatBrowseDuration(seconds) {
+  if (!Number.isInteger(seconds) || seconds < 0) return '未记录';
+  if (seconds === 0) return '不足 1 秒';
+  if (seconds < 60) return seconds + ' 秒';
+  return Math.floor(seconds / 60) + ' 分 ' + seconds % 60 + ' 秒';
+}
 const fmtExactTime = value => value ? new Date(value).toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }) : '-'
 
 function SendMessageModal({ userId, onClose, onSent }) {
@@ -373,8 +379,8 @@ export default function PatientDetailPage() {
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-title">最近浏览</div>
             {user.recentBrowseVisits?.length ? <div className="table-wrap"><table>
-              <thead><tr><th>浏览时间</th><th>浏览内容</th><th>使用平台</th></tr></thead>
-              <tbody>{user.recentBrowseVisits.map(v => <tr key={v.eventId}><td>{fmtExactTime(v.at)}</td><td>{v.title}</td><td>{v.client}</td></tr>)}</tbody>
+              <thead><tr><th>浏览时间</th><th>浏览内容</th><th>前台停留时长</th><th>使用平台</th></tr></thead>
+              <tbody>{user.recentBrowseVisits.map(v => <tr key={v.eventId}><td>{fmtExactTime(v.at)}</td><td>{v.title}</td><td>{formatBrowseDuration(v.durationSeconds)}</td><td>{v.client}</td></tr>)}</tbody>
             </table></div> : <div>暂无浏览记录</div>}
           </div>
 

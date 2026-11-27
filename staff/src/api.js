@@ -192,6 +192,8 @@ export const staffAPI = {
   me: () => req('/staff/me'),
 
   // Patients
+  getCardCustody: id => req(`/staff/patients/${id}/card-custody`),
+  saveCardCustody: (id, data) => req(`/staff/patients/${id}/card-custody`, { method: 'POST', body: JSON.stringify(data) }),
   getPatients:        (p = {}) => req('/staff/patients?' + qs(p)),
   getWecomKfUnboundContacts: () => req('/staff/wecom-kf/unbound-contacts'),
   bindWecomKfContact: (data) => req('/staff/wecom-kf/contacts', { method: 'POST', body: JSON.stringify(data) }),
@@ -704,6 +706,7 @@ export const staffAPI = {
   updatePatientHealthRecord: (patientId, recordId, data) => req(`/staff/patients/${patientId}/health-records/${recordId}`, { method: 'PUT', body: JSON.stringify(data) }),
   resolveHealthRecordAlert: (id, data) => req(`/staff/health-records/${id}/resolve-alert`, { method: 'PATCH', body: JSON.stringify(data) }),
   getHealthRiskEvents: (id) => req(`/staff/patients/${id}/health-risk-events`),
+  verifyMonitoringAlert: (kind, id, note, revision) => req(`/staff/monitoring-alerts/${kind}/${id}/verify`, { method: 'PATCH', body: JSON.stringify({ note, revision }) }),
   resolveHealthRiskEvent: (id, data) => req(`/staff/health-risk-events/${id}/resolve`, { method: 'PATCH', body: JSON.stringify(data) }),
   resolveSymptom: (id, data) => req(`/staff/health-records/${id}/resolve-symptom`, { method: 'PATCH', body: JSON.stringify(data) }),
   verifySymptom: (id, data) => req(`/staff/health-records/${id}/verify-symptom`, { method: 'PATCH', body: JSON.stringify(data) }),

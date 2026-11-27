@@ -64,6 +64,7 @@ export default function HealthRiskTodoModal({ todo, onClose, onViewSource, onDon
       {event && <>
         <strong>{event.title}</strong>
         <p>{event.summary}</p>
+        {event.managerVerificationNote && <p>健管专员核实说明：{event.managerVerificationNote}</p>}
         {event.sourceType === 'medical_report' && <p style={{ fontSize: 13 }}>原始报告：{event.evidence?.reportTitle || '未命名'}；检查日期：{event.evidence?.checkDate || '未记录'}；异常/关注项：{(event.evidence?.items || []).map(item => item.name).filter(Boolean).join('、') || '请查看报告'}</p>}
         {event.sourceType === 'health_record' && <p style={{ fontSize: 13 }}>原始记录：{event.evidence?.value || '未记录'} {event.evidence?.unit || ''}；记录时间：{event.evidence?.recordedAt ? new Date(event.evidence.recordedAt).toLocaleString('zh-CN') : '未记录'}</p>}
         {event.sourceType === 'monitoring_trend' && <p style={{ fontSize: 13 }}>原始记录：{(event.evidence?.records || []).map(record => `${record.value} ${record.unit}（${new Date(record.recordedAt).toLocaleDateString('zh-CN')}）`).join('；')}</p>}

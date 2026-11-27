@@ -54,6 +54,7 @@ import { inferAppointmentConversation } from '../utils/appointmentConversation'
 import { lifestyleHistoryLabel } from '../utils/lifestyleHistoryLabels.mjs'
 import { planningAdviceFromTask, hasPlanningAdvice, planningAdviceMessage } from '../utils/medicalPlanningAdvice'
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
+import CardCustody from '../components/CardCustody'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, psychologyAPI, managementReviewAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
@@ -5727,6 +5728,7 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
+          <CardCustody key={id} patientId={id} services={serviceRecords} />
           {/* 管理信息（可编辑） */}
           <div className="card">
             <div className="card-header">

@@ -62,6 +62,9 @@ const healthRecordSchema = new mongoose.Schema({
   // 关联报告（如从报告中提取的指标数据，删除报告时级联删除）
   reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   // AI监测异常升级（试点：血压），danger级自动进入健康顾问待审核队列，处理后置为resolved
+  managerVerifiedAt: Date,
+  managerVerifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+  managerVerificationNote: String,
   aiAlertStatus: { type: String, enum: ['pending', 'resolved', null], default: null },
   alertDisposition: { type: String, default: '' },
   alertDecisionNote: { type: String, default: '' },
