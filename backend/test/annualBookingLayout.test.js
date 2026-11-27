@@ -18,6 +18,14 @@ test('advisor requirements render once as labelled read-only values; inputs are 
   assert.match(html, /<details[^>]*><summary[^>]*>查看顾问完整依据/);
   assert.doesNotMatch(html, /预约科室<input|>编辑<|>删除</);
 });
+test('booking summary distinguishes proxy visits and errands and uses the recorded order department', () => {
+  const plannedContent = '开单科室：心内科\n检查科室：超声科\n项目：心脏超声';
+  const html = render({ deliveryType: 'proxy_visit', plannedContent });
+  assert.match(html, /帮助客户预约代诊，联系开单科室落实检查单，逐项核对检查预约方式/);
+  assert.ok(html.indexOf('本次任务要求') < html.indexOf('顾问预约要求'));
+  assert.match(render({ deliveryType: 'proxy_booking' }), /为客户代办预约/);
+  assert.doesNotMatch(render({}), /帮助客户预约代诊/);
+});
 test('missing hospital is fillable; missing department needs advisor, not a manager department input', () => {
   const html = render({ plannedContent: '科室：泌尿外科' });
   assert.match(html, /实际预约医院（顾问未指定）/);

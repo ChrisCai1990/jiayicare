@@ -45,7 +45,7 @@ function assessment(context) {
   const timing = tasks.length ? '本期到期随访' + tasks.length + '项，有办结日期' + finished.length + '项，其中按期' + onTime + '项、延期' + (finished.length-onTime) + '项；其余' + (tasks.length-finished.length) + '项截至期末缺少办结凭据。' : '本期没有已纳入统计的到期随访。';
   const samples = records.map(r => bowel.has(r.type) ? {...r,type:'symptom'} : r);
   const old = sections({records:samples,reports:[...reports].sort((a,b)=>String(a.checkDate).localeCompare(String(b.checkDate))),followups:[]})[0].map(line=>line.slice(line.indexOf('：')+1));
-  const sleep = records.filter(r=>r.type==='sleep').slice(-2).map(r=>day(r.recordedAt)+' '+r.value+(r.unit||'')).join('；');
+
   const hospital = goals.filter(g=>g.goalMetric?.source==='report_item').map(g=>{
     const metric=g.goalMetric, start=[day(context.period.start),day(plan.confirmedAt),g.effectiveAt && day(g.effectiveAt)].filter(Boolean).sort().at(-1);
     const e=metricEvidence(metric,[],reports,{start,end:day(context.period.end)});
@@ -56,9 +56,51 @@ function assessment(context) {
     const linked=tasks.filter(t=>String(t.sourceAnnualPlanId||'')===String(plan._id) && (t.managementIssueIds||[]).map(String).includes(String(g.issueId)) && g.issueId);
     return g.goal+(linked.length?'（本期关联随访'+linked.length+'项）':'');
   });
-  const observations = [[...new Set(linkedGoals)].join('；') || '本期尚无明确的结构化年度目标。',habits.join('；') || '本期缺少可确认由客户记录的数据。',timing,[sleep && old[1]==='本期暂无记录。' ? '' : old[1],sleep && '睡眠：'+sleep].filter(Boolean).join('；'),hospital.join('；') || old[0],old[2],old[3]];
-  const lifestyle = records.filter(r=>['diet','exercise','sleep','mood'].includes(r.type)).slice(-3).map(r=>day(r.recordedAt)+' '+(r.label||r.type)+' '+r.value).join('；');
-  return [observations,[lifestyle ? '同期记录：'+lifestyle+'。与本期指标对照，不能认定因果。' : '本期缺少可核实的生活方式记录，尚不能判断与健康结果的关联。'],['结合各项记录的日期、覆盖和测量条件判断可比性。',timing+' 工作人员办结与客户实际就医须分别核对。'],['按已确认的计划执行，向顾问反馈实际困难。','核对本期目标的对应结果及缺失原因，与客户确认下一阶段重点和复核日期。']];
+  const pending = tasks.filter(t => !finished.includes(t));
+  const overdue = finished.length - onTime;
+  const taskLabel = t => String(t.theme || '随访').slice(0,50);
+  const missingTask = pending[0] && taskLabel(pending[0]);
+  const suggestedGoal = missingTask ? '下次随访时确认「'+missingTask+'」的实际进展及下一步安排'
+    : overdue ? '下次随访时查明延期环节，确认下一项安排的日期' : '下次复盘时核对本期记录与下一阶段重点';
+  const goal = [...new Set(linkedGoals)].join('；') || '本期未匹配到已确认的年度目标。建议阶段目标（待确认）：'+suggestedGoal+'。';
+  const weight = require('./phaseAssessmentWeightEvidence').comparableWeightChange(records);
+  const lifestyle = [];
+  for (const [type,label] of [['exercise','运动'],['diet','饮食'],['sleep','睡眠'],['mood','情绪'],['smoking','吸烟'],['alcohol','饮酒']]) {
+    const rows = records.filter(r=>r.type===type);
+    if (!rows.length) continue;
+    const values = new Map(), dates = new Set();
+    for (const r of rows) {
+      const date = day(r.recordedAt), value=String(r.value??'').replace(/【[^】]+】/g,'').trim();
+      dates.add(date);
+      if(value){if(!values.has(value))values.set(value,new Set());values.get(value).add(date);}
+    }
+    const common=[...values].sort((a,b)=>b[1].size-a[1].size)[0];
+    lifestyle.push(label+'记录'+dates.size+'天'+(common && ['diet','exercise','smoking','alcohol'].includes(type)?'，其中'+common[1].size+'天记有「'+common[0].slice(0,32)+'」':''));
+  }
+  const groups=[...coverage(records).values()].sort((a,b)=>b.days.size-a.days.size);
+  const habitSummary=groups.length>3 ? groups.slice(0,3).map(g=>g.label+g.days.size+'天').join('、')+'；共记录'+groups.length+'类项目。' : habits.join('；');
+  const waistDays=new Set(records.filter(r=>r.type==='waist').map(r=>day(r.recordedAt))).size;
+  const daily=weight ? weight.observation : old[1];
+  const results=weight ? '体重有跨日记录，可比较期初和期末。' : '现有体重记录不足以比较期初和期末。';
+  const execution=overdue||missingTask ? [overdue?'有'+overdue+'项晚于计划日办结，需区分实际服务延期和补录。':'',missingTask?'「'+missingTask+'」缺办结日期，实际完成情况待确认。':''].join('') : timing;
+  const customer=missingTask ? '下次与顾问联系时，说明「'+missingTask+'」是否已经完成；如已完成，告知实际日期，如有报告请一并提供。' :
+    schedules.length?'按方案约定记录'+(schedules[0].items||schedules[0].metricType||'监测项目')+'（'+schedules[0].frequency+'），下次随访时带上记录。':'下次随访时，与顾问选定一项要跟踪的指标，约定记录频率。';
+  const team=missingTask||overdue ? '顾问在下次随访前'+(missingTask?'查「'+missingTask+'」的办理或回访记录，补齐实际日期和结果。':'核对延期项目的办理日期。')+(overdue?'逐项核实延期发生在预约、就医还是登记环节，再与客户确认下一次安排。':'') : '顾问在下次随访时核对本期指标，与客户确认下一阶段目标、频率和复核日期。';
+  const hospitalSummary=hospital.join('；') || (reports.length?'本期有'+reports.length+'份已审核报告，尚未匹配到年度重点指标。':'本期暂无已审核检查报告。');
+  const symptoms=records.filter(r=>bowel.has(r.type)||r.type==='symptom');
+  const symptomsSummary=symptoms.length?'本期有'+new Set(symptoms.map(r=>day(r.recordedAt))).size+'天排便、精力或症状记录。'+(symptoms.some(r=>r.type==='symptom')?old[3]:'原记录的评分含义需结合量表核对。'):old[3];
+  const dailyTypes = ['bloodPressure','heartRate','bloodSugar','waist','sleep','oxygen','temperature'];
+  const dailySummary = dailyTypes.flatMap(type=>{
+    const rows=records.filter(r=>r.type===type && r.value!=null && r.value!=='');
+    if(!rows.length)return [];
+    const last=rows.at(-1);
+    return [(last.label||type)+' '+day(last.recordedAt)+' '+last.value+(last.unit||'')];
+  });
+  if(weight)dailySummary.unshift(weight.observation);
+  else if(records.some(r=>r.type==='weight'))dailySummary.unshift(old[1].split('；')[0]);
+  const observations=[goal,habitSummary||'本期暂无可确认的客户自记数据。',timing,dailySummary.join('；')||daily,hospitalSummary,old[2],symptomsSummary];
+  return [observations,[lifestyle.length?lifestyle.join('；')+'。'+(weight?'同期体重从'+weight.first.value+' kg变为'+weight.last.value+' kg。':'')+'仅凭同期记录不能认定因果。':'本期缺少生活方式记录，无法分析与健康结果的关联。'],[results+(waistDays===1?'腰围仅记录1天，只能作为基线。':''),execution],[customer,team]];
+
 }
 function render(values) {
   if (!Array.isArray(values) || values.length !== dimensions.length) throw Error('评估草稿缺少四板块');

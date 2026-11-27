@@ -30,3 +30,11 @@ test('同次就医办结与各项目结果独立，周记录和撤销事项按�
   assert.equal(published.sections.length,4);
   assert.equal(published.sections[0].items.length,7);
 });
+test('生活方式按整月不同日期归纳，核对行动指向待查随访', () => {
+  const records = [1,8,15,31,31].map(n=>({type:'exercise',label:'运动',recordedAt:'2026-10-'+String(n).padStart(2,'0'),value:'【晚上】快走',recordedBy:{source:'customer'}}));
+  const [changes,life,analysis,actions]=assessment({period:{end:'2026-10-31'},recentHealthRecords:records,periodReports:[],periodFollowups:[{theme:'核对复查结果',date:'2026-10-20',status:'planned'}]});
+  assert.match(changes[0],/建议阶段目标（待确认）/);
+  assert.match(life[0],/运动记录4天，其中4天记有「快走」/);
+  assert.match(analysis[1],/核对复查结果/);
+  assert.ok(actions.every(line=>line.includes('核对复查结果')));
+});

@@ -38,6 +38,17 @@ function validateVisitGroups(data = {}) {
     if (entries.some(e => !validDay(e.date) || e.date !== entries[0].date)) return `“${id}”的就诊日期须一致且有效`;
     if ((!reminders && entries.some(e => !e.hospital)) || entries.some(e => e.hospital !== entries[0].hospital)) return `“${id}”的就诊医院须一致；不同医院请分别安排`;
   }
+  const reminderReviews = [];
+  for (const row of (data.abnormal_followup?.enabled === false ? [] : data.abnormal_followup?.records || [])) {
+    const item = { moduleKey: 'abnormal_followup', row, date: text(row.time), hospital: hospitalIdentity(row.hospital) };
+    if (!validDay(item.date)) continue;
+    const other = reminderReviews.find(previous => require('../../../shared/annualReminderReview.cjs').needsReview(previous, item));
+    if (other) {
+      const names = [other.row, row].map(r => r.reviewItems?.join('、') || title(r, item.moduleKey));
+      return item.date + ' 同日复查（' + names.join('、') + '）：请核对是否归为同次就诊，或填写分开安排的原因';
+    }
+    reminderReviews.push(item);
+  }
   const byDateAndHospital = new Map();
   for (const [moduleKey, dateKey] of Object.entries(MODULE_DATES)) {
     if (data[moduleKey]?.enabled === false) continue;
