@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 
+import NutritionServiceInvitation from './NutritionServiceInvitation'
+
 export const isBodyCompInvitation = task => !!task?.bodyCompCycle?.planId
 
 function plusDays(day, count) {
@@ -10,7 +12,11 @@ function plusDays(day, count) {
   return date.toISOString().slice(0, 10)
 }
 
-export default function BodyCompInvitation({ task, onClose, onSaved }) {
+export default function BodyCompInvitation(props) {
+  return props.task.bodyCompCycle?.serviceVersion === 1 ? <NutritionServiceInvitation {...props}/> : <LegacyInvitation {...props}/>
+}
+
+function LegacyInvitation({ task, onClose, onSaved }) {
   const [options, setOptions] = useState([])
   const [index, setIndex] = useState('')
   const [outcome, setOutcome] = useState('measured')

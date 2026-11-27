@@ -264,6 +264,7 @@ export const staffAPI = {
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
   continueFollowUp:    (id, data) => req(`/staff/followups/${id}/continue`, { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  updateNutritionService: (id, data) => req(`/staff/followups/${id}/nutrition-service`, { method: 'POST', body: JSON.stringify(data) }),
   getBodyCompInvitationOptions: id => req(`/staff/followups/${id}/body-composition-options`),
   completeBodyCompInvitation: (id, data) => req(`/staff/followups/${id}/body-composition-complete`, { method: 'POST', body: JSON.stringify(data) }),
   rescheduleBodyCompInvitation: (id, data) => req(`/staff/followups/${id}/body-composition-reschedule`, { method: 'POST', body: JSON.stringify(data) }),

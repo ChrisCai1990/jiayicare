@@ -2935,10 +2935,27 @@ router.post('/followups/:id/continue', staffAuth, checkPermission('followups', '
   } finally { await session.endSession(); }
 });
 
+router.post('/followups/:id/nutrition-service', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
+  try {
+    const flow = require('../utils/nutritionServiceFollowUp');
+    const task = await FollowUp.findById(req.params.id).lean();
+    if (task?.bodyCompCycle?.serviceVersion !== 1) return res.status(404).json({success:false,message:'找不到营养服务随访'});
+    if (req.staff.role !== 'superadmin' && String(task.assignedTo) !== String(req.staff._id)) return res.status(403).json({success:false,message:'仅当前任务负责人可办理'});
+    const fresh = await flow.sync(task);
+    if (!fresh || !flow.openStatuses.includes(fresh.status) || new Date(req.body.updatedAt).getTime() !== new Date(fresh.updatedAt).getTime()) return res.status(409).json({success:false,message:'安排已变化，请刷新后重试'});
+    let next;
+    try { next = flow.action(fresh.bodyCompCycle, req.body, flow.day(new Date())); }
+    catch (e) { return res.status(400).json({success:false,message:e.message}); }
+    const updated = await flow.persist(FollowUp, fresh, next);
+    if (!updated) return res.status(409).json({success:false,message:'安排已变化，请刷新后重试'});
+    res.json({success:true,data:updated});
+  } catch(e) { res.status(500).json({success:false,message:'保存营养随访失败'}); }
+});
 router.get('/followups/:id/body-composition-options', staffAuth, async (req, res) => {
   try {
     const bodyComp = require('../utils/nutritionBodyCompFollowUp');
     const task = await FollowUp.findById(req.params.id).lean();
+    if (task?.bodyCompCycle?.serviceVersion === 1) return res.status(409).json({success:false,message:'请从营养服务随访入口办理'});
     if (!bodyComp.isBodyCompTask(task)) return res.status(404).json({ success: false, message: '体成分邀约不存在' });
     if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '此邀约未分配给当前账号' });
     const plan = await HealthPlan.findById(task.sourceHealthPlanId).select('confirmedAt patientId').lean();
@@ -2953,6 +2970,7 @@ router.post('/followups/:id/body-composition-reschedule', staffAuth, checkPermis
   try {
     const bodyComp = require('../utils/nutritionBodyCompFollowUp');
     const task = await FollowUp.findById(req.params.id).lean();
+    if (task?.bodyCompCycle?.serviceVersion === 1) return res.status(409).json({success:false,message:'请从营养服务随访入口办理'});
     if (!bodyComp.isBodyCompTask(task)) return res.status(404).json({ success: false, message: '体成分邀约不存在' });
     if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅负责人可以改期' });
     if (!['planned', 'in_progress', 'missed'].includes(task.status)) return res.status(409).json({ success: false, message: '本轮已结束，不能改期' });
@@ -2974,6 +2992,7 @@ router.post('/followups/:id/body-composition-complete', staffAuth, checkPermissi
   try {
     const bodyComp = require('../utils/nutritionBodyCompFollowUp');
     const task = await FollowUp.findById(req.params.id).lean();
+    if (task?.bodyCompCycle?.serviceVersion === 1) return res.status(409).json({success:false,message:'请从营养服务随访入口办理'});
     if (!bodyComp.isBodyCompTask(task)) return res.status(404).json({ success: false, message: '体成分邀约不存在' });
     if (req.staff.role !== 'superadmin' && String(task.assignedTo || task.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '仅负责人可以确认测量并安排下一轮' });
     const plan = await HealthPlan.findById(task.sourceHealthPlanId).select('patientId staffId type status confirmedAt content').lean();
