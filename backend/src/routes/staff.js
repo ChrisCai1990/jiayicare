@@ -20343,7 +20343,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : reportParsePromptForCategory(report.documentCategory);
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}页首如为续页，先读下一检查标题前的左右两栏；正文明确写有器官和超声分级时，按该器官超声项目提取所见与结论。“报告部份”是页眉。再从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, regionIndex, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}${missingOnlyPrompt}\n\n【单页补提】${regionHint}页首如为续页，先读下一检查标题前的左右两栏；正文明确写有器官和超声分级时，按该器官超声项目提取所见与结论。“报告部份”是页眉。C13呼气试验如以左右所见与结论栏排版，按一条检查输出，保留测定值、正常值和定性结论；宫颈液基细胞学即使只有右栏结论也要输出，保留中英文原句。心超和心电图分开读取。再从上到下、从左到右逐行核对本图可见内容，提取遗漏项目、空结果，以及同一文字检查项目未提取的后续编号段落。`, { sourcePage: pageNum, regionIndex, isUrl: false, model: attempt === 3 ? 'qwen-vl-max' : 'qwen-vl-plus', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 180000 });
       parsed = safeParseJSON(raw);
       if (Array.isArray(parsed?.items)) break;
     } catch (error) { rethrowAiControl(error);

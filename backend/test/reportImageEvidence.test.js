@@ -659,3 +659,23 @@ test('page-header thyroid continuation requires its own ultrasound evidence and 
   assert.deepEqual(guard('报告部分', thyroid.findings, [{ ...thyroid, diagnosis: '' }]), []);
   assert.deepEqual(guard('报告部分', text + '。双侧颈动脉正常。', [thyroid]), []);
 });
+
+test('two-column breath test, conclusion-only cytology and echo continuation stay with their own sections', () => {
+  const findings = '测定值：0.4\n正常值：<+4.0';
+  const conclusion = '（宫颈液基）未见上皮内病变或恶性病变';
+  const diagnosis = '左室收缩功能正常。';
+  const sections = [
+    { title: '报告部份', clinicalText: '二尖瓣瓣口血流正常。' + diagnosis },
+    { title: 'C13呼气试验(仅供体检套餐)', clinicalText: findings + '\n阴性-' },
+    { title: '宫颈液基细胞学检查', clinicalText: conclusion },
+  ];
+  const items = [
+    { name: '心脏彩超', itemType: 'imaging', diagnosis },
+    { name: '碳13呼气试验', itemType: 'imaging', findings, diagnosis: '阴性-' },
+    { name: '宫颈液基细胞学检查', itemType: 'pathology', pathologyDiagnosis: conclusion },
+  ];
+  const check = input => guardImageEvidence({ items: input }, { hasMedicalImages: false, readability: 'clear', sections }).items;
+  assert.deepEqual(check(items), items);
+  assert.deepEqual(check([{ ...items[0], diagnosis: '窦性心律' }, { ...items[1], findings: '测定值：4.0' },
+    { ...items[2], pathologyDiagnosis: '见上皮内病变或恶性病变' }]), []);
+});

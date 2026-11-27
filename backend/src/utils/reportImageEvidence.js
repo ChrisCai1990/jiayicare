@@ -11,6 +11,7 @@ sections[].clinicalText 只能是该栏目文字原文，保持原字、数字�
 图文混排页必须保留图外真实的全部检查文字；纯文字报告即使标题为超声也不算包含医学影像。
 超声报告图外印刷的“超声描述”和“超声诊断/医师意见”要分别转录；尤其核对页面下方的小字诊断栏。诊断栏下方印刷的分级解释、概率和参考文献与本次患者诊断分开转录，不得混为一句；手写覆盖印刷文字时，只转录仍能确认的印刷内容。
 按原件印刷的栏目边界分别转录，不要把上一栏目的所见接到下一栏目。每个 sections 元素只包含该栏目之下、下一栏目标题之前的文字；同一栏目的检查所见和诊断均保留。栏目标题不清楚时 title=""，不要猜。
+双栏检查的实测值、正常值及右栏结论均按原句转录；C13呼气试验的测定值和正常值属于同一检查，保留比较符、正负号和小数。宫颈细胞学中英文结论同属一栏。
 页首续页的“报告部分/报告部份”是页眉。即使未重印项目标题，也要将下一检查标题之前的左右两栏分别按所见、结论顺序转录到同一段 clinicalText，title 留空。
 检验表格按真实印刷行写入 sections[].rows，每行分别填写原文项目名、结果、单位、参考范围；任何字段不清楚则留空，不得借用相邻行。叙述性所见和诊断写入 clinicalText；没有表格行时 rows=[]。栏目顺序按页面阅读顺序，不依赖医院或固定模板。
 严格返回 JSON：{"hasMedicalImages":true,"readability":"clear","sections":[{"title":"原件栏目标题","clinicalText":"该栏目叙述原文或空字符串","rows":[{"name":"","value":"","unit":"","referenceRange":""}]}]}。没有印刷检查文字和表格行时 sections=[]。`;
@@ -74,6 +75,10 @@ function continuationTitle(section, index) {
   if (index !== 0 || section.rows?.length
       || !/^(?:报告部[分份])?$/.test(normalizeText(section.title))) return section.title;
   const text = section.clinicalText;
+  if (/(?:二尖瓣|主动脉瓣|三尖瓣|肺动脉瓣)/.test(text)
+      && /(?:彩色多普勒|CDFI|多普勒血流|瓣口血流)/i.test(text)
+      && /(?:室壁运动|收缩功能|射血分数|舒张功能)/.test(text)
+      && !/心电图|心律|胸部CT|肺部|呼气试验|细胞学/i.test(text)) return '心脏彩色多普勒超声检查';
   if (/^\s*甲状腺/.test(text) && /回声/.test(text) && /(?:C[- ]?)?TI[- ]?RADS\s*[1-6]/i.test(text)
       && !/乳腺|颈动脉|骨密度|心脏|BI[- ]?RADS/i.test(text)) return '甲状腺超声检查';
   return section.title;
@@ -94,7 +99,10 @@ function evidenceSections(evidence) {
 }
 
 function sectionForItem(item, sections) {
-  const normalized = value => normalizeText(value).replace(/(?:检查|超声|彩超|b超)$/i, '');
+  const normalized = value => normalizeText(value)
+    .replace(/(?:碳13|13c)(?=(?:尿素)?呼气试验)/g, 'c13')
+    .replace(/^(?:心超|心脏彩超|心脏超声|超声心动图)(?:检查)?$/, '心脏彩色多普勒超声检查')
+    .replace(/(?:检查|超声|彩超|b超)$/i, '');
   const uniqueMatch = value => {
     const title = normalized(value);
     if (!title) return null;
@@ -258,7 +266,7 @@ function guardImageEvidence(parsed, evidence, { requireSectionEvidence = false, 
       return valid;
     }
     // Neither a project title nor a caliper number is a narrative finding.
-    const valid = ['findings', 'diagnosis'].some(key => isNarrativeAnchored(item[key], itemText))
+    const valid = fields.some(key => isNarrativeAnchored(item[key], itemText))
       && (!item.value || isAnchored(item.value, transcript));
     if (!valid) blockedReasons.unverified_text++;
     return valid;
