@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Textarea, ScrollView, Picker } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView, Picker, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../theme';
 import { servicesAPI, authAPI, userAPI, paymentsAPI, familyLinksAPI, guardianChildrenAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { isNativeApp, callNative } from '../utils/appBridge';
 import useNavBar from '../hooks/useNavBar';
 import { requestWechatPayment, waitForPayment } from '../utils/wechatPay';
 import { maxFundDeduction } from '../utils/healthFundCheckout';
@@ -133,7 +134,13 @@ export default function PurchaseModal({ item, mode, onClose, shareToken = '', pa
       // Always refresh the payer OpenID from the current WeChat session before
       // creating a payment. A stored OpenID may belong to an earlier tester and
       // causes WeChat to reject the payment as payer/order-account mismatch.
-      if (isPay && finalPrice > 0) {
+      const native = isNativeApp();
+      if (isPay && finalPrice > 0 && native) {
+        const capabilities = await paymentsAPI.capabilities();
+        if (!capabilities.data?.app) throw new Error('当前 App 微信支付未开通，请使用嘉医汇微信小程序支付');
+        await callNative('prepare-payment');
+      } else if (isPay && finalPrice > 0) {
+        if (process.env.TARO_ENV === 'h5') throw new Error('请在支持微信支付的嘉医汇 App 或微信小程序内付款');
         const bound = await authAPI.bindWechat();
         if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
         // 微信绑定接口只负责刷新支付 OpenID。保留结算页刚从 /user/me
@@ -160,8 +167,8 @@ export default function PurchaseModal({ item, mode, onClose, shareToken = '', pa
       }
       const res = isPay
         ? (pendingOrderRef.current
-          ? await paymentsAPI.retry(pendingOrderRef.current.id)
-          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, familyPayment ? null : couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, familyPayment ? false : useSharedFund, beneficiaryUserId, pushRecordId, partnerCode))
+          ? await paymentsAPI.retry(pendingOrderRef.current.id, native)
+          : await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, familyPayment ? null : couponId, currentSpecLabel || undefined, shareToken, desiredServiceDate, serviceRequirements.trim(), finalPrice, familyPayment ? false : useSharedFund, beneficiaryUserId, pushRecordId, partnerCode, native))
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined, beneficiaryUserId);
       if (res.success) {
         if (res.data?.packageCovered) {
@@ -171,7 +178,8 @@ export default function PurchaseModal({ item, mode, onClose, shareToken = '', pa
         const orderId = res.data?.orderId || res.data?.order?._id || pendingOrderRef.current?.id;
         if (isPay && orderId) pendingOrderRef.current = { id: orderId, key: checkoutKey };
         if (res.data?.paymentParams) {
-          await requestWechatPayment(res.data.paymentParams);
+          if (native) await callNative('wechat-pay', { params: res.data.paymentParams }, 150000);
+          else await requestWechatPayment(res.data.paymentParams);
           await waitForPayment(orderId);
         } else if (isPay && !res.data?.alreadyPaid && res.data?.paymentStatus !== 'paid') {
           throw new Error('付款结果待确认，请稍后在“我的订单”查看');
@@ -210,11 +218,11 @@ export default function PurchaseModal({ item, mode, onClose, shareToken = '', pa
   }
 
   return (
-    <View style={{position:'fixed',top:0,left:0,right:0,bottom:0,backgroundColor:'#fff',zIndex:100}}>
-    <View style={{position:'relative',zIndex:2,paddingTop:`${statusBarHeight}px`,height:`${totalHeight}px`,boxSizing:'border-box',backgroundColor:'#fff'}}>
+    <View style={{position:'fixed',top:0,left:0,right:0,bottom:0,backgroundColor:'#fff',zIndex:100,display:'flex',flexDirection:'column'}}>
+    <View style={{position:'relative',flexShrink:0,zIndex:2,paddingTop:`${statusBarHeight}px`,height:`${totalHeight}px`,boxSizing:'border-box',backgroundColor:'#fff'}}>
       <View onClick={(event) => { event.stopPropagation(); onClose(); }} style={{position:'relative',zIndex:3,height:`${navBarHeight}px`,display:'flex',alignItems:'center',paddingLeft:'20px',width:'120px'}}><Text style={{fontSize:'17px',color:colors.primary}}>{selfMembership ? '‹ 返回首页' : '‹ 返回商城'}</Text></View>
     </View>
-    <ScrollView scrollY enhanced showScrollbar style={{ position: 'absolute', zIndex: 1, top: `${totalHeight}px`, left: 0, right: 0, bottom: 0, width: '100%', height: `calc(100vh - ${totalHeight}px)`, backgroundColor: '#fff' }}>
+    <ScrollView scrollY enhanced showScrollbar style={{ position: 'relative', zIndex: 1, flex: 1, minHeight: 0, height: 0, width: '100%', backgroundColor: '#fff' }}>
       <View style={{ padding: `${spacing.lg}px`, paddingBottom: '40px', width: '100%', minHeight: '100vh', boxSizing: 'border-box' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View>
@@ -392,29 +400,27 @@ export default function PurchaseModal({ item, mode, onClose, shareToken = '', pa
             onInput={(e) => setNote(e.detail.value)}
           />
 
-          {!!errMsg && <Text style={{ fontSize: '13px', color: colors.danger, display: 'block', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>{errMsg}</Text>}
-
-          <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '16px', display: 'block', marginBottom: `${spacing.lg}px` }}>
-            {isPay ? '提交后将拉起微信支付，支付结果以微信服务端确认为准，可在“我的订单”查看' : '提交后，健管师将与您联系确认具体服务安排'}
-          </Text>
-          <View onClick={() => setServiceAgreed(!serviceAgreed)} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: `${spacing.md}px` }}>
+        </View>
+      </View>
+    </ScrollView>
+    <View style={{ flexShrink: 0, padding: '10px 16px', paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', backgroundColor: '#fff', borderTop: '1px solid '+colors.border }}>
+      {!!errMsg && <Text role="alert" style={{display:'block',color:colors.danger,fontSize:'13px',marginBottom:'6px'}}>{errMsg}</Text>}
+          <View onClick={() => { setServiceAgreed(!serviceAgreed); setErrMsg(''); }} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: `${spacing.md}px` }}>
             <Text style={{ color: serviceAgreed ? colors.primary : colors.textMuted }}>{serviceAgreed ? '☑' : '☐'}</Text>
             <Text style={{ flex: 1, fontSize: '11px', color: colors.textSecondary, lineHeight: '17px' }}>
               我已阅读并同意<Text style={{ color: colors.primary }} onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}>《健康管理服务说明》</Text>，知悉本服务不提供诊断、治疗、处方或检查开单。
             </Text>
           </View>
-        </View>
 
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
           <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
           </View>
-          <View onClick={submitting ? undefined : handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting || !serviceAgreed ? 0.6 : 1 }}>
+          <Button disabled={submitting} loading={submitting} onClick={handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting || !serviceAgreed ? 0.6 : 1 }}>
             <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : (isPay ? `确认支付 ¥${finalPrice.toFixed(2)}` : '提交预约')}</Text>
-          </View>
+          </Button>
         </View>
       </View>
-    </ScrollView>
     </View>
   );
 }

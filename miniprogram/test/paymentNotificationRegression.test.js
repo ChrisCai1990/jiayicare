@@ -10,6 +10,7 @@ test('cancelled cashier retries the same mall order and double tap cannot create
   const end = source.indexOf('\n  if (submitted)', start);
   let created = 0; let retried = 0; let success = false; const errors = [];
   const ctx = {
+    isNativeApp: () => false, process: {env:{TARO_ENV:"weapp"}},
     selfMembership: false, beneficiaryUserId: '', pushRecordId: '', partnerCode: '', familyPayment: false, sharedApplied: 0, useSharedFund: false,
     submittingRef: { current: false }, pendingOrderRef: { current: null }, requiresServiceDetails: true,
     desiredServiceDate: '2026-09-30', serviceRequirements: '浙一', serviceAgreed: true,
@@ -27,6 +28,22 @@ test('cancelled cashier retries the same mall order and double tap cannot create
   ctx.requestWechatPayment = async () => {};
   await ctx.submit(); assert.equal(created, 1); assert.equal(retried, 1); assert.equal(success, true);
   ctx.finalPrice = 10000; await ctx.submit(); assert.equal(retried, 1); assert.match(errors.at(-1), /取消原订单/);
+  const nativeActions = [];
+  ctx.isNativeApp = () => true;
+  ctx.finalPrice = 20000;
+  ctx.pendingOrderRef.current = null;
+  ctx.paymentsAPI.capabilities = async () => ({data:{app:true}});
+  ctx.authAPI.bindWechat = () => assert.fail('native checkout must not bind a mini-program openid');
+  ctx.callNative = async action => nativeActions.push(action);
+  ctx.servicesAPI.order = async (...args) => {
+    assert.equal(args.at(-1), true);
+    return {success:true,data:{orderId:'app-order',paymentParams:{}}};
+  };
+  success = false;
+  await ctx.submit();
+  assert.deepEqual(nativeActions, ['prepare-payment','wechat-pay']);
+  assert.equal(success, true);
+
 });
 
 test('opening notifications clears previous product detail; hiding clears stale overlays but preserves active cashier', async () => {

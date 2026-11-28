@@ -72,11 +72,15 @@ test('waist records refresh into time-ordered trend and latest cm value', async 
 
 test('purchase member requests initialize and return closes above scrolling content', async () => {
   let members=0,closed=0,stopped=0;
-  const page=mount('components/PurchaseModal.jsx',{props:{item:{id:'service',name:'服务',price:12800},mode:'pay',onClose:()=>closed++},api:{familyLinksAPI:{list:async()=>{members++;return {data:[]};}},guardianChildrenAPI:{list:async()=>{members++;return {data:[]};}},servicesAPI:{coupons:async()=>({success:true,data:[]})},userAPI:{getMe:async()=>({success:true,data:{}}),enterpriseSharedFundQuote:async()=>({data:{amount:0}})}}});
+  const page=mount('components/PurchaseModal.jsx',{props:{item:{id:'service',name:'服务',price:12800,fulfillmentType:'subscription_service'},mode:'pay',onClose:()=>closed++},api:{familyLinksAPI:{list:async()=>{members++;return {data:[]};}},guardianChildrenAPI:{list:async()=>{members++;return {data:[]};}},servicesAPI:{coupons:async()=>({success:true,data:[]})},userAPI:{getMe:async()=>({success:true,data:{}}),enterpriseSharedFundQuote:async()=>({data:{amount:0}})}}});
   let tree=page.render(); page.effects.forEach(fn=>fn()); await settle(); tree=page.render();
   assert.equal(members,2);
   const back=nodes(tree).find(n=>n.props.onClick&&content(n)==='‹ 返回商城');
   const scroll=nodes(tree).find(n=>n.type==='ScrollView');
+  const pay = nodes(tree).find(n => n.type === 'Button' && content(n).includes('确认支付'));
+  assert.ok(pay && !nodes(scroll).includes(pay));
+  await pay.props.onClick();
+  assert.match(content(page.render()), /请先阅读并同意/);
   assert.ok(back.props.style.zIndex>scroll.props.style.zIndex);
   back.props.onClick({stopPropagation:()=>stopped++});
   assert.equal(closed,1); assert.equal(stopped,1);

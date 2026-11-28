@@ -394,16 +394,17 @@ export const servicesAPI = {
   claimPartnerReferral: (productId, partnerCode) => request('/services/partner-referrals/claim', { method: 'POST', body: JSON.stringify({ productId, partnerCode }) }),
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false, beneficiaryUserId = '', pushRecordId = '', partnerCode = '') =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, partnerCode, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund, beneficiaryUserId, pushRecordId }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '', desiredServiceDate = '', serviceRequirements = '', expectedAmount, useEnterpriseSharedFund = false, beneficiaryUserId = '', pushRecordId = '', partnerCode = '', nativePayment = false) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ ...(nativePayment ? {paymentScene: 'app'} : {}), serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken, partnerCode, desiredServiceDate, serviceRequirements, expectedAmount, useEnterpriseSharedFund, beneficiaryUserId, pushRecordId }) }),
   inquire: (serviceId, note, specificationLabel, beneficiaryUserId = '') =>
     request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel, beneficiaryUserId }) }),
   coupons: () => request('/services/coupons'),
 };
 
 export const paymentsAPI = {
+  capabilities: () => request('/payments/capabilities'),
   status: (orderId) => request(`/payments/${orderId}/status`),
-  retry: (orderId) => request(`/payments/${orderId}/retry`, { method: 'POST' }),
+  retry: (orderId, nativePayment = false) => request(`/payments/${orderId}/retry`, { method: 'POST', ...(nativePayment ? { body: JSON.stringify({ paymentScene: 'app' }) } : {}) }),
 };
 
 // ── Partner Benefits ────────────────────────────────────────────
