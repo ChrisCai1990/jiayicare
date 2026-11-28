@@ -19340,6 +19340,25 @@ async function runReportParseControlled(reportId) {
       Object.assign(imagePageEvidence, savedProgress?.imagePageEvidence || {});
       const nextPage = Math.max(1, Number(savedProgress?.nextPage) || 1);
       const knownTotalPages = await getPdfPageCountFromBuffer(pdfBuf);
+      const printedPages = new Map();
+      if (isComprehensiveCheckup && !isPrescriptionReport) {
+        const api = require('../utils/reportOcrWords');
+        const { readPrintedPage } = require('../utils/shawPrintedReport');
+        // Each accepted page must independently match its printed footer and layout.
+        let matchedFormat = false;
+        for (let page = 1; page <= knownTotalPages; page++) {
+          if (page > 3 && !matchedFormat) break;
+          try {
+            const printed = await readPrintedPage(pdfBuf, page, api);
+            if (printed) {
+              matchedFormat = true;
+              printedPages.set(page, printed);
+            }
+          } catch (error) {
+            console.log(`[parse-ai] 第${page}页文字层读取失败，继续图像解析：${error.code || error.name}`);
+          }
+        }
+      }
       let allItems = Array.isArray(savedProgress?.allItems) ? savedProgress.allItems : [];
       const summaries = Array.isArray(savedProgress?.summaries) ? savedProgress.summaries : [];
       // 机构名称必须优先来自当前原件。旧档案中的 hospital/institution 可能是
@@ -19371,6 +19390,10 @@ async function runReportParseControlled(reportId) {
             while (cursor < batchImages.length) {
               const i = cursor++;
               const pageNum = batchIndex * BATCH_SIZE + i + 1;
+              if (printedPages.has(pageNum)) {
+                batchResults[i] = { _templateSkip: true, items: [] };
+                continue;
+              }
               const cachedPage = report.parseJob?.firstPassPages?.[pageNum];
               if (cachedPage) { batchResults[i] = cachedPage; continue; }
               if (useShaoyifuTemplate && ['skip', 'duplicate'].includes(shaoyifuTemplate.pageMode(pageNum))) {
@@ -19554,7 +19577,7 @@ async function runReportParseControlled(reportId) {
               // 通用报告必须复核首尾明细页之间的每一页；中间页即使首轮误判为空，也不得跳过。
               return Array.from({ length: pages[pages.length - 1] - pages[0] + 1 }, (_, i) => pages[0] + i);
             })();
-        for (const pageNum of coveragePages.filter(page => imagePageEvidence[page]?.status !== 'image_only')) {
+        for (const pageNum of coveragePages.filter(page => !printedPages.has(page) && imagePageEvidence[page]?.status !== 'image_only')) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
@@ -19851,6 +19874,7 @@ async function runReportParseControlled(reportId) {
       }
 
       }
+      allItems = allItems.filter(item => !printedPages.has(Number(item._page || item.sourcePage)));
       allItems = isPrescriptionReport ? allItems : usePediatricBodyComposition
         ? [...new Set(allItems.map(item => item._page || 0))].flatMap(page => {
             const pageItems = allItems.filter(item => (item._page || 0) === page);
@@ -19900,6 +19924,7 @@ async function runReportParseControlled(reportId) {
         const missingTextRows = [];
         for (let page = 1; page <= (knownTotalPages || totalPageCount); page++) {
           try {
+            if (printedPages.has(page)) continue;
             const layout = await readPdfPageLayout(pdfBuf, page);
             let namedBoxes = null;
             if (/项目名称\s+影像表现\s+诊断结论|(?:^|\n)\s*影像结果\s{2,}/.test(layout)) {
@@ -19934,6 +19959,17 @@ async function runReportParseControlled(reportId) {
           console.log(`[parse-ai] PDF参考值前置表格补齐 ${classifiedMissing.length} 条待审核行`);
         }
       }
+      if (printedPages.size) {
+        for (const [page, printed] of printedPages) {
+          if (printed.skip) imagePageEvidence[page] = { status: 'summary_only', message: '原件标记为体检小结，已跳过。' };
+        }
+        const printedRows = [...printedPages.values()].flatMap(page => page.items);
+        const matched = await classifyItemsAsync(printedRows);
+        classified = sortReportItemsBySource([
+          ...classified.filter(row => !printedPages.has(Number(row.sourcePage))),
+          ...matched.map(normalizeExplicitNormalStatus),
+        ]);
+      }
       const parsedItemDates = [...new Set(classified.map(item => normalizeReportDate(item.examDate)).filter(Boolean))];
       const resolvedCheckDate = parsedItemDates.length === 1 ? parsedItemDates[0] : parsedItemDates.length > 1 ? '' : normalizeReportDate(checkDate);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
@@ -19941,7 +19977,7 @@ async function runReportParseControlled(reportId) {
       // rows. This audit records counts only and never adds an unverified item.
       const textCoverage = !isPrescriptionReport && isComprehensiveCheckup
         ? await require('../utils/reportOcrWords').auditPdfTextCoverage(
-          pdfBuf, classified, Array.from({ length: knownTotalPages || totalPageCount }, (_, i) => i + 1))
+          pdfBuf, classified, Array.from({ length: knownTotalPages || totalPageCount }, (_, i) => i + 1).filter(page => !printedPages.get(page)?.skip))
         : null;
       const textGapWarning = textCoverage?.uncoveredRows
         ? `⚠️ PDF文字层在第${textCoverage.pagesWithGaps.join('、')}页发现至少${textCoverage.uncoveredRows}条有结果的原文行未与草稿同名同值对应，请逐行核对；该数字是保守候选统计，不代表全部漏项。`
@@ -20320,7 +20356,15 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // without consuming visual-model calls. Results remain unverified drafts.
   let localScan = null;
   let textNarrativeCandidates = [];
-  if (isPdf && report.type === 'annual') {
+  if (isPdf && (report.type === 'annual' || report.documentCategory === 'physical_exam')) {
+    try {
+      const printed = await require('../utils/shawPrintedReport').readPrintedPage(pdfBuf, pageNum, require('../utils/reportOcrWords'));
+      if (printed) localScan = { source: 'printed_page', items: printed.items };
+    } catch (error) {
+      console.log(`[parse-page] P${pageNum} 原件文字层不可用：${error.code || error.name}`);
+    }
+  }
+  if (!localScan && isPdf && report.type === 'annual') {
     try {
       const { readPdfPageLayout, readPdfPageTextBoxes } = require('../utils/reportOcrWords');
       const layout = await readPdfPageLayout(pdfBuf, pageNum);
@@ -20402,7 +20446,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
   // and prone to output truncation on dense lab pages.
   const runCoverageAudit = images.length < 4 && !(report.type === 'annual' && images.length > 1);
   const { hasBroadLocalLabScan } = require('../utils/reportPageSupplement');
-  let useLocalScanOnly = localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
+  let useLocalScanOnly = localScan?.source === 'printed_page' || localScan?.source === 'pdf_text_exam' || hasBroadLocalLabScan(localScan);
   if (!useLocalScanOnly) {
     try {
       await require('../utils/aiBudget').assertSupplementCallCapacity(
@@ -20594,7 +20638,7 @@ async function runReportPageParseControlled(reportId, pageNum) {
     ? `（与已有项目匹配且未接纳${candidateDiagnostics.existing}项、缺可核对结果${candidateDiagnostics.withoutResult}项、其他待核对${candidateDiagnostics.other}项）`
     : '';
   const resultMessage = localScan
-    ? `第${pageNum}页本地${localScan.source.startsWith('pdf_text') ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选${useLocalScanOnly ? '' : '并完成分段补漏'}，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
+    ? `第${pageNum}页本地${(localScan.source === 'printed_page' || localScan.source.startsWith('pdf_text')) ? 'PDF文字层' : 'OCR'}识别${localScan.items.length}条候选${useLocalScanOnly ? '' : '并完成分段补漏'}，新增${supplementMerge.added.length}项；均待逐行核对原件，不能视为已核实。`
     : acceptedSupplementItems.length
     ? `第${pageNum}页补提完成，新增${supplementMerge.added.length}项，补全${supplementMerge.enriched.length}项，本页共${classifiedPage.length}项`
     : pageEvidence?.status === 'needs_review'
@@ -20682,7 +20726,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
       success: true,
       processing: true,
       message: isPdf
-        ? 'PDF识别已开始，多页报告约需 1–3 分钟，完成后状态自动变为「待审核」'
+        ? 'PDF已进入后台解析，可继续审核其他报告；完成后本报告将显示审核入口'
         : 'AI识别已开始，约需数秒，完成后状态自动变为「待审核」',
     });
   } catch (err) {

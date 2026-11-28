@@ -349,11 +349,12 @@ function authoritativePanelClassificationName(item) {
   if (/(?:碳|C)\s*1[34].{0,8}呼气|尿素.{0,8}呼气|呼气.{0,8}试验/i.test(all)) {
     return /(?:碳|C)\s*14/i.test(all) ? '碳14呼气试验' : '碳13呼气试验';
   }
+  if (/^(钾|钠|氯)$/.test(name) && /钾[／/]钠[／/]氯/.test(context)) return '电解质';
   if (/尿微量白蛋白|微量尿蛋白|尿肌酐|尿白蛋白.*肌酐|尿生化|尿肾功能/i.test(context)) return '';
   // The same enzyme and cell names can appear in urine and vaginal-discharge
   // panels. A printed vaginal panel is authoritative for these generic rows.
   if (/白带(?:常规|生化|检查|分析)|阴道分泌物(?:常规|检查|分析)/i.test(context)) return '白带常规';
-  if (/尿常规|尿液分析|尿干化学|尿沉渣/i.test(context) || /^(?:尿常规|尿液分析)$/.test(name)) return '尿常规';
+  if (/尿常规|尿液(?:干化学)?分析|尿干化学|尿沉渣/i.test(context) || /^(?:尿常规|尿液分析)$/.test(name)) return '尿常规';
   if (/粪便常规|大便常规|便常规|粪便检查/i.test(context) || /^(?:粪便常规|大便常规|便常规)$/.test(name)) return '粪便常规';
   if (/血常规|全血细胞计数|血细胞分析/i.test(context)) return '血常规';
   return '';
