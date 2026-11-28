@@ -5,13 +5,8 @@ module.exports = {
      * WebpackModule: optimize.minimizer 及第三方插件配置
      */
     webpackChain(chain) {
-      chain.merge({
-        plugin: {
-          'webpack-bundle-analyzer': {
-            enabled: false,
-          },
-        },
-      });
+      // An unused chain plugin without .use() makes webpack-chain reject the build.
+      chain.plugins.delete('webpack-bundle-analyzer');
     },
   },
 };

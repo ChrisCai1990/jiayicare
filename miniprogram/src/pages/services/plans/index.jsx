@@ -124,6 +124,12 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
           )}
           {!!plan.year && <Text style={{ fontSize: '11px', color: meta.color, backgroundColor: meta.bg, borderRadius: '4px', padding: '2px 6px', display: 'inline-block', marginBottom: '2px' }}>{plan.year} 年度</Text>}
           <Text style={{ fontSize: '12px', color: colors.textMuted, lineHeight: '17px' }} numberOfLines={expanded ? 0 : 1}>{plan.description || meta.label}</Text>
+          {plan.type === 'annual_checkup' && (
+            <View style={{ fontSize: '12px', color: colors.textMuted }}>
+              <View>计划体检日期　{plan.checkupDate?.slice(0, 10) || '待确定'}</View>
+              <View>实际体检日期　{plan.actualCheckupDate?.slice(0, 10) || '待登记'}</View>
+            </View>
+          )}
           {!!plan.staffId?.name && <Text style={{ fontSize: '11px', color: colors.textMuted }}>由 {plan.staffId.name} 制定</Text>}
         </View>
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>{expanded ? '▲' : '▼'}</Text>

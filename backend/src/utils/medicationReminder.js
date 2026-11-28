@@ -23,7 +23,7 @@ async function saveReminder({ med, patientId, staff, body, FollowUp, now = new D
       'formData.medicationPlanId': { $exists: false }, date: { $gte: now }, tags: { $nin: ['人工跟进'] }, completedByUser: { $ne: true }, 'progressRecords.0': { $exists: false } },
       { $set: { status: 'cancelled', cancelReason: '已合并至客户持续用药提醒，同一时间的药物合并通知' } });
     return { generated: plan?.enabled ? 1 : 0, reminderId: plan?._id,
-      message: enabled ? '已保存用药提醒；同一时间的药物合并为一条消息，到点提醒' : '已关闭该药提醒，其他药物提醒保留' };
+      message: enabled ? '已保存服用提醒，同一时间的药品和营养素会合并通知' : '已关闭此项服用提醒' };
   } finally { saving.delete(key); }
 }
 module.exports = { saveReminder };

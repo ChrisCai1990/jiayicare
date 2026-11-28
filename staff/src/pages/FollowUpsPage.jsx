@@ -1,3 +1,5 @@
+import SupplyDayCard from '../components/SupplyDayCard'
+import supplyView from '../../../shared/supplyCardRows.cjs'
 import schedule from '../../../shared/followUpDue.cjs'
 import annualNutrition from '../../../shared/annualNutrition.cjs'
 import DateField from '../../../shared/DateField.jsx'
@@ -266,7 +268,7 @@ export default function FollowUpsPage() {
     const request = ++listRequest.current
     setLoading(true); setLoadError('')
     try {
-      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, sourceType, ...(sourceType ? { scope: 'assigned' } : { excludeSourceType: 'order' }) })
+      const res = await staffAPI.getFollowUps({ supplyCards: 1, page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, dateField, sourceType, ...(sourceType ? { scope: 'assigned' } : { excludeSourceType: 'order' }) })
       if (request !== listRequest.current) return
       setFollowUps(res.data.followUps)
       setTotal(res.data.total)
@@ -548,7 +550,8 @@ export default function FollowUpsPage() {
         <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>当前筛选下没有随访记录，可选择“全部日期”查看。</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {followUps.map(f => {
+          {supplyView.cardRows(followUps).map(f => {
+            if (f.supplyCard) return <SupplyDayCard key={f._id} card={f} onSelect={task => isPendingExec(task) ? openExec(task) : setDetailItem(task)} />
             const sc = STATUS_COLOR[f.status] || '#8AA89C'
             const checkin = f.patientLastRecord ? (() => {
               const days = Math.floor((Date.now() - new Date(f.patientLastRecord)) / 86400000)

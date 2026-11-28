@@ -1,3 +1,5 @@
+import SupplyDayNative from '../../../../shared/SupplyDayNative.jsx';
+import supplyView from '../../../../shared/supplyCardRows.cjs';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
@@ -357,7 +359,7 @@ export default function HomeScreen({ navigation }) {
   const activeFollowupTaskItems = followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => {
     const annual = customerAnnualFollowUp(plan);
     return ({
-      _id: plan._id,
+      _id: plan._id, supplyDay: plan.supplyDay,
       type: 'followup',
       title: annual?.title || (plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划')),
       description: annual ? annual.details.join('\n') : (plan.taskRequirements || plan.plannedContent || plan.content),
@@ -478,7 +480,8 @@ export default function HomeScreen({ navigation }) {
                 </View>
               ) : (
                 <>
-                  {allPendingTaskItems.slice(0, 3).map((t, i, arr) => {
+                  {supplyView.cardRows(allPendingTaskItems).slice(0, 3).map((t, i, arr) => {
+                    if (t.supplyCard) return <SupplyDayNative key={t._id} card={t} onSelect={setTaskDetailModal} />;
                     const isLast = i === arr.length - 1 && todayReminders.length === 0;
                     return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={t=>t.uploadReminder?navigation.navigate('ReportUpload',{careFlowId:t.careFlowId}):setTaskDetailModal(t)} />;
                   })}

@@ -1,3 +1,5 @@
+import SupplyDayNative from '../../../../shared/SupplyDayNative.jsx';
+import supplyView from '../../../../shared/supplyCardRows.cjs';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
@@ -446,6 +448,7 @@ export default function TasksScreen({ navigation }) {
     }
     try {
       await followupTasksAPI.done(id, true, needFollowUp);
+      if (current.supplyDay) await loadData();
       if (!needFollowUp && target.workflowKey === 'medical_reminder:followup') {
         setDetailTask(null);
         navigation.navigate('ReportUpload');
@@ -503,7 +506,7 @@ export default function TasksScreen({ navigation }) {
   const followupToItem = (f) => {
     const annual = customerAnnualFollowUp(f);
     return ({
-    _id: f._id,
+    _id: f._id, supplyDay: f.supplyDay,
     title: annual?.title || (f.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (f.theme || '随访计划')),
     isAnnualFollowup: !!annual,
     type: 'followup',
@@ -563,7 +566,7 @@ export default function TasksScreen({ navigation }) {
 
   const filteredTasks = (() => {
     if (statusFilter !== 'active') return baseList; // 已随访/已取消不再叠加时间维度，直接展示全部
-    if (filter === '今日') return [...tasks.filter(t => t.status !== 'completed' && (!t.dueDate || t.dueDate <= today)), ...reminders.filter(r => r.enabled && r.isActiveToday).map(reminderToItem)];
+    if (filter === '今日') return [...activeFollowups.filter(f => f.supplyDay && f.supplyDay.day <= today).map(followupToItem), ...tasks.filter(t => t.status !== 'completed' && (!t.dueDate || t.dueDate <= today)), ...reminders.filter(r => r.enabled && r.isActiveToday).map(reminderToItem)];
     if (filter === '本周') return baseList.filter(t => !t.dueDate || t.dueDate <= weekEnd);
     if (filter === '本月') return baseList.filter(t => !t.dueDate || t.dueDate <= monthEnd);
     return baseList;
@@ -665,7 +668,8 @@ export default function TasksScreen({ navigation }) {
           />
         ) : (
           <>
-            {filteredTasks.map(task => (
+            {supplyView.cardRows(filteredTasks).map(task => (
+              task.supplyCard ? <SupplyDayNative key={task._id} card={task} onSelect={setDetailTask} /> :
               task.isReminder
                 ? <ReminderCard key={task._id} reminder={reminders.find(r => r._id === task._id) || task} onToggle={toggleReminder} />
                 : <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={t=>t.uploadReminder?navigation.navigate('ReportUpload',{careFlowId:t.careFlowId}):setDetailTask(t)} />

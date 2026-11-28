@@ -5,6 +5,14 @@ const { beijingDate } = require('../../../shared/medicationReminder.cjs');
 const { disposableMedicationSlotsFilter } = require('./medicationFollowUpVisibility');
 const planId = user => new mongoose.Types.ObjectId(crypto.createHash('sha256').update(`${SOURCE_KEY}:${user}`).digest('hex').slice(0,24));
 function models() { return { Medication: require('../models/Medication'), Reminder: require('../models/Reminder'), Message: require('../models/Message') }; }
+async function scheduledItems(user) {
+  const filter = { user, stopped: { $ne: true }, 'reminder.enabled': true };
+  const [medications, supplements] = await Promise.all([
+    models().Medication.find({ ...filter, active: { $ne: false } }).lean(),
+    require('../models/Supplement').find({ ...filter, aiStatus: { $nin: ['pending', 'rejected'] } }).lean(),
+  ]);
+  return medications.concat(supplements.map(item => ({ ...item, timing: item.method, supplement: true })));
+}
 async function refreshDailyMedicationWindow(plan, meds, now = new Date()) {
   const FollowUp = require('../models/FollowUp');
   const today = beijingDate(now);
@@ -15,8 +23,8 @@ async function refreshDailyMedicationWindow(plan, meds, now = new Date()) {
   return 0;
 }
 async function syncCombinedMedicationReminder(user, now = new Date()) {
-  const { Medication, Reminder } = models();
-  const meds = await Medication.find({ user, stopped: { $ne: true }, active: { $ne: false }, 'reminder.enabled': true }).lean();
+  const { Reminder } = models();
+  const meds = await scheduledItems(user);
   const slots = groupedSlots(meds, now);
   const filter = { _id: planId(user), user };
   if (!slots.length) {
@@ -30,7 +38,7 @@ async function syncCombinedMedicationReminder(user, now = new Date()) {
   const description = active.map(medicationLine).join('\n');
   const startDate = new Date(`${beijingDate(slots[0].date)}T00:00:00+08:00`);
   const endDate = new Date(`${beijingDate(slots.at(-1).date)}T23:59:59+08:00`);
-  const set = { user, category: 'medication', title: `用药提醒（${active.length}种药）`, description,
+  const set = { user, category: 'medication', title: `服用提醒（${active.length}项）`, description,
     scheduleType: 'recurring', systemManaged: true, sourceKey: SOURCE_KEY,
     // The legacy string is displayed by released App/mini-program clients.
     reminderTime: times.join('、'), reminderTimes: times, daysOfWeek: [], startDate, endDate,
@@ -41,7 +49,7 @@ async function syncCombinedMedicationReminder(user, now = new Date()) {
 }
 
 async function scanMedicationReminders(now = new Date()) {
-  const { Medication, Reminder, Message } = models();
+  const { Reminder, Message } = models();
   const plans = await Reminder.find({ sourceKey: SOURCE_KEY, systemManaged: true, $or: [
     { medicationWindowDate: { $ne: beijingDate(now) } }, { enabled: true, nextMedicationAt: { $ne: null, $lte: now } },
   ] }).lean();
@@ -54,7 +62,7 @@ async function scanMedicationReminders(now = new Date()) {
         await Reminder.updateOne({ _id: plan._id }, { $set: { enabled: false, nextMedicationAt: null } });
         continue;
       }
-      const meds = await Medication.find({ user: plan.user, stopped: { $ne: true }, active: { $ne: false }, 'reminder.enabled': true }).lean();
+      const meds = await scheduledItems(plan.user);
       if (plan.medicationWindowDate !== beijingDate(now)) {
         await refreshDailyMedicationWindow(plan, meds, now);
         const refreshed = await Reminder.findById(plan._id).lean();
@@ -72,7 +80,7 @@ async function scanMedicationReminders(now = new Date()) {
         const dedupeKey = `medication-slot:${plan.user}:${due.toISOString()}`;
         const _id = new mongoose.Types.ObjectId(crypto.createHash('sha256').update(dedupeKey).digest('hex').slice(0,24));
         const result = await Message.updateOne({ _id }, { $setOnInsert: { user: plan.user, type: 'system', sender: '嘉医管家',
-          title: `${slot.time} 用药提醒`, content: slotContent(slot), unread: true, isAI: false, aiGenerated: false, dedupeKey, pushCategory: 'medication',
+          title: `${slot.time} 服用提醒`, content: slotContent(slot), unread: true, isAI: false, aiGenerated: false, dedupeKey, pushCategory: 'medication',
         } }, { upsert: true, setDefaultsOnInsert: true });
         sent += result.upsertedCount || 0;
         if (result.upsertedCount) await require('./nativePush').enqueueNativePush(await Message.findById(_id).lean());

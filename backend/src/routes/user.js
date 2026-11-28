@@ -1139,10 +1139,18 @@ router.get('/points', auth, async (req, res) => {
 
 // ── Req 10: 随访计划作为用户侧待办任务 ─────────────────────────
 // GET /api/user/followup-tasks
+router.get('/care-notices', auth, async (req, res) => {
+  const notices = await require('../models/Message').find({
+    user: req.user._id, type: 'system', unread: true, recalled: { $ne: true },
+    dedupeKey: /^(medication-slot:|checkup-preparation-notice:)/,
+  }).sort({ createdAt: -1 }).select('title content createdAt').limit(100).lean();
+  res.json({ success: true, data: notices });
+});
+
 router.get('/followup-tasks', auth, async (req, res) => {
   try {
     await require('../utils/legacyLifestyleInterview').reconcileLegacyLifestyleInterviews(req.user._id);
-    const followups = await FollowUp.find({
+    const visibility = {
       patientId: req.user._id,
       clientVisible: { $ne: false },
       $nor: [routineMedicationNoiseFilter],
@@ -1162,7 +1170,8 @@ router.get('/followup-tasks', auth, async (req, res) => {
         { workflowKey: /^nutrition:/ },
         { sourceType: { $in: ['professional_assessment', 'report_followup'] }, taskRole: { $in: ['executor', 'supervisor'] } },
       ],
-    })
+    };
+    const followups = await FollowUp.find(visibility)
       .sort({ date: 1 })
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
@@ -1187,6 +1196,10 @@ router.get('/followup-tasks', auth, async (req, res) => {
       if (aActiveSymptom !== bActiveSymptom) return Number(bActiveSymptom) - Number(aActiveSymptom);
       return new Date(a.date || 0) - new Date(b.date || 0);
     });
+    if (req.query.supplyCards === '1') {
+      await require('../utils/supplyDayCards').attach(data, { ...visibility, status: 'completed' },
+        task => !require('../utils/staffOnlyFollowUp').isStaffOnlyFollowUp(task, task.followUpSchemeId?.name));
+    }
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取随访任务失败', error: err.message });

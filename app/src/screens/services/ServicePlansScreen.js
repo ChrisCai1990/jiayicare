@@ -329,6 +329,12 @@ function PlanCard({ plan, expanded, full = false, onToggle, onItemPress, onConfi
           <Text style={s.planDesc} numberOfLines={expanded ? 0 : 1}>
             {plan.description || meta.label}
           </Text>
+          {plan.type === 'annual_checkup' && (
+            <View>
+              <Text style={s.planDesc}>计划体检日期　{plan.checkupDate?.slice(0, 10) || '待确定'}</Text>
+              <Text style={s.planDesc}>实际体检日期　{plan.actualCheckupDate?.slice(0, 10) || '待登记'}</Text>
+            </View>
+          )}
           {plan.staffId?.name && (
             <Text style={s.planStaff}>由 {plan.staffId.name} 制定</Text>
           )}

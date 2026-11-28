@@ -24,6 +24,7 @@ async function scanAndNotifyDueSupplyPlans() {
   });
 
   let notified = 0;
+  const dailyNotices = new Map();
   for (const plan of due) {
     // 旧版已经生成“待安排”待办的周期原地升级为新流程，避免部署后遗留任务消失。
     if ((plan.workflowStatus || 'idle') === 'idle' && plan.aiStatus === 'pending') {
@@ -49,17 +50,26 @@ async function scanAndNotifyDueSupplyPlans() {
       const label = PLAN_TYPE_LABEL[plan.planType] || plan.planType;
       const patientName = plan.patientId?.name || '会员';
       if (workflowConfig.customerNotificationEnabled) {
-        await Message.create({
-          user: plan.patientId._id || plan.patientId,
-          type: 'system', sender: '嘉医管家', title: `${plan.itemName}已进入${label}准备期`,
-          content: `您的「${plan.itemName}」已进入补充准备期。您可以选择自行购买，也可由健康管理团队协助安排；我们会先核对当前健康与使用情况。`,
-        });
+        const user = plan.patientId._id || plan.patientId;
+        const day = require('../../../shared/followUpDue.cjs').dayKey(plan.nextDueDate);
+        const key = 'recurring-supply:' + user + ':' + day;
+        if (!dailyNotices.has(key)) dailyNotices.set(key, { user, day, lines: [] });
+        dailyNotices.get(key).lines.push(label + ' · ' + plan.itemName);
       }
       notified++;
       console.log(`[recurring-supply-plan] ${patientName} 「${plan.itemName}」到期，已生成待办+通知`);
     } catch (e) {
       console.error('[recurring-supply-plan] 计划 ' + plan._id + ' 通知失败', e.message);
     }
+  }
+  for (const [dedupeKey, notice] of dailyNotices) {
+    const lines = [...new Set(notice.lines)];
+    await Message.updateOne({ user: notice.user, dedupeKey }, [
+      { $set: { type: 'system', sender: '嘉医管家', title: notice.day + ' 配取提醒', user: notice.user, dedupeKey,
+        unread: true, 'action.items': { $setUnion: [{ $ifNull: ['$action.items', []] }, { $literal: lines }] } } },
+      { $set: { content: { $reduce: { input: '$action.items', initialValue: '以下项目已进入配取准备期：',
+        in: { $concat: ['$$value', '\n', '$$this'] } } } } },
+    ], { upsert: true });
   }
   if (due.length > 0) console.log(`[recurring-supply-plan] 扫描到 ${due.length} 条到期计划，本次新通知 ${notified} 条`);
 }

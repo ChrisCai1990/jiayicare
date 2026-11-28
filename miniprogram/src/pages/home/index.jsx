@@ -1,3 +1,5 @@
+import SupplyDayCard from '../../components/SupplyDayCard'
+import supplyView from '../../../../shared/supplyCardRows.cjs'
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
@@ -202,6 +204,12 @@ export default function HomePage() {
   })();
   const [dashData, setDashData] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [noticeCount, setNoticeCount] = useState(0);
+  useEffect(() => {
+    setNoticeCount(0);
+    Taro.eventCenter.on('care-notices:count', setNoticeCount);
+    return () => Taro.eventCenter.off('care-notices:count', setNoticeCount);
+  }, [token]);
   const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sectionState, setSectionState] = useState({ dashboard: 'loading', tasks: 'loading', followups: 'loading', services: 'loading' });
@@ -278,7 +286,7 @@ export default function HomePage() {
   const followupTaskItems = followups.map((plan) => {
     const annual = customerAnnualFollowUp(plan);
     return ({
-      _id: plan._id,
+      _id: plan._id, supplyDay: plan.supplyDay,
       type: 'followup',
       title: annual?.title || (plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划')),
       description: annual ? annual.details.join('\n') : (plan.taskRequirements || plan.plannedContent || plan.content),
@@ -300,7 +308,7 @@ export default function HomePage() {
   ];
 
   const submittedFeedback=homeTaskCards(allPendingTaskItems.filter(t=>t.documentDeclaration||t.customerActionRequired===false));
-  const taskCards = homeTaskCards(allPendingTaskItems.filter(t=>!t.documentDeclaration&&t.customerActionRequired!==false));
+  const taskCards = supplyView.cardRows(homeTaskCards(allPendingTaskItems.filter(t=>!t.documentDeclaration&&t.customerActionRequired!==false)));
   const openRecordSummary = () => Taro.navigateTo({ url: '/pages/records/report/index' });
 
   const markTaskDone = async () => {
@@ -347,7 +355,7 @@ export default function HomePage() {
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
             <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>{t('近期安排')}</Text>
             <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>{t('查看全部')}</Text>
+              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>{t('查看全部')}{noticeCount > 0 && <Text aria-label={`${noticeCount}条未读提醒`} style={{ marginLeft:'4px', background:'#b83830', color:'#fff', borderRadius:'10px', padding:'1px 6px', fontSize:'11px' }}>{Math.min(99,noticeCount)}</Text>}</Text>
               <Text style={{ fontSize: '13px', color: colors.primary }}>›</Text>
             </View>
           </View>
@@ -364,7 +372,7 @@ export default function HomePage() {
             )) : (
               <>
                 {taskCards.slice(0, 3).map((t, i, arr) => (
-                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={t=>setTaskDetail(t)} />
+                  t.supplyCard ? <SupplyDayCard key={t._id} card={t} onSelect={setTaskDetail} /> : <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={t=>setTaskDetail(t)} />
                 ))}
                 {todayReminders.map((r, i) => (
                   <ReminderItemRow key={r._id || i} reminder={r} isLast={i === todayReminders.length - 1} />

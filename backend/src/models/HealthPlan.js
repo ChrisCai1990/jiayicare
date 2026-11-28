@@ -55,6 +55,7 @@ const healthPlanSchema = new mongoose.Schema({
   year:        { type: Number, default: () => new Date().getFullYear() },
   startDate:   { type: Date, default: null },
   endDate:     { type: Date, default: null },
+  actualCheckupDate: { type: Date, default: null },
   checkupDate: { type: Date, default: null },     // 年度体检方案统一体检时间
   checkupScheduleHistory: [{
     at: { type: Date, required: true },

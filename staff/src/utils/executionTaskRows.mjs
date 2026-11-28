@@ -1,3 +1,4 @@
+import supply from '../../../shared/supplyDay.cjs'
 const ACTIVE = ['planned', 'in_progress', 'missed']
 const latest = items => [...items].sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt || b.date) - new Date(a.completedAt || a.updatedAt || a.createdAt || a.date))[0]
 
@@ -36,6 +37,15 @@ export function buildExecutionRows(tasks, isServiceTask, serviceGroupKey) {
         rows.push(row)
       }
       serviceGroups.get(key).items.push(task)
+    } else if (supply.keyOf(task)) {
+      const key = 'supply:' + supply.keyOf(task)
+      if (!monitorGroups.has(key)) {
+        const row = { type: 'group', key, theme: '配取提醒', status: task.status, items: [], supply: true }
+        monitorGroups.set(key, row); rows.push(row)
+      }
+      const row = monitorGroups.get(key)
+      row.items.push(task)
+      if (ACTIVE.includes(task.status)) row.status = task.status
     } else if (task.sourceType === 'scheduled' && (task.theme || '').startsWith('日常监测随访 · ')) {
       const key = `${task.theme}|${task.status}`
       if (!monitorGroups.has(key)) {

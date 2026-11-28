@@ -165,7 +165,7 @@ test('年度补给暂停新周期，不更改已进行/人工暂停状态；故�
   const checked = [], messages = [];
   t.mock.method(Supply, 'find', () => ({ populate: async () => rows }));
   t.mock.method(gate, 'canStartAnnualSupplyCycle', async row => { checked.push(row._id); if (row._id === 'error') throw Error('database failure'); return row._id === 'good'; });
-  t.mock.method(Message, 'create', async row => messages.push(row));
+  t.mock.method(Message, 'updateOne', async (key, update) => messages.push({key,update}));
   await scanAndNotifyDueSupplyPlans(); await scanAndNotifyDueSupplyPlans();
   for (const row of rows.slice(0, 4)) assert.equal(row.saves, 0);
   assert.equal(rows[4].saves, 1); assert.equal(messages.length, 1);

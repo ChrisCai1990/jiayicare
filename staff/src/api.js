@@ -321,6 +321,7 @@ export const staffAPI = {
   syncCheckupTemplate: (id, templateId) => req(`/staff/plans/${id}/sync-checkup-template`, { method: 'POST', body: JSON.stringify({ templateId }) }),
   regenerateMedicalAssistPurposes: (id) => req(`/staff/plans/${id}/regenerate-medical-assist-purposes`, { method: 'POST' }),
   deletePlan:     (id, reason) => req(`/staff/plans/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
+  sendCheckupNotice: id => req(`/staff/plans/${id}/checkup-preparation-notice`, { method: 'POST' }),
   pushPlan:       (id)     => req(`/staff/plans/${id}/push`, { method: 'PATCH' }),
   decideWorkflowModule: (planId, moduleId, data) => req(`/staff/plans/${planId}/workflow-modules/${moduleId}/decision`, { method: 'PATCH', body: JSON.stringify(data) }),
   getFollowUpPlans: ()     => req('/staff/followup-plans'),
@@ -690,6 +691,7 @@ export const staffAPI = {
   correctStoppedMedication: (id, medId, data) => req(`/staff/patients/${id}/medications/${medId}/correct-stopped`, { method: 'PATCH', body: JSON.stringify(data) }),
   deletePatientMedication:  (id, medId) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'DELETE' }),
   saveSupplyReminder: (id, kind, recordId, data) => req(`/staff/patients/${id}/supply-reminders/${kind}/${recordId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  setSupplementReminder: (id, itemId, data) => req(`/staff/patients/${id}/supplements/${itemId}/reminder`, { method: 'PUT', body: JSON.stringify(data) }),
   setMedicationReminder:    (id, medId, data) => req(`/staff/patients/${id}/medications/${medId}/reminder`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // 会员营养素管理

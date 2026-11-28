@@ -1,3 +1,5 @@
+import SupplyDayCard from './SupplyDayCard'
+import supplyView from '../../../shared/supplyCardRows.cjs'
 import schedule from '../../../shared/followUpDue.cjs'
 import useWorkbenchResource from '../hooks/useWorkbenchResource'
 import { getToken } from '../api'
@@ -32,7 +34,7 @@ export default function FollowUpsPanel() {
     limit: PAGE_SIZE, patientName: searchName.trim(), workbenchTime: timeGroup }
   const { data, loading, error, refresh } = useWorkbenchResource(async () => {
     const dayStart = schedule.dayStart(new Date()).toISOString()
-    return (await staffAPI.getFollowUps({ ...params, dayStart })).data
+    return (await staffAPI.getFollowUps({ ...params, supplyCards: 1, dayStart })).data
   }, getToken() + JSON.stringify(params), { followUps: [], total: 0, workbenchSummary: { counts: {}, waiting: 0 } })
   const items = data.followUps || []
   const counts = data.workbenchSummary?.counts || {}
@@ -98,7 +100,8 @@ export default function FollowUpsPanel() {
         {!loading && !error && items.length === 0 && <div style={{ padding: 16, color: '#8AA89C' }}>
           {timeGroup === 'all' && !searchName.trim() ? '暂无待随访任务' : '当前筛选暂无任务'}
         </div>}
-        {pageItems.map((f, i) => {
+        {supplyView.cardRows(pageItems).map((f, i) => {
+          if (f.supplyCard) return <SupplyDayCard key={f._id} card={f} onSelect={task => nav(`/patients/${task.patientId?._id}?tab=followups`, { state: { openFollowUp: task } })} />
           const due = schedule.dueDate(f)
           const overdue = schedule.isOverdue(f)
           return (

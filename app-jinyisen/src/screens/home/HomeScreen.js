@@ -1,3 +1,5 @@
+import SupplyDayNative from '../../../../shared/SupplyDayNative.jsx';
+import supplyView from '../../../../shared/supplyCardRows.cjs';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
@@ -218,7 +220,7 @@ export default function HomeScreen({ navigation }) {
     .filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status))
     .filter(plan => plan.date && toLocalDateStr(new Date(plan.date)) === todayStr)
     .map(plan => ({
-      _id: plan._id,
+      _id: plan._id, supplyDay: plan.supplyDay,
       type: 'followup',
       title: plan.theme || '随访计划',
       description: plan.content,
@@ -304,7 +306,8 @@ export default function HomeScreen({ navigation }) {
                 </View>
               ) : (
                 <>
-                  {todayFollowupItems.map((t, i, arr) => {
+                  {supplyView.cardRows(todayFollowupItems).map((t, i, arr) => {
+                    if (t.supplyCard) return <SupplyDayNative key={t._id} card={t} onSelect={setTaskDetailModal} />;
                     const isLast = i === arr.length - 1 && todayReminders.length === 0;
                     return <TeamReminderItem key={t._id || i} task={t} isLast={isLast} onPress={setTaskDetailModal} />;
                   })}

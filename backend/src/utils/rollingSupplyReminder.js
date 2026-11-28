@@ -20,6 +20,7 @@ function nextReminderData(completed, config, managerId) {
     theme: completed.theme,
     plannedContent: completed.plannedContent,
     tags: completed.tags || [],
+    formData: { supplyName: completed.formData?.supplyName, supplyKind: completed.formData?.supplyKind, quantity: config.quantity || completed.formData?.quantity },
     sourceType: 'supply_reminder',
     sourceId: completed.sourceId,
     sourceScheduleKey: `rolling-supply:${completed._id}`,
@@ -29,14 +30,16 @@ function nextReminderData(completed, config, managerId) {
 async function generateNextSupplyReminder(completed) {
   if (completed.sourceType !== 'supply_reminder' || !completed.sourceId) return null;
   const recordFilter = { _id: completed.sourceId, user: completed.patientId, stopped: false, 'supplyReminder.enabled': true };
-  const record = await Medication.findOne(recordFilter).lean() || await Supplement.findOne(recordFilter).lean();
+  const record = await Medication.findOne(recordFilter).lean() || await Supplement.findOne({ ...recordFilter, aiStatus: { $nin: ['pending', 'rejected'] } }).lean();
   if (!record) return null;
 
+  const successor = await FollowUp.findOne({ patientId: completed.patientId, sourceType: 'supply_reminder', sourceScheduleKey: `rolling-supply:${completed._id}` });
+  if (successor) return successor;
   const existingOpen = await FollowUp.findOne({
     patientId: completed.patientId,
     sourceType: 'supply_reminder',
     sourceId: completed.sourceId,
-    status: { $in: ['planned', 'in_progress'] },
+    status: { $in: ['planned', 'in_progress', 'missed'] },
     _id: { $ne: completed._id },
   });
   if (existingOpen) return existingOpen;
@@ -45,7 +48,8 @@ async function generateNextSupplyReminder(completed) {
   if (!patient?.assignedHealthManager) return null;
   const data = nextReminderData(completed, record.supplyReminder, patient.assignedHealthManager);
   return FollowUp.findOneAndUpdate(
-    { sourceType: 'supply_reminder', sourceScheduleKey: data.sourceScheduleKey },
+    // A retry or two simultaneous confirmations must produce the same successor.
+    { _id: new (require('mongoose').Types.ObjectId)(require('crypto').createHash('sha256').update(data.sourceScheduleKey).digest('hex').slice(0, 24)) },
     { $setOnInsert: data },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );

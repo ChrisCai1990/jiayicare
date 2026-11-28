@@ -439,6 +439,7 @@ export default function PlanDetailPage() {
       description: plan.description || '',
       notes: plan.notes || '',
       ...(plan.type === 'annual_checkup' ? { year: plan.year } : {}),
+      actualCheckupDate: plan.actualCheckupDate?.slice(0, 10) || '',
       checkupDate: rawCheckupDate ? new Date(rawCheckupDate).toISOString().slice(0, 10) : '',
     }
     if (plan.type === 'medical_assist') {
@@ -477,7 +478,7 @@ export default function PlanDetailPage() {
     try {
       const { hospital, department, expert, hotel, transport, tasks, ...rest } = editForm
       const payload = { ...rest }
-      if (plan.type !== 'annual_checkup') delete payload.checkupDate
+      if (plan.type !== 'annual_checkup') { delete payload.checkupDate; delete payload.actualCheckupDate }
       if (plan.type === 'medical_assist') {
         payload.content = { ...(plan.content || {}), hospital, department, expert, hotel, transport, tasks }
       }
@@ -555,6 +556,10 @@ export default function PlanDetailPage() {
           {canEdit && plan.status === 'draft' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 推送给会员</button>
           )}
+          {canEdit && plan.type === 'annual_checkup' && plan.status === 'active' && !editMode && !plan.actualCheckupDate && <button className="btn btn-secondary" onClick={async () => {
+            try { await staffAPI.sendCheckupNotice(id); toast('当前检前注意事项已发送') }
+            catch (error) { toast(error.message) }
+          }}>推送检前注意事项</button>}
           {canEdit && plan.status === 'active' && (
             <button className="btn btn-secondary" onClick={handleResetToDraft}>✏️ 重新编辑</button>
           )}
@@ -645,9 +650,13 @@ export default function PlanDetailPage() {
                         onChange={e => setEditForm(f => ({ ...f, year: Number(e.target.value) }))} />
                     </div>
                     <div className="form-group" style={{ marginBottom: 12 }}>
-                      <label className="form-label">统一体检日期（推送前必填）</label>
+                      <label className="form-label">计划体检日期（推送前必填）</label>
                       <DateField className="form-input" type="date" value={editForm.checkupDate || ''}
                         onChange={e => setEditForm(f => ({ ...f, checkupDate: e.target.value, ...(e.target.value ? { year: Number(e.target.value.slice(0, 4)) } : {}) }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">实际体检日期（到检后填写）</label>
+                      <DateField className="form-input" type="date" value={editForm.actualCheckupDate || ''} onChange={e => setEditForm(f => ({ ...f, actualCheckupDate: e.target.value }))} />
                     </div>
                   </>
                 )}
@@ -705,7 +714,7 @@ export default function PlanDetailPage() {
                   ['年度', plan.year + ' 年'],
                   ['制定人', plan.staffId?.name],
                   ...(plan.type === 'annual_checkup' ? [['制定时间', plan.createdAt ? new Date(plan.createdAt).toLocaleString('zh-CN') : '未记录']] : []),
-                  ...(plan.type === 'annual_checkup' ? [['体检时间', plan.checkupDate ? new Date(plan.checkupDate).toLocaleDateString('zh-CN') : '未设置']] : []),
+                  ...(plan.type === 'annual_checkup' ? [['计划体检日期', plan.checkupDate?.slice(0, 10) || '未设置'], ['实际体检日期', plan.actualCheckupDate?.slice(0, 10) || '待登记']] : []),
                   ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
                   ...(plan.confirmedAt ? [['会员确认时间', new Date(plan.confirmedAt).toLocaleDateString('zh-CN')]] : []),
                   ...(plan.description ? [['描述', plan.description]] : []),

@@ -37,6 +37,11 @@ const supplementSchema = new mongoose.Schema({
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   sourceRecordKey: { type: String, default: '' },
   annualDispatchKey: { type: String },
+  reminder: {
+    enabled: { type: Boolean, default: false }, intervalDays: Number,
+    startDate: String, endDate: String, remindTime: String, remindTimes: [String],
+    note: String, updatedAt: Date, updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+  },
   supplyReminder: {
     enabled:      { type: Boolean, default: false },
     intervalDays: { type: Number, min: 1, max: 365, default: 30 },

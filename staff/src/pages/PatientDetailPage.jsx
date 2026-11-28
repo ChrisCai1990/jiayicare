@@ -10150,6 +10150,7 @@ export default function PatientDetailPage() {
                               setEditingSup(s._id); setEditingSupAiApprove(false); setShowSupModal(true)
                             }}>编辑</button>}
                             {s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => { setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: new Date().toISOString().slice(0, 10), endDate: '', purpose: s.purpose || '', note: '', imageUrls: s.imageUrls || [] }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) }}>再次补充</button>}
+                            {!s.stopped && !['pending','rejected'].includes(s.aiStatus) && <button className="btn btn-secondary btn-sm" onClick={() => setReminderMed({ ...s, supplement: true, timing: s.method })}>{s.reminder?.enabled ? '调整服用提醒' : '设置服用提醒'}</button>}
                             {!s.stopped && !s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm(supplyFormFor(s)) }}>定期配取</button>}
                             {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => { setSupplyError(''); setSupplyTarget({ kind: 'supplement', record: s }); setSupplyForm(supplyFormFor(s, shanghaiDateInput())) }}>调整配取方式</button>}
                             {!s.stopped && s.supplyReminder?.enabled && <button className="btn btn-secondary btn-sm" onClick={() => stopSupplyReminder('supplement', s)}>停止自动配取任务</button>}
@@ -10357,9 +10358,10 @@ export default function PatientDetailPage() {
           {reminderMed && <MedicationReminderModal medication={reminderMed}
             onClose={() => setReminderMed(null)}
             onSave={async (payload) => {
-              const result = await staffAPI.setMedicationReminder(id, reminderMed._id, payload)
+              const save = reminderMed.supplement ? staffAPI.setSupplementReminder : staffAPI.setMedicationReminder
+              const result = await save(id, reminderMed._id, payload)
               toast(result.message || '提醒已设置')
-              loadMedications()
+              if (reminderMed.supplement) loadSupplements(); else loadMedications()
             }} />}
           {stoppingSup && (
             <ConfirmStopModal
@@ -10757,7 +10759,7 @@ export default function PatientDetailPage() {
                       <React.Fragment key={row.key}>
                         <tr style={{ cursor: 'pointer', background: '#F7F5F0' }}
                           onClick={() => setExpandedMonitorGroups(s => ({ ...s, [row.key]: !s[row.key] }))}>
-                          <td style={{ fontSize: 13, color: '#666' }}>{new Date(nearest.date).toLocaleDateString('zh-CN')}{row.items.length > 1 ? ' 起' : ''}</td>
+                          <td style={{ fontSize: 13, color: '#666' }}>{new Date(nearest.date).toLocaleDateString('zh-CN')}{!row.supply && row.items.length > 1 ? ' 起' : ''}</td>
                             <td style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>{nearest.createdAt ? new Date(nearest.createdAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                             <td style={{ fontSize: 12, color: '#65776F', whiteSpace: 'nowrap' }}>{nearest.completedAt ? new Date(nearest.completedAt).toLocaleString('zh-CN', { hour12: false }) : '-'}</td>
                           <td><span className="badge badge-info">{TYPE_MAP[nearest.type] || nearest.type}</span></td>
@@ -10769,7 +10771,7 @@ export default function PatientDetailPage() {
                           <td style={{ fontSize: 13, color: '#666' }}>{nearest.staffId?.name || '-'}</td>
                           <td style={{ fontSize: 13, color: '#1A2B24' }} colSpan={2}>
                             <span style={{ fontWeight: 600 }}>{row.theme.replace(MONITOR_PREFIX, '')}</span>
-                            <span style={{ marginLeft: 6, fontSize: 12, color: '#8AA89C' }}>× {row.items.length}条{expanded ? ' ▲' : ' ▼'}</span>
+                            <span style={{ marginLeft: 6, fontSize: 12, color: '#8AA89C' }}>{row.supply ? `已完成 ${row.items.filter(item => item.status === 'completed').length}/${row.items.length}` : `× ${row.items.length}条`}{expanded ? ' ▲' : ' ▼'}</span>
                           </td>
                           <td />
                         </tr>

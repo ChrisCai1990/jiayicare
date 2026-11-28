@@ -40,12 +40,13 @@ export function groupReviewTodos(todos = []) {
   const groups = []
   const byKey = new Map()
   for (const todo of todos) {
-    const key = todo.patientId
+    const supplyDay = todo.supplyItemName && todo.dueDate ? new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Shanghai'}).format(new Date(todo.dueDate)) : ''
+    const key = supplyDay && todo.patientId ? `supply:${todo.patientId}:${supplyDay}` : todo.patientId
       ? `patient:${String(todo.patientId)}`
       : `task:${todo.id}`
     let group = byKey.get(key)
     if (!group) {
-      group = { key, tasks: [] }
+      group = { key, tasks: [], ...(supplyDay ? { supplyDay } : {}) }
       byKey.set(key, group)
       groups.push(group)
     }

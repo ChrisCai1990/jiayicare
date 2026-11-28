@@ -18,6 +18,7 @@ function writeBadge(count, version) {
 
 export function resetUnreadBadge() {
   lastCount = null;
+  Taro.eventCenter?.trigger('care-notices:count', 0);
   return writeBadge(0, ++generation);
 }
 
@@ -37,6 +38,7 @@ export async function refreshUnreadBadge({ notify = false } = {}) {
       const sender = res.latestMessage?.sender || res.latestMessage?.title || '服务团队';
       Taro.showToast({ title: `${sender}发来新消息`, icon: 'none', duration: 2500 });
     }
+    Taro.eventCenter?.trigger('care-notices:count', Number(res.careNoticeCount) || 0);
     lastCount = count;
     await writeBadge(count, version);
   } catch { /* Keep the last confirmed count on a transient network failure. */ }

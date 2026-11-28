@@ -27,7 +27,9 @@ function createNativePushDispatch({ enabled, Job, Message, User, registry, trans
       try {
         const message = await Message.findById(job.messageId).lean();
         let state = 'done';
-        if (eligible(message)) {
+        const staleCheckup = String(job._id).startsWith('checkup-preparation-notice:')
+          && job._id !== message?.dedupeKey + ':' + message?.action?.version;
+        if (eligible(message) && !staleCheckup) {
           const user = await User.findById(message.user).lean();
           const count = user && !user.isDeleted ? await unreadCount(user._id) : 0;
           // Fresh session lookup for each attempt, never reuse a cached recipient list.

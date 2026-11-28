@@ -2406,6 +2406,8 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     }
   }
 
+  const supplyCards = req.query.supplyCards === '1';
+  const grouping = supplyCards ? require('../utils/supplyDayCards').stages() : [];
   let workbenchSummary, pageIds, workbenchTotal;
   const requestedLimit = Math.max(1, Math.trunc(Number(limit)) || 20);
   const pageSize = req.query.workbench === 'human' ? Math.min(200, requestedLimit) : requestedLimit;
@@ -2422,21 +2424,29 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     const actionable = { 'serviceTracking.status': { $ne: 'waiting' } };
     const base = [
       { $match: FollowUp.find(filter).cast(FollowUp) },
-      { $project: { serviceTracking: 1, date: followUpDates.workbenchDueExpression() } },
+      { $set: { effectiveDate: followUpDates.workbenchDueExpression() } },
     ];
+    const bucketMatch = range => Object.fromEntries(Object.entries(range).map(([key, value]) => key === '$or' ? [key, value.map(bucketMatch)] : [key === 'date' ? 'effectiveDate' : key, value]));
     const waitingFilter = { 'serviceTracking.status': 'waiting' };
-    const ranges = Object.fromEntries(Object.entries(buckets).map(([key, range]) => [key, { ...actionable, ...range }]));
+    const ranges = Object.fromEntries(Object.entries(buckets).map(([key, range]) => [key, { ...actionable, ...bucketMatch(range) }]));
     ranges.waiting = waitingFilter;
     const [summary] = await FollowUp.aggregate([...base, { $facet: Object.fromEntries(
-      Object.entries(ranges).map(([key, range]) => [key, [{ $match: range }, { $count: 'n' }]])
+      Object.entries(ranges).map(([key, range]) => [key, [{ $match: range }, ...grouping, { $count: 'n' }]])
     ) }]);
     const counts = Object.fromEntries(Object.keys(buckets).map(key => [key, summary[key][0]?.n || 0]));
     workbenchSummary = { counts, waiting: summary.waiting[0]?.n || 0 };
     const selected = Object.hasOwn(ranges, req.query.workbenchTime) ? req.query.workbenchTime : 'all';
     workbenchTotal = selected === 'waiting' ? workbenchSummary.waiting : counts[selected];
-    const ids = await FollowUp.aggregate([...base, { $match: ranges[selected] }, { $sort: { date: 1, _id: 1 } },
-      { $skip: (clampPage(workbenchTotal) - 1) * pageSize }, { $limit: pageSize }, { $project: { _id: 1 } }]);
-    pageIds = ids.map(row => row._id);
+    const ids = await FollowUp.aggregate([...base, { $match: ranges[selected] }, ...grouping, { $sort: supplyCards ? { date: 1, _id: 1 } : { effectiveDate: 1, _id: 1 } },
+      { $skip: (clampPage(workbenchTotal) - 1) * pageSize }, { $limit: pageSize }, { $project: { _id: 1, ids: 1 } }]);
+    pageIds = ids.flatMap(row => row.ids || [row._id]);
+  } else if (supplyCards) {
+    const base = [{ $match: FollowUp.find(filter).cast(FollowUp) }, ...grouping];
+    const count = await FollowUp.aggregate([...base, { $count: 'total' }]);
+    workbenchTotal = count[0]?.total || 0;
+    const result = await FollowUp.aggregate([...base, { $sort: status === 'completed' ? { completedAt: -1, _id: -1 } : { date: 1, _id: 1 } },
+      { $skip: (clampPage(workbenchTotal) - 1) * pageSize }, { $limit: pageSize }]);
+    pageIds = result.flatMap(row => row.ids);
   }
   function clampPage(total) {
     return Math.max(1, Math.min(Math.trunc(Number(page)) || 1, Math.max(1, Math.ceil(total / pageSize))));
@@ -2496,6 +2506,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     patientLastRecord: f.patientId ? (lastRecordMap[String(f.patientId._id)] || null) : null,
   }));
 
+  if (supplyCards) await require('../utils/supplyDayCards').attach(followUpsWithRecord, { ...filter, status: 'completed' });
   res.json({ success: true, data: { followUps: followUpsWithRecord, total, page: currentPage, limit: pageSize, workbenchSummary } });
 });
 
@@ -4755,6 +4766,16 @@ async function planTypeAllowed(req, planType) {
 
 // PUT /api/staff/plans/:id — 只有制定人（staffId）或超管可修改，避免他人越权改动方案内容；
 // 部分方案类型（年度体检/营养方案）额外要求角色匹配，不论是不是本人生成
+router.post('/plans/:id/checkup-preparation-notice', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
+  const plan = await HealthPlan.findById(req.params.id);
+  if (!plan || plan.type !== 'annual_checkup') return res.status(404).json({ message: '体检方案不存在' });
+  if (!(await planTypeAllowed(req, plan.type)) || !(await canManagePlan(req, plan))) return res.status(403).json({ message: '仅方案负责人可推送' });
+  try {
+    await require('../utils/checkupPreparationNotice').syncNotice(plan, { direct: true });
+    res.json({ success: true, message: '当前体检注意事项已发送' });
+  } catch (error) { res.status(error.statusCode || 500).json({ message: error.message }); }
+});
+
 router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
@@ -4775,6 +4796,11 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
     return res.status(409).json({ success: false, message: '年度体检工作台按已审核报告的逐项核对进度自动显示完成，无需手动标记方案完成' });
   }
   if (plan.type === 'annual_checkup') {
+    if (req.body.actualCheckupDate != null && req.body.actualCheckupDate !== '' &&
+        (!followUpDates.validPlanDate(req.body.actualCheckupDate) || !/^\d{4}-\d{2}-\d{2}$/.test(req.body.actualCheckupDate) || req.body.actualCheckupDate > followUpDates.dayKey(new Date()))) {
+      return res.status(400).json({ message: '实际体检日期须为今天或之前的有效日期' });
+    }
+    if (req.body.actualCheckupDate !== undefined) plan.actualCheckupDate = req.body.actualCheckupDate || null;
     const checkupDate = req.body.checkupDate !== undefined ? req.body.checkupDate : plan.checkupDate;
     const checkupYear = checkupDate ? new Date(checkupDate).getUTCFullYear() : null;
     const nextYear = req.body.year !== undefined ? Number(req.body.year) : Number(plan.year);
@@ -4857,6 +4883,7 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   }
   plan.markModified('content');
   await plan.save();
+  if (plan.type === 'annual_checkup' && plan.pushedAt) await require('../utils/checkupPreparationNotice').syncNotice(plan);
   // 已推送方案改期时，所有未完成岗位任务和服务档案立即跟随主服务日期更新。
   if (plan.type === 'medical_assist' && plan.status === 'active' && plan.content?.serviceDate) {
     const serviceDate = new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`);
@@ -12892,7 +12919,7 @@ router.put('/patients/:id/supply-reminders/:kind/:recordId', staffAuth, checkPer
       theme: `${task} · ${record.name}`,
       plannedContent: `${mode === 'proxy' ? '请提前7天安排我方代配' : '请提醒会员自行就医/配取'}${itemType}「${record.name}」，本次数量：${quantity}${mode === 'proxy' ? `，期望送达：${firstDate}${deliveryTime ? ` ${deliveryTime}` : ''}` : ''}。${institutionType === 'hospital' ? `医院：${String(req.body.hospitalName).trim()}${req.body.campus ? `（${String(req.body.campus).trim()}）` : ''}${req.body.department ? `，科室：${String(req.body.department).trim()}` : ''}${req.body.expert ? `，专家：${String(req.body.expert).trim()}` : ''}` : institutionType === 'online' ? `线上平台：${String(req.body.platformName).trim()}，购买路径：${purchasePath}` : `线下药房：${String(req.body.pharmacyName).trim()}${req.body.pharmacyAddress ? `，地址：${String(req.body.pharmacyAddress).trim()}` : ''}${purchasePath ? `，购买路径：${purchasePath}` : ''}`}。配取前核对当前医嘱、剂量及余量；完成后记录结果。${req.body.note ? `\n备注：${String(req.body.note).trim().slice(0, 500)}` : ''}`,
       tags: ['配药与营养补充', task, itemType], sourceType: 'supply_reminder', sourceId: record._id,
-      formData: { institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, expectedDeliveryDate: mode === 'proxy' ? firstDate : '', deliveryTime, leadDays },
+      formData: { supplyName: record.name, supplyKind: kind, institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, expectedDeliveryDate: mode === 'proxy' ? firstDate : '', deliveryTime, leadDays },
     };
     record.supplyReminder = { enabled: true, intervalDays, leadDays: mode === 'proxy' ? leadDays : 0, deliveryTime: mode === 'proxy' ? deliveryTime : '', mode, institutionType, hospitalName: String(req.body.hospitalName || '').trim(), campus: String(req.body.campus || '').trim(), department: String(req.body.department || '').trim(), expert: String(req.body.expert || '').trim(), platformName: String(req.body.platformName || '').trim(), pharmacyName: String(req.body.pharmacyName || '').trim(), pharmacyAddress: String(req.body.pharmacyAddress || '').trim(), purchasePath, quantity, paymentMethod, note: String(req.body.note || '').trim().slice(0, 500), updatedAt: new Date(), updatedBy: req.staff._id };
     let linkedTask = await FollowUp.findOneAndUpdate(
@@ -13028,10 +13055,12 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
 });
 
 // 客户用药提醒；多时间排期沿用客户自助完成/显式人工跟进入口。
-router.put('/patients/:id/medications/:medId/reminder', staffAuth, async (req, res) => {
+router.put(['/patients/:id/medications/:medId/reminder', '/patients/:id/supplements/:medId/reminder'], staffAuth, async (req, res) => {
   try {
-    const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
+    const supplement = req.path.includes('/supplements/');
+    const med = await (supplement ? Supplement : Medication).findOne({ _id: req.params.medId, user: req.params.id });
     if (!med) return res.status(404).json({ success: false, message: '用药记录不存在' });
+    if (supplement && med && req.body.enabled !== false && ['pending', 'rejected'].includes(med.aiStatus)) return res.status(409).json({ success: false, message: '请先完成营养素审核' });
     if (med.stopped && req.body.enabled !== false) return res.status(400).json({ success: false, message: '已停用药物不能设置提醒' });
     const result = await require('../utils/medicationReminder').saveReminder({
       med, patientId: req.params.id, staff: req.staff, body: req.body, FollowUp, User,
@@ -13201,6 +13230,7 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
       if (error) return res.status(400).json({ success: false, message: error });
     }
     await sup.save();
+    if (sup.reminder?.enabled) await require('../utils/combinedMedicationReminder').refreshExistingPlan(sup.user);
     res.json({ success: true, data: sup });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -13220,6 +13250,7 @@ router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) =>
       await Order.updateOne({ _id: sup.sourceOrderId, user: sup.user }, { $set: { supplementArchiveDeletedAt: new Date() } });
     }
     await sup.deleteOne();
+    if (sup.reminder?.enabled) await require('../utils/combinedMedicationReminder').refreshExistingPlan(sup.user);
     await FollowUp.deleteMany({ sourceType: 'supply_reminder', sourceId: sup._id, status: { $in: ['planned', 'in_progress'] } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -17743,7 +17774,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           id: 'supply_plan_' + p._id, type: todoType, label: `${itemLabel}${actionLabel}`, priority: daysUntilDue <= 0 ? 1 : 2,
           patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
           summary: `[${timeBucket}] ${p.itemName}${p.dosage ? ' ' + p.dosage : ''} · ${p.frequency}`,
-          createdAt, dueDate: p.nextDueDate, timeBucket, overdue: daysUntilDue < 0,
+          supplyItemName: p.itemName, supplyKind: itemLabel, createdAt, dueDate: p.nextDueDate, timeBucket, overdue: daysUntilDue < 0,
           link: `/patients/${p.patientId?._id}?tab=annual-plan`,
         });
       });
