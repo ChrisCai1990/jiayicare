@@ -5,11 +5,12 @@ const vm = require('node:vm');
 const read = path => fs.readFileSync(require.resolve(`../src/${path}`), 'utf8');
 
 test('cancelled cashier retries the same mall order and double tap cannot create two orders', async () => {
-  const source = read('pages/services/mall/index.jsx');
+  const source = read('components/PurchaseModal.jsx');
   const start = source.indexOf('  const handleSubmit = async');
   const end = source.indexOf('\n  if (submitted)', start);
   let created = 0; let retried = 0; let success = false; const errors = [];
   const ctx = {
+    selfMembership: false, beneficiaryUserId: '', pushRecordId: '', partnerCode: '', familyPayment: false, sharedApplied: 0, useSharedFund: false,
     submittingRef: { current: false }, pendingOrderRef: { current: null }, requiresServiceDetails: true,
     desiredServiceDate: '2026-09-30', serviceRequirements: '浙一', serviceAgreed: true,
     setSubmitting() {}, setErrMsg: error => errors.push(error), setSubmitted: value => { success = value; },
@@ -17,7 +18,7 @@ test('cancelled cashier retries the same mall order and double tap cannot create
     item: { id: 'product' }, fundApplied: 0, couponId: null, payMethod: 'wechat_pay', shareToken: '',
     checkoutUser: {}, setCheckoutUser() {}, updateUser() {},
     authAPI: { bindWechat: async () => ({ success: true, data: {} }) },
-    servicesAPI: { order: async (...args) => { created++; assert.equal(args.at(-1), 20000); return { success: true, data: { orderId: 'o', paymentParams: {} } }; } },
+    servicesAPI: { order: async (...args) => { created++; assert.equal(args[9], 20000); return { success: true, data: { orderId: 'o', paymentParams: {} } }; } },
     paymentsAPI: { retry: async id => { retried++; assert.equal(id, 'o'); return { success: true, data: { order: { _id: 'o' }, paymentParams: {} } }; } },
     requestWechatPayment: async () => { throw new Error('取消支付'); }, waitForPayment: async () => {},
   };

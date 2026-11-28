@@ -19,6 +19,7 @@ export default defineAppConfig({
     'pages/medication/index',
     'pages/reminders/index',
     'pages/services/mall/index',
+    'pages/services/join365/index',
     'pages/profile/edit/index',
     'pages/profile/location/index',
     'pages/profile/security/index',

@@ -116,9 +116,13 @@ function ReminderItemRow({ reminder, isLast }) {
 function ButtonUpload({task}){return <View onClick={()=>Taro.navigateTo({url:'/pages/tasks/report-upload/index?flowId='+task.careFlowId})} style={{padding:'12px',backgroundColor:'#E8F5EF',borderRadius:'12px'}}><Text>上传本次报告及病历</Text></View>}
 function TaskDetailModal({ task, onClose, onDone }) {
   const isFollowup = task.type === 'followup' || task._isFollowup;
+  useEffect(() => {
+    Taro.hideTabBar({ animation: false }).catch(() => {});
+    return () => { Taro.showTabBar({ animation: false }).catch(() => {}); };
+  }, []);
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, width: '100%', boxSizing: 'border-box', maxHeight: '80vh', overflowY: 'auto' }}>
+      <View style={{ backgroundColor: '#fff', borderRadius: '24px 24px 0 0', padding: `${spacing.lg}px`, width: '100%', boxSizing: 'border-box', maxHeight: '80vh', overflowY: 'auto', paddingBottom: `calc(${spacing.lg}px + env(safe-area-inset-bottom, 0px))` }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>{task.title || task.theme}</Text>
         {!!(task.assignee || task.staffId?.name) && <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>负责人：{task.assignee || task.staffId?.name}</Text>}
@@ -329,6 +333,7 @@ export default function HomePage() {
   }
 
   return (
+    <>
     <ScrollView scrollY style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{padding:`${statusBarHeight+8}px ${spacing.lg}px 18px`,paddingRight:'112px',backgroundColor:colors.background}}>
         <Text style={{fontSize:'18px',fontWeight:700,color:colors.primary,display:'block'}}>{t('嘉医汇 · 嘉医管家')}</Text>
@@ -399,10 +404,10 @@ export default function HomePage() {
         {submittedFeedback.length>0&&<View onClick={()=>Taro.navigateTo({url:'/pages/tasks/index?feedback=1'})} style={{backgroundColor:'#fff',borderRadius:'14px',padding:'14px 16px',marginBottom:'20px',display:'flex',justifyContent:'space-between'}}><Text style={{fontSize:'13px',color:colors.textSecondary}}>{language === 'en-US' ? `Feedback sent · ${submittedFeedback.length} awaiting your care team` : `已提交反馈 · ${submittedFeedback.length} 项待团队处理`}</Text><Text style={{fontSize:'13px',color:colors.primary}}>{t('查看 ›')}</Text></View>}
         <View style={{marginBottom:'24px'}}>
           <Text style={{fontSize:'17px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'12px'}}>{t('我的权益')}</Text>
-          {join365Plan && <View onClick={() => Taro.navigateTo({ url: `/pages/services/mall/index?productId=${encodeURIComponent(join365Plan.id)}` })} style={{backgroundColor:'#EFF8F1',borderRadius:'18px',padding:'18px',marginBottom:'12px',border:`1px solid ${colors.primary}`}}>
+          {join365Plan && <View onClick={() => Taro.navigateTo({ url: `/pages/services/join365/index?productId=${encodeURIComponent(join365Plan.id)}` })} style={{backgroundColor:'#EFF8F1',borderRadius:'18px',padding:'18px',marginBottom:'12px',border:`1px solid ${colors.primary}`}}>
             <Text style={{fontSize:'16px',fontWeight:700,color:colors.textPrimary,display:'block'}}>{t('加入365会员计划')}</Text>
             <Text style={{fontSize:'12px',color:colors.textSecondary,display:'block',marginTop:'5px'}}>{t('当前没有有效年度服务，可查看计划内容并选择加入')}</Text>
-            <Text style={{fontSize:'14px',fontWeight:700,color:colors.primary,display:'block',marginTop:'8px'}}>¥{Number(join365Plan.price).toFixed(2)} · {t('查看会员计划 ›')}</Text>
+            <Text style={{fontSize:'14px',fontWeight:700,color:colors.primary,display:'block',marginTop:'8px'}}>¥{Number(join365Plan.price).toFixed(2)} · {t('立即开通 ›')}</Text>
           </View>}
           <View onClick={()=>Taro.navigateTo({url:'/pages/profile/benefits/index?section=plan'})} style={{backgroundColor:'#fff',borderRadius:'18px',padding:'18px',display:'flex',alignItems:'center',gap:'12px'}}>
             <Icon name="🎁" size={24} color={colors.primary}/>
@@ -436,9 +441,10 @@ export default function HomePage() {
       {/* 底部占位，对齐app端 <View style={{height: spacing.xl*2}}/> */}
       <View style={{ height: '24px' }} />
 
+    </ScrollView>
       {taskDetail && (
         <TaskDetailModal task={taskDetail} onClose={() => setTaskDetail(null)} onDone={markTaskDone} />
       )}
-    </ScrollView>
+    </>
   );
 }

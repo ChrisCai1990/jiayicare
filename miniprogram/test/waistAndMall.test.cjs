@@ -34,7 +34,7 @@ function mount(file, { api = {}, exports = '', props = {}, name = 'default', tar
     if(id.endsWith('/theme')) return {colors:{},spacing:{},radius:{},shadow:{}};
     if(id.endsWith('/services/api')) return api;
     if(id.endsWith('/hooks/useNavBar')) return () => ({statusBarHeight:24,navBarHeight:44,totalHeight:68});
-    if(id.endsWith('/context/AuthContext')) return {useAuth:()=>({user:{_id:'self'},updateUser(){}})};
+    if(id.endsWith('/context/AuthContext')) return {useAuth:()=>({user:{_id:'self',onboardingCompleted:true},updateUser(){}})};
     if(id.endsWith('/hooks/useArchiveSubject')) return () => ({loading:false,subject:null,subjects:[],user:{}});
     if(id.endsWith('/utils/bloodPressureTrend')) return {bloodPressurePoints:()=>[]};
     if(id.endsWith('/utils/healthFundCheckout')) return {maxFundDeduction:()=>0};
@@ -72,7 +72,7 @@ test('waist records refresh into time-ordered trend and latest cm value', async 
 
 test('purchase member requests initialize and return closes above scrolling content', async () => {
   let members=0,closed=0,stopped=0;
-  const page=mount('pages/services/mall/index.jsx',{exports:'\nexport { PurchaseModal };',name:'PurchaseModal',props:{item:{id:'service',name:'服务',price:12800},mode:'pay',onClose:()=>closed++},api:{familyLinksAPI:{list:async()=>{members++;return {data:[]};}},guardianChildrenAPI:{list:async()=>{members++;return {data:[]};}},servicesAPI:{coupons:async()=>({success:true,data:[]})},userAPI:{getMe:async()=>({success:true,data:{}}),enterpriseSharedFundQuote:async()=>({data:{amount:0}})}}});
+  const page=mount('components/PurchaseModal.jsx',{props:{item:{id:'service',name:'服务',price:12800},mode:'pay',onClose:()=>closed++},api:{familyLinksAPI:{list:async()=>{members++;return {data:[]};}},guardianChildrenAPI:{list:async()=>{members++;return {data:[]};}},servicesAPI:{coupons:async()=>({success:true,data:[]})},userAPI:{getMe:async()=>({success:true,data:{}}),enterpriseSharedFundQuote:async()=>({data:{amount:0}})}}});
   let tree=page.render(); page.effects.forEach(fn=>fn()); await settle(); tree=page.render();
   assert.equal(members,2);
   const back=nodes(tree).find(n=>n.props.onClick&&content(n)==='‹ 返回商城');
@@ -135,4 +135,39 @@ test('waist photo failure is explicit and valid reading saves cm after confirmat
  nodes(tree).find(n=>n.props.onClick&&content(n).includes('我已核对原图')).props.onClick();
  tree=page.render(); await nodes(tree).find(n=>n.type==='Button'&&content(n)==='确认并提交图片记录').props.onClick();
  assert.equal(saved.length,1);assert.equal(saved[0].type,'waist');assert.equal(saved[0].unit,'cm');assert.equal(saved[0].value,'82.5');
+});
+
+test('365 entry checks the selected package and opens personal payment', async () => {
+  const plan = {id:'plan', membershipTier:'consumer365', includes365:true, durationMonths:12, canJoin365:true};
+  for (const eligible of [true, false]) {
+    const page = mount('pages/services/join365/index.jsx', {
+      taroOverrides:{useRouter:()=>({params:{productId:'plan'}})},
+      api:{servicesAPI:{packages:async()=>({success:true,data:[{...plan,canJoin365:eligible}]})}},
+    });
+    page.render();
+    page.effects.forEach(effect => effect());
+    await settle();
+    const view = page.render();
+    if (eligible) {
+      assert.equal(view.props.mode, 'pay');
+      assert.equal(view.props.selfMembership, true);
+      assert.equal(view.props.item.fulfillmentType, 'subscription_service');
+    } else assert.match(content(view), /暂无可开通/);
+  }
+});
+
+test('schedule detail hides the tab bar until it closes', () => {
+  const calls = [];
+  const page = mount('pages/home/index.jsx', {
+    exports:'\nexport { TaskDetailModal };', name:'TaskDetailModal', props:{task:{title:'复查'}},
+    taroOverrides:{
+      hideTabBar:async()=>{calls.push('hide');},
+      showTabBar:async()=>{calls.push('show');},
+    },
+  });
+  page.render();
+  const cleanup = page.effects[0]();
+  assert.deepEqual(calls, ['hide']);
+  cleanup();
+  assert.deepEqual(calls, ['hide','show']);
 });

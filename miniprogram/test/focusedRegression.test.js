@@ -76,7 +76,7 @@ test('mall supports keyword search and explicit product sharing', () => {
   assert.match(source, /openType="share"/);
   assert.match(source, /分享当前服务给好友/);
   assert.match(source, /`productId=\$\{detailService\.id\}`/);
-  assert.match(source, /shareReady=\{!user \|\| !!shareToken\}/);
+  assert.match(source, /shareReady=\{!user \|\| !!shareToken \|\| !!detailService\.servicePackage\}/);
 });
 
 test('all check-in dialogs support record dates and optional camera uploads', () => {
@@ -174,7 +174,7 @@ test('partial batch failures retain only failed entries for retry', () => {
 });
 
 test('paid service checkout keeps money in cents and requires scheduling details', () => {
-  const source = read('src/pages/services/mall/index.jsx');
+  const source = read('src/components/PurchaseModal.jsx');
   assert.match(source, /Math\.round\(Math\.min\(fundBalance, fundMaximum\) \* 100\) \/ 100/);
   assert.match(source, /fundApplied\.toFixed\(2\)/);
   assert.match(source, /请选择期望服务时间/);
