@@ -49,8 +49,8 @@ export function summarizeReportPages(pages, items, imageEvidence = {}, textCover
       reasons.push('原文待核对')
     if (parse.status === 'failed') reasons.push('本页补提失败')
     else if (parse.status === 'needs_review' && !(evidence.status === 'verified' && imageEvidence[page]?.status === 'needs_review') && !reasons.length) reasons.push('补提结果待核对')
-    if (!pageItems.length && evidence.status !== 'image_only') reasons.push('无提取数据，请查看原件')
+    if (!pageItems.length && !['image_only', 'summary_only'].includes(evidence.status)) reasons.push('无提取数据，请查看原件')
     return { page, itemCount: pageItems.length, reasons, needsAttention: reasons.length > 0,
-      label: evidence.status === 'image_only' && !reasons.length ? '影像资料页' : reasons[0] || `${pageItems.length} 项` }
+      label: evidence.status === 'image_only' && !reasons.length ? '影像资料页' : reasons[0] || (evidence.status === 'summary_only' && !pageItems.length ? '体检小结' : `${pageItems.length} 项`) }
   })
 }
