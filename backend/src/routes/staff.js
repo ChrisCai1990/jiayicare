@@ -4804,12 +4804,11 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
     const checkupDate = req.body.checkupDate !== undefined ? req.body.checkupDate : plan.checkupDate;
     const checkupYear = checkupDate ? new Date(checkupDate).getUTCFullYear() : null;
     const nextYear = req.body.year !== undefined ? Number(req.body.year) : Number(plan.year);
-    if (checkupDate && (!Number.isInteger(checkupYear) || checkupYear !== nextYear)) {
+    const reopeningForEdit = plan.status === 'active' && req.body.status === 'draft' && Object.keys(req.body).length === 1;
+    if (!reopeningForEdit && checkupDate && (!Number.isInteger(checkupYear) || checkupYear !== nextYear)) {
       return res.status(400).json({ success: false, message: '体检年度须与明确的体检日期所在年份一致' });
     }
-    const reopeningUndatedPlan = plan.status === 'active' && !plan.checkupDate
-      && req.body.status === 'draft' && Object.keys(req.body).length === 1;
-    if (plan.pushedAt && !checkupDate && !reopeningUndatedPlan) return res.status(400).json({ success: false, message: '已推送体检方案须保留明确的体检日期' });
+    if (plan.pushedAt && !checkupDate && !reopeningForEdit) return res.status(400).json({ success: false, message: '已推送体检方案须保留明确的体检日期' });
     if (req.body.year !== undefined && Number(req.body.year) !== Number(plan.year)
       && plan.items.some(item => item.status === 'completed' || item.reportId)) {
       return res.status(409).json({ success: false, message: '已有报告核对记录的体检方案不能直接改年度' });

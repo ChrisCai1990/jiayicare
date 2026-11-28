@@ -21,11 +21,9 @@ test('saving unrelated edits does not create a schedule revision', () => {
   assert.equal(makeCheckupScheduleRevision({ ...plan, checkupDate: new Date('2026-06-01') }, 2026, '2026-06-01', staff, at), null);
 });
 
-test('a previously pushed undated checkup can reopen, acquire a date and retain it', async () => {
+function editRoute(record) {
   const source = require('node:fs').readFileSync(require.resolve('../src/routes/staff.js'), 'utf8');
   const route = source.slice(source.indexOf("router.put('/plans/:id',"), source.indexOf('// Draft-only rewrite:'));
-  const record = { ...plan, type: 'annual_checkup', status: 'active', pushedAt: at, items: [],
-    checkupScheduleHistory: [], markModified() {}, async save() {} };
   let update;
   require('node:vm').runInNewContext(route, {
     router: { put: (_path, _auth, _permission, handler) => { update = handler; } },
@@ -42,6 +40,17 @@ test('a previously pushed undated checkup can reopen, acquire a date and retain 
     await update({ params: { id: 'plan' }, staff, body }, res);
     return res.code;
   }
+  return submit;
+}
+
+function activePlan() {
+  return { ...plan, type: 'annual_checkup', status: 'active', pushedAt: at, items: [],
+    checkupScheduleHistory: [], markModified() {}, async save() {} };
+}
+
+test('a previously pushed undated checkup can reopen, acquire a date and retain it', async () => {
+  const record = activePlan();
+  const submit = editRoute(record);
   assert.equal(await submit({ status: 'draft', title: 'unrelated edit' }), 400);
   assert.equal(await submit({ status: 'draft' }), 200);
   assert.equal(record.status, 'draft');
@@ -51,4 +60,17 @@ test('a previously pushed undated checkup can reopen, acquire a date and retain 
   assert.equal(record.checkupScheduleHistory.length, 1);
   assert.equal(await submit({ checkupDate: null }), 400);
   assert.equal(record.checkupDate, '2026-12-05');
+});
+
+test('a confirmed checkup with conflicting stored years can reopen before the schedule is corrected', async () => {
+  const record = { ...activePlan(), confirmedAt: at, checkupDate: '2027-05-21' };
+  const submit = editRoute(record);
+  assert.equal(await submit({ status: 'draft', year: 2026 }), 400);
+  assert.equal(await submit({ status: 'draft' }), 200);
+  assert.equal(record.year, 2026);
+  assert.equal(record.checkupDate, '2027-05-21');
+  assert.equal(record.checkupScheduleHistory.length, 0);
+  assert.equal(await submit({ year: 2026, checkupDate: '2027-05-21' }), 400);
+  assert.equal(await submit({ year: 2027, checkupDate: '2027-05-21' }), 200);
+  assert.equal(record.checkupScheduleHistory.length, 1);
 });
