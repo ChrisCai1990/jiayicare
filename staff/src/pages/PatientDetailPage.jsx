@@ -2186,6 +2186,22 @@ function readableDietaryAnswer(value) {
   return String(value)
 }
 
+function ReportParseTime({ job }) {
+  if (!job || !['processing', 'completed', 'failed', 'paused'].includes(job.status)) return '—'
+  const start = Date.parse(job.startedAt || job.queuedAt)
+  const active = job.status === 'processing'
+  const end = active ? Date.now() : Date.parse(job.status === 'paused' ? job.pausedAt || job.completedAt : job.completedAt)
+  const validDuration = Number.isFinite(start) && Number.isFinite(end) && end >= start
+  const seconds = validDuration ? Math.floor((end - start) / 1000) : 0
+  const duration = seconds >= 60 ? `${Math.floor(seconds / 60)}分${seconds % 60}秒` : `${seconds}秒`
+  const showTime = time => new Date(time).toLocaleString('zh-CN', { hour12: false })
+  return <div style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+    {Number.isFinite(start) && <div>开始 {showTime(start)}</div>}
+    {!active && Number.isFinite(end) && <div>{job.status === 'paused' ? '暂停' : '结束'} {showTime(end)}</div>}
+    <div>{validDuration ? `${active ? '已用' : '历时'} ${duration}` : '时长未记录'}</div>
+  </div>
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -11396,7 +11412,7 @@ export default function PatientDetailPage() {
               <>
                   <div style={{ borderRadius: 8, border: '1px solid #e8e4dc', overflowX: 'auto', background: '#fff' }}>
                     <table className="table report-table" style={{ marginBottom: 0, minWidth: 920 }}>
-                      <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>人工审核</th><th>处理状态</th><th>操作</th></tr></thead>
+                      <thead><tr><th>资料名称</th><th>资料分类</th><th>来源机构</th><th>资料日期</th><th>人工审核</th><th>AI解析时间</th><th>处理状态</th><th>操作</th></tr></thead>
                       <tbody>
                       {paginatedReportRows.map(({ report: r, typeLabel }) => {
                         const isOutpatientRecord = inferDocumentCategory(r) === 'outpatient_record'
@@ -11442,6 +11458,7 @@ export default function PatientDetailPage() {
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || (r.institutionStatus === 'unknown' ? '来源机构不明' : '') || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ fontSize: 11 }}>{r.audited_at ? new Date(r.audited_at).toLocaleString() : '未完成'}<br />{r.audited_by || ''}<br />{Object.keys(r.reviewActivity || {}).length ? `有效时长 ${Math.round(Object.values(r.reviewActivity).reduce((sum, session) => sum + (session.durationMs || 0), 0) / 60000)} 分钟` : '时长未记录'}</td>
+                            <td><ReportParseTime job={r.parseJob} /></td>
                             <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {r.archiveOnly ? <button className="btn btn-sm report-action-primary" onClick={() => openReportDetail(r)}>查看原件</button> : isOutpatientRecord ? <>
@@ -11499,7 +11516,7 @@ export default function PatientDetailPage() {
                           </tr>
                           {openReportActionId === r._id && r.audit_status !== 'audited' && (
                             <tr>
-                              <td colSpan={7} style={{ padding: '8px 14px', background: '#F8FAF9', textAlign: 'right' }}>
+                              <td colSpan={8} style={{ padding: '8px 14px', background: '#F8FAF9', textAlign: 'right' }}>
                                 <span style={{ color: '#8AA89C', fontSize: 12, marginRight: 10 }}>更多操作</span>
                                 <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }} onClick={() => {
                                   setEditingReport(r)

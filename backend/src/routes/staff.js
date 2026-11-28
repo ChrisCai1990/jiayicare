@@ -19213,6 +19213,7 @@ async function extractOutpatientRecordAttachment(report, rawParseImage) {
 async function runOutpatientRecordParse(report, rawParseImage) {
   const { supplementOutpatientDraft } = require('../utils/outpatientRecordExtraction');
   const MedicalReport = require('../models/MedicalReport');
+  const startedAt = report.parseJob?.startedAt || report.parseJob?.queuedAt || new Date();
   const revision = Number(report.reviewRevision || 0);
   try {
     const { draft, reviewIssues, sourceCount, explicitExamReport } = await extractOutpatientRecordAttachment(report, rawParseImage);
@@ -19220,7 +19221,7 @@ async function runOutpatientRecordParse(report, rawParseImage) {
       const corrected = await MedicalReport.updateOne(
         { _id: report._id, reviewRevision: reviewRevisionMatch(revision), documentCategory: 'outpatient_record', audit_status: { $ne: 'audited' } },
         { $set: { documentCategory: 'exam_report', clinicalReview: null, reportItems: [], aiSummary: '原件标题表明这是检查报告，已纠正资料分类，正在按检查报告重新解析。',
-          parseJob: { status: 'processing', message: '已从门诊病历纠正为检查报告，继续解析' } }, $inc: { reviewRevision: 1 } },
+          parseJob: { startedAt, status: 'processing', message: '已从门诊病历纠正为检查报告，继续解析' } }, $inc: { reviewRevision: 1 } },
       );
       if (corrected.modifiedCount) return runReportParseControlled(report._id);
       throw new Error('分类纠正期间资料被人工修改，请刷新后核对');
@@ -19230,12 +19231,12 @@ async function runOutpatientRecordParse(report, rawParseImage) {
       { $set: {
         clinicalReview: supplementOutpatientDraft(report.clinicalReview, draft), reportItems: [], aiStatus: 'pending',
         aiSummary: `门诊病历已按病历栏目提取待核对草稿。${reviewIssues.length ? `识别疑点：${reviewIssues.join('；')}` : '请对照原件逐项核对。'}`,
-        parseJob: { status: 'completed', completedAt: new Date(), message: `病历栏目提取完成：${sourceCount}页，待结构化审核`,
+        parseJob: { startedAt, status: 'completed', completedAt: new Date(), message: `病历栏目提取完成：${sourceCount}页，待结构化审核`,
           legacyReportItems: report.reportItems?.length ? report.reportItems : report.parseJob?.legacyReportItems },
       }, $inc: { reviewRevision: 1 } },
     );
     if (!result.modifiedCount) await MedicalReport.updateOne({ _id: report._id, 'parseJob.status': 'processing' }, {
-      $set: { 'parseJob.status': 'failed', 'parseJob.message': '识别期间报告被人工修改，未覆盖审核内容' },
+      $set: { 'parseJob.status': 'failed', 'parseJob.completedAt': new Date(), 'parseJob.message': '识别期间报告被人工修改，未覆盖审核内容' },
     });
   } catch (error) {
     const paused = isAiControlError(error);
@@ -19258,6 +19259,7 @@ async function runReportParseControlled(reportId) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
+  const startedAt = report.parseJob?.startedAt || report.parseJob?.queuedAt || new Date();
   if (report.sourceInAppGroupKey && !report.groupMaterialVerified) {
     try {
       const accepted = await require('../utils/inAppGroupMaterials').checkCategory(report, rawParseImage);
@@ -19271,7 +19273,7 @@ async function runReportParseControlled(reportId) {
       }
       await MedicalReport.updateOne({_id:report._id}, {$set:{groupMaterialVerified:true,documentCategory:report.documentCategory,type:report.type,title:report.title}});
     } catch(error) {
-      await MedicalReport.updateOne({_id:report._id}, {$set:{aiStatus:'failed',parseJob:{status:'failed',message:'资料类别核验未完成，请健管专员核对或重试。'}}});
+      await MedicalReport.updateOne({_id:report._id}, {$set:{aiStatus:'failed',parseJob:{startedAt,completedAt:new Date(),status:'failed',message:'资料类别核验未完成，请健管专员核对或重试。'}}});
       return;
     }
   }
@@ -19970,7 +19972,7 @@ async function runReportParseControlled(reportId) {
         imagePageEvidence,
         aiSummary:   reviewedSummary,
         aiStatus:    allFailed ? 'failed' : 'pending',
-        parseJob:    { status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${failedPages || textCoverage?.uncoveredRows || imageEvidenceNeedsReview ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
+        parseJob:    { startedAt, status: allFailed ? 'failed' : 'completed', completedAt: new Date(), message: `${failedPages || textCoverage?.uncoveredRows || imageEvidenceNeedsReview ? '识别待核对' : '识别完成'}：${totalPageCount}页，提取${classified.length}项${failedPages ? `；识别失败${failedPages}页${failedPageLabel}` : ''}${textCoverage?.uncoveredRows ? `；文字层至少${textCoverage.uncoveredRows}行待核对` : ''}`,
           failedPages: failedPageList, ...(textCoverage ? { textCoverage } : {}) },
         institution, checkDate: resolvedCheckDate, reportYear: resolvedCheckDate ? Number(resolvedCheckDate.slice(0, 4)) : null,
       });
@@ -20207,7 +20209,7 @@ async function runReportParseControlled(reportId) {
       imagePageEvidence,
       aiSummary:   noReviewableItems ? `⚠️ 未提取到可审核项目：${failureDetail}` : preservedSummary,
       aiStatus:    noReviewableItems ? 'failed' : 'pending',
-      parseJob:    { status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), failedPages: imageFailedPages, message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `${imageNeedsReview ? '识别待核对' : '识别完成'}：${bufs.length}张，提取${resolvedImageItems.length}项${imageFailures.length ? `；${imageFailures.length}张识别失败` : ''}` },
+      parseJob:    { startedAt, status: noReviewableItems ? 'failed' : 'completed', completedAt: new Date(), failedPages: imageFailedPages, message: noReviewableItems ? `未提取到可审核项目：${failureDetail}` : `${imageNeedsReview ? '识别待核对' : '识别完成'}：${bufs.length}张，提取${resolvedImageItems.length}项${imageFailures.length ? `；${imageFailures.length}张识别失败` : ''}` },
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate),
       reportYear: (resolvedImageCheckDate || (parsedImageItemDates.length > 1 ? '' : report.checkDate)) ? Number(String(resolvedImageCheckDate || report.checkDate).slice(0, 4)) : null,
