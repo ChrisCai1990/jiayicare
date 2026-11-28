@@ -11,6 +11,11 @@ const STATUS = {
   completed: { label: '核对已结束', color: '#1E6B50', background: '#E8F5ED' },
 }
 
+function compareCheckupDates(left, right) {
+  if (!left.checkupDate || !right.checkupDate) return Number(Boolean(right.checkupDate)) - Number(Boolean(left.checkupDate))
+  return left.checkupDate.slice(0, 10).localeCompare(right.checkupDate.slice(0, 10))
+}
+
 export function CheckupProgressList({ rows = [], loading = false, error = '', onRetry, onOpen, taskMode = false }) {
   const [filter, setFilter] = useState('pending')
   const [page, setPage] = useState(1)
@@ -23,7 +28,8 @@ export function CheckupProgressList({ rows = [], loading = false, error = '', on
   const filtered = filter === 'pending' ? pending : filter === 'booking' ? booking : filter === 'waiting' ? waiting : filter === 'review' ? review : filter === 'unknown' ? unknown : filter === 'completed' ? completed : rows
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
-  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const ordered = taskMode ? filtered : [...filtered].sort(compareCheckupDates)
+  const visible = ordered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
   const patients = new Set(filtered.map(row => String(row.patientId))).size
   if (!loading && !error && rows.length === 0) return null
 

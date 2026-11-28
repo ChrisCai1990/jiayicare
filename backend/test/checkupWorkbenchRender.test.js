@@ -32,6 +32,9 @@ test('real component supports pagination, completed history, counts, opening pla
   let opened, retried = false;
   const rows = [...Array.from({ length: 6 }, (_, i) => row(String(i + 1))), row('done', true)];
   rows[0].checkupDate = '2027-01-15T00:00:00.000Z';
+  rows[4].checkupDate = '2026-11-19';
+  rows[5].checkupDate = '2026-11-19T12:00:00.000Z';
+  const visibleNames = () => Array.from(document.querySelectorAll('button[aria-label^="查看"] strong'), el => el.textContent);
   const props = { rows, onOpen: id => { opened = id; }, onRetry: () => { retried = true; } };
   const text = () => document.body.textContent;
   const button = label => [...document.querySelectorAll('button')].find(b => b.textContent === label);
@@ -42,11 +45,11 @@ test('real component supports pagination, completed history, counts, opening pla
     assert.match(text(), /体检安排日期：待确认/);
     assert.match(text(), /核对中/);
     assert.match(text(), /项目核对 1\/3 项 · 待核对 2 项/);
-    assert.doesNotMatch(text(), /客户6/);
+    assert.deepEqual(visibleNames(), ['客户5', '客户6', '客户1', '客户2', '客户3']);
     await act(async () => button('下一页').click());
-    assert.match(text(), /客户6/);
-    await act(async () => document.querySelector('button[aria-label="查看客户6的体检方案6"]').click());
-    assert.equal(opened.planId, '6');
+    assert.deepEqual(visibleNames(), ['客户4']);
+    await act(async () => document.querySelector('button[aria-label="查看客户4的体检方案4"]').click());
+    assert.equal(opened.planId, '4');
     await act(async () => button('核对已结束 1').click());
     assert.match(text(), /客户done/);
     assert.match(text(), /项目核对 3\/3 项/);
